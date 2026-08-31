@@ -1449,6 +1449,23 @@ def test_linux_office_runtime_is_dual_arch_private_and_conversion_tested() -> No
     assert "PRIVATE_RUNTIME_LIBS.txt" in readme
 
 
+def test_linux_native_runtime_gate_allows_only_private_office_loader() -> None:
+    """成品门禁必须允许经架构校验的私有加载器，同时继续拒绝其他可执行库。"""
+
+    runtime_test = (
+        ROOT / "scripts" / "test-native-package-runtime.sh"
+    ).read_text(encoding="utf-8")
+
+    assert "OFFICE_LOADER_NAME=ld-linux-x86-64.so.2" in runtime_test
+    assert "OFFICE_LOADER_NAME=ld-linux-aarch64.so.1" in runtime_test
+    assert 'PRIVATE_OFFICE_LOADER="$RUNTIME/office-runtime/private-runtime/' in runtime_test
+    assert 'file "$PRIVATE_OFFICE_LOADER" | grep -Eq "$EXPECTED_OFFICE_PATTERN"' in runtime_test
+    assert '! -path "$PRIVATE_OFFICE_LOADER" -print -quit' in runtime_test
+    assert runtime_test.index('[[ -f "$PRIVATE_OFFICE_LOADER"') < runtime_test.index(
+        '! -path "$PRIVATE_OFFICE_LOADER" -print -quit'
+    )
+
+
 def test_windows_build_requires_audited_architecture_matched_office_runtime() -> None:
     """Windows 不能把未知来源或错误架构的办公转换器封进安装包。"""
 

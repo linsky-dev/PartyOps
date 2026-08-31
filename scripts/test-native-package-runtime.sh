@@ -90,7 +90,27 @@ for runtime_entrypoint in \
     exit 2
   }
 done
-if find "$RUNTIME" -type f -name '*.so*' -perm /111 -print -quit | grep -q .; then
+
+# LibreOffice 通过随包私有加载器启动自身的 glibc 2.34 闭包。该加载器名称
+# 虽匹配 *.so*，本质却是必须由包装脚本直接 exec 的 ELF 入口。只允许与
+# 目标架构严格对应的这一项带执行位，其余共享库继续默认拒绝。
+OFFICE_LOADER_NAME=ld-linux-x86-64.so.2
+EXPECTED_OFFICE_PATTERN='x86-64|x86_64'
+if [[ "$EXPECTED_ARCH" == arm64 ]]; then
+  OFFICE_LOADER_NAME=ld-linux-aarch64.so.1
+  EXPECTED_OFFICE_PATTERN='aarch64|ARM64'
+fi
+PRIVATE_OFFICE_LOADER="$RUNTIME/office-runtime/private-runtime/$OFFICE_LOADER_NAME"
+[[ -f "$PRIVATE_OFFICE_LOADER" && -x "$PRIVATE_OFFICE_LOADER" ]] || {
+  echo "成品缺少目标架构可执行的 LibreOffice 私有加载器：$OFFICE_LOADER_NAME。" >&2
+  exit 2
+}
+file "$PRIVATE_OFFICE_LOADER" | grep -Eq "$EXPECTED_OFFICE_PATTERN" || {
+  echo "成品 LibreOffice 私有加载器架构与 $EXPECTED_ARCH 不一致。" >&2
+  exit 2
+}
+if find "$RUNTIME" -type f -name '*.so*' -perm /111 \
+  ! -path "$PRIVATE_OFFICE_LOADER" -print -quit | grep -q .; then
   echo "成品仍有共享库携带执行位，会触发国产系统安全中心反复拦截。" >&2
   exit 2
 fi
