@@ -1296,6 +1296,15 @@ def test_client_agent_rejects_corruption_and_handles_http_states(
     monkeypatch.setattr(
         client_agent.urllib.request, "urlopen", lambda *_a, **_k: HashMismatchResponse()
     )
+    # 该分支验证主机哈希不一致，不能受测试机 C 盘实时余量影响；
+    # 低磁盘空间已由独立参数化用例覆盖。
+    monkeypatch.setattr(
+        client_agent.shutil,
+        "disk_usage",
+        lambda _path: SimpleNamespace(
+            free=client_agent.BACKUP_FREE_SPACE_RESERVE_BYTES + 1024**3
+        ),
+    )
     with pytest.raises(ValueError, match="主机校验值"):
         client_agent.pull_backup("http://host", "token", tmp_path / "copies")
     assert not list((tmp_path / "copies").glob("*.part"))

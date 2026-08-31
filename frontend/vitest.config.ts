@@ -7,6 +7,10 @@ export default defineConfig({
     include: ["src/**/*.test.ts"],
     environment: "jsdom",
     setupFiles: ["src/test/setup.ts"],
+    // 发布机可能同时驻留本地模型。单 Worker 避免 V8 并发预留耗尽
+    // Windows 提交上限，导致用例未执行便出现 IPC/VirtualAlloc 失败。
+    minWorkers: 1,
+    maxWorkers: 1,
     // 路由用例会真实加载全部懒加载页面；低性能 Win7 构建机上不应因默认 10 秒误报。
     hookTimeout: 30_000,
     coverage: {

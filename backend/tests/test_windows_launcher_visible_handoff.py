@@ -132,6 +132,40 @@ def test_user_protocols_never_overwrite_unowned_existing_command(tmp_path: Path)
     assert (base, "PartyOps.AppId") not in registry.values
 
 
+def test_user_protocols_replace_owned_command_after_install_path_changes(
+    tmp_path: Path,
+) -> None:
+    """同一 AppId 的旧命令必须随覆盖安装迁移，不能遗留失效入口。"""
+
+    launcher = load_launcher()
+    runtime = tmp_path / "PartyOps"
+    runtime.mkdir()
+    log = tmp_path / "launcher.log"
+    registry = _MemoryRegistry()
+    base = r"Software\Classes\partyops-file"
+    command_key = base + r"\shell\open\command"
+    registry.keys.update({base, command_key})
+    registry.values[(base, "PartyOps.AppId")] = (
+        launcher.PARTYOPS_APP_ID,
+        registry.REG_SZ,
+    )
+    registry.values[(base, "PartyOps.InstallPath")] = (
+        r"C:\OldPartyOps",
+        registry.REG_SZ,
+    )
+    registry.values[(command_key, "")] = (
+        '"C:\\OldPartyOps\\PartyOpsFileOpen.exe" "%1"',
+        registry.REG_SZ,
+    )
+
+    assert launcher.ensure_user_protocols(runtime, log, registry) == []
+    assert registry.values[(base, "PartyOps.InstallPath")][0] == str(runtime)
+    assert registry.values[(command_key, "")][0] == (
+        f'"{runtime / "PartyOpsFileOpen.exe"}" "%1"'
+    )
+    assert not log.exists()
+
+
 def test_client_desktop_launch_waits_for_page_marker(monkeypatch, tmp_path: Path) -> None:
     launcher = load_launcher()
     runtime = tmp_path / "runtime"

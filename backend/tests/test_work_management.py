@@ -111,8 +111,8 @@ def test_period_report_journal_templates_and_status(
     client: TestClient, admin: dict
 ) -> None:
     # 使用不会与“当前日期 + 相对偏移”类用例重叠的远期周期，并先建立人工
-    # 周报再创建关联事项。任务投影会按计划日期自动预建周报，固定近期日期
-    # 会与其它后台投影竞速并偶发收到合法的 409。
+    # 周报再创建关联事项。关联事项安排在报告投影窗口之外，确保本用例验证
+    # 的是人工新增条目，而不是与异步自动归集竞争同一个来源任务。
     anchor_at = "6888-09-09T10:00:00+08:00"
     expected_period_key = period_bounds(
         PeriodType.WEEK, datetime.fromisoformat(anchor_at)
@@ -139,16 +139,17 @@ def test_period_report_journal_templates_and_status(
         work_area="组织建设",
         annual_focus="年度重点任务",
         reporting_scope="党委会周报",
-        planned_start_at="6888-09-07T09:00:00+08:00",
-        planned_end_at="6888-09-11T17:00:00+08:00",
+        planned_start_at="6888-10-07T09:00:00+08:00",
+        planned_end_at="6888-10-11T17:00:00+08:00",
         steps=[],
         materials=[],
     )
     assert task["work_area"] == "组织建设"
 
+    latest_report = client.get(f"/api/v1/period-reports/{report['id']}").json()
     item = client.post(
         f"/api/v1/period-reports/{report['id']}/items",
-        headers={"If-Match": str(report["version"])},
+        headers={"If-Match": str(latest_report["version"])},
         json={
             "section": "next_plan",
             "source_type": "task",

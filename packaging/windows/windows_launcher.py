@@ -110,7 +110,13 @@ def ensure_user_protocols(runtime: Path, log_path: Path, registry=None) -> list[
                 except OSError:
                     existing_command = ""
                 owner_conflicts = existing_owner not in {"", PARTYOPS_APP_ID}
-                command_conflicts = bool(existing_command) and existing_command != command
+                # 同一 AppId 的旧安装路径属于 PartyOps 自身，升级后必须更新；
+                # 只有没有归属标记且命令不同，才按第三方协议冲突拒绝覆盖。
+                command_conflicts = (
+                    not existing_owner
+                    and bool(existing_command)
+                    and existing_command != command
+                )
                 if owner_conflicts or command_conflicts:
                     warning = (
                         f"[PROTOCOL_USER_REGISTRY_CONFLICT] {protocol} 已由其他程序注册；"
