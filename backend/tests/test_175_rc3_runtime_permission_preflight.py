@@ -247,6 +247,93 @@ def test_launch_personal_stops_before_spawn_when_permission_probe_fails(
     assert denied.value.code == RUNTIME_PERMISSION_DENIED
 
 
+def test_installer_personal_permission_probe_checks_real_configured_data_dir(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    local = tmp_path / "PartyOps"
+    config = local / "personal.env"
+    data_dir = tmp_path / "用户数据 目录"
+    local.mkdir()
+    config.write_text(
+        "PARTYOPS_DATA_DIR="
+        f"{setup_wizard.shlex.quote(str(data_dir))}\nPARTYOPS_PORT=18775\n",
+        encoding="utf-8",
+    )
+    (local / "mode.json").write_text(
+        json.dumps({"mode": "personal", "config_path": str(config)}),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    checked: list[tuple[Path, Path]] = []
+    monkeypatch.setattr(
+        setup_wizard,
+        "_preflight_personal_runtime_access",
+        lambda config_path, configured_data: checked.append(
+            (config_path, configured_data)
+        ),
+    )
+
+    result = setup_wizard.preflight_configured_personal_runtime_access()
+
+    assert result == {
+        "passed": True,
+        "mode": "configured-personal-permission",
+        "checked": True,
+        "data_dir_writable": True,
+    }
+    assert checked == [(config, data_dir)]
+
+
+def test_installer_personal_permission_probe_propagates_acl_denial(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    local = tmp_path / "PartyOps"
+    config = local / "personal.env"
+    local.mkdir()
+    config.write_text(
+        "PARTYOPS_DATA_DIR="
+        f"{setup_wizard.shlex.quote(str(tmp_path / 'protected'))}\n"
+        "PARTYOPS_PORT=18775\n",
+        encoding="utf-8",
+    )
+    (local / "mode.json").write_text(
+        json.dumps({"mode": "personal", "config_path": str(config)}),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setattr(
+        setup_wizard,
+        "_preflight_personal_runtime_access",
+        lambda *_args: (_ for _ in ()).throw(
+            setup_wizard.HostStartupError(
+                RUNTIME_PERMISSION_DENIED,
+                "当前账号无法写入个人数据目录。",
+                detail="阶段=个人数据目录",
+            )
+        ),
+    )
+
+    with pytest.raises(setup_wizard.HostStartupError) as denied:
+        setup_wizard.preflight_configured_personal_runtime_access()
+
+    assert denied.value.code == RUNTIME_PERMISSION_DENIED
+    assert "个人数据目录" in str(denied.value)
+
+
+def test_installer_personal_permission_probe_skips_repairable_non_personal_state(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    assert setup_wizard.preflight_configured_personal_runtime_access()["checked"] is False
+    root = tmp_path / "PartyOps"
+    (root / "mode.json").write_text("{broken", encoding="utf-8")
+    result = setup_wizard.preflight_configured_personal_runtime_access()
+    assert result["reason"] == "mode-config-needs-repair"
+    (root / "mode.json").write_text(json.dumps({"mode": "client"}), encoding="utf-8")
+    result = setup_wizard.preflight_configured_personal_runtime_access()
+    assert result["reason"] == "active-mode-is-not-personal"
+
+
 def test_original_desktop_user_permission_selftest_is_side_effect_free(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -303,8 +390,14 @@ def test_installer_requires_original_desktop_user_runtime_probe() -> None:
     )
     assert "ExecAsOriginalUser" in installer
     assert "--startup-desktop-user-self-test" in installer
+    assert "--startup-configured-personal-permission-self-test" in installer
+    assert "PACKAGE_PERSONAL_DATA_PERMISSION_SELFTEST_FAILED" in installer
     assert "PACKAGE_DESKTOP_RUNTIME_STARTUP_SELFTEST_FAILED" in installer
     assert 'sys.argv[1:] == ["--startup-desktop-user-self-test"]' in entrypoint
+    assert (
+        'sys.argv[1:] == ["--startup-configured-personal-permission-self-test"]'
+        in entrypoint
+    )
     assert 'sys.argv[1:] == ["--startup-user-permission-self-test"]' in entrypoint
 
 

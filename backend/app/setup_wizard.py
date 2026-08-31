@@ -3111,6 +3111,77 @@ def _preflight_personal_runtime_access(
     return executable
 
 
+def preflight_configured_personal_runtime_access() -> dict[str, object]:
+    """以当前桌面账号核验升级前已配置的个人数据目录。
+
+    安装包原有的冻结运行时自检使用隔离临时目录，只能证明程序树、Python、
+    SQLite 与用户临时目录可用。升级电脑上的 ``personal.env`` 可能仍指向被
+    迁移、改 ACL 或被安全软件保护的数据目录，因此还必须在安装事务提交前
+    对真实配置执行同一套无持久副作用的读写探针。
+
+    未配置个人模式或配置文件已缺失时交由配置向导恢复，不把它误报成权限
+    故障；只有一个可用的个人配置确实无法读写时才阻止安装完成。
+    """
+
+    root = config_root()
+    mode_path = root / "mode.json"
+    if mode_path.is_symlink() or not mode_path.is_file():
+        return {
+            "passed": True,
+            "mode": "configured-personal-permission",
+            "checked": False,
+            "reason": "personal-mode-not-configured",
+        }
+    try:
+        mode = _read_small_json(mode_path, limit=256 * 1024)
+    except (OSError, ValueError, json.JSONDecodeError):
+        return {
+            "passed": True,
+            "mode": "configured-personal-permission",
+            "checked": False,
+            "reason": "mode-config-needs-repair",
+        }
+    if mode.get("mode") != "personal":
+        return {
+            "passed": True,
+            "mode": "configured-personal-permission",
+            "checked": False,
+            "reason": "active-mode-is-not-personal",
+        }
+
+    configured = str(mode.get("config_path") or root / "personal.env").strip()
+    config_path = Path(configured)
+    if (
+        not config_path.is_absolute()
+        or config_path.is_symlink()
+        or not config_path.is_file()
+        or config_path.stat().st_size > 64 * 1024
+    ):
+        return {
+            "passed": True,
+            "mode": "configured-personal-permission",
+            "checked": False,
+            "reason": "personal-config-needs-repair",
+        }
+    values = load_host_environment(config_path)
+    data_raw = values.get("PARTYOPS_DATA_DIR", "").strip()
+    data_dir = Path(data_raw)
+    if not data_raw or not data_dir.is_absolute():
+        return {
+            "passed": True,
+            "mode": "configured-personal-permission",
+            "checked": False,
+            "reason": "personal-config-needs-repair",
+        }
+    _preflight_personal_runtime_access(config_path, data_dir)
+    return {
+        "passed": True,
+        "mode": "configured-personal-permission",
+        "checked": True,
+        "data_dir_writable": True,
+    }
+
+
 def _sha256_file(path: Path) -> str:
     """流式计算冻结依赖哈希，避免一次读取大型运行时文件。"""
 

@@ -1456,6 +1456,27 @@ begin
       '请检查终端安全策略、杀毒软件和所选程序目录。退出码：' + IntToStr(ResultCode)
     );
   end;
+  ResultCode := 5;
+  WizardForm.StatusLabel.Caption := '正在验证原个人数据目录读写权限…';
+  { 完整启动探针使用隔离临时数据，不能覆盖升级前 personal.env 指向的真实
+    数据目录。以原桌面账号执行真实配置的无副作用探针，避免安装完成后首次
+    启动才出现 RUNTIME_PERMISSION_DENIED。 }
+  if (not ExecAsOriginalUser(
+    ExpandConstant('{app}\PartyOps.exe'),
+    '--startup-configured-personal-permission-self-test',
+    ExpandConstant('{app}'),
+    SW_HIDE,
+    ewWaitUntilTerminated,
+    ResultCode
+  )) or (ResultCode <> 0) then
+  begin
+    ServiceSetupFailed := True;
+    RaiseException(
+      '[PACKAGE_PERSONAL_DATA_PERMISSION_SELFTEST_FAILED] 当前桌面账号无法读取个人配置、' +
+      '写入原个人数据目录或启动完整运行时。安装已回滚，业务数据未改动；请检查数据目录 ' +
+      'ACL、安全软件与磁盘状态。退出码：' + IntToStr(ResultCode)
+    );
+  end;
 end;
 
 procedure RollbackInstallerCache;
