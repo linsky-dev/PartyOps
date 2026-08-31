@@ -1004,16 +1004,22 @@ def test_win7_prunes_inert_mixed_architecture_office_installer_payloads() -> Non
         '"spsupp_x86.dll"',
         '"twain32shim.exe"',
         '"wininst-*.exe"',
+        '"*_x64.dll"',
+        '"msvcp140.dll"',
+        '"vcruntime140.dll"',
     ):
         assert pattern in build
+    assert '-Architecture $targetArchitecture' in build
+    assert '压缩前 PE 门禁' in build
     copy_index = build.index(
         "Copy-Item -LiteralPath $OfficeRuntime -Destination $bundledOfficeRuntime"
     )
-    prune_index = build.index(
-        "Remove-LegacyOfficeInstallerArtifacts -RuntimeRoot $bundledOfficeRuntime"
-    )
+    prune_index = build.index("Remove-LegacyOfficeInstallerArtifacts", copy_index)
     manifest_index = build.index("generate-release-manifest.py")
     assert copy_index < prune_index < manifest_index
+    precompression_gate_index = build.index('压缩前 PE 门禁')
+    inno_index = build.index('& $InnoCompiler $innoScript')
+    assert manifest_index < precompression_gate_index < inno_index
 
 
 def test_linux_wizard_freeze_includes_tcl_runtime_and_entrypoint_smoke() -> None:

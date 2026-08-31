@@ -129,7 +129,10 @@ function Assert-NativeSuccess([string]$Stage) {
   if ($LASTEXITCODE -ne 0) { throw "$Stage 失败，退出码：$LASTEXITCODE" }
 }
 
-function Remove-LegacyOfficeInstallerArtifacts([string]$RuntimeRoot) {
+function Remove-LegacyOfficeInstallerArtifacts(
+  [string]$RuntimeRoot,
+  [string]$Architecture
+) {
   # LibreOffice 官方 MSI 会同时展开安装器专用的 System/System64 VC 运行库、
   # .NET UNO 桥接程序集、distutils 安装器和扫描仪兼容程序。这些文件不会被
   # PartyOps 的无界面文档转换链路加载；其中还包含与主程序不同架构的 PE，
@@ -159,6 +162,20 @@ function Remove-LegacyOfficeInstallerArtifacts([string]$RuntimeRoot) {
           Remove-Item -Force
       }
     }
+
+  if ($Architecture -eq "x86") {
+    # 官方 x86 MSI 还会附带供 64 位 Explorer/ActiveX 注册使用的伴生模块；
+    # 它们不是 soffice 无界面转换闭包的一部分，且 32 位 Windows 无法加载。
+    Get-ChildItem -LiteralPath $programRoot -Recurse -File -Filter "*_x64.dll" |
+      Remove-Item -Force
+    $shellExtensionRoot = Join-Path $programRoot "shlxthdl"
+    foreach ($runtimeName in @("msvcp140.dll", "vcruntime140.dll")) {
+      $runtimePath = Join-Path $shellExtensionRoot $runtimeName
+      if (Test-Path -LiteralPath $runtimePath) {
+        Remove-Item -LiteralPath $runtimePath -Force
+      }
+    }
+  }
 }
 $validatorBytes = [IO.File]::ReadAllBytes($installPathValidator)
 if ($validatorBytes.Length -lt 3 -or
@@ -497,7 +514,9 @@ Copy-Item -LiteralPath (Join-Path $repoRoot "packaging\uos\update-public-key.txt
 $bundledOfficeRuntime = Join-Path $bundleRoot "office-runtime"
 Copy-Item -LiteralPath $OfficeRuntime -Destination $bundledOfficeRuntime -Recurse -Force
 if ($isLegacy) {
-  Remove-LegacyOfficeInstallerArtifacts -RuntimeRoot $bundledOfficeRuntime
+  Remove-LegacyOfficeInstallerArtifacts `
+    -RuntimeRoot $bundledOfficeRuntime `
+    -Architecture $targetArchitecture
 }
 Copy-Item -LiteralPath $brandIcon -Destination (Join-Path $bundleRoot "partyops.ico") -Force
 Copy-Item -LiteralPath $brandImage -Destination (Join-Path $bundleRoot "partyops-1024.png") -Force
@@ -526,6 +545,15 @@ Assert-NativeSuccess "读取源码提交"
   --architecture $targetArchitecture `
   --runtime-profile $runtimeProfile
 Assert-NativeSuccess "生成嵌入式发布清单"
+
+# 在 Inno 压缩两万余项文件前先扫描完整冻结目录，及时阻止官方 MSI 中夹带的
+# 跨架构辅助模块进入安装器；外层构建器仍会在安装器生成后复验一次。
+if ($isLegacy) {
+  & $Python (Join-Path $repoRoot "scripts\validate-win7-pe.py") `
+    --root $bundleRoot `
+    --architecture $targetArchitecture
+  Assert-NativeSuccess "Win7 $targetArchitecture 压缩前 PE 门禁"
+}
 
 if (-not (Test-Path -LiteralPath $InnoCompiler)) { throw "未找到 Inno Setup 6：$InnoCompiler" }
 $env:PARTYOPS_WINDOWS_BUILD_ROOT = $bundleRoot
