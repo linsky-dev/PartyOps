@@ -57,6 +57,7 @@ from .time_utils import beijing_iso
 from .windows_host_status import (
     CHILD_EXITED,
     HEALTH_TIMEOUT,
+    INSTANCE_ALREADY_RUNNING,
     PORT_IN_USE,
     RUNTIME_BINARY_INCOMPATIBLE,
     RUNTIME_DEPENDENCY_MISSING,
@@ -1553,6 +1554,242 @@ def _personal_process_marker(data_dir: Path) -> Path:
     return data_dir / ".partyops-personal-process.json"
 
 
+def _process_executable_path(pid: int) -> Path | None:
+    """读取进程的真实可执行文件路径；失败时拒绝推断进程身份。"""
+
+    if pid <= 0:
+        return None
+    if sys.platform == "darwin":
+        try:
+            import ctypes
+
+            libproc = ctypes.CDLL("/usr/lib/libproc.dylib", use_errno=True)
+            proc_pidpath = libproc.proc_pidpath
+            proc_pidpath.argtypes = [ctypes.c_int, ctypes.c_void_p, ctypes.c_uint32]
+            proc_pidpath.restype = ctypes.c_int
+            buffer = ctypes.create_string_buffer(4096)
+            length = proc_pidpath(pid, buffer, len(buffer))
+            if length <= 0:
+                return None
+            return Path(os.fsdecode(buffer.raw[:length])).resolve()
+        except (OSError, ValueError):
+            return None
+    if os.name != "nt":
+        try:
+            return Path(f"/proc/{pid}/exe").resolve()
+        except OSError:
+            return None
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
+        handle = kernel32.OpenProcess(0x1000 | 0x00100000, False, pid)
+        if not handle:
+            return None
+        try:
+            size = wintypes.DWORD(32768)
+            buffer = ctypes.create_unicode_buffer(size.value)
+            if not kernel32.QueryFullProcessImageNameW(
+                handle, 0, buffer, ctypes.byref(size)
+            ):
+                return None
+            return Path(buffer.value).resolve()
+        finally:
+            kernel32.CloseHandle(handle)
+    except (OSError, ValueError, AttributeError):
+        return None
+
+
+def _windows_data_lock_owner_pids(data_dir: Path) -> set[int]:
+    """通过 Windows Restart Manager 查询真正持有实例锁的 PID。
+
+    旧版本使用 ``msvcrt.locking`` 锁住 PID 文本本身，普通读取会直接报
+    “另一个程序已锁定文件的一部分”。Restart Manager 从内核句柄反查，
+    因而可在不读取、不解锁、更不删除数据文件的前提下完成跨版本接管。
+    """
+
+    if os.name != "nt":
+        return set()
+    lock_path = data_dir / ".partyops-instance.lock"
+    if not lock_path.is_file() or lock_path.is_symlink():
+        return set()
+    session = None
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        manager = ctypes.WinDLL("Rstrtmgr.dll")
+
+        class UniqueProcess(ctypes.Structure):
+            _fields_ = [
+                ("dwProcessId", wintypes.DWORD),
+                ("ProcessStartTime", wintypes.FILETIME),
+            ]
+
+        class ProcessInfo(ctypes.Structure):
+            _fields_ = [
+                ("Process", UniqueProcess),
+                ("strAppName", wintypes.WCHAR * 256),
+                ("strServiceShortName", wintypes.WCHAR * 64),
+                ("ApplicationType", wintypes.DWORD),
+                ("AppStatus", wintypes.ULONG),
+                ("TSSessionId", wintypes.DWORD),
+                ("bRestartable", wintypes.BOOL),
+            ]
+
+        session = wintypes.DWORD()
+        session_key = ctypes.create_unicode_buffer(33)
+        if manager.RmStartSession(ctypes.byref(session), 0, session_key) != 0:
+            return set()
+        resources = (wintypes.LPCWSTR * 1)(str(lock_path.resolve()))
+        if manager.RmRegisterResources(session, 1, resources, 0, None, 0, None) != 0:
+            return set()
+        needed = wintypes.UINT()
+        count = wintypes.UINT()
+        reasons = wintypes.DWORD()
+        result = manager.RmGetList(
+            session,
+            ctypes.byref(needed),
+            ctypes.byref(count),
+            None,
+            ctypes.byref(reasons),
+        )
+        if result == 0:
+            return set()
+        if result != 234 or needed.value <= 0:  # ERROR_MORE_DATA
+            return set()
+        processes = (ProcessInfo * needed.value)()
+        count = wintypes.UINT(needed.value)
+        if manager.RmGetList(
+            session,
+            ctypes.byref(needed),
+            ctypes.byref(count),
+            processes,
+            ctypes.byref(reasons),
+        ) != 0:
+            return set()
+        return {
+            int(processes[index].Process.dwProcessId)
+            for index in range(count.value)
+            if int(processes[index].Process.dwProcessId) > 0
+        }
+    except (OSError, ValueError, AttributeError):
+        return set()
+    finally:
+        if session is not None:
+            try:
+                manager.RmEndSession(session)
+            except (OSError, AttributeError, UnboundLocalError):
+                pass
+
+
+def _loopback_listener_ports_for_pid(pid: int) -> set[int]:
+    """返回 Windows 进程持有的回环 TCP 监听端口。"""
+
+    if os.name != "nt" or pid <= 0:
+        return set()
+    try:
+        result = subprocess.run(
+            ["netstat.exe", "-ano", "-p", "tcp"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            creationflags=subprocess.CREATE_NO_WINDOW,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return set()
+    ports: set[int] = set()
+    for line in result.stdout.splitlines():
+        fields = line.split()
+        if (
+            len(fields) < 5
+            or fields[0].upper() != "TCP"
+            or fields[3].upper() != "LISTENING"
+            or not fields[-1].isdigit()
+            or int(fields[-1]) != pid
+        ):
+            continue
+        local = fields[1].strip("[]")
+        try:
+            host, raw_port = local.rsplit(":", 1)
+            port = int(raw_port)
+        except ValueError:
+            continue
+        # 这里只解析 netstat 已存在的监听地址，不创建全接口绑定。
+        if host.strip("[]") in {"127.0.0.1", "0.0.0.0", "::1", "::"} and 1024 <= port <= 65534:  # nosec B104
+            ports.add(port)
+    return ports
+
+
+def _personal_health_version(port: int) -> str:
+    """只接受完整 PartyOps 个人模式健康契约，并返回实际版本。"""
+
+    try:
+        request = urllib.request.Request(
+            f"http://127.0.0.1:{port}/api/v1/health"
+        )
+        with urllib.request.urlopen(request, timeout=1.0) as response:  # nosec B310 - 固定回环健康接口。
+            payload = json.loads(response.read().decode("utf-8"))
+        if not health_payload_ready(payload, expected_mode="personal"):
+            return ""
+        return str(payload.get("app_version") or "").strip()
+    except (
+        ConnectionResetError,
+        urllib.error.HTTPError,
+        urllib.error.URLError,
+        TimeoutError,
+        OSError,
+        json.JSONDecodeError,
+        ValueError,
+    ):
+        return ""
+
+
+def _discover_running_windows_personal(
+    data_dir: Path, preferred_port: int
+) -> tuple[int, int, Path, str] | None:
+    """用实例锁、PID、可执行文件、监听端口和健康契约发现旧实例。"""
+
+    if os.name != "nt":
+        return None
+    candidates: list[tuple[int, int, Path, str]] = []
+    for pid in _windows_data_lock_owner_pids(data_dir):
+        executable = _process_executable_path(pid)
+        if executable is None or executable.name.casefold() != "partyops.exe":
+            continue
+        for port in _loopback_listener_ports_for_pid(pid):
+            version = _personal_health_version(port)
+            if version:
+                candidates.append((pid, port, executable, version))
+    if not candidates:
+        return None
+    preferred = [item for item in candidates if item[1] == preferred_port]
+    selected = preferred or candidates
+    # 同一锁只能有一个所有者；若健康契约异常地落在多个端口，拒绝猜测。
+    return selected[0] if len(selected) == 1 else None
+
+
+def _write_personal_process_marker(
+    data_dir: Path, pid: int, executable: Path
+) -> None:
+    if pid <= 0:
+        return
+    _write_private(
+        _personal_process_marker(data_dir),
+        json.dumps(
+            {
+                "format_version": 1,
+                "pid": pid,
+                "executable": str(executable.resolve()),
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+    )
+
+
 def _listener_pid_for_loopback_port(port: int) -> int | None:
     """尽力定位回环监听 PID；只用于恢复旧版 PartyOps 标记，不作为通用杀进程依据。"""
 
@@ -1605,50 +1842,12 @@ def _listener_pid_for_loopback_port(port: int) -> int | None:
 def _process_executable_matches(pid: int, expected: Path) -> bool:
     """核对 PID 仍指向随包主程序，防止 PID 复用后误终止其他进程。"""
 
-    if pid <= 0:
-        return False
-    expected_text = os.path.normcase(str(expected.resolve()))
-    if sys.platform == "darwin":
-        try:
-            import ctypes
-
-            libproc = ctypes.CDLL("/usr/lib/libproc.dylib", use_errno=True)
-            proc_pidpath = libproc.proc_pidpath
-            proc_pidpath.argtypes = [ctypes.c_int, ctypes.c_void_p, ctypes.c_uint32]
-            proc_pidpath.restype = ctypes.c_int
-            buffer = ctypes.create_string_buffer(4096)
-            length = proc_pidpath(pid, buffer, len(buffer))
-            if length <= 0:
-                return False
-            actual = Path(os.fsdecode(buffer.raw[:length])).resolve()
-            return os.path.normcase(str(actual)) == expected_text
-        except (OSError, ValueError):
-            return False
-    if os.name != "nt":
-        try:
-            return (
-                os.path.normcase(str(Path(f"/proc/{pid}/exe").resolve()))
-                == expected_text
-            )
-        except OSError:
-            return False
-    import ctypes
-    from ctypes import wintypes
-
-    kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
-    handle = kernel32.OpenProcess(0x1000 | 0x00100000, False, pid)
-    if not handle:
-        return False
-    try:
-        size = wintypes.DWORD(32768)
-        buffer = ctypes.create_unicode_buffer(size.value)
-        if not kernel32.QueryFullProcessImageNameW(
-            handle, 0, buffer, ctypes.byref(size)
-        ):
-            return False
-        return os.path.normcase(str(Path(buffer.value).resolve())) == expected_text
-    finally:
-        kernel32.CloseHandle(handle)
+    actual = _process_executable_path(pid)
+    return bool(
+        actual is not None
+        and os.path.normcase(str(actual))
+        == os.path.normcase(str(expected.resolve()))
+    )
 
 
 def _personal_process_is_owned(data_dir: Path) -> bool:
@@ -1705,8 +1904,16 @@ def _stop_personal_process_for_data_migration(data_dir: Path, port: int) -> bool
         expected = _executable("partyops").resolve()
     except (OSError, ValueError, TypeError, json.JSONDecodeError):
         raise ValueError("个人模式进程标记损坏，请先退出 PartyOps 后重试") from None
-    if recorded != expected or not _process_executable_matches(pid, expected):
+    cross_version = recorded != expected
+    if not _process_executable_matches(pid, recorded):
         marker.unlink(missing_ok=True)
+        return False
+    if cross_version and (
+        recorded.name.casefold() != "partyops.exe"
+        or _listener_pid_for_loopback_port(port) != pid
+        or pid not in _windows_data_lock_owner_pids(data_dir)
+    ):
+        # 跨版本只能在五项证据全部一致时终止；当前版本仍沿用原有严格路径校验。
         return False
     try:
         os.kill(pid, signal.SIGTERM)
@@ -1714,35 +1921,22 @@ def _stop_personal_process_for_data_migration(data_dir: Path, port: int) -> bool
         marker.unlink(missing_ok=True)
         return False
     deadline = time.monotonic() + 20
-    while time.monotonic() < deadline and _process_executable_matches(pid, expected):
+    while time.monotonic() < deadline and _process_executable_matches(pid, recorded):
         time.sleep(0.25)
-    if _process_executable_matches(pid, expected):
+    if _process_executable_matches(pid, recorded):
         if os.name == "nt":
             os.kill(pid, signal.SIGTERM)
         else:
             os.kill(pid, getattr(signal, "SIGKILL", signal.SIGTERM))
         time.sleep(0.5)
-    if _process_executable_matches(pid, expected):
+    if _process_executable_matches(pid, recorded):
         raise ValueError("旧个人模式进程未能安全停止，数据目录尚未切换")
     marker.unlink(missing_ok=True)
     return True
 
 
 def _record_personal_pid(data_dir: Path, pid: int) -> None:
-    if pid <= 0:
-        return
-    _write_private(
-        _personal_process_marker(data_dir),
-        json.dumps(
-            {
-                "format_version": 1,
-                "pid": pid,
-                "executable": str(_executable("partyops").resolve()),
-            },
-            ensure_ascii=False,
-            indent=2,
-        ),
-    )
+    _write_personal_process_marker(data_dir, pid, _executable("partyops"))
 
 
 def _record_personal_process(data_dir: Path, process: subprocess.Popen | None) -> None:
@@ -3577,6 +3771,26 @@ def launch_personal(config_path: Path) -> str:
     port = int(env["PARTYOPS_PORT"])
     data_dir = Path(env["PARTYOPS_DATA_DIR"])
     executable = _preflight_personal_runtime_access(config_path, data_dir)
+    owned_existing = False
+    lock_owners = _windows_data_lock_owner_pids(data_dir)
+    discovered = _discover_running_windows_personal(data_dir, port)
+    if discovered is not None:
+        pid, discovered_port, discovered_executable, _version = discovered
+        _write_personal_process_marker(
+            data_dir, pid, discovered_executable
+        )
+        owned_existing = True
+        if discovered_port != port:
+            # rc.4/旧 rc.6 曾会误改端口；恢复到真正持锁实例的端口，再执行版本接管。
+            port = discovered_port
+            env = _rewrite_personal_port(config_path, port)
+            data_dir = Path(env["PARTYOPS_DATA_DIR"])
+    elif lock_owners:
+        raise HostStartupError(
+            INSTANCE_ALREADY_RUNNING,
+            "同一数据目录已有 PartyOps 进程运行，但其健康接口尚未就绪。请稍候后重试；系统没有启动第二个进程。",
+            detail="实例锁仍由现有进程持有；未覆盖进程标记、未改写端口、未改动数据库。",
+        )
     # 端口已由当前 PartyOps 占用时直接复用；若是其他程序占用则立即给出
     # 中文诊断，不能等待 180 秒后再让新手猜测原因。
     port_open = False
@@ -3586,7 +3800,7 @@ def launch_personal(config_path: Path) -> str:
     except OSError:
         pass
     if port_open:
-        if not _personal_process_is_owned(data_dir) and not _recover_legacy_personal_process_marker(
+        if not owned_existing and not _personal_process_is_owned(data_dir) and not _recover_legacy_personal_process_marker(
             data_dir, port
         ):
             previous_port = port
@@ -3607,7 +3821,7 @@ def launch_personal(config_path: Path) -> str:
                 timeout=5.0,
                 service_managed=False,
             )
-            if not _personal_process_is_owned(data_dir) and not _recover_legacy_personal_process_marker(
+            if not owned_existing and not _personal_process_is_owned(data_dir) and not _recover_legacy_personal_process_marker(
                 data_dir, port
             ):
                 raise HostStartupError(
@@ -3634,8 +3848,7 @@ def launch_personal(config_path: Path) -> str:
                         data_dir / "launcher.log",
                         env,
                     )
-                    _record_personal_process(data_dir, process)
-                    return wait_for_host_health(
+                    url = wait_for_host_health(
                         "127.0.0.1",
                         port,
                         timeout=180.0,
@@ -3643,14 +3856,15 @@ def launch_personal(config_path: Path) -> str:
                         service_managed=False,
                         process=process,
                     )
+                    _record_personal_process(data_dir, process)
+                    return url
             raise HostStartupError(
                 PORT_IN_USE,
                 f"个人模式端口 {port} 已被其他程序占用，请更换端口后重试。",
                 detail=exc.detail,
             ) from exc
     process = _spawn([str(executable)], data_dir / "launcher.log", env)
-    _record_personal_process(data_dir, process)
-    return wait_for_host_health(
+    url = wait_for_host_health(
         "127.0.0.1",
         port,
         timeout=180.0,
@@ -3658,6 +3872,8 @@ def launch_personal(config_path: Path) -> str:
         service_managed=False,
         process=process,
     )
+    _record_personal_process(data_dir, process)
+    return url
 
 
 MACOS_AGENT_LABELS = {

@@ -21,6 +21,7 @@ from app.startup_diagnostics import (
     DATA_DIR_FULL,
     DATABASE_IO_FAILED,
     DATABASE_SCHEMA_FAILED,
+    INSTANCE_ALREADY_RUNNING,
     SQLITE_RUNTIME_FAILED,
     UPGRADE_BACKUP_FAILED,
     classify_database_startup_error,
@@ -267,6 +268,16 @@ def test_windows_launcher_preserves_precise_database_diagnostic(
     detail: str, expected: str
 ) -> None:
     assert classify_runtime_failure(detail) == expected
+
+
+def test_current_instance_marker_wins_over_stale_schema_log_tail() -> None:
+    """截图回归：旧 schema 日志不得覆盖本次双实例根因。"""
+
+    detail = (
+        "sqlite3.OperationalError: table backup_runs has no column named deleted_at\n"
+        "RuntimeError: [INSTANCE_ALREADY_RUNNING] 当前数据目录已有 PartyOps 在运行"
+    )
+    assert classify_runtime_failure(detail) == INSTANCE_ALREADY_RUNNING
 
 
 def test_backend_classifier_does_not_misreport_schema_as_sqlite_runtime() -> None:
