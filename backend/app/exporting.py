@@ -8,6 +8,7 @@ import re
 import zipfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import cast
 
 from docx import Document
 from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT
@@ -16,6 +17,7 @@ from docx.shared import Cm, Pt
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
+from openpyxl.worksheet.worksheet import Worksheet
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -92,7 +94,7 @@ def export_tasks_xlsx(db: Session, user: User, kind: str = "台账") -> Path:
     settings = get_settings()
     path = settings.exports_dir / f"党建智办-{_safe_name(kind)}-{_stamp()}.xlsx"
     workbook = Workbook()
-    sheet = workbook.active
+    sheet = cast(Worksheet, workbook.active)
     sheet.title = _safe_name(kind)[:31]
     users = {item.id: item.display_name for item in db.scalars(select(User)).all()}
     tasks = _tasks_for_kind(db, user, kind)
@@ -241,7 +243,7 @@ def export_tasks_docx(db: Session, user: User, kind: str = "周工作清单") ->
         for cell, value in strict_zip(cells, values):
             cell.text = str(value)
             cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
-    document.save(path)
+    document.save(str(path))
     return path
 
 
@@ -254,11 +256,12 @@ def export_inspection_package(
     if task_ids:
         requested = set(task_ids)
         tasks = [task for task in tasks if task.id in requested]
+    task_entries: list[dict[str, object]] = []
     manifest: dict[str, object] = {
         "format": "partyops-inspection",
         "version": 1,
         "generated_at": serialize_api_datetime(datetime.now(timezone.utc)),
-        "tasks": [],
+        "tasks": task_entries,
     }
     with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED, allowZip64=True) as archive:
         directory_rows: list[list[str]] = []
@@ -266,11 +269,12 @@ def export_inspection_package(
             if not can_view_task(db, task, user):
                 continue
             task_dir = f"{_safe_name(task.title)}-{task.id[:8]}"
+            material_entries: list[dict[str, object]] = []
             task_entry: dict[str, object] = {
                 "id": task.id,
                 "title": task.title,
                 "status": task.status.value,
-                "materials": [],
+                "materials": material_entries,
             }
             materials = db.scalars(
                 select(MaterialItem).where(MaterialItem.task_id == task.id)
@@ -282,11 +286,12 @@ def export_inspection_package(
                     .where(AttachmentVersion.material_item_id == material.id)
                     .order_by(AttachmentVersion.version_no)
                 ).all()
+                file_entries: list[dict[str, object]] = []
                 material_entry: dict[str, object] = {
                     "name": material.name,
                     "required": material.required,
                     "not_applicable": material.not_applicable,
-                    "files": [],
+                    "files": file_entries,
                 }
                 for version, blob in versions:
                     source = resolve_blob_path(blob.relative_path)
@@ -296,7 +301,7 @@ def export_inspection_package(
                     )
                     if source.exists():
                         archive.write(source, archive_name)
-                    material_entry["files"].append(
+                    file_entries.append(
                         {
                             "path": archive_name,
                             "sha256": blob.sha256,
@@ -304,7 +309,7 @@ def export_inspection_package(
                             "stage": version.stage.value,
                         }
                     )
-                task_entry["materials"].append(material_entry)
+                material_entries.append(material_entry)
                 complete = material.not_applicable or any(
                     version.is_final for version, _blob in versions
                 )
@@ -317,7 +322,7 @@ def export_inspection_package(
                         "齐全" if complete else "缺项",
                     ]
                 )
-            manifest["tasks"].append(task_entry)
+            task_entries.append(task_entry)
         archive.writestr(
             "manifest.json",
             json.dumps(manifest, ensure_ascii=False, indent=2).encode("utf-8"),
@@ -327,7 +332,7 @@ def export_inspection_package(
             json.dumps(manifest, ensure_ascii=False, indent=2).encode("utf-8"),
         )
         workbook = Workbook()
-        sheet = workbook.active
+        sheet = cast(Worksheet, workbook.active)
         sheet.title = "材料目录"
         sheet.append(["事项", "类别", "材料", "必备", "状态"])
         for row in directory_rows:

@@ -1432,6 +1432,8 @@ class LocalAIRuntimeOut(BaseModel):
     ready: bool
     state: str
     message: str
+    runtime_profile: str = "full"
+    supported_capabilities: list[str] = Field(default_factory=list)
     model_pack_id: str | None = None
     model_id: str | None = None
     embedding_pack_id: str | None = None

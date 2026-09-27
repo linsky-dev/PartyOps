@@ -48,10 +48,33 @@ def _hash(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def test_capability_catalog_is_exact_and_office_independent() -> None:
+@pytest.mark.parametrize("feature_id", ["format", "redheader"])
+def test_missing_fonts_stop_before_processing_and_install_is_detected_on_retry(tmp_path, monkeypatch, feature_id):
+    source = tmp_path / "原稿.docx"
+    _source_docx(source)
+    checksum = _hash(source)
+    inventory = ["仿宋 楷体 黑体"]
+    monkeypatch.setattr("app.official_format._font_inventory", lambda: inventory[0])
+    monkeypatch.delenv("PARTYOPS_FORMATTER_TEST_LOCAL_ENGINE", raising=False)
+    calls = []
+    expected = features.FeatureExecutionResult((), "已调用排版引擎")
+    monkeypatch.setattr(features, "_execute_source_feature", lambda *args: calls.append(args) or expected)
+    work = tmp_path / "结果"
+    with pytest.raises(OfficialFormatError) as error:
+        execute_feature(feature_id, source, work)
+    assert error.value.code == "REQUIRED_FONT_MISSING"
+    assert "方正小标宋简体" in error.value.detail and "再次点击排版" in error.value.detail
+    assert not calls and not work.exists() and _hash(source) == checksum
+    inventory[0] += " 方正小标宋简体"
+    assert execute_feature(feature_id, source, work) is expected
+    assert len(calls) == 1 and _hash(source) == checksum
+
+
+def test_capability_catalog_is_exact_and_reports_source_host_requirement() -> None:
     payload = capabilities_payload()
-    assert payload["engine"] == "partyops-bundled"
-    assert payload["external_office_required"] is False
+    assert payload["engine"] in {"partyops-source-host", "partyops-ooxml-compatibility"}
+    assert payload["external_office_required"] is (features.os.name == "nt")
+    assert isinstance(payload["source_host_ready"], bool)
     assert payload["capability_count"] == 25
     assert [item["id"] for item in payload["features"]] == [
         "format",
@@ -77,36 +100,19 @@ def test_capability_catalog_is_exact_and_office_independent() -> None:
     }
 
 
-def test_format_full_and_selection_scope_preserve_source(tmp_path: Path, monkeypatch) -> None:
+def test_format_full_scope_preserves_source(tmp_path: Path, monkeypatch) -> None:
     source = tmp_path / "中文 空格.docx"
     _source_docx(source)
     original_hash = _hash(source)
     monkeypatch.setattr("app.official_format._font_inventory", lambda: "方正小标宋 仿宋 楷体 黑体")
 
-    full = execute_feature("format", source, tmp_path / "full", {"scope": "full"})
+    full = execute_feature("format", source, tmp_path / "full", {})
     assert full.report and full.report.changed_count > 0
     full_document = Document(full.outputs[0].path)
     assert full_document.paragraphs[0].alignment == WD_ALIGN_PARAGRAPH.CENTER
     assert full_document.tables[0].cell(1, 1).text == "完成"
 
-    selection = execute_feature(
-        "format",
-        source,
-        tmp_path / "selection",
-        {"scope": "selection", "start_paragraph": 4, "end_paragraph": 4},
-    )
-    selected_document = Document(selection.outputs[0].path)
-    assert selected_document.paragraphs[0].alignment is None
-    assert selected_document.paragraphs[3].runs[0]._element.rPr is not None
     assert _hash(source) == original_hash
-
-    with pytest.raises(OfficialFormatError, match="可排版段落"):
-        execute_feature(
-            "format",
-            source,
-            tmp_path / "invalid-selection",
-            {"scope": "selection", "start_paragraph": 999, "end_paragraph": 1000},
-        )
 
 
 def test_replace_text_regex_wildcard_format_and_batch_rules(tmp_path: Path) -> None:
@@ -351,15 +357,6 @@ def test_feature_validation_and_pdf_conversion_alternatives(tmp_path: Path) -> N
 
     with pytest.raises(OfficialFormatError, match="一键排版 支持"):
         execute_feature("format", pdf, tmp_path / "wrong-input")
-    with pytest.raises(OfficialFormatError, match="请选择全文"):
-        execute_feature("format", source, tmp_path / "wrong-scope", {"scope": "page"})
-    with pytest.raises(OfficialFormatError, match="必须为整数"):
-        execute_feature(
-            "format",
-            source,
-            tmp_path / "wrong-range",
-            {"scope": "selection", "start_paragraph": "第一段"},
-        )
     with pytest.raises(OfficialFormatError, match="请选择 DOCX"):
         execute_feature("convert", source, tmp_path / "wrong-format", {"target_format": "html"})
 

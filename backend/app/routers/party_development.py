@@ -13,7 +13,9 @@ from docx import Document
 from fastapi import APIRouter, Depends, Header, Request, Response, status
 from fastapi.responses import FileResponse, StreamingResponse
 from openpyxl import Workbook
+from openpyxl.cell.cell import Cell
 from openpyxl.styles import Alignment, Font
+from openpyxl.worksheet.worksheet import Worksheet
 from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -76,12 +78,28 @@ router = APIRouter(tags=["party-development"])
 settings = get_settings()
 
 
+@typing.overload
+def _as_datetime(value: date) -> datetime: ...
+
+
+@typing.overload
+def _as_datetime(value: None) -> None: ...
+
+
 def _as_datetime(value: date | None) -> datetime | None:
     return datetime.combine(value, time.min, tzinfo=timezone.utc) if value else None
 
 
 def _as_date(value: datetime | None) -> date | None:
     return value.date() if value else None
+
+
+@typing.overload
+def _aware(value: datetime) -> datetime: ...
+
+
+@typing.overload
+def _aware(value: None) -> None: ...
 
 
 def _aware(value: datetime | None) -> datetime | None:
@@ -141,7 +159,7 @@ def _case_payload(
     return PartyDevelopmentCalculateRequest(
         name=item.name,
         application_date=item.application_at.date(),
-        actual_dates=PartyDevelopmentActualDates(**actual_values),
+        actual_dates=PartyDevelopmentActualDates.model_validate(actual_values),
     )
 
 
@@ -978,7 +996,7 @@ def generate_case_milestones(
         generated.add(node.key)
         row = previous.get(node.key)
         is_new = row is None
-        if is_new:
+        if row is None:
             row = PartyDevelopmentMilestone(case_id=item.id, milestone_type=node.key, version=1)
             db.add(row)
         row.actual_at = _as_datetime(node.actual_at)
@@ -1023,7 +1041,10 @@ def patch_milestone(
     row.version += 1
     write_audit(db, user, "party_development.milestone_update", "party_development_milestone", row.id, {"fields": sorted(payload.model_fields_set)}, client_ip(request))
     db.commit()
-    return _case_out(db, db.get(PartyDevelopmentCase, row.case_id))
+    case = db.get(PartyDevelopmentCase, row.case_id)
+    if case is None:
+        raise ProblemException(404, "PARTY_DEVELOPMENT_CASE_NOT_FOUND", "档案不存在", "请刷新后重试。")
+    return _case_out(db, case)
 
 
 @router.get("/party-development/statistics", response_model=dict)
@@ -1157,7 +1178,7 @@ def export_development_cases_xlsx(
 
     cases = list(db.scalars(_export_cases_query(party_committee, party_branch)).all())
     workbook = Workbook()
-    sheet = workbook.active
+    sheet = typing.cast(Worksheet, workbook.active)
     sheet.title = "党员发展情况"
     sheet.append(DEVELOPMENT_EXPORT_HEADERS)
     for row in _development_export_rows(cases):
@@ -1168,7 +1189,7 @@ def export_development_cases_xlsx(
         cell.font = Font(bold=True)
         cell.alignment = Alignment(horizontal="center", vertical="center")
     for column in sheet.columns:
-        letter = column[0].column_letter
+        letter = typing.cast(Cell, column[0]).column_letter
         sheet.column_dimensions[letter].width = min(28, max(12, max(len(str(cell.value or "")) for cell in column) + 2))
     output = io.BytesIO()
     workbook.save(output)

@@ -27,11 +27,25 @@ def main() -> int:
     parser.add_argument("--platform", required=True)
     parser.add_argument("--architecture", required=True)
     parser.add_argument("--runtime-profile", required=True)
+    parser.add_argument("--only-file", action="append", default=[],
+                        help="仅登记指定运行时相对文件；Linux 身份清单用于绑定当前入口")
     args = parser.parse_args()
     root = args.root.resolve()
     output = args.output.resolve()
     files = []
-    for path in sorted(item for item in root.rglob("*") if item.is_file()):
+    if args.only_file:
+        candidates = []
+        for name in args.only_file:
+            relative = Path(name)
+            if relative.is_absolute() or ".." in relative.parts or not relative.parts:
+                parser.error("--only-file 必须是运行时内的相对文件")
+            path = root / relative
+            if not path.is_file() or path.is_symlink():
+                parser.error(f"--only-file 不存在或为链接：{name}")
+            candidates.append(path)
+    else:
+        candidates = [item for item in root.rglob("*") if item.is_file()]
+    for path in sorted(candidates):
         if path.resolve() == output:
             continue
         files.append(

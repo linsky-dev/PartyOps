@@ -4,12 +4,14 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import cast, overload
 
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.shared import Pt
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill
+from openpyxl.worksheet.worksheet import Worksheet
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -42,6 +44,14 @@ def report_sections(report: PeriodReport) -> list[ReportSection]:
         if section not in result:
             result.append(section)
     return result or list(ReportSection)
+
+
+@overload
+def _aware(value: datetime) -> datetime: ...
+
+
+@overload
+def _aware(value: None) -> None: ...
 
 
 def _aware(value: datetime | None) -> datetime | None:
@@ -141,8 +151,8 @@ def auto_fill_report(db: Session, report: PeriodReport, user: User) -> int:
             section = ReportSection.NEXT_PLAN
         elif (
             task.status not in {TaskStatus.COMPLETED, TaskStatus.ARCHIVED}
-            and _aware(task.planned_end_at) is not None
-            and _aware(task.planned_end_at) < end
+            and (planned_end := _aware(task.planned_end_at)) is not None
+            and planned_end < end
         ):
             section = ReportSection.CARRY_OVER
             carried_over = True
@@ -330,14 +340,14 @@ def export_period_docx(db: Session, report: PeriodReport) -> Path:
             paragraph.add_run(str(item.get("title") or "")).bold = True
             if item.get("content"):
                 paragraph.add_run(f"：{item['content']}")
-    document.save(path)
+    document.save(str(path))
     return path
 
 
 def export_period_xlsx(db: Session, report: PeriodReport) -> Path:
     path = get_settings().exports_dir / f"党建智办-{report.period_key}-{report.id[:8]}.xlsx"
     workbook = Workbook()
-    sheet = workbook.active
+    sheet = cast(Worksheet, workbook.active)
     sheet.title = report.period_key[:31]
     sheet.append(["栏目", "事项", "说明", "来源", "是否延续"])
     for cell in sheet[1]:

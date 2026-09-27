@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from .backups import SCHEMA_VERSION
 from .config import get_settings
-from .enums import UpdateStatus
+from .enums import DeviceStatus, UpdateStatus
 from .models import (
     Device,
     DeviceCommand,
@@ -370,7 +370,7 @@ def start_device_update(db: Session, device: Device, actor: User | None = None) 
     run.status = UpdateStatus.APPLYING
     run.progress = max(run.progress, 5)
     run.message = "已确认更新，等待本机 Agent 下载并安装"
-    device.status = "updating"
+    device.status = DeviceStatus.UPDATING
     return run
 
 
@@ -405,4 +405,4 @@ def reconcile_device_update(db: Session, device: Device) -> None:
             command.result = {"ok": True, "message": "设备已上报新版本"}
             command.completed_at = utcnow()
     if device.app_version == get_settings().app_version:
-        device.status = "online"
+        device.status = DeviceStatus.ONLINE

@@ -57,6 +57,7 @@ python3.11 "$ROOT/scripts/verify-full-function-gate.py" verify --root "$ROOT" --
 OCR_RUNTIME="${PARTYOPS_MACOS_OCR_RUNTIME:-}"
 LLAMA_RUNTIME="${PARTYOPS_MACOS_LLAMA_RUNTIME:-}"
 OFFICE_RUNTIME="${PARTYOPS_MACOS_OFFICE_RUNTIME:-}"
+FORMATTER_RUNTIME="${PARTYOPS_MACOS_FORMATTER_RUNTIME:-}"
 for command in python3.11 uv node corepack sips iconutil pkgbuild pkgutil spctl xcrun \
   curl ditto gzip tar shasum file otool codesign make perl; do
   if ! command -v "$command" >/dev/null 2>&1; then
@@ -81,6 +82,21 @@ if [[ ! -x "$OFFICE_RUNTIME/program/soffice" ]] ||
   printf '%s\n' '[MACOS_OFFICE_RUNTIME_MISSING] 请提供当前架构、包含来源清单和许可证的 LibreOffice headless 运行时。' >&2
   exit 2
 fi
+if [[ ! -d "$FORMATTER_RUNTIME" ]] ||
+  [[ ! -x "$FORMATTER_RUNTIME/partyops-document-formatter-host" ]] ||
+  [[ ! -f "$FORMATTER_RUNTIME/source-host.json" ]]; then
+  printf '%s\n' '[MACOS_FORMATTER_RUNTIME_MISSING] 请提供当前架构、已通过真实 WPS 金样测试的原源码排版宿主。' >&2
+  exit 2
+fi
+formatter_description="$(file -b "$FORMATTER_RUNTIME/partyops-document-formatter-host")"
+if [[ "$formatter_description" != *Mach-O* ]] ||
+  [[ "$formatter_description" != *"$TARGET_ARCH"* ]]; then
+  printf '[MACOS_FORMATTER_RUNTIME_ARCH_MISMATCH] 排版宿主不是 %s Mach-O。\n' \
+    "$TARGET_ARCH" >&2
+  exit 2
+fi
+python3.11 "$ROOT/scripts/validate-source-formatter-runtime.py" \
+  --runtime "$FORMATTER_RUNTIME" --platform macos --architecture "$TARGET_ARCH"
 OFFICE_RUNTIME="$(cd "$OFFICE_RUNTIME" && pwd -P)"
 while IFS= read -r -d '' link; do
   resolved="$(python3.11 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$link")"
@@ -140,6 +156,53 @@ sign_bundle_code() {
       codesign --force "${timestamp_args[@]}" --options runtime --sign "$identity" "$bundle"
     fi
   done <"$BUNDLE_DIRECTORY_LIST"
+}
+
+refresh_formatter_manifest_hash() {
+  local formatter_root="$APP/Contents/Resources/formatter-host"
+  python3.11 - "$formatter_root/partyops-document-formatter-host" \
+    "$formatter_root/source-host.json" <<'PY'
+import hashlib
+import json
+from pathlib import Path
+import sys
+
+host, manifest = map(Path, sys.argv[1:])
+record = json.loads(manifest.read_text(encoding="utf-8"))
+record["host_sha256"] = hashlib.sha256(host.read_bytes()).hexdigest()
+manifest.write_text(
+    json.dumps(record, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+    encoding="utf-8",
+)
+PY
+  python3.11 "$ROOT/scripts/validate-source-formatter-runtime.py" \
+    --runtime "$formatter_root" --platform macos --architecture "$TARGET_ARCH"
+}
+
+record_formatter_evidence() {
+  local formatter_root="$APP/Contents/Resources/formatter-host"
+  local evidence_root="$BUILD_ROOT/formatter-evidence"
+  /bin/mkdir -p "$evidence_root"
+  "$VENV/bin/python" "$ROOT/scripts/verify-document-formatter-parity.py" \
+    --root "$ROOT" \
+    --host "$formatter_root/partyops-document-formatter-host" \
+    --office-bin "$APP/Contents/Resources/office-runtime/LibreOffice.app/Contents/MacOS/soffice" \
+    --workspace "$evidence_root/parity-workspace" \
+    --evidence "$evidence_root/parity.json" \
+    --platform macos --architecture "$TARGET_ARCH"
+  "$VENV/bin/python" "$ROOT/scripts/verify-document-formatter-features-e2e.py" \
+    --root "$ROOT" \
+    --host "$formatter_root/partyops-document-formatter-host" \
+    --workspace "$evidence_root/features-workspace" \
+    --evidence "$evidence_root/features.json" \
+    --platform macos --architecture "$TARGET_ARCH"
+  "$VENV/bin/python" "$ROOT/scripts/verify-formatter-runtime-evidence.py" \
+    --root "$ROOT" \
+    --runtime "$formatter_root" \
+    --platform macos --architecture "$TARGET_ARCH" \
+    --parity-evidence "$evidence_root/parity.json" \
+    --features-evidence "$evidence_root/features.json" \
+    --output "$formatter_root/runtime-evidence.json"
 }
 
 verify_team_ids() {
@@ -450,6 +513,14 @@ done
 /usr/bin/install -m 0644 "$LLAMA_RUNTIME/licenses/llama.cpp-LICENSE" \
   "$APP/Contents/Resources/licenses/llama.cpp-LICENSE"
 /usr/bin/ditto "$OFFICE_RUNTIME" "$APP/Contents/Resources/office-runtime"
+/bin/mkdir -p "$APP/Contents/Resources/formatter-host"
+/usr/bin/ditto "$FORMATTER_RUNTIME" "$APP/Contents/Resources/formatter-host"
+/usr/bin/chmod 0755 "$APP/Contents/Resources/formatter-host/partyops-document-formatter-host"
+/usr/bin/chmod 0644 \
+  "$APP/Contents/Resources/formatter-host/source-host.json" \
+  "$APP/Contents/Resources/formatter-host/word-vtable-map.json" \
+  "$APP/Contents/Resources/formatter-host/LICENSE-WPS-SDK.txt" \
+  "$APP/Contents/Resources/formatter-host/LICENSE-MONO-RUNTIME.txt"
 # 生产更新器只信任随 PKG 安装且由 root 保护的应用资源。公钥不是可执行
 # 代码，必须放入 Apple 约定的 Resources；放在 MacOS 会被 codesign 当成
 # 未签名嵌套代码。PyInstaller 对 datas 的重排位置也不是运行时契约，因此
@@ -495,8 +566,6 @@ subprocess.run(
     timeout=120,
 )
 PY
-"$SCRIPT_DIR/validate-bundle.sh" "$APP" "$TARGET_ARCH"
-
 # PKG 载荷只携带 App 的不透明 ZIP，不直接携带 .app 目录。pkgbuild 会递归
 # 识别 PyInstaller 内嵌的 Python.framework，并在安装时按“可重定位组件”改写
 # Bundle；结果可能是 App 结构损坏，或只安装空目录。postinstall 会先完整
@@ -553,11 +622,14 @@ if [[ "$MODE" == 'release' ]]; then
   # 签名的全新运行时会令 codesign 在主入口阶段提前失败。
   /usr/bin/find "$APP/Contents" -type f ! -path "$BUNDLE_EXECUTABLE" -print0 >"$MACHO_CANDIDATE_LIST"
   sign_bundle_code "$PARTYOPS_MACOS_APPLICATION_IDENTITY" --timestamp
+  refresh_formatter_manifest_hash
+  record_formatter_evidence
   codesign --force --timestamp --options runtime \
     --sign "$PARTYOPS_MACOS_APPLICATION_IDENTITY" "$BUNDLE_EXECUTABLE"
   codesign --force --timestamp --options runtime \
     --entitlements "$SCRIPT_DIR/entitlements.plist" \
     --sign "$PARTYOPS_MACOS_APPLICATION_IDENTITY" "$APP"
+  "$SCRIPT_DIR/validate-bundle.sh" "$APP" "$TARGET_ARCH"
   codesign --verify --deep --strict --verbose=2 "$APP"
   verify_team_ids release
   APP_NOTARY_ARCHIVE="$BUILD_ROOT/PartyOps-notary.zip"
@@ -591,9 +663,12 @@ elif [[ "$MODE" == 'unsigned-candidate' ]]; then
   MACHO_CANDIDATE_LIST="$BUILD_ROOT/macho-candidates-adhoc.bin"
   /usr/bin/find "$APP/Contents" -type f ! -path "$BUNDLE_EXECUTABLE" -print0 >"$MACHO_CANDIDATE_LIST"
   sign_bundle_code -
+  refresh_formatter_manifest_hash
+  record_formatter_evidence
   codesign --force --options runtime --sign - "$BUNDLE_EXECUTABLE"
   codesign --force --options runtime \
     --entitlements "$SCRIPT_DIR/entitlements.plist" --sign - "$APP"
+  "$SCRIPT_DIR/validate-bundle.sh" "$APP" "$TARGET_ARCH"
   codesign --verify --deep --strict --verbose=2 "$APP"
   verify_team_ids unsigned
   stage_pkg_payload
@@ -639,6 +714,9 @@ Path(path).write_text(
 )
 PY
 else
+  refresh_formatter_manifest_hash
+  record_formatter_evidence
+  "$SCRIPT_DIR/validate-bundle.sh" "$APP" "$TARGET_ARCH"
   stage_pkg_payload
   pkgbuild --root "$PAYLOAD_ROOT" \
     --scripts "$PKG_SCRIPTS" --install-location / --ownership recommended \

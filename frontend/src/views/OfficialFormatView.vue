@@ -29,6 +29,7 @@ interface CapabilityResponse {
   capability_count: number;
   features: FeatureDefinition[];
   external_office_required: boolean;
+  source_host_ready?: boolean;
 }
 interface ReplaceRule {
   mode: "text" | "regex" | "wildcard" | "format";
@@ -118,9 +119,6 @@ let clockTimer = 0;
 const options = reactive({
   compatibility_mode: "auto",
   template: "GB/T 9704-2012",
-  scope: "full",
-  start_paragraph: 1,
-  end_paragraph: 99999,
   plan_name: "默认方案",
   rules: [{ mode: "text", find: "", replace: "", case_sensitive: false }] as ReplaceRule[],
   document_type: "down",
@@ -259,7 +257,7 @@ async function selectOutputDirectory() {
 }
 function requestOptions() {
   const base = { compatibility_mode: options.compatibility_mode, same_name_policy: options.same_name_policy };
-  if (selectedFeature.value === "format") return { ...base, template: options.template, scope: options.scope, start_paragraph: options.start_paragraph, end_paragraph: options.end_paragraph };
+  if (selectedFeature.value === "format") return { ...base, template: options.template };
   if (selectedFeature.value === "replace") return { ...base, plan_name: options.plan_name, rules: options.rules.map((rule) => ({ ...rule })) };
   if (selectedFeature.value === "redheader") return { ...base, document_type: options.document_type, copy_number: options.copy_number, security: options.security, urgency: options.urgency, agency: options.agency, document_number: options.document_number, signatory: options.signatory, imprint: options.imprint };
   if (selectedFeature.value === "rename") return { ...base, parts: [...options.parts], custom_text: options.custom_text, separator: options.separator, rotation_words: options.rotation_words };
@@ -328,8 +326,11 @@ async function runSelfTest() {
   try {
     await ensureLocalSession();
     const response = await window.fetch(`${localBaseUrl.value}/v1/self-test`, { cache: "no-store", credentials: "omit", mode: "cors" });
-    const result = await parseLocalResponse<{ feature_count: number; capability_count: number; external_office_required: boolean }>(response);
-    selfTestText.value = result.feature_count === 6 && result.capability_count === 25 && !result.external_office_required ? "6 项功能 / 25 项能力已就绪" : "能力清单不完整，请修复安装";
+    const result = await parseLocalResponse<{ feature_count: number; capability_count: number; external_office_required: boolean; source_host_ready?: boolean }>(response);
+    const complete = result.feature_count === 6 && result.capability_count === 25 && result.source_host_ready !== false;
+    selfTestText.value = complete
+      ? result.external_office_required ? "源码引擎已就绪 · 后台兼容 WPS/Word" : "6 项功能 / 25 项能力已就绪"
+      : "能力清单不完整，请修复安装";
   } catch (error) { selfTestText.value = "内置引擎自检失败"; showFailure(error) }
 }
 function addReplaceRule() { if (options.rules.length < 100) options.rules.push({ mode: "text", find: "", replace: "", case_sensitive: false }) }
@@ -348,7 +349,7 @@ onBeforeUnmount(() => { window.clearTimeout(pollTimer); window.clearInterval(clo
       <div>
         <p class="page-kicker">朱批案台 · 当前电脑批量处理</p>
         <h1 class="page-title">公文规范排版</h1>
-        <p class="page-description">新排版工具已完整内嵌。文件不出当前电脑，不打开 Word、WPS 或系统外窗口。</p>
+        <p class="page-description">新排版工具已完整内嵌。文件不出当前电脑，后台复用本机 WPS/Word 的原排版源码，不打开独立工具窗口。</p>
       </div>
       <div class="format-header-actions">
         <button type="button" class="engine-self-test" @click="runSelfTest"><IconSafe /><span>{{ selfTestText }}</span></button>
@@ -357,7 +358,7 @@ onBeforeUnmount(() => { window.clearTimeout(pollTimer); window.clearInterval(clo
           :tips="[
             '六类功能、25 项能力全部在 PartyOps 页面内执行，源文件默认不覆盖。',
             '文件只发送给当前电脑 127.0.0.1 的内置引擎，15 分钟无操作后自动清理临时副本。',
-            '自动、Word、WPS 是输出兼容目标，不表示需要安装或启动对应软件。',
+            '自动模式优先使用本机 WPS，宿主不可用时回退 Word；处理始终留在 PartyOps 页面。',
             '套红、复杂表格、扫描 PDF 和特殊版式仍应按最终打印页逐页核对。',
           ]"
         />
@@ -411,12 +412,10 @@ onBeforeUnmount(() => { window.clearTimeout(pollTimer); window.clearInterval(clo
 
         <aside class="format-settings-panel">
           <div class="panel-heading"><div><strong>功能参数</strong><span>{{ currentCapabilities.length }} 项能力</span></div></div>
-          <div class="setting-group"><label>兼容模式</label><a-select v-model="options.compatibility_mode" :disabled="busy"><a-option value="auto">自动兼容</a-option><a-option value="word">Word 兼容</a-option><a-option value="wps">WPS 兼容</a-option></a-select><small>只决定输出兼容性，不启动外部办公软件。</small></div>
+          <div class="setting-group"><label>文档引擎</label><a-select v-model="options.compatibility_mode" :disabled="busy"><a-option value="auto">WPS 优先（推荐）</a-option><a-option value="word">仅 Word</a-option><a-option value="wps">仅 WPS</a-option></a-select><small>在后台调用本机 WPS；Windows 自动模式仅在 WPS 不可用时回退 Word，全程不显示独立排版窗口。</small></div>
 
           <template v-if="selectedFeature === 'format'">
             <div class="setting-group"><label>排版模板</label><a-input v-model="options.template" :disabled="busy" /></div>
-            <div class="setting-group"><label>执行范围</label><a-select v-model="options.scope" :disabled="busy"><a-option value="full">全文</a-option><a-option value="selection">段落范围</a-option><a-option value="compilation">汇编文章</a-option></a-select></div>
-            <div v-if="options.scope !== 'full'" class="setting-inline"><a-input-number v-model="options.start_paragraph" :min="1" /><span>至</span><a-input-number v-model="options.end_paragraph" :min="1" /></div>
           </template>
           <template v-else-if="selectedFeature === 'replace'">
             <div class="setting-group"><label>替换方案</label><a-input v-model="options.plan_name" :disabled="busy" /></div>

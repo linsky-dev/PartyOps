@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 FORMAT="${1:-}"
 ARCH="${PARTYOPS_BUILD_ARCH:-}"
+RUNTIME_PROFILE="${PARTYOPS_RUNTIME_PROFILE:-full}"
 DEB_VERSION="1.4.5~rc.6"
 RPM_VERSION="1.4.5"
 RPM_RELEASE="0.rc.6.1"
@@ -14,7 +15,11 @@ if [[ -z "${PYTHON_BIN:-}" && -f "$ROOT/.partyops-build.env" ]]; then
   source "$ROOT/.partyops-build.env"
 fi
 if [[ -z "${PYTHON_BIN:-}" ]]; then
-  PYTHON_BIN="$(command -v python3.11 || command -v python3 || true)"
+  if [[ "$RUNTIME_PROFILE" == core ]]; then
+    PYTHON_BIN="$(command -v python3.12 || true)"
+  else
+    PYTHON_BIN="$(command -v python3.11 || command -v python3 || true)"
+  fi
 fi
 if [[ -z "$PYTHON_BIN" || ! -x "$PYTHON_BIN" ]]; then
   echo "未找到可用 Python 3.11，请先运行 ensure-build-environment.sh。" >&2
@@ -33,15 +38,66 @@ if [[ -z "$ARCH" ]]; then
   case "$(uname -m)" in
     x86_64) ARCH=amd64 ;;
     aarch64|arm64) ARCH=arm64 ;;
+    loongarch64|loong64) ARCH=loong64 ;;
     *) echo "不支持的架构：$(uname -m)" >&2; exit 2 ;;
   esac
 fi
-[[ "$ARCH" == "amd64" || "$ARCH" == "arm64" ]] || {
-  echo "仅支持 amd64/arm64：$ARCH" >&2
+[[ "$ARCH" == "amd64" || "$ARCH" == "arm64" || "$ARCH" == "loong64" ]] || {
+  echo "仅支持 amd64/arm64/loong64：$ARCH" >&2
   exit 2
 }
+if [[ "$ARCH" == loong64 ]]; then
+  [[ "$FORMAT" == deb && "$RUNTIME_PROFILE" == core ]] || {
+    echo "Loong64 仅提供显式 core DEB 档。" >&2; exit 2;
+  }
+elif [[ "$RUNTIME_PROFILE" != full ]]; then
+  echo "core 档仅允许 Loong64。" >&2; exit 2
+fi
 EXPECTED_MACHINE=x86_64
 [[ "$ARCH" == arm64 ]] && EXPECTED_MACHINE=aarch64
+[[ "$ARCH" == loong64 ]] && EXPECTED_MACHINE=loongarch64
+OFFICE_RUNTIME="${PARTYOPS_OFFICE_RUNTIME:-$ROOT/vendor/linux/libreoffice-headless-$ARCH}"
+OFFICE_BINARY="$OFFICE_RUNTIME/program/soffice.bin"
+if [[ "$ARCH" == loong64 ]]; then
+  # 来源及预期 SHA 由目标机核查后固定输入；未知来源不得通过旧 TDF 合同。
+  [[ -x "$OFFICE_RUNTIME/program/soffice" && -f "$OFFICE_BINARY" &&
+    -f "$OFFICE_RUNTIME/SOURCE.json" && -d "$OFFICE_RUNTIME/licenses" ]] || {
+    echo "[OFFICE_RUNTIME_MISSING] Loong64 公文转换运行时闭包不完整。" >&2; exit 2;
+  }
+  [[ "${PARTYOPS_LOONG64_OFFICE_SHA256:-}" =~ ^[0-9a-f]{64}$ ]] || {
+    echo "[OFFICE_EXPECTED_SHA_MISSING] 必须输入经目标机验证的 Loong64 soffice.bin SHA256。" >&2; exit 2;
+  }
+  [[ "$(sha256sum "$OFFICE_BINARY" | awk '{print $1}')" == "$PARTYOPS_LOONG64_OFFICE_SHA256" ]] || {
+    echo "[OFFICE_BINARY_HASH_MISMATCH] Loong64 Office 与固定输入不一致。" >&2; exit 2;
+  }
+  "$PYTHON_BIN" - "$OFFICE_RUNTIME" "$PARTYOPS_LOONG64_OFFICE_SHA256" <<'PY'
+import json
+import pathlib
+import sys
+runtime = pathlib.Path(sys.argv[1])
+source = json.loads((runtime / "SOURCE.json").read_text(encoding="utf-8"))
+if (source.get("architecture") != "loong64" or
+    source.get("soffice_bin_sha256") != sys.argv[2] or
+    not source.get("origin") or not source.get("version") or
+    not any((runtime / "licenses").iterdir())):
+    raise SystemExit("[OFFICE_SOURCE_MISMATCH] Loong64 来源、版本、许可或实际 SHA 未固定")
+PY
+  file "$OFFICE_BINARY" | grep -Eq 'LoongArch|Loongarch' || {
+    echo "[OFFICE_RUNTIME_ARCH_MISMATCH] Loong64 Office ELF 不匹配。" >&2; exit 2;
+  }
+  if ldd "$OFFICE_BINARY" 2>&1 | grep -q 'not found'; then
+    echo "[OFFICE_RUNTIME_DEPENDENCY_MISSING] Loong64 Office 存在缺失依赖。" >&2; exit 2
+  fi
+  OFFICE_VERSION="$(timeout 120 "$OFFICE_RUNTIME/program/soffice" --headless --version)"
+  "$PYTHON_BIN" - "$OFFICE_VERSION" "$OFFICE_RUNTIME/SOURCE.json" <<'PY'
+import json
+import re
+import sys
+version = json.load(open(sys.argv[2], encoding="utf-8"))["version"]
+if not re.search(r"(?<![0-9])" + re.escape(version) + r"(?![0-9])", sys.argv[1]):
+    raise SystemExit("[OFFICE_VERSION_MISMATCH] Loong64 Office 实际版本与来源清单不一致")
+PY
+else
 EXPECTED_OFFICE_PATTERN='x86-64|x86_64'
 OFFICE_LOADER_NAME=ld-linux-x86-64.so.2
 EXPECTED_OFFICE_ARCHIVE_SHA=a893a4f37a8b3fe110da92bb0135f488f8d695cd40cb7ce59c65bb525849bb67
@@ -52,8 +108,6 @@ if [[ "$ARCH" == arm64 ]]; then
   EXPECTED_OFFICE_ARCHIVE_SHA=a47d693dce67d5f5e15ee6f7ed2faaba5a2234fd21c3cd0227cf0567e63f95a4
   EXPECTED_OFFICE_PACKAGES_SHA=82b2b3b8c65cc1fcd369b86b0ca0b3b3ed675304898354b8f15143ba57365e90
 fi
-OFFICE_RUNTIME="${PARTYOPS_OFFICE_RUNTIME:-$ROOT/vendor/linux/libreoffice-headless-$ARCH}"
-OFFICE_BINARY="$OFFICE_RUNTIME/program/soffice.bin"
 if [[ ! -x "$OFFICE_RUNTIME/program/soffice" || ! -f "$OFFICE_BINARY" ||
   ! -f "$OFFICE_RUNTIME/SOURCE.json" || ! -d "$OFFICE_RUNTIME/licenses" ||
   ! -f "$OFFICE_RUNTIME/private-runtime/$OFFICE_LOADER_NAME" ||
@@ -161,21 +215,41 @@ while IFS= read -r -d '' link; do
     *) echo "[OFFICE_RUNTIME_SYMLINK_INVALID] LibreOffice 运行时包含越界或损坏链接：$link" >&2; exit 2 ;;
   esac
 done < <(find "$OFFICE_RUNTIME" -type l -print0)
+fi
+if [[ "$ARCH" == loong64 ]]; then
+  while IFS= read -r -d '' link; do
+    resolved="$(readlink -f -- "$link" 2>/dev/null || true)"
+    case "$resolved" in
+      "$OFFICE_RUNTIME"/*) ;;
+      *) echo "[OFFICE_RUNTIME_SYMLINK_INVALID] Loong64 Office 链接越界或损坏：$link" >&2; exit 2 ;;
+    esac
+  done < <(find "$OFFICE_RUNTIME" -type l -print0)
+fi
 [[ "$(uname -s)" == Linux ]] || {
   echo "原生包只能在 Linux manylinux2014 构建环境生成。" >&2
   exit 2
 }
 HOST_MACHINE="$(uname -m)"
+if [[ "$ARCH" == loong64 && "$HOST_MACHINE" != loongarch64 && "$HOST_MACHINE" != loong64 ]]; then
+  echo "Loong64 core 必须在目标架构原生封包与自检，不接受跨架构例外。" >&2; exit 2
+fi
 if [[ "$HOST_MACHINE" != "$EXPECTED_MACHINE" &&
+  ! ( "$ARCH" == loong64 && "$HOST_MACHINE" == loong64 ) &&
   "${PARTYOPS_ALLOW_CROSS_PACKAGE:-0}" != "1" ]]; then
   echo "目标为 $EXPECTED_MACHINE、当前为 $HOST_MACHINE；仅封装已在目标架构自检通过的载荷时，才可显式设置 PARTYOPS_ALLOW_CROSS_PACKAGE=1。" >&2
   exit 2
 fi
 GLIBC="$(getconf GNU_LIBC_VERSION | awk '{print $2}')"
-[[ "$GLIBC" == 2.17 ]] || {
-  echo "正式包要求 glibc 2.17 构建基线，当前为 $GLIBC；拒绝生成伪兼容制品。" >&2
+EXPECTED_GLIBC=2.17
+[[ "$ARCH" == loong64 ]] && EXPECTED_GLIBC=2.38
+[[ "$GLIBC" == "$EXPECTED_GLIBC" ]] || {
+  echo "正式包要求 glibc $EXPECTED_GLIBC 构建基线，当前为 $GLIBC；拒绝生成伪兼容制品。" >&2
   exit 2
 }
+if [[ "$ARCH" == loong64 ]] &&
+  [[ "$("$PYTHON_BIN" -c 'import platform;print(platform.python_version())')" != 3.12.13 ]]; then
+  echo "Loong64 core 必须使用实际 Python 3.12.13。" >&2; exit 2
+fi
 
 WHEELHOUSE="$ROOT/vendor/wheels/$ARCH"
 shopt -s nullglob
@@ -187,12 +261,15 @@ shopt -u nullglob
 }
 # 基础构建解释器刻意不预装第三方包。直接从已经纳入 vendor 哈希门禁的
 # 纯 Python wheel 加载 packaging，避免联网安装和构建机全局环境漂移。
+RUNTIME_REQUIREMENTS="$ROOT/backend/requirements-local-ai.txt"
+[[ "$ARCH" == loong64 ]] && RUNTIME_REQUIREMENTS="$ROOT/packaging/uos/requirements-core.txt"
 PYTHONPATH="${PACKAGING_WHEELS[0]}${PYTHONPATH:+:$PYTHONPATH}" \
   "$PYTHON_BIN" "$ROOT/scripts/validate-uos-wheelhouse.py" \
   --architecture "$ARCH" \
+  --runtime-profile "$RUNTIME_PROFILE" \
   --wheelhouse "$WHEELHOUSE" \
   --requirements "$ROOT/backend/requirements.txt" \
-    "$ROOT/backend/requirements-local-ai.txt" \
+    "$RUNTIME_REQUIREMENTS" \
     "$ROOT/packaging/uos/requirements-build.txt"
 
 PORTABLE="$ARTIFACTS/PartyOps-linux-$ARCH.tar.zst"
@@ -254,6 +331,9 @@ zstd -dc -- "$PORTABLE_COPY" |
   tar --extract --file - --directory "$BUILD" \
     --no-same-owner --no-same-permissions
 cp -a "$BUILD/PartyOps/." "$PKG/opt/partyops/"
+"$PYTHON_BIN" "$ROOT/scripts/validate-source-formatter-runtime.py" \
+  --runtime "$PKG/opt/partyops/formatter-host" \
+  --platform linux --architecture "$ARCH"
 # 原生包对旧便携载荷再执行一次默认拒绝权限收敛。只有固定应用入口可以
 # 执行；共享库、WASM、图片和许可证必须保持 0644，避免麒麟安全中心把
 # libgcc_s.so.1 等运行库误判为自启动程序。
@@ -269,7 +349,13 @@ chmod 0755 \
   "$PKG/opt/partyops/open-local-file.sh" \
   "$PKG/opt/partyops/install-desktop-shortcut.sh" \
   "$PKG/opt/partyops/install-internal-ca.sh" \
-  "$PKG/opt/partyops/ocr/bin/tesseract"
+  "$PKG/opt/partyops/ocr/bin/tesseract" \
+  "$PKG/opt/partyops/formatter-host/partyops-document-formatter-host"
+if [[ "$ARCH" == loong64 ]]; then
+  chmod 0755 \
+    "$PKG/opt/partyops/formatter-host/partyops-document-formatter-host.bin" \
+    "$PKG/opt/partyops/formatter-host/private/liblol/ld.so.1"
+fi
 if [[ -f "$PKG/opt/partyops/llama-server" ]]; then
   chmod 0755 "$PKG/opt/partyops/llama-server"
 fi
@@ -298,10 +384,13 @@ while IFS= read -r -d '' office_candidate; do
 done < <(find "$OFFICE_PACKAGE_RUNTIME/program" -maxdepth 1 -type f -print0)
 # 私有 ELF 加载器是唯一允许带执行位的 *.so* 文件；它是 PartyOps 直接
 # exec 的启动入口，其余共享库继续保持 0644。
-chmod 0755 "$OFFICE_PACKAGE_RUNTIME/private-runtime/$OFFICE_LOADER_NAME"
+if [[ "$ARCH" != loong64 ]]; then
+  chmod 0755 "$OFFICE_PACKAGE_RUNTIME/private-runtime/$OFFICE_LOADER_NAME"
+fi
 EXPECTED_PAYLOAD_PATTERN='x86-64'
 [[ "$ARCH" == arm64 ]] && EXPECTED_PAYLOAD_PATTERN='ARM aarch64'
-file "$PKG/opt/partyops/partyops" | grep -q "$EXPECTED_PAYLOAD_PATTERN" || {
+[[ "$ARCH" == loong64 ]] && EXPECTED_PAYLOAD_PATTERN='LoongArch|Loongarch'
+file "$PKG/opt/partyops/partyops" | grep -Eq "$EXPECTED_PAYLOAD_PATTERN" || {
   echo "便携载荷主程序架构与目标 $ARCH 不一致，拒绝封装。" >&2
   exit 2
 }
@@ -356,28 +445,54 @@ while IFS= read -r -d '' executable; do
     "$PKG/opt/partyops/install-desktop-shortcut.sh"|\
     "$PKG/opt/partyops/install-internal-ca.sh"|\
     "$PKG/opt/partyops/ocr/bin/tesseract"|\
+    "$PKG/opt/partyops/formatter-host/partyops-document-formatter-host"|\
     "$PKG/opt/partyops/llama-server"|\
     "$PKG/opt/partyops/post-install-selftest.sh"|\
     "$PKG/opt/partyops/post-install-services.sh"|\
     "$PKG/opt/partyops/post-install-verify.sh"|\
     "$PKG/opt/partyops/post-install-transaction.sh"|\
     "$PKG/opt/partyops/office-runtime/"*) ;;
+    "$PKG/opt/partyops/formatter-host/partyops-document-formatter-host.bin"|\
+    "$PKG/opt/partyops/formatter-host/private/liblol/ld.so.1")
+      [[ "$ARCH" == loong64 ]] || { echo "非 Loong64 载荷含私有 formatter 入口。" >&2; exit 2; } ;;
     *)
       echo "原生包包含未授权的可执行文件：$executable" >&2
       exit 2
       ;;
   esac
 done < <(find "$PKG/opt/partyops" -type f -perm /111 -print0)
-if find "$PKG/opt/partyops" -type f -name '*.so*' -perm /111 \
-  ! -path "$OFFICE_PACKAGE_RUNTIME/private-runtime/$OFFICE_LOADER_NAME" \
-  -print -quit | grep -q .; then
+if [[ "$ARCH" == loong64 ]]; then
+  FORBIDDEN_EXECUTABLE_SO="$(find "$PKG/opt/partyops" -type f -name '*.so*' -perm /111 \
+    ! -path "$PKG/opt/partyops/formatter-host/private/liblol/ld.so.1" -print -quit)"
+else
+  FORBIDDEN_EXECUTABLE_SO="$(find "$PKG/opt/partyops" -type f -name '*.so*' -perm /111 \
+    ! -path "$OFFICE_PACKAGE_RUNTIME/private-runtime/$OFFICE_LOADER_NAME" -print -quit)"
+fi
+if [[ -n "$FORBIDDEN_EXECUTABLE_SO" ]]; then
   echo "原生包共享库被错误标记为可执行文件，拒绝封装。" >&2
   exit 2
+fi
+"$PYTHON_BIN" "$ROOT/scripts/validate-source-formatter-runtime.py" \
+  --runtime "$PKG/opt/partyops/formatter-host" \
+  --platform linux --architecture "$ARCH"
+if [[ "$ARCH" == loong64 ]]; then
+  "$PYTHON_BIN" "$ROOT/scripts/verify-linux-elf-glibc.py" \
+    --root "$PKG/opt/partyops" --max-glibc 2.38
+  PARTYOPS_DATA_DIR="$BUILD/core-selftest-data" \
+  PARTYOPS_ENVIRONMENT=production PARTYOPS_STRICT_SQLITE=true \
+  PARTYOPS_SEED_DEMO=false \
+  "$PKG/opt/partyops/partyops" --package-self-test
 fi
 (cd "$PKG/opt/partyops" && find . -type f ! -name release-files.sha256 -print0 | \
   sort -z | xargs -0 sha256sum >release-files.sha256)
 
 if [[ "$FORMAT" == deb ]]; then
+  PACKAGE_DESCRIPTION='原生离线主机、协同、中文 OCR 和公文处理；复杂本地智能未随包提供。'
+  PACKAGE_LIBC_VERSION=2.38
+  if [[ "$ARCH" != loong64 ]]; then
+    PACKAGE_DESCRIPTION='原生离线主机、协同、中文 OCR、语义重排和本地 LLM。'
+    PACKAGE_LIBC_VERSION=2.17
+  fi
   mkdir -p "$PKG/DEBIAN"
   cat >"$PKG/DEBIAN/control" <<EOF
 Package: partyops
@@ -386,20 +501,24 @@ Section: office
 Priority: optional
 Architecture: $ARCH
 Maintainer: PartyOps Local
-Depends: libc6 (>= 2.17), bash, systemd, util-linux, coreutils, iproute2, curl, xdg-utils, policykit-1
+Depends: libc6 (>= $PACKAGE_LIBC_VERSION), bash, systemd, util-linux, coreutils, iproute2, curl, xdg-utils, policykit-1
 Description: 党建智办 PartyOps 局域网协同系统
- 原生离线主机、协同、中文 OCR、语义重排和本地 LLM。
+ $PACKAGE_DESCRIPTION
 EOF
   cp "$ROOT/packaging/linux/pre-install-stop.sh" "$PKG/DEBIAN/preinst"
   {
     cat "$ROOT/packaging/linux/post-install-configure.sh"
     printf '\n/opt/partyops/post-install-transaction.sh %s deb\n' "$ARCH"
   } >"$PKG/DEBIAN/postinst"
-  cat >"$PKG/DEBIAN/prerm" <<'EOF'
+  {
+    cat <<'EOF'
 #!/bin/sh
 set -e
-systemctl stop partyops.service partyops-updater.service >/dev/null 2>&1 || true
+case "${1:-}" in remove|deconfigure) ;; *) exit 0 ;; esac
+export PARTYOPS_PACKAGE_REMOVE=1
 EOF
+    cat "$ROOT/packaging/linux/pre-install-stop.sh"
+  } >"$PKG/DEBIAN/prerm"
   cat >"$PKG/DEBIAN/postrm" <<'EOF'
 #!/bin/sh
 set -e
@@ -462,7 +581,8 @@ $RPM_POST_SCRIPT
 
 %preun
 if [ "\$1" -eq 0 ]; then
-  systemctl stop partyops.service partyops-updater.service >/dev/null 2>&1 || true
+  export PARTYOPS_PACKAGE_REMOVE=1
+$RPM_PRE_SCRIPT
 fi
 
 %postun

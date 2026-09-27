@@ -30,6 +30,15 @@ def _code(code: str, call) -> None:
     assert raised.value.code == code
 
 
+def _allow_local_llm_package(monkeypatch) -> None:
+    """隔离进程生命周期测试与当前宿主的真实安装包身份。"""
+
+    monkeypatch.setattr(local_ai, "detect_platform_info", lambda: {
+        "runtime_profile": "full",
+        "capabilities": ["local_llm"],
+    })
+
+
 def test_embedding_runtime_reuses_pack_and_handles_sparse_inputs(monkeypatch) -> None:
     class Encoded:
         ids = [1, 2]
@@ -137,6 +146,7 @@ def test_windows_job_object_failure_paths(monkeypatch) -> None:
 
 
 def test_llm_start_posix_spawn_and_failure_branches(monkeypatch) -> None:
+    _allow_local_llm_package(monkeypatch)
     settings = SimpleNamespace(local_ai_port=18888, local_ai_max_threads=2)
     pack = SimpleNamespace(id="llm-1")
     runtime = local_ai.LocalLlmRuntime()
@@ -168,9 +178,13 @@ def test_llm_start_posix_spawn_and_failure_branches(monkeypatch) -> None:
 
 
 def test_llm_health_never_ready_stops_after_bounded_polling(monkeypatch) -> None:
+    _allow_local_llm_package(monkeypatch)
     settings = SimpleNamespace(local_ai_port=18888, local_ai_max_threads=2)
     pack = SimpleNamespace(id="llm-timeout")
     runtime = local_ai.LocalLlmRuntime()
+    elapsed = [0.0]
+    monkeypatch.setattr(local_ai.time, "monotonic", lambda: elapsed[0])
+    monkeypatch.setattr(local_ai.time, "sleep", lambda seconds: elapsed.__setitem__(0, elapsed[0] + seconds))
 
     class Process:
         def __init__(self):
@@ -198,6 +212,7 @@ def test_llm_health_never_ready_stops_after_bounded_polling(monkeypatch) -> None
     )
     _code("LOCAL_LLM_START_FAILED", lambda: runtime._ensure_started(pack))
     assert process.terminated is True and runtime._process is None
+    assert elapsed[0] == 120
 
 
 def test_automation_empty_suggestions_and_scheduler_backup_skip(monkeypatch) -> None:

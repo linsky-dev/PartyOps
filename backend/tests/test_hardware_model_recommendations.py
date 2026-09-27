@@ -173,6 +173,12 @@ def test_cpu_process_and_gpu_probes_degrade_without_breaking_startup(monkeypatch
     monkeypatch.setattr(Path, "read_text", lambda self, **kwargs: (_ for _ in ()).throw(OSError()))
     assert hardware_profile._cpu_flags() == ["avx", "avx2"]
     assert hardware_profile._process_rss_bytes() == 0
+    monkeypatch.setattr(hardware_profile.platform, "system", lambda: "Other")
+    assert hardware_profile._cpu_flags() == ["avx", "avx2"]
+
+    monkeypatch.setattr(hardware_profile.platform, "system", lambda: "Linux")
+    monkeypatch.setattr(Path, "read_text", lambda self, **kwargs: "Name: partyops\n")
+    assert hardware_profile._process_rss_bytes() == 0
 
     class Psapi:
         @staticmethod
@@ -193,6 +199,19 @@ def test_cpu_process_and_gpu_probes_degrade_without_breaking_startup(monkeypatch
         raising=False,
     )
     assert hardware_profile._process_rss_bytes() == 54321
+
+    class EmptyPsapi:
+        @staticmethod
+        def GetProcessMemoryInfo(process, pointer, size) -> bool:
+            return False
+
+    monkeypatch.setattr(
+        hardware_profile.ctypes,
+        "windll",
+        SimpleNamespace(psapi=EmptyPsapi(), kernel32=Kernel32()),
+        raising=False,
+    )
+    assert hardware_profile._process_rss_bytes() == 0
     monkeypatch.setattr(
         hardware_profile.ctypes,
         "windll",
@@ -212,6 +231,12 @@ def test_cpu_process_and_gpu_probes_degrade_without_breaking_startup(monkeypatch
     monkeypatch.setattr(hardware_profile.platform, "system", lambda: "Linux")
     backends, memory, names = hardware_profile._gpu_profile()
     assert backends == ["cuda"] and memory == 24564 and names == ["RTX 4090"]
+    monkeypatch.setattr(
+        hardware_profile.subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(stdout=""),
+    )
+    assert hardware_profile._gpu_profile() == ([], None, [])
     monkeypatch.setattr(
         hardware_profile.subprocess,
         "run",

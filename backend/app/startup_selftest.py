@@ -99,6 +99,29 @@ def _validate_probe(health: dict[str, object], frontend: bytes) -> None:
         raise RuntimeError("目标机首页静态入口不完整")
 
 
+def _probe_owned_formatter(data_dir: Path, expected_pid: int) -> None:
+    """启动自检同时验证子进程实际排版端点，旧记录或其他实例不能代替。"""
+
+    import hashlib
+
+    path = data_dir / "logs" / "official-format-endpoint.json"
+    if path.is_symlink() or path.stat().st_size > 4096:
+        raise RuntimeError("排版端点记录无效")
+    record = json.loads(path.read_text(encoding="utf-8"))
+    binding = hashlib.sha256(str(data_dir.resolve()).encode("utf-8")).hexdigest()
+    if (not isinstance(record, dict) or record.get("format_version") != 1
+            or record.get("pid") != expected_pid or expected_pid <= 0
+            or record.get("data_binding") != binding
+            or type(record.get("port")) is not int or not 1024 <= record["port"] <= 65535
+            or not isinstance(record.get("instance_id"), str) or len(record["instance_id"]) != 32):
+        raise RuntimeError("排版端点不属于本次启动子进程")
+    # 此请求不含票据或文档。PID 和每次启动随机实例标识必须同时一致。
+    probe = _read_json(f"http://127.0.0.1:{record['port']}/health")
+    if (probe.get("service") != "official-format" or probe.get("status") != "ready"
+            or probe.get("pid") != expected_pid or probe.get("instance_id") != record["instance_id"]):
+        raise RuntimeError("排版监听与本次子进程身份不一致")
+
+
 def _probe_frozen_server(runtime: Path, timeout: float) -> dict[str, object]:
     """以临时数据目录启动同一个冻结 EXE，并等待完整健康与首页响应。"""
 
@@ -154,6 +177,7 @@ def _probe_frozen_server(runtime: Path, timeout: float) -> dict[str, object]:
                     health = _read_json(f"http://127.0.0.1:{port}/api/v1/health")
                     page = _read_frontend(f"http://127.0.0.1:{port}/")
                     _validate_probe(health, page)
+                    _probe_owned_formatter(root / "data", process.pid)
                     return health
                 except (OSError, ValueError, json.JSONDecodeError, urllib.error.URLError, RuntimeError) as exc:
                     last_error = str(exc)
@@ -173,7 +197,7 @@ def _probe_frozen_server(runtime: Path, timeout: float) -> dict[str, object]:
                     process.wait(timeout=10)
 
 
-def run_selftest(runtime: Path, timeout: float = 120.0) -> dict[str, object]:
+def run_selftest(runtime: Path, timeout: float = 180.0) -> dict[str, object]:
     """执行无持久副作用的目标机加密与完整启动探针。"""
 
     _critical_crypto_roundtrip()
@@ -185,6 +209,7 @@ def run_selftest(runtime: Path, timeout: float = 120.0) -> dict[str, object]:
         "crypto": "rsa+fernet",
         "database": "sqlite+fts5",
         "frontend": "ready",
+        "official_formatter": "owned-instance-ready",
     }
 
 
@@ -227,9 +252,12 @@ def run_user_permission_selftest(runtime: Path) -> dict[str, object]:
 
 def run_desktop_user_selftest(
     runtime: Path,
-    timeout: float = 120.0,
+    timeout: float = 180.0,
 ) -> dict[str, object]:
     """以真实桌面账号同时验证权限和完整个人进程启动链。"""
+
+    # 与正常启动器的180秒门限一致；原版Win7冷启动可能在120秒后才完成
+    # 数据迁移及排版进程初始化，不能在正常启动器仍等待时提前判定安装失败。
 
     permission = run_user_permission_selftest(runtime)
     startup = run_selftest(runtime, timeout=timeout)
@@ -252,9 +280,11 @@ def main(runtime: Path | None = None) -> int:
                     "code": "PACKAGE_RUNTIME_STARTUP_SELFTEST_FAILED",
                     "error": str(exc)[-6000:],
                 },
-                ensure_ascii=False,
+                # 安装器在英文 Win7 上使用 cp1252 管道；JSON 转义保留中文，
+                # 避免诊断本身再次抛出编码异常而掩盖真正的启动故障。
+                ensure_ascii=True,
             )
         )
         return 2
-    print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+    print(json.dumps(result, ensure_ascii=True, sort_keys=True))
     return 0

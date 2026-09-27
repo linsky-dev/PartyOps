@@ -90,6 +90,27 @@ for runtime_entrypoint in \
     exit 2
   }
 done
+[[ -x "$RUNTIME/formatter-host/partyops-document-formatter-host" ]] || {
+  echo "成品缺少本机 WPS 原源码排版宿主。" >&2
+  exit 2
+}
+[[ -f "$RUNTIME/formatter-host/source-host.json" ]] || {
+  echo "成品缺少原源码排版宿主来源清单。" >&2
+  exit 2
+}
+[[ -f "$RUNTIME/formatter-host/runtime-evidence.json" ]] || {
+  echo "成品缺少目标平台真实 WPS 金样与六功能验收证据。" >&2
+  exit 2
+}
+for formatter_file in \
+  "$RUNTIME/formatter-host/word-vtable-map.json" \
+  "$RUNTIME/formatter-host/LICENSE-WPS-SDK.txt" \
+  "$RUNTIME/formatter-host/LICENSE-MONO-RUNTIME.txt"; do
+  [[ -f "$formatter_file" ]] || {
+    echo "成品缺少 WPS 原生适配资源：$formatter_file" >&2
+    exit 2
+  }
+done
 
 # LibreOffice 通过随包私有加载器启动自身的 glibc 2.34 闭包。该加载器名称
 # 虽匹配 *.so*，本质却是必须由包装脚本直接 exec 的 ELF 入口。只允许与
@@ -118,8 +139,8 @@ fi
 MACHINE="$(uname -m)"
 if [[ ( "$EXPECTED_ARCH" == "amd64" && "$MACHINE" != "x86_64" ) ||
       ( "$EXPECTED_ARCH" == "arm64" && "$MACHINE" != "aarch64" ) ]]; then
-  echo "原生包静态权限门禁通过；当前机器 $MACHINE 不执行 $EXPECTED_ARCH 运行验收。"
-  exit 0
+  echo "[RUNTIME_NOT_EXECUTED] 静态检查通过，但当前机器 $MACHINE 不匹配 $EXPECTED_ARCH；不能记为运行验收通过。" >&2
+  exit 77
 fi
 
 "$RUNTIME/partyops" --package-self-test
@@ -191,8 +212,8 @@ grep -Eq '"mode"[[:space:]]*:[[:space:]]*"personal"' "$TEST_ROOT/health.json" ||
 SERVER_EXECUTABLE="$(readlink -f "/proc/$SERVER_PID/exe" 2>/dev/null || true)"
 if [[ "$SERVER_EXECUTABLE" == */qemu-aarch64-static ]]; then
   bash -n "$RUNTIME/start.sh" "$RUNTIME/desktop-launcher.sh"
-  echo "ARM64 QEMU 成品动态门禁通过；桌面 PID 归属闭环需在真实 ARM 内核执行。"
-  exit 0
+  echo "[RUNTIME_PARTIAL] 用户态 QEMU 仅完成部分动态检查；缺少目标系统内桌面闭环，不能记为完整运行通过。" >&2
+  exit 77
 fi
 
 cat >"$CONFIG_ROOT/mode.json" <<'EOF'

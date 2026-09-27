@@ -1077,5 +1077,5 @@ def export_result_docx(result: PartyDevelopmentResultOut, exports_dir: Path) -> 
         indent=False,
     )
     generated.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-    document.save(path)
+    document.save(str(path))
     return path

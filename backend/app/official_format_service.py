@@ -15,6 +15,7 @@ import os
 import re
 import secrets
 import shutil
+import socket
 import tempfile
 import threading
 import time
@@ -50,6 +51,26 @@ UTC = timezone.utc
 
 LOCAL_FORMAT_PORT = 18768
 TICKET_TTL_SECONDS = 120
+
+
+def _store_compact_upload(workspace: Path, extension: str, payload: bytes) -> Path:
+    """用标准临时文件分配短物理名；原始文件名保存在文档元数据中。"""
+    descriptor, filename = tempfile.mkstemp(prefix="u", suffix=extension, dir=workspace)
+    source = Path(filename)
+    try:
+        with os.fdopen(descriptor, "wb") as stream:
+            stream.write(payload)
+    except Exception:
+        source.unlink(missing_ok=True)
+        raise
+    return source
+
+
+def _document_output_name(document: LocalDocument, filename: str) -> str:
+    """下载仍使用用户原名；内容命名功能生成的其他名称保持不变。"""
+    if filename.startswith(document.source.stem):
+        return document.original_stem + filename[len(document.source.stem):]
+    return filename
 
 
 def _b64encode(payload: bytes) -> str:
@@ -234,8 +255,20 @@ class LocalFormatJob:
         }
 
 
+class _ExclusiveLoopbackServer(ThreadingHTTPServer):
+    """Windows 禁止重用活跃监听地址，避免请求落入另一用户进程。"""
+
+    allow_reuse_address = os.name != "nt"
+    allow_reuse_port = False
+
+    def server_bind(self) -> None:
+        if os.name == "nt":
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        super().server_bind()
+
+
 class OfficialFormatLocalService:
-    """固定回环端口上的无窗口排版服务。"""
+    """当前进程独占回环端口上的无窗口排版服务。"""
 
     def __init__(
         self,
@@ -252,6 +285,7 @@ class OfficialFormatLocalService:
                 "设备凭据不完整，请重新打开 PartyOps 或重新授权协同电脑。",
             )
         self.secret = secret
+        self.instance_id = uuid.uuid4().hex
         self.config_dir = config_dir
         self.port = int(port)
         self.idle_timeout = max(30, int(idle_timeout))
@@ -263,6 +297,12 @@ class OfficialFormatLocalService:
         self.thread: threading.Thread | None = None
         self.cleanup_thread: threading.Thread | None = None
         self.executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="partyops-format-job")
+
+    @property
+    def ready(self) -> bool:
+        return bool(self.server is not None and self.server.socket.fileno() >= 0
+                    and self.thread is not None and self.thread.is_alive()
+                    and not self.stop_event.is_set())
 
     def start(self) -> OfficialFormatLocalService:
         service = self
@@ -380,7 +420,8 @@ class OfficialFormatLocalService:
                 if path == "/health":
                     self._send_json(
                         200,
-                        {"service": "official-format", "status": "ready", "version": VERSION},
+                        {"service": "official-format", "status": "ready", "version": VERSION,
+                         "pid": os.getpid(), "instance_id": service.instance_id},
                         origin,
                     )
                     return
@@ -388,15 +429,18 @@ class OfficialFormatLocalService:
                     self._send_json(200, capabilities_payload(), origin)
                     return
                 if path == "/v1/self-test":
-                    payload = capabilities_payload()
+                    capability_details = capabilities_payload()
                     self._send_json(
                         200,
                         {
                             "status": "ready",
-                            "engine": payload["engine"],
-                            "feature_count": len(payload["features"]),
-                            "capability_count": payload["capability_count"],
-                            "external_office_required": False,
+                            "pid": os.getpid(),
+                            "instance_id": service.instance_id,
+                            "engine": capability_details["engine"],
+                            "feature_count": len(capability_details["features"]),
+                            "capability_count": capability_details["capability_count"],
+                            "external_office_required": capability_details["external_office_required"],
+                            "source_host_ready": capability_details["source_host_ready"],
                             "version": VERSION,
                         },
                         origin,
@@ -526,8 +570,7 @@ class OfficialFormatLocalService:
                             )
                         document_id = uuid.uuid4().hex
                         extension = Path(filename).suffix.lower()
-                        source = session.workspace / f"{document_id}{extension}"
-                        _private_write(source, payload)
+                        source = _store_compact_upload(session.workspace, extension, payload)
                         session.documents[document_id] = LocalDocument(
                             source=source,
                             original_stem=_safe_stem(filename),
@@ -549,9 +592,9 @@ class OfficialFormatLocalService:
                     create_job = re.fullmatch(r"/v1/sessions/([0-9a-f]{32})/jobs", path)
                     if create_job:
                         session = self._session(create_job.group(1), origin)
-                        payload = self._read_json()
-                        feature_id = str(payload.get("feature_id", "")).strip()
-                        raw_ids = payload.get("document_ids")
+                        job_request = self._read_json()
+                        feature_id = str(job_request.get("feature_id", "")).strip()
+                        raw_ids = job_request.get("document_ids")
                         if not isinstance(raw_ids, list) or not all(
                             isinstance(item, str) and re.fullmatch(r"[0-9a-f]{32}", item)
                             for item in raw_ids
@@ -559,7 +602,7 @@ class OfficialFormatLocalService:
                             raise OfficialFormatError(
                                 "FORMAT_DOCUMENT_IDS_INVALID", "文件列表无效", "请重新添加待处理文件。"
                             )
-                        options = payload.get("options", {})
+                        options = job_request.get("options", {})
                         if not isinstance(options, dict):
                             raise OfficialFormatError(
                                 "FORMAT_OPTIONS_INVALID", "功能参数无效", "功能参数必须是对象。"
@@ -578,15 +621,15 @@ class OfficialFormatLocalService:
                     )
                     if cancel_job:
                         session = self._session(cancel_job.group(1), origin)
-                        job = session.jobs.get(cancel_job.group(2))
-                        if job is None:
+                        pending_job = session.jobs.get(cancel_job.group(2))
+                        if pending_job is None:
                             raise OfficialFormatError(
                                 "FORMAT_JOB_GONE", "处理任务已清理", "请重新创建处理任务。"
                             )
-                        job.cancel_event.set()
-                        job.message = "正在安全停止任务"
-                        job.updated_at = time.time()
-                        self._send_json(202, job.as_dict(), origin)
+                        pending_job.cancel_event.set()
+                        pending_job.message = "正在安全停止任务"
+                        pending_job.updated_at = time.time()
+                        self._send_json(202, pending_job.as_dict(), origin)
                         return
 
                     diagnose = re.fullmatch(r"/v1/sessions/([0-9a-f]{32})/diagnose", path)
@@ -690,14 +733,20 @@ class OfficialFormatLocalService:
             self.config_dir.mkdir(parents=True, exist_ok=True)
             if os.name != "nt":
                 self.config_dir.chmod(0o700)
-            self.server = ThreadingHTTPServer(("127.0.0.1", self.port), Handler)
-            # 测试和诊断允许传 0 由系统选择空闲端口；生产配置仍固定 18768。
+        except OSError as exc:
+            raise OfficialFormatError(
+                "LOCAL_FORMAT_CONFIG_WRITE_FAILED", "公文排版日志目录不可写",
+                "请检查当前业务数据目录权限后重新打开 PartyOps。",
+            ) from exc
+        try:
+            self.server = _ExclusiveLoopbackServer(("127.0.0.1", self.port), Handler)
+            # 传 0 时直接由系统原子分配，主机/个人模式保存并公告实际端点。
             self.port = int(self.server.server_address[1])
         except OSError as exc:
             raise OfficialFormatError(
                 "LOCAL_FORMAT_PORT_IN_USE",
                 "本机排版服务端口不可用",
-                f"回环端口 {self.port} 已被占用；请关闭旧版 PartyOps 后重新打开。",
+                f"无法独占回环端口 {self.port}；请在运行诊断中检查端口配置后重试。",
             ) from exc
         self.thread = threading.Thread(
             target=self.server.serve_forever,
@@ -716,7 +765,7 @@ class OfficialFormatLocalService:
         return self
 
     def create_session(self, origin: str) -> LocalFormatSession:
-        workspace = Path(tempfile.mkdtemp(prefix="partyops-official-format-"))
+        workspace = Path(tempfile.mkdtemp(prefix="pf-"))
         if os.name != "nt":
             workspace.chmod(0o700)
         token = secrets.token_urlsafe(32)
@@ -801,7 +850,8 @@ class OfficialFormatLocalService:
             item.state = "running"
             item.message = "正在准备只读副本"
             item.progress = 1
-            workspace = session.workspace / "jobs" / job.id / item.document_id
+            # API ID 保持完整；私有磁盘路径无需重复文档 UUID。序号仅在本作业内使用。
+            workspace = session.workspace / "j" / job.id / str(index)
 
             def progress(percent: int, message: str) -> None:
                 item.progress = percent
@@ -829,7 +879,7 @@ class OfficialFormatLocalService:
                         id=output_id,
                         document_id=item.document_id,
                         path=output.path,
-                        filename=output.filename,
+                        filename=_document_output_name(document, output.filename),
                         content_type=output.content_type,
                     )
                 succeeded += 1

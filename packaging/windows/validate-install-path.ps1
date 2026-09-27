@@ -10,7 +10,8 @@ $ErrorActionPreference = "Stop"
 function Stop-InstallPathValidation {
   param([string]$Code, [string]$Message, [int]$ExitCode)
   $diagnostic = "[$Code] $Message"
-  if (-not [string]::IsNullOrWhiteSpace($DiagnosticFile)) {
+  # 原版 Win7 的 PowerShell 2 使用 CLR 2，没有 IsNullOrWhiteSpace。
+  if (([string]$DiagnosticFile).Trim().Length -gt 0) {
     try {
       [IO.File]::WriteAllText(
         $DiagnosticFile,
@@ -22,7 +23,9 @@ function Stop-InstallPathValidation {
     }
   }
   [Console]::Error.WriteLine($diagnostic)
-  exit $ExitCode
+  # PowerShell 2 的带参数 -File 调用可能把 exit 的非零结果丢成 0。
+  # 此文件由独立校验进程执行，直接返回进程退出码，不能放行失败目录。
+  [Environment]::Exit($ExitCode)
 }
 
 function Assert-SecureDirectoryAcl {
@@ -157,7 +160,7 @@ catch {
   Stop-InstallPathValidation "INSTALL_DIR_CHECK_FAILED" "程序目录安全检查失败：$($_.Exception.Message)" 5
 }
 
-if (-not [string]::IsNullOrWhiteSpace($DiagnosticFile)) {
+if (([string]$DiagnosticFile).Trim().Length -gt 0) {
   try {
     [IO.File]::WriteAllText(
       $DiagnosticFile,

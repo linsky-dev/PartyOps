@@ -652,9 +652,9 @@ def search(
         )
     ).all()
     visible = [task for task in tasks if can_view_task(db, task, user)]
-    start = (page - 1) * page_size
+    page_start = (page - 1) * page_size
     return TaskListOut(
-        items=[task_to_out(db, task, include_detail=False) for task in visible[start : start + page_size]],
+        items=[task_to_out(db, task, include_detail=False) for task in visible[page_start : page_start + page_size]],
         total=len(visible),
         page=page,
         page_size=page_size,

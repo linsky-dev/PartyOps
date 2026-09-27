@@ -630,7 +630,7 @@ def test_launch_personal_cross_version_handoff_repairs_port_before_spawn(
     monkeypatch.setattr(
         setup_wizard,
         "load_host_environment",
-        lambda _path: {
+        lambda _path, **_kwargs: {
             "PARTYOPS_PORT": "18776",
             "PARTYOPS_DATA_DIR": str(data_dir),
         },
@@ -737,7 +737,7 @@ def test_launch_personal_never_overwrites_marker_before_new_process_is_healthy(
     monkeypatch.setattr(
         setup_wizard,
         "load_host_environment",
-        lambda _path: {
+        lambda _path, **_kwargs: {
             "PARTYOPS_PORT": "18775",
             "PARTYOPS_DATA_DIR": str(data_dir),
         },
@@ -796,7 +796,7 @@ def test_launch_personal_lock_owner_without_health_fails_before_spawn(
     monkeypatch.setattr(
         setup_wizard,
         "load_host_environment",
-        lambda _path: {
+        lambda _path, **_kwargs: {
             "PARTYOPS_PORT": "18775",
             "PARTYOPS_DATA_DIR": str(data_dir),
         },

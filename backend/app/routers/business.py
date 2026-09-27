@@ -10,6 +10,7 @@ from typing import Any, List
 from urllib.parse import quote
 
 from docx import Document
+from docx.document import Document as DocumentType
 from fastapi import APIRouter, Body, Depends, File, Header, Query, Request, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
@@ -1294,7 +1295,7 @@ def document_revisions(
     return [{"id": row.id, "revision_no": row.revision_no, "content": row.content, "change_note": row.change_note, "created_by": row.created_by, "created_at": row.created_at} for row in db.scalars(select(BusinessDocumentRevision).where(BusinessDocumentRevision.document_id == document_id).order_by(BusinessDocumentRevision.revision_no.desc())).all()]
 
 
-def _append_structured_content(document: Document, content: dict[str, Any]) -> None:
+def _append_structured_content(document: DocumentType, content: dict[str, Any]) -> None:
     blocks = content.get("blocks", []) if isinstance(content, dict) else []
     for block in blocks if isinstance(blocks, list) else []:
         if not isinstance(block, dict):

@@ -11,8 +11,31 @@ import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import TypedDict
 
 from .config import get_settings
+
+
+class HardwareProfile(TypedDict, total=False):
+    """硬件检测字段的实际类型；允许能力缺失时使用既有默认值。"""
+
+    platform: str
+    platform_version: str
+    architecture: str
+    cpu_name: str
+    cpu_cores: int
+    cpu_flags: list[str]
+    total_memory_mb: int
+    available_memory_mb: int
+    reserved_memory_mb: int
+    model_disk_free_mb: int
+    gpu_backends: list[str]
+    gpu_memory_mb: int | None
+    gpu_names: list[str]
+    runtime_backends: list[str]
+    partyops_rss_mb: int
+    detected_at: datetime
+    privacy_notice: str
 
 
 def _memory_windows() -> tuple[int, int]:
@@ -89,9 +112,10 @@ def _memory_bytes() -> tuple[int, int]:
     if system == "darwin":
         return _memory_macos()
     try:
-        page_size = os.sysconf("SC_PAGE_SIZE")
-        total = page_size * os.sysconf("SC_PHYS_PAGES")
-        available = page_size * os.sysconf("SC_AVPHYS_PAGES")
+        # Windows 类型库不声明 POSIX sysconf；Windows 分支已在上方返回。
+        page_size = os.sysconf("SC_PAGE_SIZE")  # type: ignore[attr-defined]
+        total = page_size * os.sysconf("SC_PHYS_PAGES")  # type: ignore[attr-defined]
+        available = page_size * os.sysconf("SC_AVPHYS_PAGES")  # type: ignore[attr-defined]
         return int(total), int(available)
     except (AttributeError, OSError, ValueError):
         return 0, 0
@@ -186,7 +210,7 @@ def _gpu_profile() -> tuple[list[str], int | None, list[str]]:
     return backends, memory_mb, names
 
 
-def collect_hardware_profile() -> dict[str, object]:
+def collect_hardware_profile() -> HardwareProfile:
     total, available = _memory_bytes()
     total_mb = total // 1024**2
     available_mb = available // 1024**2

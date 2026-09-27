@@ -20,10 +20,12 @@ BEIJING = timezone(timedelta(hours=8))
 PACKAGE_INCLUDE_ROOTS = (
     "backend/app",
     "backend/tests",
+    "backend/legacy",
     "frontend/src",
     "frontend/tests",
     "packaging",
     "scripts",
+    "vendor/document-formatter-source",
 )
 PACKAGE_INCLUDE_FILES = (
     "backend/pyproject.toml",
@@ -33,6 +35,7 @@ PACKAGE_INCLUDE_FILES = (
     "frontend/package.json",
     "frontend/pnpm-lock.yaml",
     "frontend/vite.config.ts",
+    "vendor/windows/dotnet-framework-4.8/SOURCE.json",
 )
 WEBSITE_INCLUDE_ROOTS = (
     "website/src",
@@ -54,6 +57,8 @@ EXCLUDED_PARTS = {
     "htmlcov",
     "dist",
     "artifacts",
+    "bin",
+    "obj",
 }
 TEXT_SUFFIXES = {
     ".c",
@@ -181,7 +186,11 @@ def record(root: Path) -> int:
         "suite": "scripts/test.ps1",
         "scope": [
             "document-formatter-source-release-x64-x86-build-and-regression",
+            "document-formatter-source-host-x64-x86-user-golden-parity",
+            "document-formatter-source-host-x64-x86-six-feature-12-scenario-real-wps-e2e",
+            "document-formatter-cross-platform-package-contract-manifest-hash-and-selftest-tests",
             "backend-full-pytest-and-coverage",
+            "backend-mypy-no-incremental",
             "frontend-typecheck-tests-coverage-build",
             "website-tests-coverage-build",
             "dependency-audits-secret-scan-static-analysis",

@@ -1,8 +1,8 @@
 """PartyOps 内嵌公文工具的跨平台功能注册表与本地执行器。
 
 本模块以 ``PartyOps.DocumentFormatter.Source`` 中的 6 个功能、25 条产品能力
-契约为兼容边界。所有处理只发生在本机临时目录，源文件始终只读；需要旧格式
-转换或分页渲染时，只调用安装包随附的无窗口 LibreOffice 运行时。
+契约为兼容边界。所有处理只发生在本机临时目录，源文件始终只读；正式路径
+的六类功能统一调用原源码宿主，禁止用简化 OOXML 实现产生近似结果。
 """
 
 from __future__ import annotations
@@ -18,14 +18,16 @@ import tempfile
 import zipfile
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Callable, Iterable
+from typing import Any, Callable, Iterable, cast
 
-import fitz
+import fitz  # type: ignore[import-untyped]  # 固定 PyMuPDF 运行时未发布类型标注。
 from docx import Document
+from docx.document import Document as DocumentType
 from docx.enum.section import WD_SECTION
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
+from docx.oxml.text.paragraph import CT_P
 from docx.shared import Mm, Pt, RGBColor
 from docx.text.paragraph import Paragraph
 from lxml import etree
@@ -34,6 +36,7 @@ from PIL import Image
 from .official_format import (
     FormatReport,
     OfficialFormatError,
+    _font_issues,
     _office_candidates,
     _safe_stem,
     diagnose_docx,
@@ -91,7 +94,7 @@ class FeatureExecutionResult:
 
 PRODUCT_CAPABILITIES: tuple[CapabilityDefinition, ...] = (
     CapabilityDefinition("format", "format.element-recognition", "识别主标题、副标题、层级标题、正文、附件、落款和日期。"),
-    CapabilityDefinition("format", "format.execution-scopes", "支持全文、普通选区和汇编文章范围排版。"),
+    CapabilityDefinition("format", "format.character-indent", "使用 Word/WPS 字符单位执行首行缩进，保持公文版式语义。"),
     CapabilityDefinition("format", "format.templates", "支持系统默认参数及最多九套用户排版模板切换。"),
     CapabilityDefinition("format", "format.page-layout", "设置页边距、文档网格和页码。"),
     CapabilityDefinition("format", "format.images-and-tables", "按模板参数规划并执行图片和表格排版。"),
@@ -137,9 +140,6 @@ FEATURE_DEFINITIONS: tuple[FeatureDefinition, ...] = (
         COMMON_OPTIONS
         + (
             {"id": "template", "label": "排版模板", "type": "text", "default": "GB/T 9704-2012"},
-            {"id": "scope", "label": "执行范围", "type": "select", "default": "full", "choices": ["full", "selection", "compilation"]},
-            {"id": "start_paragraph", "label": "起始段落", "type": "number", "default": 1, "min": 1, "max": 99999},
-            {"id": "end_paragraph", "label": "结束段落", "type": "number", "default": 99999, "min": 1, "max": 99999},
         ),
     ),
     FeatureDefinition(
@@ -219,12 +219,16 @@ SUPPORTED_INPUT_EXTENSIONS = frozenset(
 def capabilities_payload() -> dict[str, Any]:
     """返回稳定的 6 功能、25 能力契约。"""
 
+    from .official_format_host import resolve_source_host
+
+    source_host_ready = resolve_source_host() is not None
     return {
         "schema_version": 1,
         "features": [item.as_dict() for item in FEATURE_DEFINITIONS],
         "capability_count": len(PRODUCT_CAPABILITIES),
-        "engine": "partyops-bundled",
-        "external_office_required": False,
+        "engine": "partyops-source-host",
+        "external_office_required": True,
+        "source_host_ready": source_host_ready,
     }
 
 
@@ -312,7 +316,7 @@ def _run_libreoffice_conversion(source: Path, workspace: Path, target_extension:
     return expected
 
 
-def _iter_text_paragraphs(document: Document) -> Iterable[Any]:
+def _iter_text_paragraphs(document: DocumentType) -> Iterable[Any]:
     yield from document.paragraphs
     for table in document.tables:
         for row in table.rows:
@@ -359,7 +363,7 @@ def _compile_replace_pattern(rule: dict[str, Any]) -> re.Pattern[str]:
     return re.compile(re.escape(search), flags)
 
 
-def _apply_format_rule(document: Document, rule: dict[str, Any]) -> int:
+def _apply_format_rule(document: DocumentType, rule: dict[str, Any]) -> int:
     criteria = str(rule.get("find", "")).strip()
     font_name = str(rule.get("font_name", "")).strip()
     font_size = rule.get("font_size")
@@ -408,7 +412,7 @@ def _execute_replace(source: Path, workspace: Path, options: dict[str, Any], pro
             for paragraph in _iter_text_paragraphs(document):
                 total_changes += _replace_paragraph_text(paragraph, pattern, replacement)
         _progress(progress, 15 + int((index + 1) * 70 / len(rules)), f"已执行规则 {index + 1}/{len(rules)}")
-    document.save(output)
+    document.save(str(output))
     _validate_docx(output)
     return FeatureExecutionResult(
         (FeatureOutput(output, output.name, "application/vnd.openxmlformats-officedocument.wordprocessingml.document"),),
@@ -420,7 +424,7 @@ def _execute_replace(source: Path, workspace: Path, options: dict[str, Any], pro
 def _insert_paragraph_before(paragraph: Any, text: str = "") -> Any:
     new_element = OxmlElement("w:p")
     paragraph._p.addprevious(new_element)
-    inserted = Paragraph(new_element, paragraph._parent)
+    inserted = Paragraph(cast(CT_P, new_element), paragraph._parent)
     if text:
         inserted.add_run(text)
     return inserted
@@ -487,7 +491,7 @@ def _execute_redheader(source: Path, workspace: Path, options: dict[str, Any], p
         _red_line(tail)
         _set_run_font(tail.runs[0], "仿宋_GB2312", 14)
     _progress(progress, 78, "红头、红线与版记已生成")
-    document.save(output)
+    document.save(str(output))
     _validate_docx(output)
     report = diagnose_docx(output, changed_count=5 + len([item for item in top_values if item]))
     return FeatureExecutionResult(
@@ -626,7 +630,7 @@ def _pdf_to_docx(source: Path, output: Path, options: dict[str, Any], progress: 
     if document.paragraphs:
         empty = document.paragraphs[0]
         if not empty.text:
-            empty._element.getparent().remove(empty._element)
+            cast("etree._Element", empty._element.getparent()).remove(empty._element)
     with fitz.open(source) as pdf:
         for page_index, page in enumerate(pdf):
             _check_cancelled(cancelled)
@@ -663,7 +667,7 @@ def _pdf_to_docx(source: Path, output: Path, options: dict[str, Any], progress: 
                     except (AttributeError, ValueError, RuntimeError):
                         pass
             _progress(progress, 12 + int((page_index + 1) * 76 / max(1, pdf.page_count)), f"正在还原第 {page_index + 1}/{pdf.page_count} 页")
-    document.save(output)
+    document.save(str(output))
     _validate_docx(output)
 
 
@@ -698,7 +702,10 @@ def _execute_convert(source: Path, workspace: Path, options: dict[str, Any], pro
             prepared, _ = _prepare_word_source(source, workspace)
             text = _extract_docx_text(prepared)
         output = _unique_output(workspace, source.stem, "-转换版.txt", options)
-        output.write_text(text, encoding="utf-8", newline="\n")
+        # Windows 7 安装包固定使用 Python 3.8；Path.write_text 在该版本尚未
+        # 接受 newline，因此使用 Path.open 保证 TXT 输出仍统一为 LF。
+        with output.open("w", encoding="utf-8", newline="\n") as stream:
+            stream.write(text)
         return FeatureExecutionResult((FeatureOutput(output, output.name, "text/plain; charset=utf-8"),), "TXT 转换完成。")
     pdf_path = source if source.suffix.lower() == ".pdf" else _run_libreoffice_conversion(_prepare_word_source(source, workspace)[0], workspace, "pdf")
     if target_format == "pdf":
@@ -710,26 +717,15 @@ def _execute_convert(source: Path, workspace: Path, options: dict[str, Any], pro
 
 
 def _execute_format(source: Path, workspace: Path, options: dict[str, Any], progress: ProgressCallback, cancelled: CancelCallback) -> FeatureExecutionResult:
+    # 仅供单元测试覆盖底层 OOXML 辅助函数；正式任务在 execute_feature 中已被
+    # 强制路由到原源码宿主，不得把此路径作为发布降级方案。
     prepared, _ = _prepare_word_source(source, workspace)
     _check_cancelled(cancelled)
     output = _unique_output(workspace, source.stem, "-公文规范版.docx", options)
     _progress(progress, 30, "正在识别公文要素")
-    scope = str(options.get("scope", "full"))
-    if scope not in {"full", "selection", "compilation"}:
-        raise OfficialFormatError("FORMAT_SCOPE_INVALID", "排版范围无效", "请选择全文、段落范围或汇编文章。")
-    paragraph_range = None
-    if scope != "full":
-        try:
-            start = int(options.get("start_paragraph", 1))
-            end = int(options.get("end_paragraph", 99999))
-        except (TypeError, ValueError) as exc:
-            raise OfficialFormatError("FORMAT_SCOPE_INVALID", "排版范围无效", "起止段落必须为整数。") from exc
-        paragraph_range = (start, end)
     report = format_docx(
         prepared,
         output,
-        paragraph_range=paragraph_range,
-        apply_document_layout=scope != "selection",
     )
     _check_cancelled(cancelled)
     _progress(progress, 88, "正在复核版面与输出结构")
@@ -748,6 +744,67 @@ EXECUTORS = {
     "convert": _execute_convert,
     "pdf-to-word": _execute_pdf_to_word,
 }
+
+
+def _execute_source_feature(
+    feature_id: str,
+    source: Path,
+    workspace: Path,
+    options: dict[str, Any],
+    progress: ProgressCallback,
+    cancelled: CancelCallback,
+) -> FeatureExecutionResult:
+    """用同一原源码宿主执行六类功能，宿主缺失时保持失败关闭。"""
+
+    from .official_format_host import _content_type, run_source_host
+
+    _check_cancelled(cancelled)
+    _progress(progress, 8, "正在启动原排版源码宿主")
+    target_format = str(options.get("target_format", "")).strip().lower()
+    if feature_id == "convert" and target_format in {"png", "jpg"}:
+        # WPS Linux/macOS 的原生 RPC 不提供 Windows 专属的
+        # Range.EnhMetaFileBits。仍由原源码/WPS 先完成分页和 PDF 输出，再由
+        # PartyOps 随包 PDF 运行时只做像素栅格化；不重新解释、不改写公文。
+        pdf_options = dict(options)
+        pdf_options["target_format"] = "pdf"
+        pdf_outputs = run_source_host(
+            feature_id,
+            source,
+            workspace / "source-pdf",
+            pdf_options,
+            progress=progress,
+            cancelled=cancelled,
+        )
+        pdf_files = [item.path for item in pdf_outputs if item.path.suffix.lower() == ".pdf"]
+        if len(pdf_files) != 1:
+            raise OfficialFormatError(
+                "SOURCE_FORMATTER_PDF_MISSING",
+                "原排版引擎没有生成页面底稿",
+                "WPS 未生成唯一 PDF 页面底稿，已停止图片转换。",
+            )
+        outputs = _render_pdf_images(
+            pdf_files[0], workspace, source.stem, options, progress, cancelled
+        )
+        _progress(progress, 96, "原源码页面底稿已完成，正在校验图片")
+        return FeatureExecutionResult(outputs, "图片转换完成。")
+    hosted_outputs = run_source_host(
+        feature_id,
+        source,
+        workspace,
+        options,
+        progress=progress,
+        cancelled=cancelled,
+    )
+    outputs = tuple(
+        FeatureOutput(item.path, item.path.name, _content_type(item.path))
+        for item in hosted_outputs
+    )
+    report = next(
+        (diagnose_docx(item.path) for item in outputs if item.path.suffix.lower() == ".docx"),
+        None,
+    )
+    _progress(progress, 96, "原排版源码已完成，正在校验输出")
+    return FeatureExecutionResult(outputs, hosted_outputs[0].message, report)
 
 
 def execute_feature(
@@ -770,11 +827,30 @@ def execute_feature(
             "文件类型与功能不匹配",
             f"{definition.display_name} 支持：{', '.join(definition.accepts)}。",
         )
+    if feature_id in {"format", "redheader"}:
+        # 每次点击重新读取本机字体；用户安装后直接重试，无需重启或导入字体包。
+        font_issues = _font_issues()
+        if font_issues:
+            issue = font_issues[0]
+            detail = issue.detail.split("。", 1)[0]
+            raise OfficialFormatError(issue.code, issue.title,
+                                      detail + "。请安装所需字体后再次点击排版，系统会自动重新检测。")
     workspace.mkdir(parents=True, exist_ok=True)
     callback = progress or (lambda _percent, _message: None)
     cancel_callback = cancelled or (lambda: False)
     _progress(callback, 2, "正在准备只读源文件")
-    result = EXECUTORS[feature_id](source, workspace, dict(options or {}), callback, cancel_callback)
+    request_options = dict(options or {})
+    if os.environ.get("PARTYOPS_FORMATTER_TEST_LOCAL_ENGINE") == "1":
+        result = EXECUTORS[feature_id](source, workspace, request_options, callback, cancel_callback)
+    else:
+        result = _execute_source_feature(
+            feature_id,
+            source,
+            workspace,
+            request_options,
+            callback,
+            cancel_callback,
+        )
     _progress(callback, 100, result.message)
     return result
 

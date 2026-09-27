@@ -531,7 +531,12 @@ def test_native_linux_packages_embed_upgrade_and_selftest_lifecycle() -> None:
     )
     rpm_preun = build.split("%preun", 1)[1].split("%postun", 1)[0]
     assert 'if [ "\\$1" -eq 0 ]; then' in rpm_preun
-    assert "systemctl stop partyops.service partyops-updater.service" in rpm_preun
+    assert "export PARTYOPS_PACKAGE_REMOVE=1" in rpm_preun
+    assert "$RPM_PRE_SCRIPT" in rpm_preun
+    deb_prerm = build.split('>"$PKG/DEBIAN/postinst"', 1)[1].split('cat >"$PKG/DEBIAN/postrm"', 1)[0]
+    assert 'case "${1:-}" in remove|deconfigure)' in deb_prerm
+    assert "export PARTYOPS_PACKAGE_REMOVE=1" in deb_prerm
+    assert 'cat "$ROOT/packaging/linux/pre-install-stop.sh"' in deb_prerm
 
     one_click = (ROOT / "packaging" / "uos" / "one-click-install.sh").read_text(
         encoding="utf-8"
@@ -680,7 +685,9 @@ def test_linux_freeze_rejects_python_without_shared_runtime() -> None:
 
     assert 'sysconfig.get_config_var("Py_ENABLE_SHARED")' in portable
     assert 'sysconfig.get_config_var("LDLIBRARY")' in portable
-    assert 'candidate = Path(sys.base_prefix) / "lib" / library' in portable
+    assert 'sysconfig.get_config_var("LIBDIR")' in portable
+    assert 'candidates.append(Path(sys.base_prefix) / "lib" / library)' in portable
+    assert 'shared == 1 and library and any(candidate.is_file() for candidate in candidates)' in portable
     assert "发布冻结要求带共享 libpython 的 Python 3.11" in portable
 
 
@@ -963,6 +970,11 @@ def test_win7_uses_verified_sdk_ucrt_instead_of_build_host_system_dlls() -> None
     assert "ucrt-source.json" in build
     assert 'for directory in (root, root / "_internal")' in validator
     assert "is_verified_ucrt_forwarder" in validator
+    assert "_is_managed_anycpu" in validator
+    assert "COMIMAGE_FLAGS_32BITREQUIRED" in validator
+    assert "verified_universal_hashes" in validator
+    assert "ndp48-x86-x64-allos-enu.exe" in validator
+    assert "expected_dotnet_hash" in validator
 
 
 def test_win7_pins_vc142_instead_of_collecting_build_host_runtime() -> None:
@@ -1051,6 +1063,14 @@ def test_linux_native_install_moves_slow_runtime_health_check_out_of_package_tra
     assert "ExecStart=/opt/partyops/post-install-verify.sh" in service
     assert "TimeoutStartSec=240" in service
     assert "partyops-install-verify.service" in build
+
+
+def test_linux_install_verification_uses_explicit_beijing_time() -> None:
+    """安装状态的两个对外时间不得继承机器时区或输出无偏移日期。"""
+    verifier = (ROOT / "packaging" / "linux" / "post-install-verify.sh").read_text(encoding="utf-8")
+    expression = "$(TZ=Asia/Shanghai date +%Y-%m-%dT%H:%M:%S%:z)"
+    assert f'STARTED_AT="{expression}"' in verifier
+    assert f'FINISHED_AT="{expression}"' in verifier
 
 
 def test_linux_bundle_only_includes_current_user_documents() -> None:
@@ -1222,16 +1242,20 @@ def test_linux_native_packages_preserve_frozen_runtime_and_verify_identity() -> 
 
 
 def test_portable_builder_uses_an_executable_allowlist() -> None:
-    """共享库和静态资源不得以可执行权限进入便携或原生安装包。"""
+    """目录、共享库和静态资源不得继承 DrvFS 的宽松权限。"""
 
     script = (ROOT / "packaging" / "uos" / "build-portable.sh").read_text(
         encoding="utf-8"
     )
 
-    assert 'find "$RUNTIME" -type f -exec chmod 0644 {} +' in script
+    directory_normalization = 'find "$RUNTIME" -type d -exec chmod 0755 {} +'
+    file_normalization = 'find "$RUNTIME" -type f -exec chmod 0644 {} +'
+    assert directory_normalization in script
+    assert file_normalization in script
     assert 'find "$RUNTIME" -type f -perm /111 -print0' in script
     assert "共享库被错误标记为可执行文件" in script
-    assert script.index('find "$RUNTIME" -type f -exec chmod 0644') < script.index(
+    assert script.index(directory_normalization) < script.index(file_normalization)
+    assert script.index(file_normalization) < script.index(
         'chmod 0755 "$RUNTIME/partyops"'
     )
 
@@ -1248,7 +1272,7 @@ def test_linux_services_cap_restart_storms() -> None:
 
 
 def test_linux_ocr_uses_locked_glibc217_runtime_not_build_host() -> None:
-    """Linux 制品必须封入固定 OCR，不能复用构建机的过时系统版本。"""
+    """现有 full 制品仍封入固定 5.5.3 OCR，不复用构建机系统版本。"""
 
     portable = (ROOT / "packaging" / "uos" / "build-portable.sh").read_text(
         encoding="utf-8"
@@ -1265,7 +1289,8 @@ def test_linux_ocr_uses_locked_glibc217_runtime_not_build_host() -> None:
 
     assert 'OCR_ARCHIVE="$OCR_RUNTIME/tesseract-runtime.tar.gz"' in portable
     assert "validate-portable-tar.py" in portable
-    assert "--expected-root tesseract-5.5.3" in portable
+    assert "OCR_ARCHIVE_ROOT=tesseract-5.5.3" in portable
+    assert '--expected-root "$OCR_ARCHIVE_ROOT"' in portable
     assert "command -v tesseract" not in portable
     assert "/usr/share/tesseract" not in portable
     assert "^tesseract 5\\.5\\.3" in portable
@@ -1487,3 +1512,80 @@ def test_windows_build_requires_audited_architecture_matched_office_runtime() ->
     assert "-OfficeRuntime $OfficeRuntime" in legacy
     assert "OfficeRuntimeMode" not in build
     assert "OfficeRuntimeMode" not in legacy
+
+
+def test_windows_packages_embed_and_transactionally_install_dotnet48() -> None:
+    """原源码宿主依赖必须随包闭环，不能只在构建机已有 .NET 时通过。"""
+
+    helper = (ROOT / "packaging" / "windows" / "prepare-dotnet48-runtime.ps1").read_text(
+        encoding="utf-8"
+    )
+    installer = (ROOT / "packaging" / "windows" / "PartyOps.iss").read_text(
+        encoding="utf-8"
+    )
+    for script_name in ("build-windows.ps1", "package-windows.ps1"):
+        script = (ROOT / "packaging" / "windows" / script_name).read_text(
+            encoding="utf-8"
+        )
+        assert "prepare-dotnet48-runtime.ps1" in script
+        assert "Add-VerifiedPartyOpsDotNet48Prerequisite" in script
+        assert script.index("generate-release-manifest.py") < script.index(
+            "Add-VerifiedPartyOpsDotNet48Prerequisite"
+        )
+
+    assert "0A3A390C47E639D0F7FC65B21195FEE6B7F65B066F80F70C60FAB191D14B7E40" in helper
+    assert "Get-AuthenticodeSignature" in helper
+    assert "DOTNET48_SIGNATURE_INVALID" in helper
+    assert "Invoke-WebRequest" in helper
+    assert "Net.SecurityProtocolType]::Tls12" in helper
+    assert "Start-Sleep -Seconds 20" in helper
+    assert "Start-Sleep -Seconds 2" in helper
+    assert 'Excludes: "PartyOpsUpdater.exe,PartyOpsUpdaterService.exe,prerequisites\\*"' in installer
+    assert 'Flags: dontcopy' in installer
+    assert "DotNet48ReleaseMinimum = 528040" in installer
+    assert "function EnsureDotNet48" in installer
+    assert "ExtractTemporaryFile(DotNet48InstallerName)" in installer
+    assert "'/q /norestart'" in installer
+    assert "ResultCode <> 1641" in installer and "ResultCode <> 3010" in installer
+    assert "NeedsRestart := True" in installer
+    assert "WizardSilentAndCanLaunch" in installer
+
+
+def test_windows_formatter_release_host_has_no_debug_or_build_path_dependency() -> None:
+    """直接移植的程序集可以包含原规则，但不得依赖 PDB 或开发机源码路径。"""
+
+    script = (ROOT / "scripts" / "build-document-formatter-host.ps1").read_text(
+        encoding="utf-8"
+    )
+    assert "/p:DebugSymbols=false" in script
+    assert "/p:DebugType=None" in script
+    assert "FORMATTER_HOST_BUILD_PATH_LEAK" in script
+    assert "FORMATTER_HOST_PDB_LEAK" in script
+    assert "$repoRoot, $DocumentFormatterSource" in script
+
+
+def test_linux_packages_require_real_wps_source_formatter_runtime() -> None:
+    """国产系统制品不得在缺少本机 WPS 原源码宿主时继续封包。"""
+
+    portable = (ROOT / "packaging" / "uos" / "build-portable.sh").read_text(
+        encoding="utf-8"
+    )
+    native = (ROOT / "packaging" / "linux" / "build-native.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert "PARTYOPS_LINUX_FORMATTER_RUNTIME" in portable
+    assert "FORMATTER_RUNTIME_MISSING" in portable
+    assert "validate-source-formatter-runtime.py" in portable
+    assert "verify-document-formatter-parity.py" in portable
+    assert "verify-document-formatter-features-e2e.py" in portable
+    assert "probe-wps-native-bridge.py" not in portable
+    assert "--bridge-evidence" not in portable
+    assert "verify-formatter-runtime-evidence.py" in portable
+    assert "runtime-evidence.json" in portable
+    assert "word-vtable-map.json" in portable
+    assert "LICENSE-WPS-SDK.txt" in portable
+    assert "LICENSE-MONO-RUNTIME.txt" in portable
+    assert "formatter-host/partyops-document-formatter-host" in portable
+    assert "formatter-host/partyops-document-formatter-host" in native
+    assert "validate-source-formatter-runtime.py" in native

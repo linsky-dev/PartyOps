@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import stat
 import subprocess
 import sys
 import time
@@ -16,6 +17,7 @@ from pathlib import Path
 from app import __version__
 from app.setup_wizard import (
     HostStartupError,
+    _personal_preflight_io_error,
     _preflight_windows_runtime_dependencies,
     _start_windows_host_service,
     clear_windows_client_autostart,
@@ -460,6 +462,17 @@ def prepare_client_page(runtime: Path, config: Path, local: Path) -> bool:
     return open_browser_or_explain(versioned_browser_url(url))
 
 
+def _configuration_read_failed(path: Path, local: Path, error: OSError, *, background: bool) -> int:
+    """已有配置拒读时保留原文件；后台也必须返回失败并保存稳定诊断。"""
+    failure = _personal_preflight_io_error("已保存的模式配置", path, error)
+    message = f"{failure}\n原配置保持不变，未启动首次配置向导。\n故障详情：{failure.detail}"
+    log_path = local / "launcher.log"
+    _append_launcher_diagnostic(log_path, message)
+    if not background:
+        show_launch_failure(message + f"\n诊断日志：{log_path}")
+    return 1
+
+
 def main() -> int:
     background = "--background" in sys.argv[1:]
     runtime = Path(sys.executable).resolve().parent
@@ -495,13 +508,15 @@ def main() -> int:
             launch_wizard_and_wait(runtime, local, [])
         return 1
     mode_path = local / "mode.json"
-    if not mode_path.is_file():
+    try:
+        mode = json.loads(mode_path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
         if not background:
             return 0 if launch_wizard_and_wait(runtime, local, []) else 1
         return 0
-    try:
-        mode = json.loads(mode_path.read_text(encoding="utf-8"))
-    except (OSError, ValueError, json.JSONDecodeError):
+    except OSError as exc:
+        return _configuration_read_failed(mode_path, local, exc, background=background)
+    except (ValueError, json.JSONDecodeError):
         if not background:
             return 0 if launch_wizard_and_wait(runtime, local, []) else 1
         return 0
@@ -525,7 +540,13 @@ def main() -> int:
         return 0 if prepare_client_page(runtime, config, local) else 1
     if mode.get("mode") == "personal":
         config = Path(str(mode.get("config_path") or local / "personal.env"))
-        if not config.is_file():
+        try:
+            config_exists = stat.S_ISREG(config.stat().st_mode)
+        except FileNotFoundError:
+            config_exists = False
+        except OSError as exc:
+            return _configuration_read_failed(config, local, exc, background=background)
+        if not config_exists:
             if not background:
                 return (
                     0
@@ -537,7 +558,10 @@ def main() -> int:
             return 1
         personal_log = local / "launcher.log"
         try:
-            personal_values = load_host_environment(config)
+            try:
+                personal_values = load_host_environment(config, inherit_environment=False)
+            except OSError as exc:
+                return _configuration_read_failed(config, local, exc, background=background)
             personal_log = (
                 Path(personal_values["PARTYOPS_DATA_DIR"]) / "launcher.log"
             )

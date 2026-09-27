@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="Current" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <Configuration Condition="'$(Configuration)' == ''">Debug</Configuration>
+    <Platform Condition="'$(Platform)' == ''">AnyCPU</Platform>
+    <ProjectGuid>{FBBC1FD1-A0A0-4421-AB94-D4F179037048}</ProjectGuid>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>SignatureLayoutHostSmoke</AssemblyName>
+    <RootNamespace>SignatureLayoutHostSmoke</RootNamespace>
+    <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
+    <LangVersion>12.0</LangVersion>
+    <Nullable>annotations</Nullable>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <Deterministic>true</Deterministic>
+    <OutputPath Condition="'$(Platform)' == 'AnyCPU' Or '$(Platform)' == 'Any CPU'">bin\$(Configuration)\</OutputPath>
+    <OutputPath Condition="'$(Platform)' == 'x86' Or '$(Platform)' == 'x64'">bin\$(Platform)\$(Configuration)\</OutputPath>
+    <IntermediateOutputPath Condition="'$(Platform)' == 'AnyCPU' Or '$(Platform)' == 'Any CPU'">obj\$(Configuration)\</IntermediateOutputPath>
+    <IntermediateOutputPath Condition="'$(Platform)' == 'x86' Or '$(Platform)' == 'x64'">obj\$(Platform)\$(Configuration)\</IntermediateOutputPath>
+    <PlatformTarget Condition="'$(Platform)' == 'AnyCPU' Or '$(Platform)' == 'Any CPU'">AnyCPU</PlatformTarget>
+    <PlatformTarget Condition="'$(Platform)' == 'x86'">x86</PlatformTarget>
+    <PlatformTarget Condition="'$(Platform)' == 'x64'">x64</PlatformTarget>
+    <Optimize Condition="'$(Configuration)' == 'Release'">true</Optimize>
+    <DebugSymbols Condition="'$(Configuration)' == 'Debug'">true</DebugSymbols>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="System" />
+    <Reference Include="System.Core" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\PartyOps.DocumentFormatter.AddIn\PartyOps.DocumentFormatter.AddIn.csproj">
+      <Project>{8A4E1C33-1D9F-4EA2-9CF1-2673D0A2A591}</Project>
+      <Name>PartyOps.DocumentFormatter.AddIn</Name>
+    </ProjectReference>
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="Program.cs" />
+  </ItemGroup>
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+</Project>

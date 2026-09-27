@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import http.client
 import json
+import os
 import re
 import time
 from datetime import UTC, datetime, timedelta
@@ -224,7 +225,8 @@ def test_local_service_exposes_six_features_batch_job_progress_and_result(tmp_pa
         assert status == 200
         assert len(catalog["features"]) == 6
         assert catalog["capability_count"] == 25
-        assert catalog["external_office_required"] is False
+        assert catalog["external_office_required"] is (os.name == "nt")
+        assert isinstance(catalog["source_host_ready"], bool)
 
         status, _, payload = _request(service, "GET", "/v1/self-test")
         self_test = _json(payload)

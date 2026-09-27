@@ -6,6 +6,7 @@ param(
 $ErrorActionPreference = "Stop"
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 . (Join-Path $PSScriptRoot "prepare-ocr-runtime.ps1")
+. (Join-Path $PSScriptRoot "prepare-dotnet48-runtime.ps1")
 $releaseVersion = "1.4.5-rc.6"
 $releaseTag = "v1.4.5-rc.6"
 $runtimeRoot = Join-Path $repoRoot "artifacts\windows-runtime"
@@ -58,12 +59,27 @@ if (-not $Python) {
 if (-not (Test-Path -LiteralPath $Python)) {
   throw "未找到用于生成发布清单的 Python：$Python"
 }
+& $Python (Join-Path $repoRoot "scripts\verify-full-function-gate.py") verify --root $repoRoot --scope package
+if ($LASTEXITCODE -ne 0) {
+  throw "全功能测试门禁失败，拒绝组装旧式 Windows 运行时。"
+}
 
 if ([System.IO.Path]::GetFullPath($bundleRoot) -ne $expectedBundleRoot) {
   throw "拒绝清理未验证的 Windows 组装目录：$bundleRoot"
 }
 if (-not (Test-Path -LiteralPath (Join-Path $runtimeRoot "PartyOps\PartyOps.exe"))) {
   throw "缺少已冻结的 PartyOps 主程序，请先执行 build-windows.ps1。"
+}
+$prebuiltFormatterRoot = Join-Path $runtimeRoot "PartyOps\formatter-host"
+foreach ($requiredFormatterFile in @(
+    "PartyOps.DocumentFormatter.Host.exe",
+    "PartyOps.DocumentFormatter.AddIn.dll",
+    "source-host.json",
+    "runtime-evidence.json"
+  )) {
+  if (-not (Test-Path -LiteralPath (Join-Path $prebuiltFormatterRoot $requiredFormatterFile))) {
+    throw "旧式组装入口缺少已绑定真实 WPS 金样证据的排版宿主：$requiredFormatterFile"
+  }
 }
 if (-not (Test-Path -LiteralPath $sqliteDll)) {
   throw "缺少经校验的 SQLite 运行时：$sqliteDll"
@@ -148,6 +164,10 @@ if ($LASTEXITCODE -ne 0) { throw "读取源码提交失败" }
   --architecture amd64 `
   --runtime-profile full
 if ($LASTEXITCODE -ne 0) { throw "嵌入式发布清单生成失败" }
+
+Add-VerifiedPartyOpsDotNet48Prerequisite `
+  -RepoRoot $repoRoot `
+  -Destination (Join-Path $bundleRoot "prerequisites")
 
 $expectedSqliteHash = $expectedSqliteSha256
 $bundledSqliteHash = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $internalRoot "sqlite3.dll")).Hash

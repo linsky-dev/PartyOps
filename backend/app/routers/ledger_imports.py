@@ -455,7 +455,8 @@ def _validate_mapped_value(field_type: str, value: Any, label: str) -> Any:
     if formula_like(value):
         raise ValueError(f"{label}包含公式样式内容")
     if field_type == "date":
-        return parse_date(value, label).isoformat()
+        parsed = parse_date(value, label)
+        return parsed.isoformat() if parsed is not None else None
     if field_type == "number":
         number = float(value)
         return int(number) if number.is_integer() else number
@@ -1093,14 +1094,14 @@ def _cleanup_undone_fields(
     ).all()
     schema: list[dict[str, Any]] = []
     changed = False
-    for definition in category.field_schema or []:
-        key = str(definition.get("key") or "")
+    for field_definition in category.field_schema or []:
+        key = str(field_definition.get("key") or "")
         if key not in keys:
-            schema.append(dict(definition))
+            schema.append(dict(field_definition))
             continue
         changed = True
         if any(key in (item.custom_fields or {}) for item in other_records):
-            schema.append({**definition, "active": False})
+            schema.append({**field_definition, "active": False})
     if changed:
         category.field_schema = schema
         category.version += 1
@@ -1121,18 +1122,26 @@ def undo_import(
     if job.status != "committed":
         raise ProblemException(409, "LEDGER_NOT_COMMITTED", "导入尚未提交", "只有已提交的导入批次可以撤销。")
     _ensure_target_permission(db, request, user, job.target_type, job.target_id)
-    changes = db.scalars(select(LedgerImportChange).where(LedgerImportChange.job_id == job.id, LedgerImportChange.status == "active").order_by(LedgerImportChange.created_at.desc())).all()
+    changes = list(db.scalars(select(LedgerImportChange).where(LedgerImportChange.job_id == job.id, LedgerImportChange.status == "active").order_by(LedgerImportChange.created_at.desc())).all())
     conflicts: list[dict[str, str]] = []
     for change in changes:
+        progress_entity: PartyDevelopmentProgressEvent | None = None
         if change.entity_type == "party_development_case":
-            entity = db.get(PartyDevelopmentCase, change.entity_id)
+            case_entity = db.get(PartyDevelopmentCase, change.entity_id)
+            version = case_entity.version if case_entity else None
         elif change.entity_type == "archive_record":
-            entity = db.get(ArchiveRecord, change.entity_id)
+            archive_entity = db.get(ArchiveRecord, change.entity_id)
+            version = archive_entity.version if archive_entity else None
         else:
-            entity = db.get(PartyDevelopmentProgressEvent, change.entity_id)
-        if not entity or entity.version != change.after_version:
+            progress_entity = db.get(PartyDevelopmentProgressEvent, change.entity_id)
+            version = progress_entity.version if progress_entity else None
+        if version is None or version != change.after_version:
             conflicts.append({"entity_type": change.entity_type, "entity_id": change.entity_id, "reason": "记录已被后续修改或不存在"})
-        elif change.entity_type == "party_development_progress_event" and entity.status != "confirmed":
+        elif (
+            change.entity_type == "party_development_progress_event"
+            and progress_entity is not None
+            and progress_entity.status != "confirmed"
+        ):
             conflicts.append({"entity_type": change.entity_type, "entity_id": change.entity_id, "reason": "真实进度已被纠正或作废"})
     if conflicts:
         raise ProblemException(409, "LEDGER_UNDO_CONFLICT", "导入内容已被后续编辑", "为避免覆盖后续人工修改，本批次不能自动撤销。", extra={"conflicts": conflicts[:200], "conflict_count": len(conflicts)})
@@ -1140,6 +1149,8 @@ def undo_import(
         for change in changes:
             if change.entity_type == "party_development_case":
                 item = db.get(PartyDevelopmentCase, change.entity_id)
+                if item is None or item.version != change.after_version:
+                    raise ProblemException(409, "LEDGER_UNDO_CONFLICT", "导入内容已被后续编辑", "撤销期间记录发生变化，请刷新后重试。")
                 if change.action == "create":
                     item.status = "archived"
                 else:
@@ -1147,6 +1158,8 @@ def undo_import(
                 item.version += 1
             elif change.entity_type == "archive_record":
                 record = db.get(ArchiveRecord, change.entity_id)
+                if record is None or record.version != change.after_version:
+                    raise ProblemException(409, "LEDGER_UNDO_CONFLICT", "导入内容已被后续编辑", "撤销期间记录发生变化，请刷新后重试。")
                 if change.action == "create":
                     record.status = ArchiveRecordStatus.VOIDED
                     record.void_reason = f"撤销台账导入批次 {job.id[:8]}"
@@ -1158,6 +1171,8 @@ def undo_import(
                 refresh_search_index(db, record.id)
             else:
                 event = db.get(PartyDevelopmentProgressEvent, change.entity_id)
+                if event is None or event.version != change.after_version:
+                    raise ProblemException(409, "LEDGER_UNDO_CONFLICT", "导入内容已被后续编辑", "撤销期间记录发生变化，请刷新后重试。")
                 event.status = "voided"
                 event.voided_at = utcnow()
                 event.version += 1

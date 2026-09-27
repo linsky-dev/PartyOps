@@ -158,6 +158,7 @@ PARTYOPS_MODEL_PACK_PUBLIC_KEY=<模型包发布公钥；可与更新公钥分离
 
 ## 7. 故障定位
 
+- 公文排版与套红会在每次操作前检查本机字体。若提示缺少字体，按提示安装后再次点击排版即可，无需重启 PartyOps；安装包不内置公文字体。
 - 主机日志：数据目录 `logs/partyops.log`（JSON 单行、按日轮转）。
 - Windows 主机监督日志：数据目录 `logs/partyops-host-service.log`（5 MiB × 6 份）；状态诊断为 `logs/partyops-host-status.json`。
 - 协同机日志：配置目录 `logs/partyops-agent.log`（5 MiB × 6 份）。
@@ -167,6 +168,7 @@ PARTYOPS_MODEL_PACK_PUBLIC_KEY=<模型包发布公钥；可与更新公钥分离
 - `reauth_required`：设备凭据失效，需要备份本机共享配置后重新入网。
 - `SERVICE_MISSING` / `SERVICE_STOPPED`：安装器未正确注册服务或服务未运行，优先使用安装器“修复安装”。
 - `RUNTIME_PERMISSION_DENIED`：诊断摘要会标明“个人模式配置”“PartyOps 主程序”或“个人数据目录”。优先使用同一安装包执行修复安装；数据目录阶段失败时，在配置向导选择当前桌面账号可写的本机固定磁盘目录。不要关闭单位安全策略、不要给 Everyone 完全控制，也不要删除原数据。
+- rc.6 候选版只将本次启动新增日志归因到本次进程，并优先保留实际系统错误及退出码。历史日志中的权限码不再单独证明本次启动失败；排查时保留原日志，核对本次时间、故障阶段和退出码，不通过删除历史日志掩盖问题。
 - `LEGACY_SERVICE_CONFLICT`：rc.4 能安全识别 rc.1/rc.2/已撤回 rc.3 的正式服务残留；如果 rc.4 仍报此码，说明路径、哈希和完整服务元数据都无法证明归属，不应手工强删，请保留安装日志供核验。
 - `UPGRADE_BACKUP_FAILED` / `DATABASE_SCHEMA_FAILED` / `SQLITE_RUNTIME_FAILED`：分别表示升级前备份失败、结构/迁移失败和 SQLite 驱动/版本/FTS5 故障；rc.4 不再把含有 SQLite 字样的迁移异常误报为运行时损坏。
 - `CHILD_EXITED` / `PORT_IN_USE` / `DATA_DIR_DENIED` / `TLS_INIT_FAILED` / `HEALTH_TIMEOUT`：分别检查主进程日志、端口、所选目录 ACL、内部 CA/TLS 与启动阶段；向导可直接复制诊断。

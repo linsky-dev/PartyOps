@@ -13,6 +13,7 @@ from ..appearance import (
 )
 from ..audit import emit_event, write_audit
 from ..database import get_session
+from ..enums import ArtLevel, SeasonTheme
 from ..models import SystemSetting, User, UserAppearancePreference
 from ..problems import ProblemException
 from ..schemas import (
@@ -36,8 +37,8 @@ def get_appearance_context(
     config = global_appearance(db)
     preference = db.get(UserAppearancePreference, user.id) if user else None
     return AppearanceContextOut(
-        effective_season=effective_season(config, preference),
-        art_level=(preference.art_level.value if preference else config["default_art_level"]),
+        effective_season=SeasonTheme(effective_season(config, preference)),
+        art_level=(preference.art_level if preference else ArtLevel(config["default_art_level"])),
         reduce_motion=(preference.reduce_motion if preference else bool(config["default_reduce_motion"])),
         theme_mode=config["theme_mode"],
     )
@@ -47,7 +48,7 @@ def get_appearance_context(
 def get_my_appearance(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_session),
-) -> UserAppearanceOut:
+) -> UserAppearancePreference:
     preference = ensure_user_appearance(db, user)
     db.commit()
     db.refresh(preference)
@@ -61,7 +62,7 @@ def patch_my_appearance(
     if_match: str | None = Header(default=None, alias="If-Match"),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_session),
-) -> UserAppearanceOut:
+) -> UserAppearancePreference:
     preference = ensure_user_appearance(db, user)
     if preference.version != parse_if_match(if_match):
         raise ProblemException(409, "VERSION_CONFLICT", "外观偏好已更新", "请刷新后重试。")

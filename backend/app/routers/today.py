@@ -270,8 +270,8 @@ def today(
         development_reminders = sum(
             1
             for milestone in milestones
-            if (aware_utc(milestone.adjusted_at or milestone.planned_at))
-            and aware_utc(milestone.adjusted_at or milestone.planned_at) <= reminder_limit
+            if (deadline := aware_utc(milestone.adjusted_at or milestone.planned_at))
+            and deadline <= reminder_limit
         )
     return {
         "updated_at": now,

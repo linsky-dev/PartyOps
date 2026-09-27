@@ -1,5 +1,7 @@
 param(
-  [string]$DocumentFormatterSource = $env:PARTYOPS_DOCUMENT_FORMATTER_SOURCE
+  [string]$DocumentFormatterSource = $env:PARTYOPS_DOCUMENT_FORMATTER_SOURCE,
+  [string]$DocumentFormatterParitySource = $env:PARTYOPS_DOCUMENT_FORMATTER_PARITY_SOURCE,
+  [string]$DocumentFormatterParityGolden = $env:PARTYOPS_DOCUMENT_FORMATTER_PARITY_GOLDEN
 )
 
 $ErrorActionPreference = "Stop"
@@ -16,7 +18,13 @@ if (-not $corepackCommand) {
 $corepack = $corepackCommand.Source
 
 if ([string]::IsNullOrWhiteSpace($DocumentFormatterSource)) {
-  $DocumentFormatterSource = "E:\paiban\PartyOps.DocumentFormatter.Source"
+  $DocumentFormatterSource = Join-Path $root "vendor\document-formatter-source"
+}
+if ([string]::IsNullOrWhiteSpace($DocumentFormatterParitySource)) {
+  $DocumentFormatterParitySource = Join-Path $root "backend\tests\fixtures\document-formatter-source\input-manual-break.docx"
+}
+if ([string]::IsNullOrWhiteSpace($DocumentFormatterParityGolden)) {
+  $DocumentFormatterParityGolden = Join-Path $root "backend\tests\fixtures\document-formatter-source\expected-source-formatted.docx"
 }
 $formatterBuild = Join-Path $DocumentFormatterSource "tools\Build-Windows.ps1"
 if (-not (Test-Path -LiteralPath $formatterBuild)) {
@@ -97,6 +105,11 @@ function Initialize-TestTempRoot {
 }
 
 # 先重新构建并运行用户提供的新工具原始 x64/x86 功能契约，避免仅验证迁移后的
+Invoke-Checked {
+  & $python (Join-Path $root "scripts\verify-document-formatter-source-snapshot.py") `
+    --source $DocumentFormatterSource
+} "内嵌公文排版源码上游一致性校验"
+
 # 自有测试而漏掉规格源中的能力变化。此步骤不会发布或启动外部产品窗口。
 # 禁止 MSBuild 节点在两次构建后常驻。发布机可能同时运行本地模型，遗留
 # 编译进程会挤满 Windows 提交内存并让后续审计无法启动。
@@ -112,6 +125,45 @@ try {
   Invoke-Checked { & $formatterBuild -Configuration Release -Platform x64 } "新排版工具 Release|x64 源码构建与功能回归"
   Wait-CommitHeadroom -Stage "新排版工具 Release|x86 构建"
   Invoke-Checked { & $formatterBuild -Configuration Release -Platform x86 } "新排版工具 Release|x86 源码构建与功能回归"
+
+  $formatterParityTemp = Join-Path (Initialize-TestTempRoot) "formatter-parity"
+  $formatterParityOffice = Join-Path $root "vendor\windows\libreoffice-headless-amd64\program\soffice.com"
+  if (-not (Test-Path -LiteralPath $formatterParityOffice -PathType Leaf)) {
+    throw "缺少公文金标准视觉对比所需的随包 LibreOffice：$formatterParityOffice"
+  }
+  foreach ($formatterPlatform in @("x64", "x86")) {
+    $formatterRelocatedHostRoot = Join-Path $root ".release-gates\formatter-relocated-$formatterPlatform"
+    Invoke-Checked {
+      & (Join-Path $root "scripts\build-document-formatter-host.ps1") `
+        -Platform $formatterPlatform `
+        -DocumentFormatterSource $DocumentFormatterSource `
+        -StageDirectory $formatterRelocatedHostRoot
+    } "PartyOps 原排版源码无窗口宿主 $formatterPlatform 构建与脱离源码目录自检"
+    # 后续真实 WPS 金样与六功能测试只使用随包目录，不使用 MSBuild bin 目录，
+    # 从而证明安装到其他电脑后不会依赖开发机的 E:\paiban 或仓库源码路径。
+    $formatterHost = Join-Path $formatterRelocatedHostRoot "PartyOps.DocumentFormatter.Host.exe"
+    Invoke-Checked {
+      & $python (Join-Path $root "scripts\verify-document-formatter-parity.py") `
+        --root $root `
+        --source $DocumentFormatterParitySource `
+        --golden $DocumentFormatterParityGolden `
+        --host $formatterHost `
+        --office-bin $formatterParityOffice `
+        --workspace (Join-Path $formatterParityTemp $formatterPlatform) `
+        --evidence (Join-Path $root ".release-gates\formatter-parity-$formatterPlatform.json") `
+        --platform windows `
+        --architecture $formatterPlatform
+    } "PartyOps 原排版源码 $formatterPlatform 用户样本金标准对比"
+    Invoke-Checked {
+      & $python (Join-Path $root "scripts\verify-document-formatter-features-e2e.py") `
+        --root $root `
+        --host $formatterHost `
+        --workspace (Join-Path $formatterParityTemp "features-$formatterPlatform") `
+        --evidence (Join-Path $root ".release-gates\formatter-features-e2e-$formatterPlatform.json") `
+        --platform windows `
+        --architecture $formatterPlatform
+    } "PartyOps 原排版源码 $formatterPlatform 六功能真实宿主端到端"
+  }
 }
 finally {
   # 只回收本轮新建的 Roslyn 服务，既释放发布门禁占用，也不影响调用前
@@ -133,6 +185,13 @@ Invoke-Checked {
 } "Python 中高危静态安全扫描"
 Invoke-Checked { & $python -m compileall -q (Join-Path $root "backend\app") (Join-Path $root "backend\tests") } "Python 编译检查"
 Invoke-Checked { & $python -m ruff check (Join-Path $root "backend\app") (Join-Path $root "backend\tests") } "Python Ruff 检查"
+Push-Location (Join-Path $root "backend")
+try {
+  Invoke-Checked { & $python -m mypy app --no-incremental } "后端静态类型检查（不得用功能测试覆盖失败）"
+}
+finally {
+  Pop-Location
+}
 Invoke-Checked { & $corepack pnpm --dir (Join-Path $root "frontend") run typecheck } "前端类型检查"
 Invoke-Checked { & $corepack pnpm --dir (Join-Path $root "frontend") run test:coverage } "前端覆盖率测试"
 Invoke-Checked { & $corepack pnpm --dir (Join-Path $root "frontend") run test:sites } "静态入口测试"

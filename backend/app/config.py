@@ -89,7 +89,7 @@ class Settings(BaseSettings):
     )
     model_pack_public_key: str = ""
     local_ai_port: int = 18767
-    # 公文排版只监听当前电脑回环地址，固定端口便于实施精确 CSP/PNA。
+    # 公文排版只监听回环。此值为实例首选端口，实际独占绑定后同步精确 CSP/PNA。
     official_format_port: int = Field(default=18768, ge=1024, le=65535)
     local_ai_max_threads: int = 4
     local_ai_memory_limit_mb: int = 3584

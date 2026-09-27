@@ -517,12 +517,37 @@ def test_runtime_helpers_autostart_and_ca_failure_paths(
         setup_wizard.install_internal_ca(ca)
 
 
-def test_personal_early_exit_reports_personal_launcher_log(tmp_path: Path) -> None:
-    """个人进程退出时必须返回它自己的日志，而不是主机服务日志。"""
+@pytest.mark.parametrize(
+    "output, expected_code",
+    [
+        ("启动阶段\n数据库初始化失败：测试诊断\n", setup_wizard.CHILD_EXITED),
+        ("[RUNTIME_PERMISSION_DENIED] 本轮真实权限拒绝\n", setup_wizard.RUNTIME_PERMISSION_DENIED),
+        ("", setup_wizard.CHILD_EXITED),
+    ],
+)
+def test_personal_early_exit_reports_personal_launcher_log(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, output: str, expected_code: str
+) -> None:
+    """让本轮进程真实追加临时日志；历史错误和主机服务日志不得冒充本轮证据。"""
 
-    (tmp_path / "launcher.log").write_text(
-        "启动阶段\n数据库初始化失败：测试诊断\n", encoding="utf-8"
-    )
+    log_path = tmp_path / "launcher.log"
+    history = "[RUNTIME_PERMISSION_DENIED] 历史故障必须保留但不能追认\n"
+    log_path.write_text(history, encoding="utf-8")
+
+    def popen(_command, **options):
+        # 子进程可在 Popen 返回前写完并早退，边界必须由真实 _spawn 提前捕获。
+        options["stdout"].write(output.encode("utf-8"))
+        options["stdout"].flush()
+        return _ExitedProcess()
+
+    def unexpected(*_args, **_kwargs):
+        pytest.fail("个人进程已退出，不得查询主机日志或发送健康 HTTP 请求")
+
+    monkeypatch.setattr(setup_wizard.subprocess, "Popen", popen)
+    monkeypatch.setattr(setup_wizard, "read_service_status", unexpected)
+    monkeypatch.setattr(setup_wizard, "tail_service_log", unexpected)
+    monkeypatch.setattr(setup_wizard.urllib.request, "urlopen", unexpected)
+    process = setup_wizard._spawn(["fixture-never-executed"], log_path)
     with pytest.raises(setup_wizard.HostStartupError) as captured:
         setup_wizard.wait_for_host_health(
             "127.0.0.1",
@@ -530,10 +555,16 @@ def test_personal_early_exit_reports_personal_launcher_log(tmp_path: Path) -> No
             timeout=5,
             data_dir=tmp_path,
             service_managed=False,
-            process=_ExitedProcess(),  # type: ignore[arg-type]
+            process=process,
         )
-    assert captured.value.code == setup_wizard.CHILD_EXITED
-    assert "数据库初始化失败：测试诊断" in captured.value.detail
+    assert captured.value.code == expected_code
+    assert "个人进程退出码 23" in captured.value.detail
+    assert "历史故障" not in captured.value.detail
+    if output:
+        assert output.strip() in captured.value.detail
+    else:
+        assert "无本轮日志输出" in captured.value.detail
+    assert log_path.read_text(encoding="utf-8") == history + output
 
 
 def test_health_version_mismatch_fails_immediately(monkeypatch) -> None:
@@ -582,7 +613,7 @@ def test_personal_upgrade_replaces_only_recorded_old_process(
     monkeypatch.setattr(
         setup_wizard,
         "load_host_environment",
-        lambda _path: {
+        lambda _path, **_kwargs: {
             "PARTYOPS_PORT": "18775",
             "PARTYOPS_DATA_DIR": str(data_dir),
         },
@@ -647,7 +678,7 @@ def test_personal_existing_unknown_port_is_reassigned_without_health_probe_or_ki
     monkeypatch.setattr(
         setup_wizard,
         "load_host_environment",
-        lambda _path: {"PARTYOPS_PORT": "18775", "PARTYOPS_DATA_DIR": str(data_dir)},
+        lambda _path, **_kwargs: {"PARTYOPS_PORT": "18775", "PARTYOPS_DATA_DIR": str(data_dir)},
     )
     monkeypatch.setattr(
         setup_wizard.socket,
@@ -912,7 +943,7 @@ def test_admin_submit_readiness_reuses_personal_and_recovers_host(
     monkeypatch.setattr(
         setup_wizard,
         "load_host_environment",
-        lambda _path: {
+        lambda _path, **_kwargs: {
             "PARTYOPS_HOST": "192.168.8.20",
             "PARTYOPS_PORT": "18765",
             "PARTYOPS_TLS_ENABLED": "false",

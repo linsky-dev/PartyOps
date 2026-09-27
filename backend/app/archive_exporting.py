@@ -7,11 +7,14 @@ import json
 import re
 import zipfile
 from pathlib import Path
+from typing import cast
 
 from docx import Document
 from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from openpyxl import Workbook
+from openpyxl.cell.cell import Cell
+from openpyxl.worksheet.worksheet import Worksheet
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -80,7 +83,7 @@ def export_archive_package(
     output = settings.exports_dir / f"党建智办-{archive_year}年重要档案包-{timestamp}.zip"
     manifest_files: list[dict[str, object]] = []
     workbook = Workbook()
-    sheet = workbook.active
+    sheet = cast(Worksheet, workbook.active)
     sheet.title = "年度档案目录"
     sheet.append(
         [
@@ -170,7 +173,7 @@ def export_archive_package(
             )
             manifest_sources[relative] = source
     for column in sheet.columns:
-        sheet.column_dimensions[column[0].column_letter].width = min(
+        sheet.column_dimensions[cast(Cell, column[0]).column_letter].width = min(
             max(len(str(cell.value or "")) for cell in column) + 2,
             42,
         )
@@ -188,7 +191,7 @@ def export_archive_package(
     }
     try:
         workbook.save(workbook_path)
-        doc.save(docx_path)
+        doc.save(str(docx_path))
         with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED, allowZip64=True) as archive:
             archive.write(workbook_path, f"{archive_year}年度档案目录.xlsx")
             archive.write(docx_path, f"{archive_year}年度档案目录.docx")

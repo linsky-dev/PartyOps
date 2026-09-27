@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import pytest
@@ -236,6 +236,117 @@ def test_pki_generates_dns_certificate_and_device_certificate(monkeypatch, tmp_p
     ).decode("utf-8")
     with pytest.raises(ValueError, match="签名无效"):
         pki.issue_device_certificate(settings, "device-1", invalid_csr)
+
+
+def _write_ca_fixture(root, key, certificate) -> None:
+    """写入 ensure_tls_material 使用的最小 CA 文件，保持测试走真实校验路径。"""
+
+    pki_root = root / "pki"
+    pki_root.mkdir(parents=True)
+    (pki_root / "ca.key").write_bytes(
+        key.private_bytes(
+            serialization.Encoding.PEM,
+            serialization.PrivateFormat.PKCS8,
+            serialization.NoEncryption(),
+        )
+    )
+    (pki_root / "ca.pem").write_bytes(certificate.public_bytes(serialization.Encoding.PEM))
+
+
+def _ca_certificate(key, *, ca: bool, issuer_key=None):
+    issuer_key = issuer_key or key
+    subject = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "PartyOps Test CA")])
+    now = datetime.now(timezone.utc)
+    return (
+        x509.CertificateBuilder()
+        .subject_name(subject)
+        .issuer_name(subject if issuer_key is key else x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "Other CA")]))
+        .public_key(key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now - timedelta(minutes=1))
+        .not_valid_after(now + timedelta(days=30))
+        .add_extension(x509.BasicConstraints(ca=ca, path_length=1 if ca else None), critical=True)
+        .sign(issuer_key, hashes.SHA256())
+    )
+
+
+def test_pki_rejects_invalid_ca_and_regenerates_expired_server(tmp_path) -> None:
+    """覆盖 CA 约束、密钥匹配、过期证书及空主机名的安全分支。"""
+
+    invalid_root = tmp_path / "invalid-ca"
+    invalid_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    _write_ca_fixture(invalid_root, invalid_key, _ca_certificate(invalid_key, ca=False))
+    invalid_settings = SimpleNamespace(
+        secrets_dir=invalid_root,
+        host="partyops.local",
+        tls_cert_file=None,
+        tls_key_file=None,
+        tls_client_ca_file=None,
+    )
+    with pytest.raises(ValueError, match="完整性校验失败"):
+        pki.ensure_tls_material(invalid_settings)
+
+    mismatch_root = tmp_path / "mismatched-ca"
+    stored_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    signer_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    # 证书公钥故意来自另一个密钥，命中“私钥与证书不匹配”分支。
+    mismatch_cert = _ca_certificate(signer_key, ca=True, issuer_key=signer_key)
+    _write_ca_fixture(mismatch_root, stored_key, mismatch_cert)
+    mismatch_settings = SimpleNamespace(
+        secrets_dir=mismatch_root,
+        host="partyops.local",
+        tls_cert_file=None,
+        tls_key_file=None,
+        tls_client_ca_file=None,
+    )
+    with pytest.raises(ValueError, match="完整性校验失败"):
+        pki.ensure_tls_material(mismatch_settings)
+
+    expired_root = tmp_path / "expired-server"
+    settings = SimpleNamespace(
+        secrets_dir=expired_root,
+        host="partyops.local",
+        tls_cert_file=None,
+        tls_key_file=None,
+        tls_client_ca_file=None,
+    )
+    pki.ensure_tls_material(settings)
+    ca_key = pki._load_key(expired_root / "pki" / "ca.key")
+    ca_cert = x509.load_pem_x509_certificate((expired_root / "pki" / "ca.pem").read_bytes())
+    server_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    now = datetime.now(timezone.utc)
+    expired = (
+        x509.CertificateBuilder()
+        .subject_name(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "expired")]))
+        .issuer_name(ca_cert.subject)
+        .public_key(server_key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now - timedelta(days=2))
+        .not_valid_after(now - timedelta(days=1))
+        .add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True)
+        .sign(ca_key, hashes.SHA256())
+    )
+    (expired_root / "pki" / "server.key").write_bytes(
+        server_key.private_bytes(
+            serialization.Encoding.PEM,
+            serialization.PrivateFormat.PKCS8,
+            serialization.NoEncryption(),
+        )
+    )
+    (expired_root / "pki" / "server.pem").write_bytes(expired.public_bytes(serialization.Encoding.PEM))
+    refreshed = pki.ensure_tls_material(settings)
+    refreshed_cert = x509.load_pem_x509_certificate(refreshed["server_cert_path"].read_bytes())
+    assert refreshed_cert.not_valid_after.replace(tzinfo=timezone.utc) > now
+
+    empty_host_settings = SimpleNamespace(
+        secrets_dir=tmp_path / "empty-host",
+        host="",
+        tls_cert_file=None,
+        tls_key_file=None,
+        tls_client_ca_file=None,
+    )
+    material = pki.ensure_tls_material(empty_host_settings)
+    assert material["server_cert_path"].is_file()
 
 
 class _RelationDb:

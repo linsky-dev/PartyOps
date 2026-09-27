@@ -65,7 +65,7 @@ def test_format_docx_preserves_content_images_and_merged_tables(tmp_path, monkey
     assert round(section.right_margin.mm) == 26
     assert output.paragraphs[0].alignment == 1
     assert output.paragraphs[0].runs[0]._element.rPr.rFonts.get(qn("w:eastAsia")) == "方正小标宋简体"
-    assert output.paragraphs[1].paragraph_format.first_line_indent.twips == 640
+    assert output.paragraphs[1].paragraph_format.first_line_indent.twips == 420
     assert output.paragraphs[1].paragraph_format.line_spacing.pt == 28
     assert "这是正文，请访问https://example.test/a,b" in output.paragraphs[1].text
     assert len(output.inline_shapes) == 1
@@ -82,7 +82,8 @@ def test_format_docx_preserves_content_images_and_merged_tables(tmp_path, monkey
             assert "— " in footer_xml and " —" in footer_xml and " PAGE " in footer_xml
         document_xml = package.read("word/document.xml").decode("utf-8")
         assert 'w:line="560"' in document_xml
-        assert 'w:firstLine="640"' in document_xml
+        assert 'w:firstLine="420"' in document_xml
+        assert 'w:firstLineChars="200"' in document_xml
 
 
 def test_formatter_preserves_footer_emphasis_and_table_alignment(tmp_path, monkeypatch) -> None:
@@ -160,7 +161,7 @@ def test_formatter_applies_header_roles_exact_grid_and_page_number_position(tmp_
     assert str(output.paragraphs[3].runs[0]._element.rPr.color.val) == "FF0000"
     assert output.paragraphs[5].runs[0]._element.rPr.rFonts.get(qn("w:eastAsia")) == "方正小标宋简体"
     assert output.paragraphs[6].paragraph_format.first_line_indent.twips == 0
-    assert output.paragraphs[7].paragraph_format.first_line_indent.twips == 640
+    assert output.paragraphs[7].paragraph_format.first_line_indent.twips == 420
     assert output.paragraphs[9].alignment == WD_ALIGN_PARAGRAPH.RIGHT
     assert output.paragraphs[10].alignment == WD_ALIGN_PARAGRAPH.RIGHT
 
@@ -170,7 +171,44 @@ def test_formatter_applies_header_roles_exact_grid_and_page_number_position(tmp_
         assert f'w:charSpace="{GRID_CHARACTER_SPACE}"' in document_xml
         assert f'w:footer="{PAGE_FOOTER_DISTANCE}"' in document_xml
         assert 'w:styleId="Normal"' in styles_xml
-        assert 'w:sz w:val="32"' in styles_xml
+
+
+def test_formatter_splits_salutation_manual_break_before_applying_body_indent(
+    tmp_path, monkeypatch
+) -> None:
+    """用户样本中的 Shift+Enter 必须先拆段，称谓不能继承正文首行缩进。"""
+
+    source = tmp_path / "manual-break.docx"
+    target = tmp_path / "manual-break-formatted.docx"
+    document = Document()
+    document.add_paragraph("以有效覆盖提升新兴领域党建质效")
+    document.add_paragraph("")
+    mixed = document.add_paragraph()
+    run = mixed.add_run("同志们：")
+    run.add_break()
+    run.add_text("这是手动换行后的正文内容，应当独立缩进。")
+    document.save(source)
+
+    monkeypatch.setattr("app.official_format._font_inventory", lambda: "方正小标宋 仿宋 楷体 黑体")
+    report = format_docx(source, target)
+    assert report.compliant is True
+    output = Document(target)
+    assert [paragraph.text for paragraph in output.paragraphs] == [
+        "以有效覆盖提升新兴领域党建质效",
+        "同志们：",
+        "这是手动换行后的正文内容，应当独立缩进。",
+    ]
+    assert output.paragraphs[1].paragraph_format.first_line_indent.twips == 0
+    assert output.paragraphs[2].paragraph_format.first_line_indent.twips == 420
+    with zipfile.ZipFile(target) as package:
+        document_xml = package.read("word/document.xml").decode("utf-8")
+        assert "w:br" not in document_xml
+        assert 'w:firstLineChars="200"' in document_xml
+        assert 'w:left="1588"' in document_xml
+        assert 'w:footer="1418"' in document_xml
+        assert 'w:linePitch="312"' in document_xml
+        assert 'w:charSpace="0"' in document_xml
+        assert 'w:type="linesAndChars"' not in document_xml
 
 
 def test_diagnosis_rejects_zip_slip_and_explicitly_blocks_missing_fonts(tmp_path, monkeypatch) -> None:

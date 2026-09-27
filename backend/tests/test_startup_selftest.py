@@ -1,13 +1,39 @@
 from __future__ import annotations
 
+import io
 import json
+import runpy
 import subprocess
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
 from app import startup_selftest
+
+
+@pytest.mark.parametrize('argument,function,code', [
+    ('--startup-desktop-user-self-test', 'run_desktop_user_selftest', 4),
+    ('--startup-user-permission-self-test', 'run_user_permission_selftest', 3),
+])
+def test_frozen_entrypoint_keeps_chinese_error_on_cp1252(monkeypatch, argument, function, code):
+    """安装器的真实入口也须保留中文故障与原退出码，不能仅覆盖内部 main。"""
+    def fail(_runtime):
+        raise RuntimeError('普通用户启动超时：中文 程序')
+
+    monkeypatch.setattr(startup_selftest, function, fail)
+    monkeypatch.setattr(sys, 'argv', ['PartyOps.exe', argument])
+    output = io.BytesIO()
+    console = io.TextIOWrapper(output, encoding='cp1252', write_through=True)
+    monkeypatch.setattr(sys, 'stdout', console)
+    entrypoint = Path(__file__).resolve().parents[2] / 'packaging/uos/entrypoint.py'
+    with pytest.raises(SystemExit) as caught:
+        runpy.run_path(str(entrypoint), run_name='__main__')
+    assert caught.value.code == code
+    payload = json.loads(output.getvalue().decode('cp1252'))
+    assert payload['passed'] is False
+    assert payload['error'] == '普通用户启动超时：中文 程序'
 
 
 def test_critical_crypto_roundtrip_uses_real_runtime() -> None:
@@ -160,6 +186,7 @@ def test_http_probe_and_log_tail_boundaries(
 
 class _Process:
     def __init__(self, polls: list[int | None], *, wait_timeout: bool = False) -> None:
+        self.pid = 24680
         self.polls = iter(polls)
         self.last_poll: int | None = None
         self.returncode: int | None = None
@@ -190,6 +217,8 @@ class _Process:
 def test_frozen_probe_success_exit_and_timeout(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    formatter_probes = []
+    monkeypatch.setattr(startup_selftest, "_probe_owned_formatter", lambda data, pid: formatter_probes.append((data, pid)))
     runtime = tmp_path / "runtime"
     (runtime / "_internal" / "frontend").mkdir(parents=True)
     success = _Process([None, None])
@@ -213,6 +242,7 @@ def test_frozen_probe_success_exit_and_timeout(
         lambda _url: b'<!doctype html><div id="app"></div>',
     )
     assert startup_selftest._probe_frozen_server(runtime, 10)["status"] == "ok"
+    assert formatter_probes[-1][0].name == "data" and formatter_probes[-1][1] == success.pid
     assert success.terminated is True
 
     no_frontend_runtime = tmp_path / "runtime-without-frontend"
@@ -224,6 +254,27 @@ def test_frozen_probe_success_exit_and_timeout(
     assert (
         startup_selftest._probe_frozen_server(no_frontend_runtime, 10)["status"] == "ok"
     )
+
+    # 冷启动在150秒完成：旧120秒探针会误报，而正常启动器仍允许等待。
+    slow = _Process([None, None, None])
+    monkeypatch.setattr(startup_selftest.subprocess, "Popen", lambda *_a, **_k: slow)
+    real_time = startup_selftest.time
+    read_health = startup_selftest._read_json
+    attempts = iter([False, True])
+    ticks = iter([0.0, 0.0, 150.0])
+
+    def delayed_health(url):
+        if not next(attempts):
+            raise OSError("正在初始化")
+        return read_health(url)
+
+    monkeypatch.setattr(startup_selftest, "_read_json", delayed_health)
+    monkeypatch.setattr(startup_selftest, "time", SimpleNamespace(
+        monotonic=lambda: next(ticks), sleep=lambda _seconds: None))
+    assert startup_selftest._probe_frozen_server(runtime, 180)["status"] == "ok"
+    assert slow.terminated is True
+    monkeypatch.setattr(startup_selftest, "time", real_time)
+    monkeypatch.setattr(startup_selftest, "_read_json", read_health)
 
     exited = _Process([7])
     monkeypatch.setattr(
@@ -277,6 +328,22 @@ def test_main_reports_success_and_bounded_failure(
     payload = json.loads(capsys.readouterr().out)
     assert payload["code"] == "PACKAGE_RUNTIME_STARTUP_SELFTEST_FAILED"
     assert len(payload["error"]) == 6000
+
+
+def test_failure_json_survives_english_windows_console(monkeypatch: pytest.MonkeyPatch) -> None:
+    """真实Win7故障含中文路径时，诊断不能被cp1252编码异常覆盖。"""
+    import io
+
+    output = io.BytesIO()
+    console = io.TextIOWrapper(output, encoding="cp1252", write_through=True)
+    monkeypatch.setattr(startup_selftest.sys, "stdout", console)
+
+    def fail(_runtime: Path) -> dict[str, object]:
+        raise RuntimeError("中文 程序：DLL接口缺失")
+
+    monkeypatch.setattr(startup_selftest, "run_selftest", fail)
+    assert startup_selftest.main(Path("runtime")) == 2
+    assert json.loads(output.getvalue().decode("cp1252"))["error"] == "中文 程序：DLL接口缺失"
 
 
 def test_desktop_user_selftest_combines_permission_and_real_server_probe(

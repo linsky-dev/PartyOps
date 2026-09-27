@@ -582,10 +582,10 @@ def _scan_root_locked(db: Session, root: WorkspaceRoot) -> WorkspaceScanOut:
             diagnostic_id,
         )
         db.rollback()
-        root = db.get(WorkspaceRoot, root.id)
-        if root:
-            root.scan_status = "failed"
-            root.error_message = "目录扫描失败，请在系统日志中查看追踪编号。"
+        restored_root = db.get(WorkspaceRoot, root.id)
+        if restored_root:
+            restored_root.scan_status = "failed"
+            restored_root.error_message = "目录扫描失败，请在系统日志中查看追踪编号。"
             db.commit()
         raise
 
@@ -603,6 +603,9 @@ def run_scan_job(job_id: str, root_id: str) -> None:
         try:
             result = scan_root(db, root)
             job = db.get(BackgroundJob, job_id)
+            if job is None:
+                # 扫描期间任务记录已被清理，不重新创建或误报为扫描失败。
+                return
             job.status = "completed"
             job.progress = 100
             job.message = (

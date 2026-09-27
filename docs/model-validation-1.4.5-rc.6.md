@@ -1,7 +1,15 @@
 # PartyOps 1.4.5-rc.6 模型验收记录
 
-最后验证日期：2026-08-27（北京时间，UTC+08:00）  
+最后验证日期：2026-09-02（北京时间，UTC+08:00）
+
 状态：Windows AMD64 本地闭环通过；跨平台原生运行与公开发布门禁尚未完成。
+
+## 2026-09-02 复验范围
+
+- 从当前 rc.6 Windows AMD64 冻结目录提供 `llama-server.exe` 及外部更新公钥，通过生产 API 的隔离 TestClient 再测模型包导入、验签、激活、真实 BGE 向量、Qwen3/DeepSeek 中文推理，以及 Needle 原生推理、只读预览、停用和卸载。两个集成用例全部通过（55.12 秒，零跳过）。Qwen2.5 仅作为原集成测试的附加样本，不新增到 rc.6 锁定模型组合。
+- 日志：`.release-gates/windows-amd64-models-20260902.log`；JUnit：`windows-amd64-models-20260902.xml`。API 在源码测试环境执行，GGUF 推理使用本次随包的真实程序；不能描述为整个冻结 EXE 的生产接口已完成同一闭环。
+- 冻结 `PartyOps.exe --package-self-test` 同时通过 SQLite 3.53.4/FTS5、中文 OCR、NumPy 2.2.6、ONNX Runtime 1.22.1、tokenizers 0.21.4、TLS/Ed25519、llama 启动和原排版宿主依赖校验。日志：`.release-gates/windows-amd64-runtime-package-selftest-20260902.log`。
+- 以上是在当前 Windows 11 AMD64 主机上的证据。Win7 x86 不具备语义重排/llama.cpp，Win7 amd64 不具备 llama.cpp；Linux ARM64、国产系统原生安装环境及 macOS 两架构仍未通过实测。未据此开放官网或 GitHub 下载。
 
 ## 锁定组合
 
@@ -42,3 +50,8 @@ rc.6 客户端使用 `packaging/uos/update-public-key.txt` 作为外部信任根
   官网模型目录和下载清单。
 - 生成 rc.6 模型目录时只列上述锁定组合，不把测试辅助使用的 Qwen2.5 误列为编排器组件；
   Cloud Studio 公网回读通过前，官网仍不得宣称 rc.6 模型已公开挂载。
+# 原版 UOS 加载时限复核（2026-09-07）
+
+原版 UOS 1070 的实际安装版 Qwen 子进程持续返回加载中 503；相同参数、加载器环境、3584 MiB 地址空间上限和 nice 10 的独立诊断于 74.698 秒就绪。约 30 秒的旧轮询时限不足，现改为单调时钟限定 120 秒，已退出进程仍立即失败，超过时限仍停止并进入重试退避。回归覆盖 21 秒、74.698 秒、接近截止时间正常就绪及始终不就绪。
+
+证据：`D:/PartyOps-VM-Lab/reports/uos-deb-x64/llm-observed-20260907b/diagnostic.json`、`llm-load-time-20260907/diagnostic.json`。独立诊断不能替代产品接口推理；本修复须经完整质量门禁、重建制品及原版 Guest 重验后才计通过。

@@ -1,6 +1,12 @@
 #!/usr/bin/env sh
 set -eu
 
+# rpm/dpkg 可能从调用者当前目录运行安装后脚本；该目录对 ``partyops``
+# 服务账号通常不可读（例如用户家目录为 0700），而冻结 Python 的
+# ``env_file=.env`` 会先读取当前目录。固定到系统根目录，确保自检不因
+# 调用者工作目录权限而误报 ``Permission denied: .env``。
+cd /
+
 RUNTIME=/opt/partyops
 EXPECTED_ARCH="${1:-}"
 MODE="${2:-full}"
@@ -31,6 +37,7 @@ fail() {
 case "$(uname -m)" in
   x86_64|amd64) ACTUAL_ARCH=amd64 ;;
   aarch64|arm64) ACTUAL_ARCH=arm64 ;;
+  loongarch64|loong64) ACTUAL_ARCH=loong64 ;;
   *) fail PACKAGE_ARCH_UNSUPPORTED "不支持的处理器架构：$(uname -m)" ;;
 esac
 case "$MODE" in

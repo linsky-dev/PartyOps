@@ -13,6 +13,18 @@ from app.enums import ModelPackStatus
 from app.problems import ProblemException
 
 
+@pytest.fixture(autouse=True)
+def _full_platform_profile(monkeypatch: pytest.MonkeyPatch) -> None:
+    # 本文件模拟完整安装包；core 专用用例会覆盖此默认包身份。
+    monkeypatch.setattr(local_ai, "detect_platform_info", lambda: {
+        "runtime_profile": "full",
+        "capabilities": [
+            "host", "collaboration", "database", "files", "archives", "backup", "ocr",
+            "semantic_rerank", "local_llm",
+        ],
+    })
+
+
 class _Db:
     def __init__(self, values=None) -> None:
         self.values = iter(values or [])
@@ -86,6 +98,66 @@ def test_readiness_is_capability_specific_and_never_blocks_business(
     ready = local_ai.local_ai_readiness(_Db())
     assert ready["state"] == "ready"
     assert ready["llm_available"] is True and ready["intent_available"] is True
+
+
+def test_core_package_disables_only_complex_local_ai(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(local_ai, "detect_platform_info", lambda: {
+        "runtime_profile": "core",
+        "capabilities": ["host", "collaboration", "database", "files", "archives", "backup", "ocr"],
+    })
+    monkeypatch.setattr(local_ai, "get_settings", lambda: SimpleNamespace(
+        mode="host", local_ai_max_threads=4, local_ai_memory_limit_mb=3584,
+    ))
+    monkeypatch.setattr(local_ai, "_system_busy", lambda _db: (False, ""))
+    monkeypatch.setattr(local_ai, "_available_memory_mb", lambda: 8192)
+    accessed: list[str] = []
+    monkeypatch.setattr(local_ai, "active_model_pack", lambda _db, capability: accessed.append(capability) or None)
+    assert local_ai.supported_local_capabilities() == ("core", ["intent_router"])
+    assert local_ai.local_ai_readiness(_Db(), "embedding")["state"] == "unsupported_package"
+    assert local_ai.local_ai_readiness(_Db(), "llm")["state"] == "unsupported_package"
+    status = local_ai.local_runtime_status(_Db())
+    assert status["runtime_profile"] == "core"
+    assert status["supported_capabilities"] == [
+        "host", "collaboration", "database", "files", "archives", "backup", "ocr",
+    ]
+    assert status["embedding_available"] is False and status["llm_available"] is False
+    assert accessed == ["intent_router"]
+
+    from app.routers import ai as ai_routes
+
+    with pytest.raises(ProblemException) as unsupported:
+        ai_routes.activate_local_model_pack(
+            "absent", SimpleNamespace(), "embedding", SimpleNamespace(id="admin"), _Db()
+        )
+    assert unsupported.value.code == "LOCAL_AI_PACKAGE_UNSUPPORTED"
+
+
+def test_core_package_rejects_legacy_llm_fallback_before_process_start(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app import ai_orchestrator
+
+    monkeypatch.setattr(local_ai, "detect_platform_info", lambda: {
+        "runtime_profile": "core",
+        "capabilities": ["host", "collaboration", "database", "files", "archives", "backup", "ocr"],
+    })
+    monkeypatch.setattr(local_ai.subprocess, "Popen", lambda *_args, **_kwargs: pytest.fail("core 启动了本地 LLM 进程"))
+    deepseek = _pack("old-deepseek", model_id="deepseek-r1-distill-qwen-1.5b")
+    fallback = _pack("signed-qwen", model_id="qwen3-0.6b-q8_0")
+    runtime = local_ai.LocalLlmRuntime()
+    with pytest.raises(ProblemException) as direct:
+        runtime.complete(fallback, "生成草稿", [])
+    assert direct.value.code == "LOCAL_AI_PACKAGE_UNSUPPORTED"
+    with pytest.raises(ProblemException) as start:
+        runtime._ensure_started(fallback)
+    assert start.value.code == "LOCAL_AI_PACKAGE_UNSUPPORTED"
+
+    monkeypatch.setattr(ai_orchestrator, "preview_intent_with_needle", lambda *_args: {"flags": [], "engine": "rules"})
+    monkeypatch.setattr(ai_orchestrator, "active_model_pack", lambda *_args: deepseek)
+    monkeypatch.setattr(ai_orchestrator, "_signed_qwen_fallback", lambda _db: fallback)
+    result = ai_orchestrator.build_plan(_Db(), SimpleNamespace(id="user"), "整理会议材料")
+    assert result["model_id"] == "rules"
+    assert result["engine"] == "rules"
 
 
 def test_component_file_rejects_missing_and_escaping_members(
@@ -298,6 +370,35 @@ def test_llm_process_backoff_health_completion_and_failure(
     assert failed.value.code == "LOCAL_LLM_CALL_FAILED"
 
 
+@pytest.mark.parametrize("ready_seconds", [21.0, 74.698, 119.5])
+def test_llm_loading_responses_wait_for_model_readiness(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, ready_seconds: float,
+) -> None:
+    """原版 UOS 的 503 加载阶段不能耗尽重试并误杀可正常启动的模型。"""
+    runtime = local_ai.LocalLlmRuntime()
+    settings = SimpleNamespace(local_ai_port=18888, local_ai_max_threads=2)
+    monkeypatch.setattr(local_ai, "get_settings", lambda: settings)
+    monkeypatch.setattr(runtime, "_binary", lambda: str(tmp_path / "llama-server"))
+    monkeypatch.setattr(local_ai, "_component_file", lambda *_args: tmp_path / "model.gguf")
+    monkeypatch.setattr(runtime, "_apply_windows_job_limit", lambda _process: None)
+    elapsed = [0.0]
+    terminated = []
+    process = SimpleNamespace(poll=lambda: None, pid=1234,
+                              terminate=lambda: terminated.append(True), wait=lambda **_kwargs: 0)
+    monkeypatch.setattr(local_ai.subprocess, "Popen", lambda *_args, **_kwargs: process)
+    monkeypatch.setattr(local_ai.time, "monotonic", lambda: elapsed[0])
+    monkeypatch.setattr(local_ai.time, "sleep", lambda duration: elapsed.__setitem__(0, elapsed[0] + duration))
+
+    def health(*_args, **_kwargs):
+        return SimpleNamespace(status_code=200 if elapsed[0] >= ready_seconds else 503)
+
+    monkeypatch.setattr(local_ai.httpx, "get", health)
+    runtime._ensure_started(_pack())
+    assert ready_seconds <= elapsed[0] < 120
+    assert runtime.status() == (True, 1234)
+    assert terminated == []
+
+
 def test_runtime_status_and_complete_locally_use_active_llm(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -319,6 +420,8 @@ def test_runtime_status_and_complete_locally_use_active_llm(
     monkeypatch.setattr(local_ai.embedding_runtime, "loaded_for", lambda pack_id: pack_id == "embedding-pack")
     status = local_ai.local_runtime_status(_Db())
     assert status["llm_running"] is True and status["embedding_loaded"] is True
+    assert "semantic_rerank" in status["supported_capabilities"]
+    assert "local_llm" in status["supported_capabilities"]
     assert status["max_threads"] == 4
 
     with pytest.raises(ProblemException) as unavailable:

@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "darwin_vm": {"url": "https://github.com/jprx/darwin-vm", "commit": "44f374574cb3be1e62f8d85517636c8bc7ff98a9"},
+  "qemu_sptm": {"url": "https://github.com/jprx/qemu-sptm", "commit": "6c3ca665bab9a08399f4681e4ada43bfcfb7d493"},
+  "device": "Macmini9,1",
+  "product": "macOS",
+  "version": "26.6",
+  "build": "25G72",
+  "ipsw_url": "https://updates.cdn-apple.com/2026SummerFCS/fullrestores/140-65618/10445B26-DE2C-43EC-9149-0A831602E74B/UniversalMac_26.6_25G72_Restore.ipsw",
+  "helper_target": "macos-x64",
+  "wsl_distribution": "Debian",
+  "local_only": true,
+  "capability": "experimental-command-line",
+  "full_desktop_supported": false
+}

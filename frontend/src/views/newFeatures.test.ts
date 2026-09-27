@@ -238,7 +238,8 @@ describe("1.4.3 新增页面", () => {
       await flushPromises();
       optionSnapshots[feature] = vm.requestOptions();
     }
-    expect(optionSnapshots.format).toMatchObject({ template: "GB/T 9704-2012", scope: "full" });
+    expect(optionSnapshots.format).toMatchObject({ template: "GB/T 9704-2012" });
+    expect(optionSnapshots.format).not.toHaveProperty("scope");
     expect(optionSnapshots.replace.rules).toHaveLength(1);
     expect(optionSnapshots.redheader).toMatchObject({ document_type: "down", agency: "中共××委员会" });
     expect(optionSnapshots.rename.parts).toEqual(["title", "document_number"]);

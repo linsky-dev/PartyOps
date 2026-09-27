@@ -85,12 +85,13 @@ Name: "{commonappdata}\PartyOps"; Permissions: admins-full system-full
 Name: "{commonappdata}\PartyOps-System"; Permissions: admins-full system-full
 
 [Files]
-Source: "{#BuildRoot}\*"; Excludes: "PartyOpsUpdater.exe,PartyOpsUpdaterService.exe"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
+Source: "{#BuildRoot}\*"; Excludes: "PartyOpsUpdater.exe,PartyOpsUpdaterService.exe,prerequisites\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
 ; 主机应用内升级期间这两个进程仍承载事务。Windows 不能覆盖正在运行的
 ; EXE，因此仅它们使用系统重启替换；主程序、前端和其余组件立即生效。
 Source: "{#BuildRoot}\PartyOpsUpdater.exe"; DestDir: "{app}"; Flags: ignoreversion restartreplace
 Source: "{#BuildRoot}\PartyOpsUpdaterService.exe"; DestDir: "{app}"; Flags: ignoreversion restartreplace
 Source: "{#SourcePath}\validate-install-path.ps1"; Flags: dontcopy
+Source: "{#BuildRoot}\prerequisites\ndp48-x86-x64-allos-enu.exe"; Flags: dontcopy
 
 [Icons]
 Name: "{group}\党建智办"; Filename: "{app}\PartyOpsLauncher.exe"; IconFilename: "{app}\partyops.ico"
@@ -98,8 +99,8 @@ Name: "{group}\管理本机共享文件夹"; Filename: "{app}\PartyOpsWizard.exe
 Name: "{commondesktop}\党建智办"; Filename: "{app}\PartyOpsLauncher.exe"; IconFilename: "{app}\partyops.ico"
 
 [Run]
-Filename: "{app}\PartyOpsLauncher.exe"; Description: "启动党建智办配置向导"; Flags: nowait postinstall skipifsilent runasoriginaluser
-Filename: "{app}\PartyOpsLauncher.exe"; Parameters: "--background"; Flags: nowait runasoriginaluser; Check: WizardSilent
+Filename: "{app}\PartyOpsLauncher.exe"; Description: "启动党建智办配置向导"; Flags: nowait postinstall skipifsilent runasoriginaluser; Check: CanLaunchAfterInstall
+Filename: "{app}\PartyOpsLauncher.exe"; Parameters: "--background"; Flags: nowait runasoriginaluser; Check: WizardSilentAndCanLaunch
 
 [UninstallRun]
 Filename: "{app}\PartyOpsService.exe"; Parameters: "--wait=30 stop"; Flags: runhidden waituntilterminated skipifdoesntexist; RunOnceId: "StopHostService"
@@ -165,10 +166,95 @@ var
   DataMarkerHadPrevious: Boolean;
   DataMarkerTransactionActive: Boolean;
   DeleteAllDataOnUninstall: Boolean;
+  DotNet48RestartRequired: Boolean;
 
 const
   PartyOpsAppId = '{1C8EFC63-CAFC-46EF-A5E3-D3D119B5BB3A}';
   ClassesPrefix = 'Software\Classes\';
+  DotNet48ReleaseMinimum = 528040;
+  DotNet48InstallerName = 'ndp48-x86-x64-allos-enu.exe';
+  DotNet48InstallerSha256 = '0A3A390C47E639D0F7FC65B21195FEE6B7F65B066F80F70C60FAB191D14B7E40';
+
+function HasDotNet48: Boolean;
+var
+  ReleaseValue: Cardinal;
+begin
+  Result :=
+    RegQueryDWordValue(
+      HKLM32,
+      'SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full',
+      'Release',
+      ReleaseValue
+    ) and
+    (ReleaseValue >= DotNet48ReleaseMinimum);
+end;
+
+function EnsureDotNet48(var NeedsRestart: Boolean): String;
+var
+  InstallerPath, InstallerHash, ExtractError: String;
+  ResultCode: Integer;
+begin
+  Result := '';
+  if HasDotNet48 then
+    exit;
+  WizardForm.StatusLabel.Caption := '正在安装公文排版所需的微软 .NET Framework 4.8…';
+  try
+    ExtractTemporaryFile(DotNet48InstallerName);
+  except
+    { 保留底层错误，区分远程 Shell 配额、磁盘/文件异常；不把所有失败都归因权限。 }
+    ExtractError := GetExceptionMessage;
+    Log('[DOTNET48_EXTRACT_FAILED] ' + ExtractError);
+    Result := '[DOTNET48_EXTRACT_FAILED] 无法释放随包携带的 .NET Framework 4.8 离线运行时。请查看安装日志中的详细原因。';
+    exit;
+  end;
+  InstallerPath := ExpandConstant('{tmp}\') + DotNet48InstallerName;
+  InstallerHash := GetSHA256OfFile(InstallerPath);
+  if (InstallerHash = '') or
+     (CompareText(InstallerHash, DotNet48InstallerSha256) <> 0) then
+  begin
+    Result := '[DOTNET48_HASH_MISMATCH] .NET Framework 4.8 离线运行时校验失败，安装已停止。';
+    exit;
+  end;
+  ResultCode := -1;
+  if not Exec(
+    InstallerPath,
+    '/q /norestart',
+    '',
+    SW_HIDE,
+    ewWaitUntilTerminated,
+    ResultCode
+  ) then
+  begin
+    Result := '[DOTNET48_INSTALL_LAUNCH_FAILED] 无法启动 .NET Framework 4.8 安装程序。';
+    exit;
+  end;
+  if (ResultCode <> 0) and (ResultCode <> 1641) and (ResultCode <> 3010) then
+  begin
+    Result := '[DOTNET48_INSTALL_FAILED] .NET Framework 4.8 安装失败，退出码：' +
+      IntToStr(ResultCode) + '。PartyOps 尚未开始安装。';
+    exit;
+  end;
+  if not HasDotNet48 then
+  begin
+    Result := '[DOTNET48_VERIFY_FAILED] .NET Framework 4.8 安装后回读失败，PartyOps 尚未开始安装。';
+    exit;
+  end;
+  if (ResultCode = 1641) or (ResultCode = 3010) then
+  begin
+    NeedsRestart := True;
+    DotNet48RestartRequired := True;
+  end;
+end;
+
+function CanLaunchAfterInstall: Boolean;
+begin
+  Result := not DotNet48RestartRequired;
+end;
+
+function WizardSilentAndCanLaunch: Boolean;
+begin
+  Result := WizardSilent and CanLaunchAfterInstall;
+end;
 
 #ifdef PartyOpsLegacy
 function GetModuleHandle(ModuleName: String): THandle;
@@ -683,24 +769,14 @@ end;
 
 function ExtractServiceExecutablePath(CommandLine, ServiceExecutable: String): String;
 var
-  I, ExecutableEnd: Integer;
+  I, NameLength, ExecutableEnd: Integer;
 begin
   Result := '';
   CommandLine := Trim(CommandLine);
   if CommandLine = '' then
     exit;
-  { 历史服务可能留下未加引号且安装目录含空格的 ImagePath。只在完整出现
-    精确服务文件名时截取到该后缀，不能再按第一个空格误读为 C:\Program。 }
-  I := Pos(Lowercase(ServiceExecutable), Lowercase(CommandLine));
-  if I > 0 then
-  begin
-    ExecutableEnd := I + Length(ServiceExecutable) - 1;
-    Result := Copy(CommandLine, 1, ExecutableEnd);
-    if (Length(Result) > 0) and (Result[1] = '"') then
-      Delete(Result, 1, 1);
-    Result := NormalizeOwnedExecutablePath(Result);
-    exit;
-  end;
+  { 先按 Unicode 字符读取引号路径。Inno 的 Pos 字节位置不能用于
+    Copy 的字符位置，否则中文目录会把结尾引号或参数截入文件名。 }
   if CommandLine[1] = '"' then
   begin
     I := 2;
@@ -708,16 +784,32 @@ begin
       I := I + 1;
     if I <= Length(CommandLine) then
       Result := Copy(CommandLine, 2, I - 2);
+    Result := NormalizeOwnedExecutablePath(Result);
+    exit;
   end
   else
   begin
-    I := Pos(' ', CommandLine);
-    if I = 0 then
-      Result := CommandLine
-    else
-      Result := Copy(CommandLine, 1, I - 1);
+    { 历史未加引号的含空格路径，仍只接受完整服务文件名边界。
+      全程用 Copy/Length 的字符索引，避免依赖当前 Windows 代码页。 }
+    NameLength := Length(ServiceExecutable);
+    if NameLength = 0 then
+      exit;
+    for I := 1 to Length(CommandLine) - NameLength + 1 do
+    begin
+      if CompareText(Copy(CommandLine, I, NameLength), ServiceExecutable) = 0 then
+      begin
+        ExecutableEnd := I + NameLength - 1;
+        if ((I = 1) or (CommandLine[I - 1] = '\') or (CommandLine[I - 1] = '/')) and
+           ((ExecutableEnd = Length(CommandLine)) or
+            (CommandLine[ExecutableEnd + 1] = ' ') or
+            (CommandLine[ExecutableEnd + 1] = #9)) then
+        begin
+          Result := NormalizeOwnedExecutablePath(Copy(CommandLine, 1, ExecutableEnd));
+          exit;
+        end;
+      end;
+    end;
   end;
-  Result := NormalizeOwnedExecutablePath(Result);
 end;
 
 function IsKnownLegacyPartyOpsServiceBinary(
@@ -1230,6 +1322,9 @@ var
   RegistryError: String;
 #endif
 begin
+  Result := EnsureDotNet48(NeedsRestart);
+  if Result <> '' then
+    exit;
 #ifdef PartyOpsLegacy
   if not ValidateWindows7Prerequisites(RegistryError) then
   begin

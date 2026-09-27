@@ -1,0 +1,37 @@
+Mono 6.8 runtime redistribution notice
+======================================
+
+PartyOps uses Mono's mkbundle utility to embed the Mono runtime and the
+architecture-neutral PartyOps document formatter assemblies into the native
+Linux/macOS formatter host. The bundled runtime and class libraries are
+generally distributed under the MIT license; a small number of runtime
+components use compatible BSD-3-Clause terms.
+
+Locked upstream license source:
+https://github.com/mono/mono/blob/mono-6.8.0.123/LICENSE
+
+MIT X11 License
+---------------
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+The complete upstream file also lists the BSD and other notices applicable to
+individual Mono source files. PartyOps redistributes the unmodified mkbundle
+runtime produced from the locked Mono release and preserves that upstream
+license URL in both this file and the project third-party notice.

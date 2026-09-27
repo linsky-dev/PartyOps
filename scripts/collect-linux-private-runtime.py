@@ -196,14 +196,14 @@ def main() -> int:
         return 2
 
     manifest = output.parent / "PRIVATE_RUNTIME_LIBS.txt"
-    manifest.write_text(
-        "".join(
-            f"{name}\t{source.relative_to(sysroot)}\t{_sha256(output / name)}\n"
-            for name, source in sorted(copied.items())
-        ),
-        encoding="utf-8",
-        newline="\n",
-    )
+    # 保持打包工具可由 Python 3.8 执行，并显式固定清单换行为 LF。
+    with manifest.open("w", encoding="utf-8", newline="\n") as stream:
+        stream.write(
+            "".join(
+                f"{name}\t{source.relative_to(sysroot)}\t{_sha256(output / name)}\n"
+                for name, source in sorted(copied.items())
+            )
+        )
     print(f"LIBRARIES={len(copied)}")
     print(f"BYTES={sum(path.stat().st_size for path in output.iterdir() if path.is_file())}")
     return 0

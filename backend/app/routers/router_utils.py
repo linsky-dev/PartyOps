@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from typing import overload
 
 from fastapi import Request
 
@@ -40,7 +41,16 @@ def client_ip(request: Request) -> str:
     return request.client.host if request.client else ""
 
 
+@overload
+def aware_utc(value: datetime) -> datetime: ...
+
+
+@overload
+def aware_utc(value: None) -> None: ...
+
+
 def aware_utc(value: datetime | None) -> datetime | None:
+    """保留空值；非空输入保证返回非空时间，不改变已有 UTC 解释。"""
     if value is None:
         return None
     return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value

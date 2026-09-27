@@ -44,6 +44,7 @@ from ..local_ai import (
     embedding_runtime,
     llm_runtime,
     local_runtime_status,
+    supported_local_capabilities,
 )
 from ..model_catalog import recommend_models
 from ..model_packs import (
@@ -637,6 +638,9 @@ def activate_local_model_pack(
     admin: User = Depends(require_admin),
     db: Session = Depends(get_session),
 ) -> AIModelPackOut:
+    _profile, supported = supported_local_capabilities()
+    if capability not in supported:
+        raise ProblemException(409, "LOCAL_AI_PACKAGE_UNSUPPORTED", "当前安装包不支持此本地模型能力", "请使用当前安装包提供的能力。")
     pack = db.get(AIModelPack, pack_id)
     if not pack:
         raise ProblemException(404, "MODEL_PACK_NOT_FOUND", "模型包不存在", "请刷新模型包列表。")
@@ -851,7 +855,7 @@ def patch_ai_settings(
             resolve=False,
         )
     is_new = provider is None
-    if is_new:
+    if provider is None:
         provider = AIProviderConfig(created_by=admin.id, version=1)
         db.add(provider)
     provider.name = payload.name.strip()
@@ -1056,7 +1060,7 @@ def query_ai(
         else:
             content = complete_locally(db, payload.instruction, excerpts)
     except ProblemException as exc:
-        invocation = db.get(AIInvocation, invocation.id)
+        db.refresh(invocation)
         invocation.status = "failed"
         invocation.error_code = exc.code
         invocation.completed_at = utcnow()
@@ -1070,7 +1074,7 @@ def query_ai(
         sources=sources,
     )
     db.add(draft)
-    invocation = db.get(AIInvocation, invocation.id)
+    db.refresh(invocation)
     invocation.status = "completed"
     invocation.completed_at = utcnow()
     db.flush()

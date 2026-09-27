@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import errno
 import getpass
 import hashlib
 import html
@@ -52,7 +53,12 @@ from .client_agent import (
     validate_config,
 )
 from .networking import discover_lan_addresses
-from .startup_diagnostics import public_startup_message
+from .official_format_instance import configured_formatter_port
+from .startup_diagnostics import (
+    DATA_DIR_FULL,
+    DATABASE_IO_FAILED,
+    public_startup_message,
+)
 from .time_utils import beijing_iso
 from .windows_host_status import (
     CHILD_EXITED,
@@ -102,6 +108,7 @@ LINUX_LAUNCH_ENV_KEYS = (
     "PARTYOPS_ADVERTISE_HOST",
     "PARTYOPS_PORT",
     "PARTYOPS_AGENT_PORT",
+    "PARTYOPS_OFFICIAL_FORMAT_PORT",
     "PARTYOPS_DATA_DIR",
     "PARTYOPS_STRICT_SQLITE",
     "PARTYOPS_SEED_DEMO",
@@ -1977,6 +1984,9 @@ def _rewrite_personal_port(config_path: Path, port: int) -> dict[str, str]:
     replacements = {
         "PARTYOPS_PORT": str(port),
         "PARTYOPS_AGENT_PORT": str(port + 1),
+        "PARTYOPS_OFFICIAL_FORMAT_PORT": str(
+            configured_formatter_port(load_host_environment(config_path), port)
+        ),
     }
     lines = config_path.read_text(encoding="utf-8").splitlines()
     seen: set[str] = set()
@@ -2095,6 +2105,7 @@ def write_host_config(
         "PARTYOPS_ADVERTISE_HOST": host,
         "PARTYOPS_PORT": str(port),
         "PARTYOPS_AGENT_PORT": str(port + 1),
+        "PARTYOPS_OFFICIAL_FORMAT_PORT": str(configured_formatter_port(previous, port)),
         "PARTYOPS_DATA_DIR": str(resolved_data_dir),
         "PARTYOPS_STRICT_SQLITE": "true",
         "PARTYOPS_SEED_DEMO": "false",
@@ -2216,6 +2227,7 @@ def write_personal_config(data_dir: Path, port: int = 18775) -> Path:
             "PARTYOPS_ADVERTISE_HOST": "127.0.0.1",
             "PARTYOPS_PORT": str(port),
             "PARTYOPS_AGENT_PORT": str(port + 1),
+            "PARTYOPS_OFFICIAL_FORMAT_PORT": str(configured_formatter_port(previous, port)),
             "PARTYOPS_DATA_DIR": str(resolved_data_dir),
             "PARTYOPS_STRICT_SQLITE": "true",
             "PARTYOPS_SEED_DEMO": "false",
@@ -2829,8 +2841,8 @@ def write_device_config(
         raise
 
 
-def load_host_environment(path: Path) -> dict[str, str]:
-    env = os.environ.copy()
+def load_host_environment(path: Path, *, inherit_environment: bool = True) -> dict[str, str]:
+    env = os.environ.copy() if inherit_environment else {}
     for line in path.read_text(encoding="utf-8").splitlines():
         if not line.strip() or line.lstrip().startswith("#"):
             continue
@@ -3019,30 +3031,73 @@ def _marked_runtime_file_is_trusted(root: Path, candidate: Path) -> bool:
         return False
 
 
+def _log_prefix_digest(stream: Any, size: int) -> str:
+    """流式校验启动前的原日志，识别同文件截断后重新增长的情况。"""
+    digest = hashlib.sha256()
+    remaining = size
+    while remaining:
+        block = stream.read(min(remaining, 256 * 1024))
+        if not block:
+            return ""
+        digest.update(block)
+        remaining -= len(block)
+    return digest.hexdigest()
+
+
 def _spawn(
     command: list[str], log_path: Path, env: dict[str, str] | None = None
 ) -> subprocess.Popen:
     log_path.parent.mkdir(parents=True, exist_ok=True)
     _rotate_bounded_log(log_path)
     handle = log_path.open("ab")
-    options: dict[str, Any] = {
-        "env": env,
-        "stdin": subprocess.DEVNULL,
-        "stdout": handle,
-        "stderr": subprocess.STDOUT,
-    }
-    if os.name == "nt":
-        # PartyOps.exe 是服务/诊断共用的控制台入口；个人模式由桌面 GUI
-        # 启动时必须隐藏其控制台，否则会出现黑框闪烁。
-        options["creationflags"] = subprocess.CREATE_NO_WINDOW
-    else:
-        options["start_new_session"] = True
-    process = subprocess.Popen(  # noqa: S603 - 命令仅指向同包内固定可执行文件。
-        command,
-        **options,
-    )
-    handle.close()
+    try:
+        metadata = os.fstat(handle.fileno())
+        # 在启动前绑定本次追加起点和文件身份；旧故障仍保留在原日志中。
+        log_boundary: dict[str, Any] = {
+            "path": str(log_path.resolve()), "offset": handle.tell(),
+            "device": metadata.st_dev, "inode": metadata.st_ino,
+        }
+        try:
+            with log_path.open("rb") as previous:
+                log_boundary["prefix_sha256"] = _log_prefix_digest(previous, log_boundary["offset"])
+        except OSError:
+            # 日志不可读不阻止已授权的启动，只拒绝把无法绑定的文本作为本轮证据。
+            log_boundary["prefix_sha256"] = ""
+        options: dict[str, Any] = {
+            "env": env,
+            "stdin": subprocess.DEVNULL,
+            "stdout": handle,
+            "stderr": subprocess.STDOUT,
+        }
+        if os.name == "nt":
+            # 保持桌面个人进程原有的隐藏控制台行为。
+            options["creationflags"] = subprocess.CREATE_NO_WINDOW
+        else:
+            options["start_new_session"] = True
+        process = subprocess.Popen(  # noqa: S603 - 命令仅指向同包内固定可执行文件。
+            command,
+            **options,
+        )
+        setattr(process, "_partyops_log_boundary", log_boundary)
+    finally:
+        handle.close()
     return process
+
+
+
+def _personal_preflight_io_error(stage: str, path: Path, exc: OSError) -> HostStartupError:
+    """保留真实权限拒绝；空间不足和一般 I/O 失败不能统一误报权限。"""
+    winerror = getattr(exc, "winerror", None)
+    if isinstance(exc, PermissionError) or exc.errno in {errno.EACCES, errno.EPERM} or winerror == 5:
+        code = RUNTIME_PERMISSION_DENIED
+        message = f"当前账号无法读写{stage}。请使用当前账号可访问的本机目录；原数据不会被删除。"
+    elif exc.errno == errno.ENOSPC or winerror in {39, 112}:
+        code = DATA_DIR_FULL
+        message = "所在磁盘空间不足，请释放空间后重试。"
+    else:
+        code = DATABASE_IO_FAILED
+        message = "所在磁盘或文件暂时无法可靠读写，请检查磁盘状态后重试。"
+    return HostStartupError(code, message, detail=f"阶段={stage}；路径={path}；winerror={winerror}；errno={exc.errno}")
 
 
 def _preflight_personal_runtime_access(
@@ -3071,14 +3126,7 @@ def _preflight_personal_runtime_access(
             if stage == "PartyOps 主程序" and not os.access(path, os.X_OK):
                 raise PermissionError(f"{stage}不可执行")
         except OSError as exc:
-            raise HostStartupError(
-                RUNTIME_PERMISSION_DENIED,
-                f"当前账号无法读取或执行{stage}。请使用当前安装包执行修复安装。",
-                detail=(
-                    f"阶段={stage}；路径={path}；"
-                    f"winerror={getattr(exc, 'winerror', '')}；errno={getattr(exc, 'errno', '')}"
-                ),
-            ) from exc
+            raise _personal_preflight_io_error(stage, path, exc) from exc
 
     temporary = data_dir / f".partyops-runtime-permission-{secrets.token_hex(8)}.tmp"
     committed = temporary.with_suffix(".ok")
@@ -3093,16 +3141,10 @@ def _preflight_personal_runtime_access(
         with log_path.open("ab"):
             pass
     except OSError as exc:
-        raise HostStartupError(
-            RUNTIME_PERMISSION_DENIED,
-            "当前账号无法写入个人数据目录。请在配置向导重新选择当前账号可写的本机目录；原数据不会被删除。",
-            detail=(
-                f"阶段=个人数据目录；路径={data_dir}；"
-                f"winerror={getattr(exc, 'winerror', '')}；errno={getattr(exc, 'errno', '')}"
-            ),
-        ) from exc
+        raise _personal_preflight_io_error("个人数据目录", data_dir, exc) from exc
     finally:
-        for candidate in (temporary, committed):
+        # _write_private 自身的写入临时文件也属于本次随机探针，失败时必须清理。
+        for candidate in (temporary, committed, temporary.with_suffix(temporary.suffix + ".tmp")):
             try:
                 candidate.unlink(missing_ok=True)
             except OSError:
@@ -3125,7 +3167,13 @@ def preflight_configured_personal_runtime_access() -> dict[str, object]:
 
     root = config_root()
     mode_path = root / "mode.json"
-    if mode_path.is_symlink() or not mode_path.is_file():
+    try:
+        mode_metadata = mode_path.lstat()
+    except FileNotFoundError:
+        mode_metadata = None
+    except OSError as exc:
+        raise _personal_preflight_io_error("个人模式配置", mode_path, exc) from exc
+    if mode_metadata is None or not stat.S_ISREG(mode_metadata.st_mode):
         return {
             "passed": True,
             "mode": "configured-personal-permission",
@@ -3134,7 +3182,9 @@ def preflight_configured_personal_runtime_access() -> dict[str, object]:
         }
     try:
         mode = _read_small_json(mode_path, limit=256 * 1024)
-    except (OSError, ValueError, json.JSONDecodeError):
+    except OSError as exc:
+        raise _personal_preflight_io_error("个人模式配置", mode_path, exc) from exc
+    except (ValueError, json.JSONDecodeError):
         return {
             "passed": True,
             "mode": "configured-personal-permission",
@@ -3151,19 +3201,25 @@ def preflight_configured_personal_runtime_access() -> dict[str, object]:
 
     configured = str(mode.get("config_path") or root / "personal.env").strip()
     config_path = Path(configured)
-    if (
-        not config_path.is_absolute()
-        or config_path.is_symlink()
-        or not config_path.is_file()
-        or config_path.stat().st_size > 64 * 1024
-    ):
+    try:
+        config_metadata = config_path.lstat() if config_path.is_absolute() else None
+    except FileNotFoundError:
+        config_metadata = None
+    except OSError as exc:
+        raise _personal_preflight_io_error("个人模式配置", config_path, exc) from exc
+    if (config_metadata is None or not stat.S_ISREG(config_metadata.st_mode)
+            or config_metadata.st_size > 64 * 1024):
         return {
             "passed": True,
             "mode": "configured-personal-permission",
             "checked": False,
             "reason": "personal-config-needs-repair",
         }
-    values = load_host_environment(config_path)
+    try:
+        # 必须检查已保存的个人目录，不能被安装器/控制器继承的环境变量补齐。
+        values = load_host_environment(config_path, inherit_environment=False)
+    except OSError as exc:
+        raise _personal_preflight_io_error("个人模式配置", config_path, exc) from exc
     data_raw = values.get("PARTYOPS_DATA_DIR", "").strip()
     data_dir = Path(data_raw)
     if not data_raw or not data_dir.is_absolute():
@@ -3278,15 +3334,20 @@ def _preflight_windows_runtime_dependencies(
             "当前是 Windows 7，但安装的是 Windows 10/11 通用包。请改用文件名含 windows7 的专用安装包。",
             detail=f"package_platform={package_platform or 'missing'}；os=Windows 7 SP1",
         )
+    legacy_package = package_platform == "windows7"
     if not is_win7 and package_platform != "windows":
-        raise HostStartupError(
-            RUNTIME_PACKAGE_MISMATCH,
-            "当前 Windows 10/11 必须使用通用安装包，请安装文件名含 windows_amd64 的版本。",
-            detail=(
-                f"package_platform={package_platform or 'missing'}；"
-                f"os={detected_version or 'unknown'}"
-            ),
-        )
+        from .windows_runtime_identity import installed_identity
+
+        identity = installed_identity(executable, stdlib_platform.version())
+        if (not legacy_package or not detected_version or detected_version < (10, 0)
+                or identity.get("package_identity_status") != "verified"
+                or identity.get("package_platform") != "windows7"
+                or identity.get("architecture") != package_arch):
+            raise HostStartupError(
+                RUNTIME_PACKAGE_MISMATCH,
+                "当前系统与安装包的架构、发布线或运行时身份不匹配，请安装对应版本。",
+                detail=f"package_platform={package_platform or 'missing'}；os={detected_version or 'unknown'}；identity={identity.get('package_identity_reason', '')}",
+            )
 
     missing_apis = _missing_win7_loader_apis() if is_win7 else []
     if is_win7 and missing_apis:
@@ -3330,7 +3391,8 @@ def _preflight_windows_runtime_dependencies(
             detail="无效清单条目=" + ",".join(invalid_entries[:12]),
         )
 
-    expected_python = "python38.dll" if is_win7 else (
+    # 依赖闭包由安装包发布线决定，不能让 Win10/ARM 宿主把 legacy 包误认为现代 Python。
+    expected_python = "python38.dll" if legacy_package else (
         f"python{sys.version_info.major}{sys.version_info.minor}.dll"
     )
     python_dlls = {
@@ -3343,7 +3405,7 @@ def _preflight_windows_runtime_dependencies(
             RUNTIME_PACKAGE_MISMATCH,
             (
                 "Win7 专用包必须使用隔离的 Python 3.8 运行时；当前包不符合要求。"
-                if is_win7
+                if legacy_package
                 else "通用安装包的 Python 运行时与当前启动程序不一致，请重新下载安装。"
             ),
             detail="检测到 Python DLL=" + (",".join(sorted(python_dlls)) or "无"),
@@ -3371,7 +3433,7 @@ def _preflight_windows_runtime_dependencies(
     if process_arch == "amd64":
         required_paths.add("_internal/vcruntime140_1.dll")
 
-    if is_win7:
+    if legacy_package:
         source_names = ("ucrt-source.json", "vc-runtime-source.json")
         required_names: set[str] = set()
         try:
@@ -3556,16 +3618,28 @@ def wait_for_host_health(
     def personal_log_tail() -> str:
         """读取个人进程自己的启动日志，避免误报不存在的服务日志。"""
 
-        if data_dir is None:
+        boundary = getattr(process, "_partyops_log_boundary", None)
+        if data_dir is None or not isinstance(boundary, dict):
             return ""
         path = data_dir / "launcher.log"
         try:
-            size = path.stat().st_size
+            start = boundary.get("offset")
+            if (type(start) is not int or start < 0
+                    or boundary.get("path") != str(path.resolve())
+                    or not boundary.get("prefix_sha256")):
+                return ""
             with path.open("rb") as stream:
-                offset = max(0, size - 8192)
+                metadata = os.fstat(stream.fileno())
+                if (metadata.st_dev != boundary.get("device")
+                        or metadata.st_ino != boundary.get("inode")
+                        or metadata.st_size < start):
+                    return ""
+                if _log_prefix_digest(stream, start) != boundary["prefix_sha256"]:
+                    return ""
+                offset = max(start, metadata.st_size - 8192)
                 stream.seek(offset)
                 text = stream.read(8192).decode("utf-8", errors="replace")
-            if offset and "\n" in text:
+            if offset > start and "\n" in text:
                 text = text.split("\n", 1)[1]
             return text
         except OSError:
@@ -3596,7 +3670,7 @@ def wait_for_host_health(
             raise HostStartupError(
                 code,
                 "PartyOps 个人进程启动后提前退出。" if code == CHILD_EXITED else "PartyOps 个人进程启动探针发现明确故障。",
-                detail=detail or f"个人进程退出码 {process.returncode}",
+                detail=f"个人进程退出码 {process.returncode}；本次启动日志：\n{detail or '无本轮日志输出'}",
             )
         if progress:
             progress("health_check")
@@ -3838,11 +3912,18 @@ def launch_host(config_path: Path) -> str:
 def launch_personal(config_path: Path) -> str:
     """按当前桌面账号启动本机专用进程，不注册服务、不开放局域网。"""
 
-    env = load_host_environment(config_path)
-    port = int(env["PARTYOPS_PORT"])
-    data_dir = Path(env["PARTYOPS_DATA_DIR"])
+    # 核心路径和端口必须来自保存配置，不能由控制器或旧实例的环境补齐。
+    saved = load_host_environment(config_path, inherit_environment=False)
+    port = int(saved["PARTYOPS_PORT"])
+    data_raw = saved.get("PARTYOPS_DATA_DIR", "").strip()
+    data_dir = Path(data_raw)
+    if not data_raw or not data_dir.is_absolute():
+        raise ValueError("个人模式配置缺少绝对数据目录，请修复已保存的配置。")
+    env = os.environ.copy()
+    env.update(saved)
     executable = _preflight_personal_runtime_access(config_path, data_dir)
     owned_existing = False
+    config_rewritten = False
     lock_owners = _windows_data_lock_owner_pids(data_dir)
     discovered = _discover_running_windows_personal(data_dir, port)
     if discovered is not None:
@@ -3855,6 +3936,7 @@ def launch_personal(config_path: Path) -> str:
             # rc.4/旧 rc.6 曾会误改端口；恢复到真正持锁实例的端口，再执行版本接管。
             port = discovered_port
             env = _rewrite_personal_port(config_path, port)
+            config_rewritten = True
             data_dir = Path(env["PARTYOPS_DATA_DIR"])
     elif lock_owners:
         raise HostStartupError(
@@ -3877,6 +3959,7 @@ def launch_personal(config_path: Path) -> str:
             previous_port = port
             port = _select_alternative_personal_port(previous_port)
             env = _rewrite_personal_port(config_path, port)
+            config_rewritten = True
             data_dir = Path(env["PARTYOPS_DATA_DIR"])
             port_open = False
             print(
@@ -3914,6 +3997,8 @@ def launch_personal(config_path: Path) -> str:
                         detail=str(stop_error),
                     ) from stop_error
                 if stopped:
+                    if not config_rewritten:
+                        env = _rewrite_personal_port(config_path, port)
                     process = _spawn(
                         [str(executable)],
                         data_dir / "launcher.log",
@@ -3934,6 +4019,8 @@ def launch_personal(config_path: Path) -> str:
                 f"个人模式端口 {port} 已被其他程序占用，请更换端口后重试。",
                 detail=exc.detail,
             ) from exc
+    if not config_rewritten and "PARTYOPS_OFFICIAL_FORMAT_PORT=" not in config_path.read_text(encoding="utf-8"):
+        env = _rewrite_personal_port(config_path, port)
     process = _spawn([str(executable)], data_dir / "launcher.log", env)
     url = wait_for_host_health(
         "127.0.0.1",

@@ -4448,4 +4448,58 @@ describe("核心页面真实挂载", () => {
     localStorage.removeItem("partyops.pending-online-update");
     wrapper.unmount();
   });
+
+  it("按本机包档限制本地模型启用与推荐，同时兼容旧 runtime status", async () => {
+    const wrapper = await mountView(SettingsView, "/settings", true);
+    const state = setupState(wrapper);
+    const canUse = state.modelCapabilitySupported as (capability: string) => boolean;
+    const recommendations = [
+      { id: "embed", kind: "embedding" },
+      { id: "llm", kind: "llm" },
+      { id: "intent", kind: "intent_router" },
+    ];
+    state.modelRecommendations = recommendations;
+
+    state.localAIRuntime = {
+      ready: true, state: "ready", message: "完整本地模型能力", runtime_profile: "full",
+      supported_capabilities: ["semantic_rerank", "local_llm"],
+      llm_running: false, embedding_loaded: false, embedding_available: false, llm_available: false,
+      worker_scope: "host", max_threads: 4, memory_limit_mb: 2048,
+    };
+    await flushPromises();
+    expect(canUse("embedding")).toBe(true);
+    expect(canUse("llm")).toBe(true);
+    expect((state.visibleModelRecommendations as typeof recommendations).map((item) => item.kind))
+      .toEqual(["embedding", "llm", "intent_router"]);
+
+    for (const supported_capabilities of [
+      [],
+      ["host", "collaboration", "database", "files", "archives", "backup", "ocr"],
+    ]) {
+      state.localAIRuntime = {
+        ready: false, state: "degraded", message: "本版本暂不提供本地 AI", runtime_profile: "core",
+        supported_capabilities,
+        llm_running: false, embedding_loaded: false, embedding_available: false, llm_available: false,
+        worker_scope: "host", max_threads: 4, memory_limit_mb: 2048,
+      };
+      await flushPromises();
+      expect(canUse("embedding")).toBe(false);
+      expect(canUse("llm")).toBe(false);
+      expect(canUse("intent_router")).toBe(true);
+      expect((state.visibleModelRecommendations as typeof recommendations).map((item) => item.kind))
+        .toEqual(["intent_router"]);
+      expect(state.localAIProfileUnavailable).toBe(true);
+    }
+
+    state.localAIRuntime = {
+      ready: true, state: "ready", message: "旧服务端状态",
+      llm_running: false, embedding_loaded: false, embedding_available: false, llm_available: false,
+      worker_scope: "host", max_threads: 4, memory_limit_mb: 2048,
+    };
+    await flushPromises();
+    expect(canUse("embedding")).toBe(true);
+    expect(canUse("llm")).toBe(true);
+    expect(state.localAIProfileUnavailable).toBe(false);
+    wrapper.unmount();
+  });
 });

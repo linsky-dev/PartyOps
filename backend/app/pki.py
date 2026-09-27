@@ -6,6 +6,8 @@ import ipaddress
 import os
 import socket
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from typing import TypedDict
 
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
@@ -28,7 +30,15 @@ def _load_key(path):
     return serialization.load_pem_private_key(path.read_bytes(), password=None)
 
 
-def ensure_tls_material(settings: Settings) -> dict[str, object]:
+class TLSMaterial(TypedDict):
+    """已生成证书的公共元数据；不包含私钥。"""
+
+    ca_path: Path
+    server_cert_path: Path
+    fingerprint: str
+
+
+def ensure_tls_material(settings: Settings) -> TLSMaterial:
     """按需生成并复用主机证书；密钥只存在 secrets/pki。"""
 
     advertised_host = getattr(settings, "network_advertise_host", settings.host)

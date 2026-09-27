@@ -654,14 +654,14 @@ def _read_update_manifest(package_path: Path) -> dict:
         if not isinstance(name, str) or not isinstance(expected, dict):
             raise RuntimeError("更新包制品清单结构无效")
         _safe_member(name)
-        info = info_by_name.get(name)
+        info_record = info_by_name.get(name)
         try:
             expected_size = int(expected.get("size", -1))
         except (TypeError, ValueError) as exc:
             raise RuntimeError("更新包制品大小无效") from exc
         expected_hash = str(expected.get("sha256", "")).lower()
         if (
-            info is None
+            info_record is None
             or expected_size < 0
             or expected_size > MAX_UPDATE_ARTIFACT_BYTES
             or info.file_size != expected_size
@@ -698,8 +698,15 @@ def _verify_manifest_signature(manifest: dict) -> bool:
 
 
 def _architecture() -> str:
+    if os.name == "nt" and getattr(sys, "frozen", False):
+        info = detect_platform_info()
+        if not update_platform_key(info):
+            raise RuntimeError("WINDOWS_UPDATE_CHANNEL_UNSUPPORTED：当前安装包身份未验证或没有对应更新通道")
+        return str(info["architecture"])
     value = normalize_architecture(platform.machine())
     supported = {"amd64", "x86"} if os.name == "nt" else {"amd64", "arm64"}
+    if sys.platform.startswith("linux"):
+        supported.add("loong64")
     if value not in supported:
         raise RuntimeError("当前系统架构不在 PartyOps 支持范围")
     return value
@@ -716,6 +723,9 @@ def _manifest_platform_name(manifest: dict) -> str:
         if not value:
             raise RuntimeError("当前系统无法匹配 PartyOps 更新制品")
         return value
+    if os.name == "nt" and getattr(sys, "frozen", False):
+        if update_platform_key(detect_platform_info()) != "windows":
+            raise RuntimeError("WINDOWS_UPDATE_CHANNEL_UNSUPPORTED：旧更新清单不包含当前兼容包发布线")
     return "windows" if os.name == "nt" else "uos"
 
 
@@ -871,6 +881,7 @@ def _select_artifact(
         "linux-deb": {
             "amd64": "_linux_amd64.deb",
             "arm64": "_linux_arm64.deb",
+            "loong64": "_linux_loong64.deb",
         },
         "linux-rpm": {
             "amd64": ".x86_64.rpm",
@@ -2200,7 +2211,7 @@ def _restart_linux_personal_runtime(
         import pwd
 
         try:
-            account = pwd.getpwuid(desktop_uid)
+            account = pwd.getpwuid(desktop_uid)  # type: ignore[attr-defined]  # Linux 个人更新路径。
         except KeyError:
             return False, None
         runuser = shutil.which("runuser")
@@ -2218,7 +2229,7 @@ def _restart_linux_personal_runtime(
     log_path.parent.mkdir(parents=True, exist_ok=True)
     with log_path.open("ab") as log_handle:
         if desktop_uid is not None:
-            os.fchown(log_handle.fileno(), desktop_uid, account.pw_gid)
+            os.fchown(log_handle.fileno(), desktop_uid, account.pw_gid)  # type: ignore[attr-defined]
         process = subprocess.Popen(  # noqa: S603 - 仅启动同一受保护安装目录内的固定程序。
             command,
             env=environment,
@@ -2263,11 +2274,11 @@ def _restore_personal_database_as_user(backup_path: Path, desktop_uid: int) -> N
     except FileNotFoundError:
         import pwd
 
-        account = pwd.getpwuid(desktop_uid)
+        account = pwd.getpwuid(desktop_uid)  # type: ignore[attr-defined]  # Linux 个人恢复路径。
         database_gid = account.pw_gid
         database_mode = 0o600
     restore_database_from_upgrade_backup(backup_path)
-    os.chown(database, desktop_uid, database_gid)
+    os.chown(database, desktop_uid, database_gid)  # type: ignore[attr-defined]
     database.chmod(database_mode & 0o660 or 0o600)
 
 

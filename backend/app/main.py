@@ -16,6 +16,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
+from typing import BinaryIO, Literal, TypedDict
 from urllib.parse import urlparse
 
 from fastapi import Depends, FastAPI, Query, Request
@@ -113,7 +114,7 @@ class DataDirectoryInstanceLock:
 
     def __init__(self, data_dir: Path) -> None:
         self.path = data_dir / ".partyops-instance.lock"
-        self.handle = None
+        self.handle: BinaryIO | None = None
 
     def acquire(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -130,7 +131,8 @@ class DataDirectoryInstanceLock:
             else:
                 import fcntl
 
-                fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                # Windows 的 typeshed 不公开 POSIX API；此分支只在 POSIX 运行。
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)  # type: ignore[attr-defined]
         except (OSError, BlockingIOError) as exc:
             handle.close()
             if getattr(exc, "errno", None) in {
@@ -162,7 +164,7 @@ class DataDirectoryInstanceLock:
             else:
                 import fcntl
 
-                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)  # type: ignore[attr-defined]
         finally:
             handle.close()
 
@@ -383,18 +385,32 @@ async def lifespan(_app: FastAPI):
         _initialize_runtime()
         # 主机/个人模式在同一用户进程内启动无窗口回环服务；协同模式由
         # client_agent 使用设备令牌摘要启动同一服务。
-        from .official_format_service import OfficialFormatLocalService
+        from .official_format_instance import start_instance_formatter
 
         with db_runtime.session_factory() as db:
-            local_formatter = OfficialFormatLocalService(
-                secret=ensure_device_context_secret(db),
-                config_dir=settings.data_dir / "logs",
-                port=settings.official_format_port,
-            ).start()
+            local_formatter = start_instance_formatter(
+                settings.data_dir, settings.official_format_port, ensure_device_context_secret(db)
+            )
+            settings.official_format_port = local_formatter.port
+            _app.state.official_formatter = local_formatter
             db.commit()
         stop_event = asyncio.Event()
         scheduler = asyncio.create_task(scheduler_loop(stop_event))
-    except BaseException:
+    except BaseException as exc:
+        if local_formatter is not None:
+            _app.state.official_formatter = None
+            local_formatter.close()
+        from .official_format import OfficialFormatError
+
+        if isinstance(exc, OfficialFormatError):
+            logging.getLogger("partyops").error("[%s] %s", exc.code, exc.detail)
+            try:
+                from .windows_host_status import write_service_status
+
+                write_service_status(settings.data_dir, stage="formatter_failed",
+                                     code=exc.code, detail=exc.detail)
+            except OSError:
+                logging.getLogger("partyops").exception("formatter_status_write_failed")
         db_runtime.dispose()
         instance_lock.release()
         raise
@@ -406,6 +422,7 @@ async def lifespan(_app: FastAPI):
         try:
             await scheduler
         finally:
+            _app.state.official_formatter = None
             if local_formatter is not None:
                 local_formatter.close()
             db_runtime.dispose()
@@ -454,7 +471,7 @@ def _apply_security_headers(response, request: Request):
         f"default-src 'self'; base-uri 'self'; frame-ancestors {frame_ancestors}; "
         "form-action 'self'; object-src 'none'; script-src 'self'; "
         "style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; "
-        f"font-src 'self' data:; connect-src 'self' http://127.0.0.1:{settings.official_format_port}; "
+        f"font-src 'self' data:; connect-src 'self' http://127.0.0.1:{settings.official_format_port} http://127.0.0.1:18768; "
         "worker-src 'self' blob:"
     )
     if settings.tls_enabled:
@@ -731,10 +748,29 @@ if frontend_dist.exists():
         return FileResponse(frontend_dist / "index.html")
 
 
+class _UvicornOptions(TypedDict, total=False):
+    """主端口和设备端口共用的实际参数，不放宽为任意值字典。"""
+
+    host: str
+    port: int
+    loop: Literal["asyncio"]
+    http: Literal["h11"]
+    ws: Literal["none"]
+    workers: int
+    reload: bool
+    access_log: bool
+    timeout_graceful_shutdown: int
+    ssl_certfile: str
+    ssl_keyfile: str
+    ssl_ca_certs: str | None
+    ssl_cert_reqs: int
+    lifespan: Literal["off"]
+
+
 def run() -> None:
     import uvicorn
 
-    uvicorn_options = {
+    uvicorn_options: _UvicornOptions = {
         "host": settings.network_bind_host,
         "port": settings.port,
         "loop": "asyncio",
@@ -768,7 +804,7 @@ def run() -> None:
         )
         # Agent 使用独立端口并强制客户端证书；浏览器主端口不要求客户端证书。
         if settings.agent_port != settings.port:
-            agent_options = {
+            agent_options: _UvicornOptions = {
                 **uvicorn_options,
                 "port": settings.agent_port,
                 "ssl_cert_reqs": 2,

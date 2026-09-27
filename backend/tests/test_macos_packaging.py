@@ -173,12 +173,28 @@ def test_macos_build_is_native_strict_signed_and_notarized() -> None:
     assert '"$LLAMA_RUNTIME/llama-server" "$APP/Contents/MacOS/llama-server"' in build
     assert "PARTYOPS_MACOS_OFFICE_RUNTIME" in build
     assert "MACOS_OFFICE_RUNTIME_MISSING" in build
+    assert "PARTYOPS_MACOS_FORMATTER_RUNTIME" in build
+    assert "MACOS_FORMATTER_RUNTIME_MISSING" in build
+    assert "validate-source-formatter-runtime.py" in build
+    assert "verify-document-formatter-parity.py" in build
+    assert "verify-document-formatter-features-e2e.py" in build
+    assert "probe-wps-native-bridge.py" not in build
+    assert "--bridge-evidence" not in build
+    assert "verify-formatter-runtime-evidence.py" in build
+    assert "runtime-evidence.json" in validation
+    assert "word-vtable-map.json" in validation
+    assert "LICENSE-WPS-SDK.txt" in validation
+    assert "LICENSE-MONO-RUNTIME.txt" in validation
+    assert "Resources/formatter-host/partyops-document-formatter-host" in build
+    assert "refresh_formatter_manifest_hash" in build
     assert "MACOS_OFFICE_RUNTIME_ARCH_MISMATCH" in build
     assert "MACOS_OFFICE_RUNTIME_SYMLINK_INVALID" in build
     assert '"$OFFICE_RUNTIME" "$APP/Contents/Resources/office-runtime"' in build
     assert "PARTYOPS_MACOS_OCR_RUNTIME" not in spec
     assert "PARTYOPS_MACOS_LLAMA_RUNTIME" not in spec
     assert "PARTYOPS_MACOS_OFFICE_RUNTIME" not in spec
+    assert "PARTYOPS_MACOS_FORMATTER_RUNTIME" not in spec
+    assert "MACOS_FORMATTER_RUNTIME_INCOMPLETE" in validation
     assert '(str(ocr_runtime), "ocr")' not in spec
     assert '(str(llama_runtime), ".")' not in spec
     update_key = ROOT / "packaging" / "uos" / "update-public-key.txt"
@@ -196,6 +212,10 @@ def test_macos_build_is_native_strict_signed_and_notarized() -> None:
     assert "不使用 Docker" in runbook
     assert "UNSIGNED-DO-NOT-PUBLISH" in runbook
     assert "公开测试候选升级为稳定版的必要条件" in runbook
+    assert "PARTYOPS_MACOS_FORMATTER_RUNTIME" in runbook
+    assert "目标机生成的 `runtime-evidence.json`" in runbook
+    assert "当前已验证的 WPS RPC 适配路径是 Linux" in runbook
+    assert "不得通过跳过测试" in runbook
 
 
 def test_macos_reconfigure_marker_is_short_lived_and_single_use(

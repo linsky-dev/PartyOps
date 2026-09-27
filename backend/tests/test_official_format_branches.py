@@ -134,7 +134,7 @@ def test_normal_style_creation_and_document_grid_diagnosis(tmp_path: Path, monke
         xml = etree.fromstring(package.read("word/document.xml"), parser=formatter.XML_PARSER)
         grid = xml.find(".//w:docGrid", namespaces=formatter.NS)
         assert grid is not None
-        grid.set(formatter._qn("charSpace"), "0")
+        grid.set(formatter._qn("charSpace"), "1")
         package.writestr("word/document.xml", etree.tostring(xml, encoding="UTF-8"))
     warning = formatter.diagnose_docx(formatted, changed_count=0)
     error = formatter.diagnose_docx(formatted, changed_count=1)
@@ -227,6 +227,7 @@ def test_font_inventory_and_issue_branches(tmp_path: Path, monkeypatch: pytest.M
 
     fake_winreg = SimpleNamespace(
         HKEY_LOCAL_MACHINE=object(),
+        HKEY_CURRENT_USER=object(),
         OpenKey=lambda *_args: FontKey(),
         EnumValue=enum_value,
     )
@@ -235,6 +236,44 @@ def test_font_inventory_and_issue_branches(tmp_path: Path, monkeypatch: pytest.M
     assert formatter._font_issues() == []
     fake_winreg.OpenKey = lambda *_args: (_ for _ in ()).throw(OSError())
     assert formatter._font_inventory() == ""
+
+
+@pytest.mark.parametrize("unavailable", [None, "machine", "user"])
+def test_user_font_installation_is_detected_without_restart(monkeypatch: pytest.MonkeyPatch, unavailable: str | None) -> None:
+    """字体安装/移除后下一次检测立即变化，单个注册表范围失败可独立处理。"""
+    entries: dict[str, list[str]] = {"machine": [], "user": []}
+
+    class FontKey:
+        def __init__(self, hive: str) -> None:
+            self.hive = hive
+
+        def __enter__(self) -> "FontKey":
+            if self.hive == unavailable:
+                raise PermissionError("synthetic registry access denied")
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+    def enum_value(key: FontKey, index: int) -> tuple[str, str, int]:
+        try:
+            return entries[key.hive][index], "fixture.ttf", 1
+        except IndexError as exc:
+            raise OSError("end of registry values") from exc
+
+    monkeypatch.setattr(formatter, "os", SimpleNamespace(name="nt"))
+    monkeypatch.setitem(sys.modules, "winreg", SimpleNamespace(
+        HKEY_LOCAL_MACHINE="machine", HKEY_CURRENT_USER="user",
+        OpenKey=lambda hive, _path: FontKey(hive), EnumValue=enum_value,
+    ))
+    assert formatter._font_issues()[0].code == "FONT_CHECK_UNAVAILABLE"
+    available = "machine" if unavailable == "user" else "user"
+    entries[available].append("仿宋 楷体 黑体")
+    assert formatter._font_issues()[0].code == "REQUIRED_FONT_MISSING"
+    entries[available].append("方正小标宋简体")
+    assert formatter._font_issues() == []
+    entries[available].pop()
+    assert "方正小标宋" in formatter._font_issues()[0].detail
 
 
 def test_local_office_conversion_branches(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -364,6 +403,108 @@ def test_office_candidate_and_windows_com_conversion_matrix(tmp_path: Path, monk
     with monkeypatch.context() as patcher:
         patcher.setattr(formatter.os, "name", "posix")
         assert formatter._convert_with_windows_office(source, workspace) is None
+
+
+def test_frozen_office_candidates_prefer_bundled_runtime_with_explicit_override(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    app_root = tmp_path / "frozen-app"
+    executable = app_root / "partyops"
+    executable.parent.mkdir(parents=True)
+    executable.touch()
+    bundled = app_root / "office-runtime" / "program" / "soffice"
+    bundled.parent.mkdir(parents=True)
+    bundled.touch()
+    explicit = tmp_path / "office-override"
+    explicit.touch()
+    path_soffice = tmp_path / "path-soffice"
+    path_soffice.touch()
+    path_libreoffice = tmp_path / "path-libreoffice"
+    path_libreoffice.touch()
+
+    monkeypatch.setattr(formatter.sys, "executable", str(executable))
+    monkeypatch.setattr(formatter.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(
+        formatter.shutil,
+        "which",
+        lambda name: str(path_soffice if name == "soffice" else path_libreoffice),
+    )
+    monkeypatch.setenv("PARTYOPS_OFFICE_BIN", str(explicit))
+    monkeypatch.delenv("PROGRAMFILES", raising=False)
+    monkeypatch.delenv("PROGRAMFILES(X86)", raising=False)
+
+    candidates = formatter._office_candidates()
+    assert candidates[0] == explicit
+    assert candidates.index(bundled) < candidates.index(path_soffice)
+    assert candidates.index(path_soffice) < candidates.index(path_libreoffice)
+
+
+def test_development_office_candidates_keep_path_before_bundled_with_override(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    app_root = tmp_path / "development-app"
+    executable = app_root / "partyops"
+    executable.parent.mkdir(parents=True)
+    executable.touch()
+    bundled = app_root / "office-runtime" / "program" / "soffice"
+    bundled.parent.mkdir(parents=True)
+    bundled.touch()
+    explicit = tmp_path / "office-override"
+    explicit.touch()
+    path_soffice = tmp_path / "path-soffice"
+    path_soffice.touch()
+    path_libreoffice = tmp_path / "path-libreoffice"
+    path_libreoffice.touch()
+
+    monkeypatch.setattr(formatter.sys, "executable", str(executable))
+    monkeypatch.setattr(formatter.sys, "frozen", False, raising=False)
+    monkeypatch.setattr(
+        formatter.shutil,
+        "which",
+        lambda name: str(path_soffice if name == "soffice" else path_libreoffice),
+    )
+    monkeypatch.setenv("PARTYOPS_OFFICE_BIN", str(explicit))
+    monkeypatch.delenv("PROGRAMFILES", raising=False)
+    monkeypatch.delenv("PROGRAMFILES(X86)", raising=False)
+
+    candidates = formatter._office_candidates()
+    assert candidates[0] == explicit
+    assert candidates.index(path_soffice) < candidates.index(path_libreoffice)
+    assert candidates.index(path_libreoffice) < candidates.index(bundled)
+
+
+@pytest.mark.parametrize("original", [None, "", "/bundle/_internal", "/bundle/_internal:/user/lib"])
+def test_frozen_linux_font_query_uses_system_libraries_and_refreshes(
+    monkeypatch: pytest.MonkeyPatch, original: str | None,
+) -> None:
+    """复现 UOS 的嵌套冻结进程库污染，并验证安装字体后无需重启。"""
+    monkeypatch.setattr(formatter.sys, "platform", "linux")
+    monkeypatch.setattr(formatter.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(formatter.sys, "_MEIPASS", "/bundle/_internal", raising=False)
+    monkeypatch.setattr(formatter.sys, "executable", "/bundle/partyops")
+    monkeypatch.setenv("LD_LIBRARY_PATH", "/bundle/_internal:/bundle/_internal")
+    if original is None:
+        monkeypatch.delenv("LD_LIBRARY_PATH_ORIG", raising=False)
+    else:
+        monkeypatch.setenv("LD_LIBRARY_PATH_ORIG", original)
+    monkeypatch.setattr(formatter.shutil, "which", lambda _name: "/usr/bin/fc-list")
+    inventories = iter(["黑体", "黑体 仿宋 楷体 方正小标宋"])
+
+    def query(_args: list[str], **kwargs: object) -> object:
+        environment = kwargs["env"]
+        assert isinstance(environment, dict)
+        expected = "/user/lib" if original and "/user/lib" in original else None
+        assert environment.get("LD_LIBRARY_PATH") == expected
+        assert "LD_LIBRARY_PATH_ORIG" not in environment
+        return formatter.subprocess.CompletedProcess(_args, 0, stdout=next(inventories))
+
+    monkeypatch.setattr(formatter.subprocess, "run", query)
+    # 暂时切换 os.name 仅覆盖注册表分支，不创建 PosixPath。
+    monkeypatch.setattr(formatter, "Path", type(Path.cwd()))
+    monkeypatch.setattr(formatter.os, "name", "posix")
+    assert formatter._font_inventory() == "黑体"
+    assert formatter._font_inventory() == "黑体 仿宋 楷体 方正小标宋"
+    assert formatter.os.environ["LD_LIBRARY_PATH"] == "/bundle/_internal:/bundle/_internal"
 
 
 def test_posix_font_inventory_and_private_write_cleanup(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -1,0 +1,9 @@
+{
+  "name": "PartyOpsDocumentFormatterBridge",
+  "addonType": "wps",
+  "version": "1.4.5-rc.6",
+  "description": "PartyOps 内嵌公文排版工具的本机 WPS 静默桥接加载项",
+  "main": "index.html",
+  "license": "BSD-3-Clause"
+}
+

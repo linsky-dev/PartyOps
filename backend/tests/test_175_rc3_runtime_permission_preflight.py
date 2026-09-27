@@ -219,7 +219,7 @@ def test_launch_personal_stops_before_spawn_when_permission_probe_fails(
     monkeypatch.setattr(
         setup_wizard,
         "load_host_environment",
-        lambda _path: {
+        lambda _path, **_kwargs: {
             "PARTYOPS_PORT": "18775",
             "PARTYOPS_DATA_DIR": str(data_dir),
         },

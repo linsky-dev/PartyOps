@@ -1,0 +1,107 @@
+schema_version: 1
+version: 1.4.5-rc.6
+local_only: true
+retain_obsolete_packages: false
+run_order: [uos-deb-x64, uos-deb-arm64, deepin-deb-loong64, openeuler-iso-x64, openeuler-iso-arm64, win10-x64, win10-x86, win10-arm64, win11-x64-native, win11-arm64, win7-x64, win7-x86, macos-x64, macos-arm64]
+defaults:
+  primary_root: 'D:/PartyOps-VM-Lab'
+  fallback_root: 'E:/codex/PartyOps/.partyops-vm-lab'
+  qemu_home: 'D:/PartyOps-VM-Lab/tools/qemu-11.1.0'
+  memory_mib: 8192
+  cpus: 4
+  disk_gib: 96
+  host_free_memory_gib: 8
+  reserve_primary_gib: 20
+  reserve_fallback_gib: 30
+required_cases:
+  - clean_install
+  - standard_user_launch
+  - first_configuration
+  - personal_and_collaboration
+  - health_and_selftest
+  - formatter_contract_and_visual_golden
+  - offline_models
+  - business_backup_restore
+  - restart_persistence
+  - upgrade_and_data_preservation
+  - uninstall_keep_data
+  - uninstall_remove_test_data
+  - historical_failure_regressions
+packages:
+  windows_amd64:
+    pattern: 'PartyOps_{version}_windows_amd64.exe'
+    required_targets: [win11-x64-native, win10-x64, win11-arm64]
+  windows7_amd64:
+    pattern: 'PartyOps_{version}_windows7_amd64.exe'
+    required_targets: [win7-x64]
+  windows7_x86:
+    pattern: 'PartyOps_{version}_windows7_x86.exe'
+    required_targets: [win7-x86, win10-x86, win10-arm64]
+  linux_amd64:
+    pattern: 'PartyOps_{version}_linux_amd64.deb'
+    required_targets: [uos-deb-x64]
+  linux_arm64:
+    pattern: 'PartyOps_{version}_linux_arm64.deb'
+    required_targets: [uos-deb-arm64]
+  linux_loong64:
+    pattern: 'PartyOps_{version}_linux_loong64.deb'
+    required_targets: [deepin-deb-loong64]
+  rpm_x86_64:
+    pattern: 'PartyOps-1.4.5-0.rc.6.*.x86_64.rpm'
+    required_targets: [openeuler-iso-x64]
+  rpm_aarch64:
+    pattern: 'PartyOps-1.4.5-0.rc.6.*.aarch64.rpm'
+    required_targets: [openeuler-iso-arm64]
+  macos_x86_64:
+    pattern: 'PartyOps_{version}_macos_x86_64.pkg'
+    required_targets: [macos-x64]
+  macos_arm64:
+    pattern: 'PartyOps_{version}_macos_arm64.pkg'
+    required_targets: [macos-arm64]
+targets:
+  # 用户 2026-09-08 改为本机 Windows 11 验收；无 ISO、Guest 身份或可丢弃快照。
+  win11-x64-native: {os: windows, os_release: '11', arch: x86_64, backend: native-host, local_only: true}
+  # 4 GiB 实测在 Qwen 推理后不足 1130 MiB；增至 5 GiB，启动仍强制保留宿主 8 GiB。
+  win10-x64: {os: windows, os_release: '10', arch: x86_64, backend: qemu, media: win10-x64, ssh_port: 22110, memory_mib: 5120, whpx_legacy_irq: true, cpus: 1}
+  # 复用真实既有包线，安装包 ISA 与 OS ISA 分开；不新建不存在的 ARM64 发布包。
+  win10-x86: {os: windows, os_release: '10', os_build: '19045', arch: i686, backend: qemu, media: win10-x86, ssh_port: 22112, memory_mib: 3072, cpus: 1, vm_storage: fallback, whpx_legacy_irq: true, windows_execution_contract: 1, package_arch: i686, expected_runtime_profile: legacy-core, application_execution: native, hardware_scope: qemu-pc}
+  win10-arm64: {os: windows, os_release: '10', arch: arm64, backend: qemu, media: win10-arm64, ssh_port: 22113, memory_mib: 4096, cpus: 2, vm_storage: fallback, windows_execution_contract: 1, package_arch: i686, expected_runtime_profile: legacy-core, application_execution: windows-x86-emulation, hardware_scope: qemu-virt, requires_uefi_secureboot_tpm2: true, driver_media: virtio-win-arm64}
+  win11-arm64: {os: windows, os_release: '11', os_build: '26200', arch: arm64, backend: qemu, media: win11-arm64, ssh_port: 22114, memory_mib: 8192, cpus: 2, vm_storage: fallback, windows_execution_contract: 1, package_arch: x86_64, expected_runtime_profile: full, application_execution: windows-x64-emulation, hardware_scope: qemu-virt, requires_uefi_secureboot_tpm2: true, driver_media: virtio-win-arm64}
+  win7-x64: {os: windows, os_release: '7 SP1', arch: x86_64, backend: qemu, media: win7-x64, ssh_port: 22171, winrm_port: 23171, vm_storage: fallback, vm_folder: win7-x64-original2, whpx_legacy_irq: true, cpus: 1}
+  win7-x86: {os: windows, os_release: '7 SP1', arch: i686, backend: qemu, media: win7-x86, ssh_port: 22172, winrm_port: 23172, memory_mib: 3072, vm_storage: fallback, whpx_legacy_irq: true, cpus: 1}
+  uos-deb-x64: {os: linux, arch: x86_64, backend: qemu, media: uos-1070-hwe-x64, ssh_port: 22401, distribution: UOS, distribution_id: uos, os_release: '20', os_build: '1070', edition: Professional, installation_growth_gib: 18, vm_storage: fallback, whpx_legacy_irq: true, cpus: 1}
+  uos-deb-arm64: {os: linux, arch: aarch64, backend: qemu, media: uos-1070-arm64, ssh_port: 22402, distribution: UOS, distribution_id: uos, os_release: '20', os_build: '1070', edition: Professional, installation_growth_gib: 18, vm_storage: fallback}
+  # 独立龙架构原版环境；不替代统信双架构，缺少实际 25.2.0 身份字段时保持阻断。
+  deepin-deb-loong64:
+    os: linux
+    arch: loongarch64
+    package_arch: loong64
+    backend: qemu
+    media: deepin-25-loong64
+    ssh_port: 22403
+    distribution: Deepin
+    distribution_id: deepin
+    os_release: '25'
+    os_build: '25.2.0'
+    memory_mib: 4096
+    cpus: 2
+    vm_storage: fallback
+    installation_growth_gib: 24
+    machine: virt-11.1
+    cpu: la464
+    firmware:
+      code: share/edk2-loongarch64-code.fd
+      code_sha256: edd5a67fe50f7597faecb2fe67c5733b9a31b0b345a2127c3c358a5737446ef7
+      vars_template: share/edk2-loongarch64-vars.fd
+      vars_template_sha256: adbfcb31d6470ef090220baeb53559e26323b6cfb5e7614f879e89608a3ed748
+  openeuler-iso-x64: {os: linux, arch: x86_64, backend: qemu, media: openeuler-iso-x64, ssh_port: 22411, distribution: openEuler, distribution_id: openeuler, os_release: '24.03', os_build: LTS-SP2, installation_growth_gib: 10, vm_storage: fallback, whpx_legacy_irq: true, cpus: 1}
+  openeuler-iso-arm64: {os: linux, arch: aarch64, backend: qemu, media: openeuler-iso-arm64, ssh_port: 22412, distribution: openEuler, distribution_id: openeuler, os_release: '24.03', os_build: LTS-SP2, installation_growth_gib: 10, vm_storage: fallback}
+  macos-x64: {os: darwin, arch: x86_64, backend: vmware, media: macos-x64, ssh_port: 22301}
+  macos-arm64: {os: darwin, arch: arm64, backend: macos-arm64-experimental, media: macos-arm64, ssh_port: 22302, hosted_fallback: false, local_only: true}
+# 只用于恢复、关机和查看历史证据，不计入本轮 required_targets。
+historical_targets:
+  win11-x64: {os: windows, os_release: '11', arch: x86_64, backend: qemu, media: win11-x64, ssh_port: 22111, vm_storage: fallback, installation_growth_gib: 36}
+  deepin-deb-x64: {os: linux, arch: x86_64, backend: qemu, media: deepin-25-x64, ssh_port: 22201, distribution: Deepin}
+  deepin-deb-arm64: {os: linux, arch: aarch64, backend: qemu, media: deepin-25-arm64, ssh_port: 22202, distribution: Deepin}
+  openeuler-rpm-x64: {os: linux, arch: x86_64, backend: qemu, media: openeuler-x64, ssh_port: 22211, distribution: openEuler}
+  openeuler-rpm-arm64: {os: linux, arch: aarch64, backend: qemu, media: openeuler-arm64, ssh_port: 22212, distribution: openEuler}

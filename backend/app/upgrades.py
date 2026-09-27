@@ -166,10 +166,13 @@ def restore_database_from_upgrade_backup(path: Path) -> None:
     # 迁移失败前后可能经过较长时间；再次校验清单、成员闭包、哈希和 SQLite
     # 完整性，避免路径被替换后把未校验数据库覆盖回生产数据目录。
     manifest = verify_backup(path)
+    manifest_files = manifest.get("files", [])
+    if not isinstance(manifest_files, list):
+        raise RuntimeError("升级前备份清单文件项无效")
     expected_database = next(
         (
             item
-            for item in manifest.get("files", [])
+            for item in manifest_files
             if isinstance(item, dict) and item.get("path") == "database/partyops.db"
         ),
         None,
@@ -181,11 +184,11 @@ def restore_database_from_upgrade_backup(path: Path) -> None:
     ) as temporary:
         extracted = Path(temporary) / "partyops.db"
         with zipfile.ZipFile(path) as archive:
-            with archive.open("database/partyops.db") as source, extracted.open(
+            with archive.open("database/partyops.db") as source_stream, extracted.open(
                 "wb"
-            ) as destination:
-                while chunk := source.read(1024 * 1024):
-                    destination.write(chunk)
+            ) as destination_stream:
+                while chunk := source_stream.read(1024 * 1024):
+                    destination_stream.write(chunk)
         with closing(sqlite3_connect(extracted)) as restored:
             if restored.execute("PRAGMA quick_check").fetchone()[0] != "ok":
                 raise RuntimeError("升级前备份数据库完整性检查失败，拒绝覆盖当前数据")

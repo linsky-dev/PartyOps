@@ -3,12 +3,20 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 ARTIFACTS="$ROOT/artifacts"
+RUNTIME_PROFILE="${PARTYOPS_RUNTIME_PROFILE:-full}"
+[[ "$RUNTIME_PROFILE" == full || "$RUNTIME_PROFILE" == core ]] || {
+  echo "未知 Linux 包档：$RUNTIME_PROFILE" >&2; exit 2;
+}
 if [[ -z "${PYTHON_BIN:-}" && -f "$ROOT/.partyops-build.env" ]]; then
   # shellcheck disable=SC1091
   source "$ROOT/.partyops-build.env"
 fi
 if [[ -z "${PYTHON_BIN:-}" ]]; then
-  PYTHON_BIN="$(command -v python3.11 || command -v python3 || true)"
+  if [[ "$RUNTIME_PROFILE" == core ]]; then
+    PYTHON_BIN="$(command -v python3.12 || true)"
+  else
+    PYTHON_BIN="$(command -v python3.11 || command -v python3 || true)"
+  fi
 fi
 if [[ -z "$PYTHON_BIN" || ! -x "$PYTHON_BIN" ]]; then
   echo "未找到可用 Python 3.11，请先运行 ensure-build-environment.sh。" >&2
@@ -49,10 +57,14 @@ if [[ -z "$ARCH" ]]; then
     aarch64|arm64) ARCH="arm64" ;;
   esac
 fi
-[[ "$ARCH" == "amd64" || "$ARCH" == "arm64" ]] || {
-  echo "仅支持 amd64 与 arm64，本机为：${ARCH:-unknown}" >&2
+[[ "$ARCH" == "amd64" || "$ARCH" == "arm64" || "$ARCH" == "loong64" ]] || {
+  echo "仅支持 amd64、arm64 与 loong64，本机为：${ARCH:-unknown}" >&2
   exit 2
 }
+if [[ "$ARCH" == loong64 && "$RUNTIME_PROFILE" != core ]] ||
+  [[ "$ARCH" != loong64 && "$RUNTIME_PROFILE" == core ]]; then
+  echo "loong64 必须显式选择 core；core 仅可用于 loong64。" >&2; exit 2
+fi
 WHEELHOUSE="$ROOT/vendor/wheels/$ARCH"
 if [[ "$ARCH" == "amd64" && ! -d "$WHEELHOUSE" ]]; then
   WHEELHOUSE="$ROOT/vendor/wheels"
@@ -61,7 +73,17 @@ LOCAL_AI_RUNTIME="$ROOT/vendor/local-ai/$ARCH"
 LOCAL_AI_ARCHIVE="$LOCAL_AI_RUNTIME/llama-runtime.tar.gz"
 OCR_RUNTIME="$ROOT/vendor/ocr/$ARCH"
 OCR_ARCHIVE="$OCR_RUNTIME/tesseract-runtime.tar.gz"
+FORMATTER_RUNTIME="${PARTYOPS_LINUX_FORMATTER_RUNTIME:-}"
+FORMATTER_OFFICE_RUNTIME="${PARTYOPS_LINUX_OFFICE_RUNTIME:-$ROOT/vendor/linux/libreoffice-headless-$ARCH}"
+# WPS 原生宿主的金样验证必须在能够加载目标 WPS 运行时的环境完成。
+# 默认仍在当前构建机实时验证；当发布构建机（例如 glibc 2.17
+# manylinux 工具链）无法加载目标 WPS 时，允许传入已经在同架构目标
+# 环境生成的证据目录。后续 verify-formatter-runtime-evidence.py 会
+# 重新校验宿主哈希、来源指纹、三页像素和六类功能，禁止把任意旧证据
+# 或不同架构证据混入安装包。
+FORMATTER_EVIDENCE_SOURCE="${PARTYOPS_FORMATTER_EVIDENCE_DIR:-}"
 REQUIRE_LOCAL_AI_RUNTIME=1
+[[ "$RUNTIME_PROFILE" == core ]] && REQUIRE_LOCAL_AI_RUNTIME=0
 SQLITE_ARCHIVE="$ROOT/vendor/sqlite-amalgamation-3510300.zip"
 PYSQLITE_ARCHIVE="$ROOT/vendor/pysqlite3-0.5.4.tar.gz"
 PID=""
@@ -92,42 +114,93 @@ import sysconfig
 
 shared = int(sysconfig.get_config_var("Py_ENABLE_SHARED") or 0)
 library = str(sysconfig.get_config_var("LDLIBRARY") or "")
-candidate = Path(sys.base_prefix) / "lib" / library
-raise SystemExit(0 if shared == 1 and library and candidate.is_file() else 1)
+library_dir = str(sysconfig.get_config_var("LIBDIR") or "")
+candidates = [Path(library_dir) / library] if library_dir else []
+candidates.append(Path(sys.base_prefix) / "lib" / library)
+raise SystemExit(0 if shared == 1 and library and any(candidate.is_file() for candidate in candidates) else 1)
 PY
 then
-  echo "发布冻结要求带共享 libpython 的 Python 3.11；当前解释器仅支持静态嵌入，无法生成可启动的 PyInstaller 载荷。" >&2
+  if [[ "$RUNTIME_PROFILE" == core ]]; then
+    echo "Loong64 core 发布冻结要求带共享 libpython 的 Python 3.12.13。" >&2
+  else
+    echo "发布冻结要求带共享 libpython 的 Python 3.11；当前解释器仅支持静态嵌入，无法生成可启动的 PyInstaller 载荷。" >&2
+  fi
   exit 2
 fi
 
 EXPECTED_MACHINE="x86_64"
 [[ "$ARCH" == "arm64" ]] && EXPECTED_MACHINE="aarch64"
-if [[ "$(uname -s)" != "Linux" || "$(uname -m)" != "$EXPECTED_MACHINE" ]]; then
+[[ "$ARCH" == "loong64" ]] && EXPECTED_MACHINE="loongarch64"
+HOST_MACHINE="$(uname -m)"
+if [[ "$(uname -s)" != "Linux" ]] ||
+  { [[ "$HOST_MACHINE" != "$EXPECTED_MACHINE" ]] &&
+    ! { [[ "$ARCH" == loong64 && "$HOST_MACHINE" == loong64 ]]; }; }; then
   echo "必须在 UOS V20 $ARCH 目标机原生构建；当前为 $(uname -m)。" >&2
   exit 2
 fi
+if [[ ! -d "$FORMATTER_RUNTIME" ]] ||
+  [[ ! -x "$FORMATTER_RUNTIME/partyops-document-formatter-host" ]] ||
+  [[ ! -f "$FORMATTER_RUNTIME/source-host.json" ]]; then
+  echo "[FORMATTER_RUNTIME_MISSING] 请提供当前架构、已通过真实 WPS 金样测试的原源码排版宿主。" >&2
+  exit 2
+fi
+FORMATTER_PATTERN=x86-64
+[[ "$ARCH" == arm64 ]] && FORMATTER_PATTERN='ARM aarch64'
+[[ "$ARCH" == loong64 ]] && FORMATTER_PATTERN='LoongArch|Loongarch'
+file "$FORMATTER_RUNTIME/partyops-document-formatter-host" | grep -Eq "$FORMATTER_PATTERN" || {
+  echo "[FORMATTER_RUNTIME_ARCH_MISMATCH] 排版宿主与 $ARCH 不一致。" >&2
+  exit 2
+}
+if ldd "$FORMATTER_RUNTIME/partyops-document-formatter-host" 2>&1 | grep -q 'not found'; then
+  echo "[FORMATTER_RUNTIME_DEPENDENCY_MISSING] 排版宿主存在缺失的动态库依赖。" >&2
+  exit 2
+fi
+if [[ -n "$FORMATTER_EVIDENCE_SOURCE" ]] &&
+  [[ ! -f "$FORMATTER_EVIDENCE_SOURCE/parity.json" || ! -f "$FORMATTER_EVIDENCE_SOURCE/features.json" ]]; then
+  echo "[FORMATTER_EVIDENCE_SOURCE_MISSING] 外部金样目录缺少 parity.json 或 features.json。" >&2
+  exit 2
+fi
+"$PYTHON_BIN" "$ROOT/scripts/validate-source-formatter-runtime.py" \
+  --runtime "$FORMATTER_RUNTIME" --platform linux --architecture "$ARCH"
+if [[ ! -x "$FORMATTER_OFFICE_RUNTIME/program/soffice" ]]; then
+  echo "[FORMATTER_PARITY_RENDERER_MISSING] 缺少 $ARCH 金样视觉对比所需的固定 LibreOffice。" >&2
+  exit 2
+fi
 GLIBC_VERSION="$(getconf GNU_LIBC_VERSION | awk '{print $2}')"
-if ! "$PYTHON_BIN" - "$GLIBC_VERSION" <<'PY'
+if ! "$PYTHON_BIN" - "$GLIBC_VERSION" "$RUNTIME_PROFILE" <<'PY'
 import sys
 
 current = tuple(int(part) for part in sys.argv[1].split(".")[:2])
-raise SystemExit(0 if current == (2, 17) else 1)
+expected = (2, 38) if sys.argv[2] == "core" else (2, 17)
+raise SystemExit(0 if current == expected else 1)
 PY
 then
-  echo "正式构建必须在 glibc 2.17 的 manylinux2014 工具链中运行；当前为 $GLIBC_VERSION。" >&2
+  echo "构建机 glibc 与 $RUNTIME_PROFILE 档不匹配：当前 $GLIBC_VERSION，core 要求 2.38，full 要求 2.17。" >&2
+  exit 2
+fi
+if [[ "$RUNTIME_PROFILE" == core ]] &&
+  [[ "$("$PYTHON_BIN" -c 'import platform; print(platform.python_version())')" != 3.12.13 ]]; then
+  echo "Loong64 core 候选必须使用实际 Python 3.12.13，不得伪装 3.11 基线。" >&2
   exit 2
 fi
 for required in "$SQLITE_ARCHIVE" "$PYSQLITE_ARCHIVE" "$WHEELHOUSE" "$OCR_ARCHIVE"; do
   [[ -e "$required" ]] || { echo "缺少离线构建输入：$required" >&2; exit 2; }
 done
 LOCAL_EMBEDDING_AVAILABLE=1
-for wheel_prefix in numpy onnxruntime tokenizers; do
+LOCAL_LLM_AVAILABLE=1
+REQUIRED_WHEELS=(numpy onnxruntime tokenizers)
+if [[ "$RUNTIME_PROFILE" == core ]]; then
+  LOCAL_EMBEDDING_AVAILABLE=0
+  LOCAL_LLM_AVAILABLE=0
+  REQUIRED_WHEELS=(numpy)
+fi
+for wheel_prefix in "${REQUIRED_WHEELS[@]}"; do
   if ! compgen -G "$WHEELHOUSE/${wheel_prefix}-*.whl" >/dev/null; then
     echo "缺少 $ARCH 本地语义离线轮子 ${wheel_prefix}，严格模式拒绝构建。" >&2
     exit 2
   fi
 done
-LOCAL_LLM_AVAILABLE=1
+if [[ "$REQUIRE_LOCAL_AI_RUNTIME" == 1 ]]; then
 case "$ARCH" in
   amd64) EXPECTED_LLAMA_SHA256="dfb51ab3c3d0ca61054a4c2df37fc27d037f9f2c3284300ef743875fd8731d9f" ;;
   arm64) EXPECTED_LLAMA_SHA256="0fad023bd95e1a26bdaa972b737ff636091e75eb2e743ab98ee726ec0c64ad0f" ;;
@@ -141,13 +214,24 @@ if [[ ! -f "$LOCAL_AI_RUNTIME/LICENSE" || ! -f "$LOCAL_AI_RUNTIME/SOURCE.json" ]
   echo "缺少 llama.cpp 许可文件，严格模式拒绝构建。" >&2
   exit 2
 fi
+fi
 # 部分 Windows 解压/重打包工具会把清单改成 CRLF。校验前只规范行尾，
 # 避免 sha256sum 把不可见的 \r 误认为文件名的一部分。
 sed -i 's/\r$//' "$ROOT/vendor/SHA256SUMS"
 (cd "$ROOT/vendor" && sha256sum -c SHA256SUMS)
+OCR_ARCHIVE_ROOT=tesseract-5.5.3
+if [[ "$RUNTIME_PROFILE" == core ]]; then
+  OCR_ARCHIVE_ROOT=tesseract-5.5.0-deepin-loong64
+  [[ "${PARTYOPS_LOONG64_OCR_ARCHIVE_SHA256:-}" =~ ^[0-9a-f]{64}$ ]] || {
+    echo "Loong64 core 缺少实际 OCR 候选归档 SHA-256。" >&2; exit 2
+  }
+  [[ "$(sha256sum "$OCR_ARCHIVE" | cut -d ' ' -f 1)" == "$PARTYOPS_LOONG64_OCR_ARCHIVE_SHA256" ]] || {
+    echo "Loong64 core OCR 候选归档 SHA-256 不匹配。" >&2; exit 2
+  }
+fi
 gzip -dc "$OCR_ARCHIVE" |
   "$PYTHON_BIN" "$ROOT/scripts/validate-portable-tar.py" \
-    --expected-root tesseract-5.5.3 --max-members 1000 --max-bytes 536870912
+    --expected-root "$OCR_ARCHIVE_ROOT" --max-members 1000 --max-bytes 536870912
 
 # python-build-standalone 由 Clang 构建，其 sysconfig 会默认调用 clang/llvm-ar。
 # UOS 的 build-essential 提供 GCC 工具链，因此为本机扩展显式覆盖编译与链接命令。
@@ -175,12 +259,15 @@ mkdir -p "$ARTIFACTS"
 PY="$BUILD/venv/bin/python"
 "$PY" -m pip install --no-index --find-links "$WHEELHOUSE" \
   -r "$ROOT/packaging/uos/requirements-build.txt"
+RUNTIME_REQUIREMENTS="$ROOT/backend/requirements-local-ai.txt"
+[[ "$RUNTIME_PROFILE" == core ]] && RUNTIME_REQUIREMENTS="$ROOT/packaging/uos/requirements-core.txt"
 "$PY" "$ROOT/scripts/validate-uos-wheelhouse.py" \
   --architecture "$ARCH" \
+  --runtime-profile "$RUNTIME_PROFILE" \
   --wheelhouse "$WHEELHOUSE" \
   --requirements \
   "$ROOT/backend/requirements.txt" \
-  "$ROOT/backend/requirements-local-ai.txt" \
+  "$RUNTIME_REQUIREMENTS" \
   "$ROOT/packaging/uos/requirements-build.txt" || {
     echo "严格模式：$ARCH 离线依赖存在重复包、错误架构、glibc 超限、缺失项或版本冲突，拒绝构建。" >&2
     exit 2
@@ -200,6 +287,9 @@ cp "$BUILD"/sqlite/sqlite-amalgamation-3510300/sqlite3.h "$BUILD/pysqlite3/"
 if [[ "$LOCAL_EMBEDDING_AVAILABLE" == "1" ]]; then
   "$PY" -m pip install --no-index --find-links "$WHEELHOUSE" \
     -r "$ROOT/backend/requirements-local-ai.txt"
+else
+  "$PY" -m pip install --no-index --find-links "$WHEELHOUSE" \
+    -r "$ROOT/packaging/uos/requirements-core.txt"
 fi
 "$PY" -m pip install "$BUILD"/pysqlite3/dist/pysqlite3-*.whl
 "$PY" -m pip check
@@ -243,6 +333,7 @@ fi
   # libtcl/libtk 的向导程序，只有用户点击“选择数据目录”时才崩溃。
   # 发布构建必须在冻结时解析并封入这两个库。
   PYTHON_BASE_LIB="$("$PY" -c 'from pathlib import Path; import sys; print(Path(sys.executable).resolve().parents[1] / "lib")')"
+  PARTYOPS_RUNTIME_PROFILE="$RUNTIME_PROFILE" \
   LD_LIBRARY_PATH="$PYTHON_BASE_LIB${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
     "$PY" -m PyInstaller --noconfirm --clean \
       --distpath "$PYI_DIST" --workpath "$PYI_WORK" \
@@ -273,6 +364,18 @@ verify_runtime_bundle() {
   for entrypoint in partyops partyops-client partyops-wizard partyops-updater; do
     [[ -x "$runtime_dir/$entrypoint" ]] || missing+=("$entrypoint 运行入口")
   done
+  [[ -x "$runtime_dir/formatter-host/partyops-document-formatter-host" ]] ||
+    missing+=("formatter-host/partyops-document-formatter-host")
+  [[ -f "$runtime_dir/formatter-host/source-host.json" ]] ||
+    missing+=("formatter-host/source-host.json")
+  [[ -f "$runtime_dir/formatter-host/word-vtable-map.json" ]] ||
+    missing+=("formatter-host/word-vtable-map.json")
+  [[ -f "$runtime_dir/formatter-host/LICENSE-WPS-SDK.txt" ]] ||
+    missing+=("formatter-host/LICENSE-WPS-SDK.txt")
+  [[ -f "$runtime_dir/formatter-host/LICENSE-MONO-RUNTIME.txt" ]] ||
+    missing+=("formatter-host/LICENSE-MONO-RUNTIME.txt")
+  [[ -f "$runtime_dir/formatter-host/runtime-evidence.json" ]] ||
+    missing+=("formatter-host/runtime-evidence.json")
   if [[ ${#missing[@]} -gt 0 ]]; then
     echo "便携运行时打包不完整，缺少以下关键数据：" >&2
     printf '  - %s\n' "${missing[@]}" >&2
@@ -288,7 +391,6 @@ verify_runtime_bundle() {
   fi
   echo "便携运行时打包完整性核验通过（alembic 迁移 $bundled_versions 个）。"
 }
-verify_runtime_bundle "$RUNTIME" || exit 2
 cp "$ROOT/packaging/uos/start.sh" "$ROOT/packaging/uos/stop.sh" \
   "$ROOT/packaging/uos/desktop-launcher.sh" \
   "$ROOT/packaging/uos/open-local-file.sh" \
@@ -299,6 +401,45 @@ cp "$ROOT/packaging/uos/partyops.desktop" "$ROOT/packaging/uos/partyops-file.des
   "$ROOT/packaging/uos/partyops.svg" "$RUNTIME/"
 cp "$ROOT/packaging/uos/client-config.example.json" "$RUNTIME/"
 printf '%s\n' "$APP_VERSION" >"$RUNTIME/VERSION"
+mkdir -p "$RUNTIME/formatter-host"
+# 原生宿主、WPS 虚表槽位和两份许可属于同一个不可拆分的运行时闭包。
+# 完整复制该闭包；正式处理不依赖 JSAPI 加载项或本机 58890 中继。
+cp -a "$FORMATTER_RUNTIME/." "$RUNTIME/formatter-host/"
+FORMATTER_EVIDENCE_ROOT="$BUILD/formatter-evidence"
+mkdir -p "$FORMATTER_EVIDENCE_ROOT"
+if [[ -n "$FORMATTER_EVIDENCE_SOURCE" ]]; then
+  [[ -f "$FORMATTER_EVIDENCE_SOURCE/parity.json" && -f "$FORMATTER_EVIDENCE_SOURCE/features.json" ]] || {
+    echo "[FORMATTER_EVIDENCE_SOURCE_MISSING] 外部金样目录缺少 parity.json 或 features.json。" >&2
+    exit 2
+  }
+  cp "$FORMATTER_EVIDENCE_SOURCE/parity.json" "$FORMATTER_EVIDENCE_ROOT/parity.json"
+  cp "$FORMATTER_EVIDENCE_SOURCE/features.json" "$FORMATTER_EVIDENCE_ROOT/features.json"
+  echo "使用同架构目标环境已生成的 WPS 金样证据：$FORMATTER_EVIDENCE_SOURCE"
+else
+  PYTHONPATH="$ROOT/backend" \
+    "$PY" "$ROOT/scripts/verify-document-formatter-parity.py" \
+      --root "$ROOT" \
+      --host "$RUNTIME/formatter-host/partyops-document-formatter-host" \
+      --office-bin "$FORMATTER_OFFICE_RUNTIME/program/soffice" \
+      --workspace "$FORMATTER_EVIDENCE_ROOT/parity-workspace" \
+      --evidence "$FORMATTER_EVIDENCE_ROOT/parity.json" \
+      --platform linux --architecture "$ARCH"
+  PYTHONPATH="$ROOT/backend" \
+    "$PY" "$ROOT/scripts/verify-document-formatter-features-e2e.py" \
+      --root "$ROOT" \
+      --host "$RUNTIME/formatter-host/partyops-document-formatter-host" \
+      --workspace "$FORMATTER_EVIDENCE_ROOT/features-workspace" \
+      --evidence "$FORMATTER_EVIDENCE_ROOT/features.json" \
+      --platform linux --architecture "$ARCH"
+fi
+"$PY" "$ROOT/scripts/verify-formatter-runtime-evidence.py" \
+  --root "$ROOT" \
+  --runtime "$RUNTIME/formatter-host" \
+  --platform linux --architecture "$ARCH" \
+  --parity-evidence "$FORMATTER_EVIDENCE_ROOT/parity.json" \
+  --features-evidence "$FORMATTER_EVIDENCE_ROOT/features.json" \
+  --output "$RUNTIME/formatter-host/runtime-evidence.json"
+verify_runtime_bundle "$RUNTIME" || exit 2
 if [[ -f "$ROOT/packaging/uos/update-public-key.txt" ]]; then
   cp "$ROOT/packaging/uos/update-public-key.txt" "$RUNTIME/"
 elif [[ "${PARTYOPS_REQUIRE_UPDATE_SIGNING:-0}" == "1" ]]; then
@@ -364,26 +505,34 @@ fi
   echo "缺失的增强能力不会影响任务、文件、档案、协同、规则推荐和外部 AI。"
 } >"$RUNTIME/local-ai-capabilities.txt"
 
-# 将固定官方源码重建的 OCR 引擎与中英文语言数据随应用一并交付。
-# 禁止从构建机复制系统 Tesseract：manylinux2014 环境里的系统版本可能
-# 已停止维护，也会让不同时间生成的制品内容无法复现。
+# full 保持固定源码重建的静态 OCR；Loong64 core 使用有来源和逐文件指纹的
+# Deepin 官方二进制私有闭包。两档都必须携带中英文数据并真实执行。
 OCR_ROOT="$RUNTIME/ocr"
 mkdir -p "$OCR_ROOT/bin" "$OCR_ROOT/lib" "$OCR_ROOT/tessdata" "$OCR_ROOT/licenses"
 mkdir -p "$BUILD/ocr-runtime"
 tar -xzf "$OCR_ARCHIVE" -C "$BUILD/ocr-runtime" \
   --no-same-owner --no-same-permissions
 OCR_SOURCE_DIR="$(find "$BUILD/ocr-runtime" -mindepth 1 -maxdepth 1 \
-  -type d -name 'tesseract-5.5.3' -print -quit)"
+  -type d -name "$OCR_ARCHIVE_ROOT" -print -quit)"
 [[ -n "$OCR_SOURCE_DIR" && -x "$OCR_SOURCE_DIR/bin/tesseract" ]] || {
-  echo "固定 OCR 运行时缺少 Tesseract 5.5.3 可执行文件。" >&2
+  echo "OCR 候选归档缺少 Tesseract 可执行文件。" >&2
   exit 2
 }
 cp -a "$OCR_SOURCE_DIR/bin/tesseract" "$OCR_ROOT/bin/"
 cp -a "$OCR_SOURCE_DIR/tessdata/." "$OCR_ROOT/tessdata/"
 cp -a "$OCR_SOURCE_DIR/licenses/." "$OCR_ROOT/licenses/"
+if [[ "$RUNTIME_PROFILE" == core ]]; then
+  cp -a "$OCR_SOURCE_DIR/lib/." "$OCR_ROOT/lib/"
+  cp -a "$OCR_SOURCE_DIR/SOURCE.json" "$OCR_ROOT/"
+  "$PYTHON_BIN" "$ROOT/scripts/validate-loong64-deepin-ocr.py" \
+    --root "$OCR_ROOT" \
+    --fixture "$ROOT/qa/vm-lab/release-preparation/loong64/ocr-chinese-page-20260923.png"
+  "$PYTHON_BIN" "$ROOT/scripts/verify-linux-elf-glibc.py" \
+    --root "$OCR_ROOT" --max-glibc 2.38
+else
 EXPECTED_OCR_PATTERN=x86-64
 [[ "$ARCH" == arm64 ]] && EXPECTED_OCR_PATTERN='ARM aarch64'
-file "$OCR_ROOT/bin/tesseract" | grep -q "$EXPECTED_OCR_PATTERN" || {
+file "$OCR_ROOT/bin/tesseract" | grep -Eq "$EXPECTED_OCR_PATTERN" || {
   echo "OCR ELF 架构与目标 $ARCH 不一致。" >&2
   exit 2
 }
@@ -408,18 +557,27 @@ grep -qx chi_sim <<<"$OCR_LANGS" && grep -qx eng <<<"$OCR_LANGS" || {
   echo "OCR 中英文离线语言数据未完整加载。" >&2
   exit 2
 }
-# WSL DrvFS 和部分 PyInstaller wheel 会把共享库、前端图片、WASM 乃至
-# 许可证统一标成可执行文件。麒麟安全中心会因此把 libgcc_s.so.1 当成
-# “启动程序”反复拦截。权限安全模型改成默认拒绝：先清除所有普通文件
-# 的执行位，再只为经过审计的 PartyOps 入口恢复执行位。动态链接器加载
-# .so 只需要读取权限，不需要文件本身具有执行位。
+fi
+# WSL DrvFS 和部分 PyInstaller wheel 会把目录、共享库、前端图片、WASM
+# 乃至许可证统一标成 0777。麒麟安全中心会因此把 libgcc_s.so.1 当成
+# “启动程序”反复拦截；0777 目录也会被载荷门禁拒绝。权限安全模型改成
+# 默认拒绝：先规范目录并清除所有普通文件的执行位，再只为经过审计的
+# PartyOps 入口恢复执行位。动态链接器加载 .so 只需要读取权限，不需要
+# 文件本身具有执行位。
+find "$RUNTIME" -type d -exec chmod 0755 {} +
 find "$RUNTIME" -type f -exec chmod 0644 {} +
 chmod 0755 "$RUNTIME/partyops" "$RUNTIME/partyops-client" "$RUNTIME/partyops-wizard" \
   "$RUNTIME/partyops-updater" \
   "$RUNTIME/start.sh" "$RUNTIME/stop.sh" "$RUNTIME/desktop-launcher.sh" \
   "$RUNTIME/open-local-file.sh" \
   "$RUNTIME/install-desktop-shortcut.sh" "$RUNTIME/install-internal-ca.sh" \
-  "$OCR_ROOT/bin/tesseract"
+  "$OCR_ROOT/bin/tesseract" \
+  "$RUNTIME/formatter-host/partyops-document-formatter-host"
+if [[ "$ARCH" == loong64 ]]; then
+  # Loong64 旧 ABI 主程序与私有 ELF 加载器均由新 ABI launcher 直接 exec。
+  chmod 0755 "$RUNTIME/formatter-host/partyops-document-formatter-host.bin" \
+    "$RUNTIME/formatter-host/private/liblol/ld.so.1"
+fi
 if [[ "$LOCAL_LLM_AVAILABLE" == "1" ]]; then
   chmod 0755 "$RUNTIME/llama-server"
 fi
@@ -434,16 +592,39 @@ while IFS= read -r -d '' executable; do
     "$RUNTIME/desktop-launcher.sh"|"$RUNTIME/open-local-file.sh"|\
     "$RUNTIME/install-desktop-shortcut.sh"|\
     "$RUNTIME/install-internal-ca.sh"|"$OCR_ROOT/bin/tesseract"|\
+    "$RUNTIME/formatter-host/partyops-document-formatter-host"|\
     "$RUNTIME/llama-server") ;;
+    "$RUNTIME/formatter-host/partyops-document-formatter-host.bin"|\
+    "$RUNTIME/formatter-host/private/liblol/ld.so.1")
+      [[ "$ARCH" == loong64 ]] || { echo "非 Loong64 载荷含私有 formatter 入口。" >&2; exit 2; } ;;
     *)
       echo "运行时包含未授权的可执行文件：$executable" >&2
       exit 2
       ;;
   esac
 done < <(find "$RUNTIME" -type f -perm /111 -print0)
-if find "$RUNTIME" -type f -name '*.so*' -perm /111 -print -quit | grep -q .; then
+# formatter 的私有 ld.so.1 是直接 exec 的普通文件；只豁免这个精确路径。
+if [[ "$ARCH" == loong64 ]]; then
+  FORBIDDEN_EXECUTABLE_SO="$(find "$RUNTIME" -type f -name '*.so*' -perm /111 \
+    ! -path "$RUNTIME/formatter-host/private/liblol/ld.so.1" -print -quit)"
+else
+  FORBIDDEN_EXECUTABLE_SO="$(find "$RUNTIME" -type f -name '*.so*' -perm /111 -print -quit)"
+fi
+if [[ -n "$FORBIDDEN_EXECUTABLE_SO" ]]; then
   echo "共享库被错误标记为可执行文件，拒绝生成 Linux 制品。" >&2
   exit 2
+fi
+"$PYTHON_BIN" "$ROOT/scripts/validate-source-formatter-runtime.py" \
+  --runtime "$RUNTIME/formatter-host" --platform linux --architecture "$ARCH"
+if [[ "$RUNTIME_PROFILE" == core ]]; then
+  "$PYTHON_BIN" "$ROOT/scripts/verify-linux-elf-glibc.py" \
+    --root "$RUNTIME" --max-glibc 2.38
+  SOURCE_COMMIT="$(git -C "$ROOT" rev-parse HEAD)"
+  "$PYTHON_BIN" "$ROOT/scripts/generate-release-manifest.py" \
+    --root "$RUNTIME" --output "$RUNTIME/release-manifest.json" \
+    --version "$APP_VERSION" --tag "v$APP_VERSION" --commit "$SOURCE_COMMIT" \
+    --platform linux-deb --architecture loong64 --runtime-profile core \
+    --only-file partyops
 fi
 
 # 回归解压后的单文件入口，特别防止向导程序在构建时

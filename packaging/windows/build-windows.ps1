@@ -9,7 +9,13 @@ param(
 
 $ErrorActionPreference = "Stop"
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
+$documentFormatterSource = if ($env:PARTYOPS_DOCUMENT_FORMATTER_SOURCE) {
+  $env:PARTYOPS_DOCUMENT_FORMATTER_SOURCE
+} else {
+  Join-Path $repoRoot "vendor\document-formatter-source"
+}
 . (Join-Path $PSScriptRoot "prepare-ocr-runtime.ps1")
+. (Join-Path $PSScriptRoot "prepare-dotnet48-runtime.ps1")
 $releaseVersion = "1.4.5-rc.6"
 $releaseTag = "v1.4.5-rc.6"
 & $Python (Join-Path $repoRoot "scripts\verify-full-function-gate.py") verify --root $repoRoot --scope package
@@ -382,6 +388,13 @@ foreach ($entry in $entries) {
     "--specpath", (Join-Path $repoRoot ".build-windows\spec")
   )
   if ($entry.Gui) { $arguments += "--noconsole" }
+  if ($isLegacy) {
+    # 启动器、向导及服务均须在 cryptography 导入前脱离 OpenSSL 构建盘路径。
+    $arguments += @(
+      "--runtime-hook", (Join-Path $PSScriptRoot "win7_openssl_hook.py"),
+      "--add-data", "$(Join-Path $PSScriptRoot 'partyops-openssl.cnf');."
+    )
+  }
   if ($entry.Name -eq "PartyOps") {
     $arguments += @(
       "--add-data", "$frontendDist\client;frontend",
@@ -511,6 +524,24 @@ if ($isLegacy) {
     -Destination (Join-Path $bundleRoot "vc-runtime-source.json") -Force
 }
 Copy-Item -LiteralPath (Join-Path $repoRoot "packaging\uos\update-public-key.txt") -Destination $bundleRoot -Force
+$formatterPlatform = if ($targetArchitecture -eq "x86") { "x86" } else { "x64" }
+& (Join-Path $repoRoot "scripts\build-document-formatter-host.ps1") `
+  -Platform $formatterPlatform `
+  -DocumentFormatterSource $documentFormatterSource `
+  -StageDirectory (Join-Path $bundleRoot "formatter-host")
+Assert-NativeSuccess "原排版源码无窗口宿主写入安装包"
+$formatterStage = Join-Path $bundleRoot "formatter-host"
+$formatterParityEvidence = Join-Path $repoRoot ".release-gates\formatter-parity-$formatterPlatform.json"
+$formatterFeatureEvidence = Join-Path $repoRoot ".release-gates\formatter-features-e2e-$formatterPlatform.json"
+& $Python (Join-Path $repoRoot "scripts\verify-formatter-runtime-evidence.py") `
+  --root $repoRoot `
+  --runtime $formatterStage `
+  --platform windows `
+  --architecture $formatterPlatform `
+  --parity-evidence $formatterParityEvidence `
+  --features-evidence $formatterFeatureEvidence `
+  --output (Join-Path $formatterStage "runtime-evidence.json")
+Assert-NativeSuccess "Windows 原排版源码真实 WPS 金样与六功能证据写入安装包"
 $bundledOfficeRuntime = Join-Path $bundleRoot "office-runtime"
 Copy-Item -LiteralPath $OfficeRuntime -Destination $bundledOfficeRuntime -Recurse -Force
 if ($isLegacy) {
@@ -545,6 +576,13 @@ Assert-NativeSuccess "读取源码提交"
   --architecture $targetArchitecture `
   --runtime-profile $runtimeProfile
 Assert-NativeSuccess "生成嵌入式发布清单"
+
+# .NET Framework 4.8 是原排版源码宿主的运行时。官方离线安装程序在发布清单
+# 冻结后才进入 Inno 私有前置包区：它会随单文件安装器分发，但不会永久占用
+# PartyOps 程序目录，也不会被误当作应用运行文件。
+Add-VerifiedPartyOpsDotNet48Prerequisite `
+  -RepoRoot $repoRoot `
+  -Destination (Join-Path $bundleRoot "prerequisites")
 
 # 在 Inno 压缩两万余项文件前先扫描完整冻结目录，及时阻止官方 MSI 中夹带的
 # 跨架构辅助模块进入安装器；外层构建器仍会在安装器生成后复验一次。

@@ -5,12 +5,20 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import struct
 import sys
 from pathlib import Path
 
 import pefile
 
 MACHINES = {"amd64": 0x8664, "x86": 0x014C}
+
+# ECMA-335 / CorHdr.h 的 CLR 映像标志。AnyCPU 托管程序集仍使用 I386
+# Machine 值，但只含 IL，且不能要求或偏好 32 位，也不能带原生入口点。
+COMIMAGE_FLAGS_ILONLY = 0x00000001
+COMIMAGE_FLAGS_32BITREQUIRED = 0x00000002
+COMIMAGE_FLAGS_NATIVE_ENTRYPOINT = 0x00000010
+COMIMAGE_FLAGS_32BITPREFERRED = 0x00020000
 
 # 下列 DLL/API 最早随 Windows 8/10 提供。Win7 制品出现任一项都说明冻结运行时
 # 使用了错误的 SDK/工具链；KB2533623 提供的 AddDllDirectory 等不在禁止列表中。
@@ -32,8 +40,14 @@ FORBIDDEN_IMPORTS = {
         "MapViewOfFileFromApp",
         "SetProcessMitigationPolicy",
         "SetThreadDescription",
+        "WaitOnAddress",
+        "WakeByAddressAll",
+        "WakeByAddressSingle",
     },
     "shcore.dll": {"GetDpiForMonitor", "SetProcessDpiAwareness"},
+    "bcryptprimitives.dll": {"ProcessPrng"},
+    # 微软Win7兼容UCRT也通过该APISet导入Sleep，不能禁止整个DLL。
+    "api-ms-win-core-synch-l1-2-0.dll": {"WaitOnAddress", "WakeByAddressAll", "WakeByAddressSingle"},
     "user32.dll": {
         "EnableNonClientDpiScaling",
         "GetDpiForSystem",
@@ -56,8 +70,48 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _managed_corflags(image: pefile.PE) -> int | None:
+    """读取 CLR 头标志；非托管或结构损坏时返回 None。"""
+
+    directories = image.OPTIONAL_HEADER.DATA_DIRECTORY
+    com_index = pefile.DIRECTORY_ENTRY["IMAGE_DIRECTORY_ENTRY_COM_DESCRIPTOR"]
+    if len(directories) <= com_index:
+        return None
+    descriptor = directories[com_index]
+    if descriptor.VirtualAddress == 0 or descriptor.Size < 20:
+        return None
+    header = image.get_data(descriptor.VirtualAddress, 20)
+    if len(header) < 20:
+        return None
+    size, major, _minor, metadata_rva, metadata_size, flags = struct.unpack_from(
+        "<IHHIII", header
+    )
+    if size < 0x48 or major < 2 or metadata_rva == 0 or metadata_size == 0:
+        return None
+    return flags
+
+
+def _is_managed_anycpu(image: pefile.PE) -> bool:
+    """仅认可纯 IL、未绑定 32 位且没有原生入口点的 AnyCPU 程序集。"""
+
+    if image.FILE_HEADER.Machine != MACHINES["x86"]:
+        return False
+    flags = _managed_corflags(image)
+    if flags is None or not flags & COMIMAGE_FLAGS_ILONLY:
+        return False
+    disallowed = (
+        COMIMAGE_FLAGS_32BITREQUIRED
+        | COMIMAGE_FLAGS_32BITPREFERRED
+        | COMIMAGE_FLAGS_NATIVE_ENTRYPOINT
+    )
+    return flags & disallowed == 0
+
+
 def validate_pe(
-    path: Path, architecture: str, verified_ucrt_hashes: dict[str, str]
+    path: Path,
+    architecture: str,
+    verified_ucrt_hashes: dict[str, str],
+    verified_universal_hashes: dict[Path, str] | None = None,
 ) -> list[str]:
     errors: list[str] = []
     try:
@@ -66,7 +120,17 @@ def validate_pe(
         return [f"{path.name}: PE 文件无效：{exc}"]
     try:
         machine = image.FILE_HEADER.Machine
-        if machine != MACHINES[architecture]:
+        universal_hashes = verified_universal_hashes or {}
+        is_verified_universal = (
+            path.resolve() in universal_hashes
+            and _sha256(path) == universal_hashes[path.resolve()]
+        )
+        is_managed_anycpu = architecture == "amd64" and _is_managed_anycpu(image)
+        if (
+            machine != MACHINES[architecture]
+            and not is_managed_anycpu
+            and not is_verified_universal
+        ):
             errors.append(
                 f"{path.name}: 架构为 0x{machine:04x}，期望 {architecture}"
             )
@@ -137,6 +201,41 @@ def main() -> int:
                 )
                 return 2
 
+    # .NET Framework 4.8 官方离线包是微软的 x86 引导程序，但其负载同时支持
+    # x86/x64。它不进入 PartyOps 程序目录，只由 Inno 临时释放。必须以固定
+    # 路径、版本、大小和 SHA-256 完整确证，不能按文件名宽松放行其它 x86 EXE。
+    prerequisite_source_path = root / "prerequisites" / "SOURCE.json"
+    prerequisite_installer = (
+        root / "prerequisites" / "ndp48-x86-x64-allos-enu.exe"
+    )
+    if not prerequisite_source_path.is_file() or not prerequisite_installer.is_file():
+        print("Win7 PE 门禁失败：缺少 .NET Framework 4.8 前置包或来源清单", file=sys.stderr)
+        return 2
+    try:
+        prerequisite_source = json.loads(
+            prerequisite_source_path.read_text(encoding="utf-8")
+        )
+    except (OSError, ValueError) as exc:
+        print(f"Win7 PE 门禁失败：.NET 4.8 来源清单无效：{exc}", file=sys.stderr)
+        return 2
+    expected_dotnet_hash = (
+        "0a3a390c47e639d0f7fc65b21195fee6b7f65b066f80f70c60fab191d14b7e40"
+    )
+    if (
+        prerequisite_source.get("version") != "4.8"
+        or prerequisite_source.get("filename") != prerequisite_installer.name
+        or prerequisite_source.get("architectures") != ["x86", "x64"]
+        or str(prerequisite_source.get("sha256", "")).lower()
+        != expected_dotnet_hash
+        or prerequisite_source.get("size") != 121346568
+        or _sha256(prerequisite_installer) != expected_dotnet_hash
+    ):
+        print("Win7 PE 门禁失败：.NET 4.8 前置包来源、架构、大小或哈希不一致", file=sys.stderr)
+        return 2
+    verified_universal_hashes = {
+        prerequisite_installer.resolve(): expected_dotnet_hash
+    }
+
     vc_source_path = root / "vc-runtime-source.json"
     if not vc_source_path.is_file():
         print("Win7 PE 门禁失败：缺少 VC142 来源与哈希清单", file=sys.stderr)
@@ -176,7 +275,12 @@ def main() -> int:
     errors = [
         error
         for path in files
-        for error in validate_pe(path, args.architecture, ucrt_hashes)
+        for error in validate_pe(
+            path,
+            args.architecture,
+            ucrt_hashes,
+            verified_universal_hashes,
+        )
     ]
     if errors:
         print("Win7 PE 门禁失败：", file=sys.stderr)

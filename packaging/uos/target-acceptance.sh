@@ -3,8 +3,8 @@ set -euo pipefail
 
 URL="${1:-https://127.0.0.1:18765}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-RESULT="$ROOT/artifacts/uos-target-acceptance.txt"
-mkdir -p "$ROOT/artifacts"
+RESULT="${PARTYOPS_ACCEPTANCE_RESULT:-$ROOT/artifacts/uos-target-acceptance.txt}"
+mkdir -p "$(dirname "$RESULT")"
 
 {
   echo "PartyOps UOS 目标机验收"
@@ -13,9 +13,12 @@ mkdir -p "$ROOT/artifacts"
   case "$(uname -m)" in
     x86_64) ARCH="amd64" ;;
     aarch64|arm64) ARCH="arm64" ;;
+    loongarch64|loong64) ARCH="loong64" ;;
     *) echo "不支持的处理器架构：$(uname -m)" >&2; exit 2 ;;
   esac
   echo "architecture=$ARCH"
+  RUNTIME_PROFILE=full
+  [[ "$ARCH" == loong64 ]] && RUNTIME_PROFILE=core
   VERSION="${PARTYOPS_VERSION:-1.4.5-rc.6}"
   PACKAGE_VERSION="${PARTYOPS_PACKAGE_VERSION:-1.4.5~rc.6}"
   INSTALLED_VERSION="$(dpkg-query -W -f='${Version}' partyops)"
@@ -29,18 +32,34 @@ mkdir -p "$ROOT/artifacts"
   test -x /opt/partyops/open-local-file.sh
   test -f /usr/share/applications/partyops-file.desktop
   test -f /usr/share/applications/partyops-client.desktop
-  test -x /opt/partyops/llama-server
-  LD_LIBRARY_PATH=/opt/partyops /opt/partyops/llama-server --version >/dev/null
+  if [[ "$RUNTIME_PROFILE" == full ]]; then
+    test -x /opt/partyops/llama-server
+    LD_LIBRARY_PATH=/opt/partyops /opt/partyops/llama-server --version >/dev/null
+  else
+    test ! -e /opt/partyops/llama-server
+    test -f /opt/partyops/release-manifest.json
+    /opt/partyops/partyops --package-self-test
+  fi
   grep -q '^Exec=/bin/bash /opt/partyops/desktop-launcher.sh$' \
     /usr/share/applications/partyops.desktop
-  DEB="$ROOT/artifacts/PartyOps_1.4.5-rc.6_linux_${ARCH}.deb"
+  DEB="${PARTYOPS_ACCEPTANCE_PACKAGE:-$ROOT/artifacts/PartyOps_${VERSION}_linux_${ARCH}.deb}"
+  if [[ -n "${PARTYOPS_ACCEPTANCE_PACKAGE:-}" && ! -f "$DEB" ]]; then
+    echo '指定的最终安装包不存在，不能跳过包校验。' >&2
+    exit 2
+  fi
   if [[ -f "$DEB" ]]; then
     test "$(dpkg-deb -f "$DEB" Architecture)" = "$ARCH"
     test "$(dpkg-deb -f "$DEB" Version)" = "$PACKAGE_VERSION"
-    (cd "$ROOT/artifacts" && sha256sum -c "SHA256SUMS.$ARCH")
+    if [[ -n "${PARTYOPS_ACCEPTANCE_SHA256:-}" ]]; then
+      printf '%s  %s\n' "$PARTYOPS_ACCEPTANCE_SHA256" "$DEB" | sha256sum -c -
+    else
+      (cd "$(dirname "$DEB")" && sha256sum -c "SHA256SUMS.$ARCH")
+    fi
   fi
   ldd --version 2>&1 | sed -n '1p'
-  if command -v python3.11 >/dev/null 2>&1; then
+  if [[ "$RUNTIME_PROFILE" == core ]]; then
+    echo "Loong64 core 构建基线：Python 3.12.13、glibc 2.38；冻结运行时以安装包自检为准。"
+  elif command -v python3.11 >/dev/null 2>&1; then
     python3.11 --version
   elif [[ -x "$ROOT/.partyops-python/bin/python3.11" ]]; then
     "$ROOT/.partyops-python/bin/python3.11" --version

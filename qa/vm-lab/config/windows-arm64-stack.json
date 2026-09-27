@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "verified_at": "2026-09-08",
+  "wsl_distribution": "Debian",
+  "expected_distribution_id": "debian",
+  "expected_distribution_version": "13",
+  "expected_host_arch": "x86_64",
+  "windows_root": "E:/codex/PartyOps/.partyops-vm-lab/tools/windows-arm64-stack",
+  "wsl_root": "/mnt/e/codex/PartyOps/.partyops-vm-lab/tools/windows-arm64-stack",
+  "primary_reserve_gib": 20,
+  "fallback_reserve_gib": 30,
+  "build_memory_gib": 12,
+  "build_jobs": 2,
+  "sources": {
+    "libtpms": {"url": "https://github.com/stefanberger/libtpms.git", "tag": "v0.10.2", "commit": "03ff2481e133540be3b3ffe3daa1483d2a73d967"},
+    "swtpm": {"url": "https://github.com/stefanberger/swtpm.git", "tag": "v0.10.2", "commit": "32b5a0575991a73398de9749d63cafd847008af2"},
+    "qemu": {"url": "https://github.com/qemu/qemu.git", "tag": "v11.1.0", "commit": "84f07211cc5b4fc6a371559bf8a5de4fb068e648"},
+    "edk2": {"url": "https://github.com/tianocore/edk2.git", "tag": "edk2-stable202608", "commit": "2970e5699ba6267f3384ffab20f96647578aebc8"},
+    "secureboot_objects": {"url": "https://github.com/microsoft/secureboot_objects.git", "commit": "9a2bbf82e86b62694e44aba3a4068d8dd0c943d7"}
+  },
+  "secure_boot_template": "Templates/MicrosoftOnly.toml",
+  "certificates": [
+    {"variable": "PK", "path": "PreSignedObjects/PK/Certificate/WindowsOEMDevicesPK.der", "sha256": "2f569e8edaf9657dc4951c29598725255c7f821472db71374211fe44d082546f"},
+    {"variable": "KEK", "path": "PreSignedObjects/KEK/Certificates/microsoft corporation kek 2k ca 2023.der", "sha256": "3cd3f0309edae228767a976dd40d9f4affc4fbd5218f2e8cc3c9dd97e8ac6f9d"},
+    {"variable": "db", "path": "PreSignedObjects/DB/Certificates/windows uefi ca 2023.der", "sha256": "076f1fea90ac29155ebf77c17682f75f1fdd1be196da302dc8461e350a9ae330"},
+    {"variable": "dbx-source", "path": "PreSignedObjects/DBX/dbx_info_msft_latest.json", "sha256": "7ddf37f639ace32004744939d9d7da820793f1728768b7b90b4de2379b3e8fbe"}
+  ],
+  "driver_media": {
+    "id": "virtio-win-arm64",
+    "version": "0.1.302",
+    "path": "D:/PartyOps-VM-Lab/downloads/virtio-win-0.1.302.iso",
+    "sha256": "303f7ae40dad495d6ae474fdc571df58958a4dbc5c37a522d80f9a203867949d",
+    "hash_source": "local-sha256-after-upstream-download",
+    "catalog_member_signature_verified": true,
+    "guest_driver_load_verified": false
+  },
+  "build_dependencies": ["build-essential", "git", "pkg-config", "python3", "python3-venv", "meson", "ninja-build", "autoconf", "automake", "libtool", "libglib2.0-dev", "libpixman-1-dev", "libslirp-dev", "libfdt-dev", "libssl-dev", "libgnutls28-dev", "gnutls-bin", "libjson-glib-dev", "libtasn1-6-dev", "libgmp-dev", "libfuse3-dev", "libseccomp-dev", "expect", "gawk", "socat", "gcc-aarch64-linux-gnu", "uuid-dev", "acpica-tools", "nasm"]
+}

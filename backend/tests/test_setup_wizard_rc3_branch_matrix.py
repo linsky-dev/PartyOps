@@ -121,7 +121,7 @@ def test_personal_mode_never_requests_service_or_admin(
         "PARTYOPS_DATA_DIR": str(data_dir),
     }
     monkeypatch.setattr(
-        setup_wizard, "load_host_environment", lambda _path: environment
+        setup_wizard, "load_host_environment", lambda _path, **_kwargs: environment
     )
     monkeypatch.setattr(
         setup_wizard.socket,

@@ -27,9 +27,10 @@ class WheelMetadata:
 
 GLIBC_BASELINE = (2, 17)
 REQUIRED_SMART_RUNTIME = {"numpy", "onnxruntime", "tokenizers"}
+LOONG_CORE_GLIBC = (2, 38)
 
 
-def validate_wheel_platform(path: Path, architecture: str) -> None:
+def validate_wheel_platform(path: Path, architecture: str, profile: str = "full") -> None:
     """拒绝错误架构及最低 glibc 高于 2.17 的原生轮子。"""
 
     try:
@@ -39,10 +40,15 @@ def validate_wheel_platform(path: Path, architecture: str) -> None:
     platforms = {tag.platform for tag in tags}
     if platforms == {"any"}:
         return
-    machine = "x86_64" if architecture == "amd64" else "aarch64"
+    machine = {"amd64": "x86_64", "arm64": "aarch64", "loong64": "loongarch64"}[architecture]
+    baseline = LOONG_CORE_GLIBC if profile == "core" else GLIBC_BASELINE
     compatible: list[tuple[int, int]] = []
     for platform_tag in platforms:
         if platform_tag == f"linux_{machine}":
+            if profile == "core":
+                # Loong64 wheel 目前可带本机 linux 标签；实际 ELF 符号另验。
+                compatible.append(baseline)
+                continue
             raise ValueError(
                 f"{path.name} 只有通用 linux 标签，无法证明 glibc 2.17 ABI；"
                 "必须用 auditwheel 生成 manylinux2014 标签。"
@@ -57,11 +63,11 @@ def validate_wheel_platform(path: Path, architecture: str) -> None:
             compatible.append(GLIBC_BASELINE)
     if not compatible:
         raise ValueError(f"{path.name} 不包含 {architecture} Linux 兼容标签")
-    if min(compatible) > GLIBC_BASELINE:
+    if min(compatible) > baseline:
         required = ".".join(str(part) for part in min(compatible))
         raise ValueError(
-            f"{path.name} 最低需要 glibc {required}，高于发布基线 2.17；"
-            "必须在 manylinux2014 工具链重建，禁止仅改文件名。"
+            f"{path.name} 最低需要 glibc {required}，高于发布基线 {baseline[0]}.{baseline[1]}；"
+            "必须核验目标 ABI，禁止仅改文件名。"
         )
 
 
@@ -69,26 +75,27 @@ def linux_environment(architecture: str = "amd64") -> dict[str, str]:
     """返回套件目标机 CPython 3.11 / Linux 的标记环境。"""
 
     environment = default_environment()
+    loong = architecture == "loong64"
     environment.update(
         {
             "implementation_name": "cpython",
-            "implementation_version": "3.11.15",
+            "implementation_version": "3.12.13" if loong else "3.11.15",
             "os_name": "posix",
-            "platform_machine": "aarch64" if architecture == "arm64" else "x86_64",
+            "platform_machine": {"amd64": "x86_64", "arm64": "aarch64", "loong64": "loongarch64"}[architecture],
             "platform_python_implementation": "CPython",
             "platform_system": "Linux",
-            "python_full_version": "3.11.15",
-            "python_version": "3.11",
+            "python_full_version": "3.12.13" if loong else "3.11.15",
+            "python_version": "3.12" if loong else "3.11",
             "sys_platform": "linux",
         }
     )
     return environment
 
 
-def read_wheels(wheelhouse: Path, architecture: str) -> dict[str, WheelMetadata]:
+def read_wheels(wheelhouse: Path, architecture: str, profile: str = "full") -> dict[str, WheelMetadata]:
     wheels: dict[str, WheelMetadata] = {}
     for path in sorted(wheelhouse.glob("*.whl")):
-        validate_wheel_platform(path, architecture)
+        validate_wheel_platform(path, architecture, profile)
         with zipfile.ZipFile(path) as archive:
             metadata_names = [
                 name
@@ -146,14 +153,17 @@ def marker_applies(
 
 
 def validate(
-    wheelhouse: Path, requirement_files: list[Path], architecture: str = "amd64"
+    wheelhouse: Path, requirement_files: list[Path], architecture: str = "amd64", profile: str = "full"
 ) -> int:
-    wheels = read_wheels(wheelhouse, architecture)
+    if (architecture == "loong64") != (profile == "core"):
+        raise ValueError("loong64 仅允许显式 core 档，core 仅允许 loong64")
+    wheels = read_wheels(wheelhouse, architecture, profile)
     cryptography = wheels.get("cryptography")
     if cryptography is None or cryptography.version != Version("50.0.0"):
         actual = cryptography.version if cryptography else "missing"
         raise ValueError(f"cryptography 必须唯一且为 50.0.0，实际为 {actual}")
-    missing_smart = sorted(REQUIRED_SMART_RUNTIME - set(wheels))
+    required_smart = {"numpy"} if profile == "core" else REQUIRED_SMART_RUNTIME
+    missing_smart = sorted(required_smart - set(wheels))
     if missing_smart:
         raise ValueError(
             f"{architecture} 本地智能运行时不完整：{', '.join(missing_smart)}"
@@ -223,14 +233,16 @@ def main() -> int:
     parser.add_argument("--wheelhouse", type=Path, required=True)
     parser.add_argument("--requirements", type=Path, nargs="+", required=True)
     parser.add_argument(
-        "--architecture", choices=("amd64", "arm64"), default="amd64"
+        "--architecture", choices=("amd64", "arm64", "loong64"), default="amd64"
     )
+    parser.add_argument("--runtime-profile", choices=("full", "core"), default="full")
     args = parser.parse_args()
     try:
         return validate(
             args.wheelhouse.resolve(),
             [path.resolve() for path in args.requirements],
             args.architecture,
+            args.runtime_profile,
         )
     except (OSError, ValueError, zipfile.BadZipFile) as exc:
         print(f"UOS/Linux {args.architecture} 离线依赖校验失败：{exc}", file=sys.stderr)

@@ -103,6 +103,71 @@ def test_system_cleanup_accepts_marked_programdata_child_and_rejects_wrong_scope
         cleanup.execute("system", check_only=True)
 
 
+def test_inactive_stale_host_config_does_not_block_personal_full_cleanup(
+    monkeypatch, tmp_path: Path
+) -> None:
+    local, program_data = _environment(monkeypatch, tmp_path)
+    user_control = local / "PartyOps"
+    user_control.mkdir(parents=True)
+    personal = tmp_path / "Data" / "当前个人数据"
+    _marker(personal, "personal")
+    (user_control / "personal.env").write_text(
+        f"PARTYOPS_DATA_DIR={shlex.quote(str(personal))}\n",
+        encoding="utf-8",
+    )
+    (user_control / "mode.json").write_text(
+        json.dumps({"format_version": 1, "mode": "personal"}),
+        encoding="utf-8",
+    )
+
+    system_control = program_data / "PartyOps"
+    system_control.mkdir(parents=True)
+    stale_host = tmp_path / "Data" / "旧主机无标记"
+    stale_host.mkdir(parents=True)
+    (system_control / "partyops.env").write_text(
+        f"PARTYOPS_DATA_DIR={shlex.quote(str(stale_host))}\n",
+        encoding="utf-8",
+    )
+    (system_control / "mode.json").write_text(
+        json.dumps({"format_version": 1, "mode": "personal"}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(cleanup, "_stop_owned_user_processes", lambda: None)
+    monkeypatch.setattr(cleanup, "_remove_owned_autostarts", lambda: None)
+    monkeypatch.setattr(cleanup, "_remove_user_ca", lambda: None)
+    monkeypatch.setattr(cleanup, "_stop_system_services", lambda: None)
+
+    cleanup.execute("all", check_only=True)
+    cleanup.execute("all", check_only=False)
+
+    assert not personal.exists()
+    assert not user_control.exists()
+    assert not system_control.exists()
+    assert stale_host.exists()
+
+
+def test_active_personal_config_still_blocks_unsafe_data_pointer(
+    monkeypatch, tmp_path: Path
+) -> None:
+    local, _program_data = _environment(monkeypatch, tmp_path)
+    control = local / "PartyOps"
+    control.mkdir(parents=True)
+    unsafe = tmp_path / "Data" / "当前个人无标记"
+    unsafe.mkdir(parents=True)
+    (control / "personal.env").write_text(
+        f"PARTYOPS_DATA_DIR={shlex.quote(str(unsafe))}\n",
+        encoding="utf-8",
+    )
+    (control / "mode.json").write_text(
+        json.dumps({"format_version": 1, "mode": "personal"}),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="缺少 PartyOps 所有权标记"):
+        cleanup.execute("user", check_only=True)
+    assert unsafe.exists()
+
+
 def test_installer_exposes_preserve_or_full_delete_choice() -> None:
     installer = (ROOT / "packaging" / "windows" / "PartyOps.iss").read_text(
         encoding="utf-8"

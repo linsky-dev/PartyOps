@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="Current" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
+    <ProjectGuid>{7C306C60-85AF-4BF8-B539-C44CB813A759}</ProjectGuid>
+    <OutputType>WinExe</OutputType>
+    <AssemblyName>PartyOps.DocumentFormatter.Desktop</AssemblyName>
+    <RootNamespace>PartyOps.DocumentFormatter.Desktop</RootNamespace>
+    <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
+    <TargetFrameworkProfile />
+    <LangVersion>12.0</LangVersion>
+    <Nullable>annotations</Nullable>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
+    <Deterministic>true</Deterministic>
+    <OutputPath Condition=" '$(Platform)' == 'AnyCPU' Or '$(Platform)' == 'Any CPU' ">bin\$(Configuration)\</OutputPath>
+    <OutputPath Condition=" '$(Platform)' == 'x86' Or '$(Platform)' == 'x64' ">bin\$(Platform)\$(Configuration)\</OutputPath>
+    <IntermediateOutputPath Condition=" '$(Platform)' == 'AnyCPU' Or '$(Platform)' == 'Any CPU' ">obj\$(Configuration)\</IntermediateOutputPath>
+    <IntermediateOutputPath Condition=" '$(Platform)' == 'x86' Or '$(Platform)' == 'x64' ">obj\$(Platform)\$(Configuration)\</IntermediateOutputPath>
+    <DebugSymbols Condition=" '$(Configuration)' == 'Debug' ">true</DebugSymbols>
+    <DebugType Condition=" '$(Configuration)' == 'Debug' ">portable</DebugType>
+    <DebugType Condition=" '$(Configuration)' == 'Release' ">pdbonly</DebugType>
+    <Optimize Condition=" '$(Configuration)' == 'Release' ">true</Optimize>
+    <DefineConstants Condition=" '$(Configuration)' == 'Debug' ">DEBUG;TRACE</DefineConstants>
+    <DefineConstants Condition=" '$(Configuration)' == 'Release' ">TRACE</DefineConstants>
+    <PlatformTarget Condition=" '$(Platform)' == 'AnyCPU' Or '$(Platform)' == 'Any CPU' ">AnyCPU</PlatformTarget>
+    <PlatformTarget Condition=" '$(Platform)' == 'x86' ">x86</PlatformTarget>
+    <PlatformTarget Condition=" '$(Platform)' == 'x64' ">x64</PlatformTarget>
+    <!-- 本机 WPS 为 32 位；AnyCPU 发布默认以 32 位启动，仍保留显式 x64 构建。 -->
+    <Prefer32Bit Condition=" '$(Platform)' == 'AnyCPU' Or '$(Platform)' == 'Any CPU' ">true</Prefer32Bit>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="Microsoft.CSharp" />
+    <Reference Include="System" />
+    <Reference Include="System.Core" />
+    <Reference Include="System.Drawing" />
+    <Reference Include="System.Windows.Forms" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="**\*.cs" Exclude="bin\**;obj\**" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\PartyOps.DocumentFormatter.AddIn\PartyOps.DocumentFormatter.AddIn.csproj">
+      <Project>{8A4E1C33-1D9F-4EA2-9CF1-2673D0A2A591}</Project>
+      <Name>PartyOps.DocumentFormatter.AddIn</Name>
+      <EmbedInteropTypes>false</EmbedInteropTypes>
+    </ProjectReference>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="..\..\assets\images\*" Exclude="..\..\assets\images\about.png">
+      <Link>images\%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+</Project>

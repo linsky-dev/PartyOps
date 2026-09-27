@@ -23,6 +23,7 @@ import urllib.request
 import zipfile
 from datetime import datetime
 from pathlib import Path, PurePosixPath
+from typing import cast
 
 from fastapi import APIRouter, Depends, File, Header, Request, UploadFile
 from fastapi.responses import FileResponse
@@ -114,6 +115,11 @@ class _DuplicateJSONFieldError(ValueError):
     """签名 JSON 出现重复字段，避免不同解析器产生歧义。"""
 V4_PLATFORM_ARTIFACTS = {
     **V3_PLATFORM_ARTIFACTS,
+    # 仅扩展 v4 单平台更新合同，旧 v3 多包清单保持原有结构。
+    "linux-deb": {
+        **V3_PLATFORM_ARTIFACTS["linux-deb"],
+        "loong64": "_linux_loong64.deb",
+    },
     "macos": {
         "amd64": "_macos_x86_64.pkg",
         "arm64": "_macos_arm64.pkg",
@@ -387,9 +393,15 @@ def fetch_online_update_catalog() -> dict[str, object]:
         "published_at": published_at,
     }
     package_record = release
+    platform_info = detect_platform_info()
+    platform_name = update_platform_key(platform_info)
+    # 安装版 Windows 的 architecture 来自已验证 PE/进程，不能重新按宿主 ARM ISA 选包。
+    architecture = str(platform_info["architecture"] if "architecture" in platform_info else normalize_architecture())
+    if (platform_info.get("platform_family") == "windows"
+            and (not platform_name or (catalog_format_version == 1 and platform_name != "windows"))):
+        result.update(target_available=False, availability_message="当前安装包尚无已验证的对应更新通道；不会下载其他平台或架构的安装包。")
+        return result
     if catalog_format_version in {2, 3}:
-        platform_name = update_platform_key(detect_platform_info())
-        architecture = normalize_architecture()
         packages = release.get("platform_packages")
         platform_packages = (
             packages.get(platform_name) if isinstance(packages, dict) else None
@@ -459,7 +471,7 @@ def _online_download_state(
 ) -> dict[str, object]:
     """生成可持久化的公开下载进度，不保存签名或其他敏感值。"""
 
-    size = int(catalog["package_size"])
+    size = int(cast(str | int | float, catalog["package_size"]))
     return {
         "source": "official-online-catalog",
         "download_state": state,
@@ -469,7 +481,7 @@ def _online_download_state(
         "package_url": str(catalog["package_url"]),
         "package_sha256": str(catalog["package_sha256"]),
         "release_title": str(catalog["title"]),
-        "release_notes": list(catalog["release_notes"]),
+        "release_notes": list(cast(list[str], catalog["release_notes"])),
         "published_at": str(catalog["published_at"]),
     }
 
@@ -502,7 +514,7 @@ def _download_online_update(package_id: str, catalog: dict[str, object]) -> None
     """后台下载官方统一更新包，完成外层哈希与包内签名双重校验。"""
 
     settings = get_settings()
-    expected_size = int(catalog["package_size"])
+    expected_size = int(cast(str | int | float, catalog["package_size"]))
     expected_hash = str(catalog["package_sha256"])
     incoming = settings.updates_dir / f".{package_id}.incoming"
     final_name = f"partyops_{catalog['version']}_{expected_hash[:12]}.partyops-update"
@@ -1104,8 +1116,8 @@ def _extract_manifest(path, *, require_signature: bool = True):
     expanded_size = 0
     for filename, expected in artifacts.items():
         _safe_zip_member(str(filename))
-        info = info_by_name.get(filename)
-        if info is None or not isinstance(expected, dict):
+        info_record = info_by_name.get(filename)
+        if info_record is None or not isinstance(expected, dict):
             raise ProblemException(
                 422,
                 "UPDATE_ARTIFACT_MISSING",
@@ -1124,7 +1136,7 @@ def _extract_manifest(path, *, require_signature: bool = True):
         if (
             expected_size < 0
             or expected_size > MAX_UPDATE_ARTIFACT_BYTES
-            or info.file_size != expected_size
+            or info_record.file_size != expected_size
         ):
             raise ProblemException(
                 422,
@@ -1144,7 +1156,7 @@ def _extract_manifest(path, *, require_signature: bool = True):
             with zipfile.ZipFile(path) as archive:
                 digest = hashlib.sha256()
                 size = 0
-                with archive.open(info) as source:
+                with archive.open(info_record) as source:
                     while chunk := source.read(1024 * 1024):
                         digest.update(chunk)
                         size += len(chunk)
@@ -1231,7 +1243,7 @@ def prepare_online_update(
         UpdateStatus.COMPLETED,
     }:
         path = settings.updates_dir / package.filename
-        if path.is_file() and path.stat().st_size == int(catalog["package_size"]):
+        if path.is_file() and path.stat().st_size == int(cast(str | int | float, catalog["package_size"])):
             if hmac.compare_digest(_sha256_path(path), expected_hash):
                 return package
         if package.status in {UpdateStatus.APPLYING, UpdateStatus.COMPLETED}:

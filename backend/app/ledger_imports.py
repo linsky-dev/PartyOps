@@ -537,12 +537,12 @@ def mapped_rows(job_id: str, sheet_name: str, header_row: int, mappings: list[di
             if mapping.get("action") == "ignore":
                 continue
             source = normalize_header(mapping.get("source_column", ""))
-            index = index_by_header.get(source)
-            if index is None:
+            source_index = index_by_header.get(source)
+            if source_index is None:
                 continue
             target = str(mapping.get("target_field") or "")
             if target:
-                values[target] = row[index] if index < len(row) else None
+                values[target] = row[source_index] if source_index < len(row) else None
         if any(value not in (None, "") for value in values.values()):
             result.append({"row_number": row_number, "values": values})
     return result

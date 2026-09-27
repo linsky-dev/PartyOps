@@ -14,7 +14,11 @@ macOS 制品不使用 Docker，也不在 Windows/Linux 上交叉冻结。Apple S
 3. 当前架构的可审计 OCR 运行时，必须包含 `bin/tesseract` 和 `tessdata/chi_sim.traineddata`。
 4. 当前架构的 llama.cpp 运行时，必须包含 `llama-server`。
 5. 当前架构且经过许可审计的 LibreOffice headless 运行时，必须保留完整 `LibreOffice.app` 签名边界，并包含兼容入口 `program/soffice`、`SOURCE.json` 和 `licenses/`。macOS 官方 Bundle 不使用 Linux 的 `program/soffice.bin` 布局；该闭包只用于本机 DOC/WPS 转换，构建脚本会拒绝符号链接越界和错误架构。
-6. 正式构建需要 Developer ID Application、Developer ID Installer 证书以及 `notarytool` 钥匙串配置。
+6. 当前架构的原排版源码宿主。先在 Windows 构建锁定的 `AnyCPU` 规则载荷，再在目标 Mac 上运行 `scripts/build-document-formatter-host-unix.sh`，用该架构的 Mono 6.8 `mkbundle` 生成单一、瘦架构 Mach-O。该运行时必须包含 `source-host.json`、`word-vtable-map.json`、WPS SDK 许可、Mono 运行时许可和目标机生成的 `runtime-evidence.json`。
+7. 目标 Mac 必须安装可被 PartyOps 原生适配器自动化调用的 WPS，并在本机构建过程中完成真实 WPS 金样、六类功能和 25 项能力验收。仅安装 WPS、仅能人工打开文档或仅通过宿主 `--self-test` 均不构成排版验收。
+8. 正式构建需要 Developer ID Application、Developer ID Installer 证书以及 `notarytool` 钥匙串配置。
+
+当前已验证的 WPS RPC 适配路径是 Linux。macOS WPS 的可用自动化接口、应用定位和目标机行为仍须分别在 Apple Silicon 与 Intel 真机验证；在证据缺失时，`build-pkg.sh` 的真实排版门禁会失败并停止，不得通过跳过测试、伪造 `runtime-evidence.json` 或改用 LibreOffice 近似排版来生成候选包。
 
 ## 正式构建
 
@@ -22,6 +26,7 @@ macOS 制品不使用 Docker，也不在 Windows/Linux 上交叉冻结。Apple S
 export PARTYOPS_MACOS_OCR_RUNTIME=/absolute/path/to/ocr-runtime
 export PARTYOPS_MACOS_LLAMA_RUNTIME=/absolute/path/to/llama-runtime
 export PARTYOPS_MACOS_OFFICE_RUNTIME=/absolute/path/to/libreoffice-headless-runtime
+export PARTYOPS_MACOS_FORMATTER_RUNTIME=/absolute/path/to/native-source-formatter-runtime
 export PARTYOPS_MACOS_APPLICATION_IDENTITY='Developer ID Application: ...'
 export PARTYOPS_MACOS_INSTALLER_IDENTITY='Developer ID Installer: ...'
 export PARTYOPS_MACOS_NOTARY_PROFILE='partyops-notary'
@@ -29,7 +34,7 @@ export PARTYOPS_MACOS_NOTARY_PROFILE='partyops-notary'
 ./packaging/macos/build-pkg.sh --architecture "$(uname -m)"
 ```
 
-脚本会重建前端、冻结六个运行入口，扫描 Mach-O 架构与动态依赖，逐层签名 `.app`，生成 Installer 签名 PKG，提交 Apple 公证并 staple 票据。缺少任一证书或公证配置时，正式构建直接失败。
+脚本会重建前端、冻结六个运行入口，在最终 App 内直接调用原排版源码宿主完成真实 WPS 金样和六功能验收，随后扫描 Mach-O 架构与动态依赖，逐层签名 `.app`，生成 Installer 签名 PKG，提交 Apple 公证并 staple 票据。缺少原排版运行时、真实排版证据、任一证书或公证配置时，正式构建直接失败。
 
 本地调试可显式使用 `--unsigned-development`；输出文件名带 `UNSIGNED-DO-NOT-PUBLISH`，不得上传官网、GitHub 或更新目录。
 

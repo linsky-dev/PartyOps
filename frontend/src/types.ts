@@ -1038,6 +1038,8 @@ export interface LocalAIRuntime {
   ready: boolean;
   state: string;
   message: string;
+  runtime_profile?: string;
+  supported_capabilities?: string[];
   model_pack_id?: string | null;
   model_id?: string | null;
   embedding_pack_id?: string | null;

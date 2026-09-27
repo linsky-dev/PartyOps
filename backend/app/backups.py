@@ -550,9 +550,10 @@ def verify_backup(path: Path) -> dict[str, object]:
 def restore_backup(path: Path, actor_id: str | None = None) -> None:
     settings = get_settings()
     manifest = verify_backup(path)
-    required_bytes = int(
-        sum(int(item.get("size", 0)) for item in manifest.get("files", [])) * 2.5
-    )
+    manifest_files = manifest.get("files", [])
+    if not isinstance(manifest_files, list):
+        raise ProblemException(400, "BACKUP_MANIFEST_INVALID", "备份清单无效", "files 必须是数组。")
+    required_bytes = int(sum(int(item.get("size", 0)) for item in manifest_files if isinstance(item, dict)) * 2.5)
     if shutil.disk_usage(settings.data_dir).free < required_bytes:
         raise ProblemException(
             507,

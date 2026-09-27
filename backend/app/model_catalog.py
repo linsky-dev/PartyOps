@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from .hardware_profile import HardwareProfile
+
 MODEL_CATALOG_VERSION = 3
 
 # “官网模型包”仅在签名资产完成发布后填写 hosted_url；没有资产时只给
@@ -291,7 +293,7 @@ MODEL_CATALOG: list[dict[str, Any]] = [
 ]
 
 
-def recommend_models(profile: dict[str, object]) -> list[dict[str, Any]]:
+def recommend_models(profile: HardwareProfile) -> list[dict[str, Any]]:
     total = int(profile.get("total_memory_mb", 0) or 0)
     available = int(profile.get("available_memory_mb", 0) or 0)
     reserve = int(profile.get("reserved_memory_mb", 2_048) or 2_048)

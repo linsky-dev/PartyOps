@@ -5,15 +5,20 @@ from __future__ import annotations
 import asyncio
 import calendar
 import io
+import os
 import re
+import shutil
+import subprocess
+import sys
 import tarfile
+import tempfile
 import zipfile
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-import fitz
-import pytesseract
+import fitz  # type: ignore[import-untyped]  # 固定 PyMuPDF 运行时未发布类型标注。
+import pytesseract  # type: ignore[import-untyped]  # OCR 运行时未发布类型标注。
 from defusedxml import ElementTree
 from docx import Document
 from fastapi import UploadFile
@@ -201,6 +206,41 @@ def _validate_office_container(data: bytes) -> None:
         ) from exc
 
 
+def _image_ocr(image: Image.Image, *, timeout: int) -> str:
+    """Windows OCR 子进程使用相对文件名，兼容旧引擎的窄字符参数解析。"""
+    tessdata = os.environ.get("TESSDATA_PREFIX", "")
+    if sys.platform != "win32" or not tessdata:
+        return pytesseract.image_to_string(image, lang="chi_sim", timeout=timeout)
+    # Win7 引擎会把中文 argv 路径变成问号；仅改 --tessdata-dir 仍不足以
+    # 兼容中文用户的 TEMP。图片和单个中文语言包放入独立临时目录，子进程
+    # cwd 通过 Unicode Windows API 传入，所有 CLI 文件参数均为 ASCII。
+    # 不修改全局 cwd/环境，也不要求管理员权限、短文件名或额外字体。
+    environment = os.environ.copy()
+    environment.pop("TESSDATA_PREFIX", None)
+    with tempfile.TemporaryDirectory(prefix="partyops-ocr-") as temporary:
+        source = Path(temporary) / "input.png"
+        rgba = image.convert("RGBA")
+        background = Image.new("RGBA", rgba.size, "white")
+        Image.alpha_composite(background, rgba).convert("RGB").save(source, format="PNG")
+        shutil.copyfile(Path(tessdata) / "chi_sim.traineddata", Path(temporary) / "chi_sim.traineddata")
+        try:
+            result = subprocess.run(
+                [pytesseract.pytesseract.tesseract_cmd, source.name, "stdout",
+                 "--tessdata-dir", ".", "-l", "chi_sim"],
+                cwd=temporary,
+                env=environment, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                timeout=timeout, check=False,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+        except FileNotFoundError as exc:
+            raise pytesseract.TesseractNotFoundError() from exc
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError("Tesseract process timeout") from exc
+    if result.returncode:
+        raise pytesseract.TesseractError(result.returncode, result.stderr.decode("utf-8", errors="replace"))
+    return result.stdout.decode("utf-8")
+
+
 def _extract_pdf(data: bytes) -> tuple[str, list[str]]:
     warnings: list[str] = []
     pages: list[str] = []
@@ -233,7 +273,7 @@ def _extract_pdf(data: bytes) -> tuple[str, list[str]]:
             try:
                 pixmap = page.get_pixmap(matrix=fitz.Matrix(1.8, 1.8), alpha=False)
                 image = Image.open(io.BytesIO(pixmap.tobytes("png")))
-                pages.append(pytesseract.image_to_string(image, lang="chi_sim", timeout=10))
+                pages.append(_image_ocr(image, timeout=10))
             except (pytesseract.TesseractNotFoundError, RuntimeError):
                 if not any("Tesseract" in warning for warning in warnings):
                     warnings.append("扫描页需要本地 Tesseract 中文 OCR；当前环境未检测到引擎或识别超时。")
@@ -248,7 +288,7 @@ def _extract_image(data: bytes) -> tuple[str, list[str]]:
         image = Image.open(io.BytesIO(data))
         if image.width * image.height > MAX_IMAGE_PIXELS:
             return "", ["图片像素规模超过快速识别上限，请压缩后重试。"]
-        return pytesseract.image_to_string(image, lang="chi_sim", timeout=20), []
+        return _image_ocr(image, timeout=20), []
     except pytesseract.TesseractNotFoundError:
         return "", ["当前环境未检测到 Tesseract 中文 OCR，请人工确认图片内容。"]
     except (OSError, RuntimeError):

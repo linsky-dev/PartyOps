@@ -10,6 +10,7 @@ from __future__ import annotations
 import ctypes
 import json
 import os
+import sys
 import threading
 from datetime import date
 from pathlib import Path
@@ -155,7 +156,7 @@ class NeedleIntentRuntime:
 
     @staticmethod
     def _validate_suffix(path: Path) -> None:
-        expected = ".dll" if os.name == "nt" else ".dylib" if os.sys.platform == "darwin" else ".so"
+        expected = ".dll" if os.name == "nt" else ".dylib" if sys.platform == "darwin" else ".so"
         if path.suffix.lower() != expected:
             raise RuntimeError(f"Needle 运行时必须是当前平台的 {expected} 文件")
 

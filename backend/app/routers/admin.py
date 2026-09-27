@@ -221,7 +221,7 @@ def _probe_network_health(value: dict[str, object]) -> dict[str, object]:
     settings = get_settings()
     url = service_url(
         str(value["advertise_host"]),
-        int(value["port"]),
+        int(typing.cast(str | int | float, value["port"])),
         tls_enabled=settings.tls_enabled,
     )
     context = None
@@ -1003,7 +1003,7 @@ def validate_network_payload(payload: dict[str, object]) -> dict[str, object]:
     bind_host = str(payload.get("bind_host", settings.network_bind_host)).strip()
     advertise_host = str(payload.get("advertise_host", settings.network_advertise_host)).strip()
     try:
-        port = int(payload.get("port", settings.port))
+        port = int(typing.cast(str | int | float, payload.get("port", settings.port)))
     except (TypeError, ValueError) as exc:
         raise ProblemException(422, "NETWORK_PORT_INVALID", "端口无效", "端口必须是 1024 到 65535 的整数。") from exc
     if not bind_host or not advertise_host or "://" in bind_host or "://" in advertise_host:
@@ -1173,10 +1173,10 @@ def patch_network_configuration(
         "requested_at": beijing_iso(utcnow()),
         "requested_by": admin.id,
         "transaction_id": transaction_id,
-        "migration_grace_hours": max(1, min(168, int(payload.get("migration_grace_hours", 24)))),
+        "migration_grace_hours": max(1, min(168, int(typing.cast(str | int | float, payload.get("migration_grace_hours", 24))))),
         "state": "restart_required",
     }
-    migration_expires_at = utcnow() + timedelta(hours=pending_value["migration_grace_hours"])
+    migration_expires_at = utcnow() + timedelta(hours=int(typing.cast(str | int | float, pending_value["migration_grace_hours"])))
     migrated_devices = 0
     for device in db.scalars(select(Device).where(Device.active.is_(True))).all():
         db.add(
@@ -1188,7 +1188,7 @@ def patch_network_configuration(
                     "transaction_id": transaction_id,
                     "host_url": service_url(
                         str(new_value["advertise_host"]),
-                        int(new_value["port"]),
+                        int(typing.cast(str | int | float, new_value["port"])),
                         tls_enabled=settings.tls_enabled,
                     ),
                     "agent_url": service_url(
@@ -1239,6 +1239,8 @@ def get_network_transaction(
     db: Session = Depends(get_session),
 ) -> dict[str, object]:
     pending = db.get(SystemSetting, "network.pending")
+    if pending is None:
+        raise ProblemException(404, "NETWORK_TRANSACTION_NOT_FOUND", "网络事务不存在", "请刷新网络设置后重试。")
     value = pending.value if pending and isinstance(pending.value, dict) else {}
     if value.get("transaction_id") != transaction_id:
         raise ProblemException(404, "NETWORK_TRANSACTION_NOT_FOUND", "网络事务不存在", "请刷新网络设置后重试。")
@@ -1255,6 +1257,8 @@ def confirm_network_transaction(
     if not _request_from_host_desktop(request):
         raise ProblemException(403, "NETWORK_CONFIRM_LOCAL_REQUIRED", "只能在主机本机确认网络配置", "请到主机电脑完成健康检查。")
     pending = db.get(SystemSetting, "network.pending")
+    if pending is None:
+        raise ProblemException(404, "NETWORK_TRANSACTION_NOT_FOUND", "网络事务不存在", "请刷新网络设置后重试。")
     value = pending.value if pending and isinstance(pending.value, dict) else {}
     if value.get("transaction_id") != transaction_id:
         raise ProblemException(404, "NETWORK_TRANSACTION_NOT_FOUND", "网络事务不存在", "请刷新网络设置后重试。")
@@ -1303,6 +1307,8 @@ def rollback_network_transaction(
     if not _request_from_host_desktop(request):
         raise ProblemException(403, "NETWORK_ROLLBACK_LOCAL_REQUIRED", "只能在主机本机回滚网络配置", "请到主机电脑操作。")
     pending = db.get(SystemSetting, "network.pending")
+    if pending is None:
+        raise ProblemException(404, "NETWORK_TRANSACTION_NOT_FOUND", "网络事务不存在", "请刷新网络设置后重试。")
     value = pending.value if pending and isinstance(pending.value, dict) else {}
     if value.get("transaction_id") != transaction_id:
         raise ProblemException(404, "NETWORK_TRANSACTION_NOT_FOUND", "网络事务不存在", "请刷新网络设置后重试。")
@@ -1328,7 +1334,7 @@ def rollback_network_transaction(
                     "transaction_id": f"{transaction_id}:rollback",
                     "host_url": service_url(
                         str(previous["advertise_host"]),
-                        int(previous["port"]),
+                        int(typing.cast(str | int | float, previous["port"])),
                         tls_enabled=settings.tls_enabled,
                     ),
                     "agent_url": service_url(
@@ -1450,7 +1456,7 @@ def system_status(
     }
     ready = all(value for key, value in readiness.items() if key != "backup_fresh")
     try:
-        load_average = list(os.getloadavg())
+        load_average = list(os.getloadavg())  # type: ignore[attr-defined]  # POSIX-only optional metric。
     except (AttributeError, OSError):
         load_average = []
     return {

@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import io
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Literal
+from typing import Any, Dict, List, Literal, cast
 from urllib.parse import quote
 
 from docx import Document
 from fastapi import APIRouter, Depends, Header, Query, Request, Response
 from fastapi.responses import StreamingResponse
 from openpyxl import Workbook
+from openpyxl.worksheet.worksheet import Worksheet
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -1190,7 +1191,7 @@ def _safe_cell(value: object) -> str:
 def _ledger_export(rows: list[dict[str, Any]], *, title: str, output_format: str) -> StreamingResponse:
     if output_format == "xlsx":
         workbook = Workbook()
-        sheet = workbook.active
+        sheet = cast(Worksheet, workbook.active)
         sheet.title = "台账"
         headers = ["类型", "组织", "标题", "计划时间", "状态", "台账状态", "出席人数", "材料数", "逾期落实项"]
         sheet.append(headers)

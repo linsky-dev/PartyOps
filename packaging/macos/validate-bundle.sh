@@ -76,6 +76,16 @@ if [[ ! -d "$OFFICE_APP" ]] || [[ ! -f "$OFFICE_APP/Contents/Info.plist" ]] ||
   printf '%s\n' '[MACOS_OFFICE_BUNDLE_INCOMPLETE] 公文转换运行时未保留完整 LibreOffice.app 签名边界。' >&2
   exit 2
 fi
+FORMATTER_ROOT="$APP_PATH/Contents/Resources/formatter-host"
+if [[ ! -x "$FORMATTER_ROOT/partyops-document-formatter-host" ]] ||
+  [[ ! -f "$FORMATTER_ROOT/source-host.json" ]] ||
+  [[ ! -f "$FORMATTER_ROOT/word-vtable-map.json" ]] ||
+  [[ ! -f "$FORMATTER_ROOT/LICENSE-WPS-SDK.txt" ]] ||
+  [[ ! -f "$FORMATTER_ROOT/LICENSE-MONO-RUNTIME.txt" ]] ||
+  [[ ! -f "$FORMATTER_ROOT/runtime-evidence.json" ]]; then
+  printf '%s\n' '[MACOS_FORMATTER_RUNTIME_INCOMPLETE] 本机 WPS 原源码排版宿主不完整。' >&2
+  exit 2
+fi
 
 bad_architecture=''
 bad_dependency=''

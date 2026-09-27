@@ -1095,6 +1095,9 @@ def test_linux_desktop_launcher_covers_every_configured_mode_and_visible_failure
     assert 'readlink -f "/proc/$pid/exe"' in start
     assert "[CHILD_EXITED]" in start
     assert "bash -n" in selftest
+    # 安装后脚本可能从受限的用户家目录被手工/包管理器调用；必须先
+    # 固定到可读的系统目录，避免冻结配置的 ``.env`` 读取误报权限错误。
+    assert "cd /" in selftest
     assert "PACKAGE_DESKTOP_ENTRY_INVALID" in selftest
     assert "Exec=/bin/bash /opt/partyops/desktop-launcher.sh" in main_entry
     assert "--manage-shared-roots" in client_entry

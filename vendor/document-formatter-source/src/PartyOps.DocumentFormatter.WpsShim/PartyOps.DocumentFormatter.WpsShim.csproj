@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="Current" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
+    <ProjectGuid>{B891D08B-0F03-4D58-A622-7B7A807244A6}</ProjectGuid>
+    <OutputType>Library</OutputType>
+    <RootNamespace>PartyOps.DocumentFormatter.Wps</RootNamespace>
+    <AssemblyName>PartyOps.DocumentFormatter.WpsShim</AssemblyName>
+    <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
+    <LangVersion>12.0</LangVersion>
+    <Nullable>annotations</Nullable>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <Deterministic>true</Deterministic>
+    <OutputPath Condition=" '$(Platform)' == 'AnyCPU' Or '$(Platform)' == 'Any CPU' ">bin\$(Configuration)\</OutputPath>
+    <OutputPath Condition=" '$(Platform)' == 'x86' Or '$(Platform)' == 'x64' ">bin\$(Platform)\$(Configuration)\</OutputPath>
+    <IntermediateOutputPath Condition=" '$(Platform)' == 'AnyCPU' Or '$(Platform)' == 'Any CPU' ">obj\$(Configuration)\</IntermediateOutputPath>
+    <IntermediateOutputPath Condition=" '$(Platform)' == 'x86' Or '$(Platform)' == 'x64' ">obj\$(Platform)\$(Configuration)\</IntermediateOutputPath>
+    <DebugSymbols Condition=" '$(Configuration)' == 'Debug' ">true</DebugSymbols>
+    <DebugType Condition=" '$(Configuration)' == 'Debug' ">portable</DebugType>
+    <DebugType Condition=" '$(Configuration)' == 'Release' ">pdbonly</DebugType>
+    <Optimize Condition=" '$(Configuration)' == 'Release' ">true</Optimize>
+    <DefineConstants Condition=" '$(Configuration)' == 'Debug' ">DEBUG;TRACE</DefineConstants>
+    <DefineConstants Condition=" '$(Configuration)' == 'Release' ">TRACE</DefineConstants>
+    <PlatformTarget Condition=" '$(Platform)' == 'AnyCPU' Or '$(Platform)' == 'Any CPU' ">AnyCPU</PlatformTarget>
+    <PlatformTarget Condition=" '$(Platform)' == 'x86' ">x86</PlatformTarget>
+    <PlatformTarget Condition=" '$(Platform)' == 'x64' ">x64</PlatformTarget>
+    <Prefer32Bit>false</Prefer32Bit>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="System" />
+    <Reference Include="System.Core" />
+    <Reference Include="System.Windows.Forms" />
+    <!-- 使用 VS 2022 随附的官方 COM PIA，确保 WPS 查询 IDTExtensibility2 时的
+         类型库标记、参数封送和枚举布局与 Office 生态完全一致。 -->
+    <Reference Include="Extensibility">
+      <HintPath>$(VsPublicAssembliesPath)\extensibility.dll</HintPath>
+      <Private>true</Private>
+      <EmbedInteropTypes>false</EmbedInteropTypes>
+    </Reference>
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="**\*.cs" Exclude="bin\**;obj\**" />
+  </ItemGroup>
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+</Project>

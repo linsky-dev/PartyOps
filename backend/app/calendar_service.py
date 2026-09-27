@@ -50,7 +50,7 @@ def preference_for(db: Session, user: User) -> CalendarPreference:
 
 
 def _topic_ids(db: Session, task_ids: list[str]) -> dict[str, list[str]]:
-    result = {task_id: [] for task_id in task_ids}
+    result: dict[str, list[str]] = {task_id: [] for task_id in task_ids}
     if not task_ids:
         return result
     links = db.scalars(
@@ -227,16 +227,16 @@ def calendar_events(
                 }
             )
 
-    for item in db.scalars(select(WorkCalendarEntry)).all():
+    for workday in db.scalars(select(WorkCalendarEntry)).all():
         event_type = (
             CalendarEventType.ADJUSTED_WORKDAY
-            if item.is_workday
+            if workday.is_workday
             else CalendarEventType.HOLIDAY
         )
         if event_type not in allowed:
             continue
         local_start = datetime.combine(
-            datetime.fromisoformat(item.date_key).date(),
+            datetime.fromisoformat(workday.date_key).date(),
             time.min,
             tzinfo=LOCAL_TIMEZONE,
         ).astimezone(timezone.utc)
@@ -244,21 +244,21 @@ def calendar_events(
             continue
         result.append(
             {
-                "id": f"workday:{item.id}",
+                "id": f"workday:{workday.id}",
                 "event_type": event_type,
-                "title": item.title,
+                "title": workday.title,
                 "start_at": local_start,
                 "end_at": local_start + timedelta(days=1),
                 "all_day": True,
                 "object_type": None,
-                "object_id": item.id,
+                "object_id": workday.id,
                 "route": "/calendar",
-                "status": item.kind,
-                "owner_id": item.owner_id,
+                "status": workday.kind,
+                "owner_id": workday.owner_id,
                 "work_area": "",
                 "topic_ids": [],
                 "editable": user.role == UserRole.ADMIN,
-                "metadata": {"note": item.note},
+                "metadata": {"note": workday.note},
             }
         )
     return sorted(result, key=lambda item: (item["start_at"], str(item["title"])))
