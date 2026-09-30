@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       confirmation:
-        description: 输入 BUILD-UNSIGNED-145-RC6，确认只生成未公证测试候选
+        description: BUILD-UNSIGNED-145-RC6 构建候选，或 PROBE-WPS-145-RC6 仅验证 WPS 原生桥
         required: true
         type: string
   workflow_call:
@@ -22,11 +22,64 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  native-wps-probe:
+    if: inputs.confirmation == 'PROBE-WPS-145-RC6'
+    name: ${{ matrix.architecture }} WPS 原生桥探针
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - architecture: arm64
+            runner: macos-15
+          - architecture: x86_64
+            runner: macos-15-intel
+    steps:
+      - name: 检出触发工作流的源码冻结提交
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: 验证官方 WPS 安装输入与真实 GUI JSAPI 链路
+        shell: bash
+        run: bash qa/vm-lab/release-preparation/macos-intel/run-native-wps-probe.sh
+
+      - name: 收集限定诊断文件
+        if: always()
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          artifact_dir="$RUNNER_TEMP/partyops-wps-probe-artifact"
+          mkdir -p "$artifact_dir"
+          while IFS= read -r work_dir; do
+            while IFS= read -r file; do
+              case "$(basename "$file")" in
+                status.json|probe-evidence.json|failure.txt|python-version.txt|wps-version.txt|wps-executable-architectures.txt|preexisting-wps-processes.txt|wps-processes.txt|codesign-details.txt|*.log|*.headers|*.body|*.png|*.docx)
+                  cp "$file" "$artifact_dir/$(basename "$work_dir")-$(basename "$file")"
+                  ;;
+              esac
+            done < <(find "$work_dir" -maxdepth 1 -type f -print)
+          done < <(find "$RUNNER_TEMP" -maxdepth 1 -type d -name 'partyops-wps-native-probe.*' -print)
+          printf 'head_sha=%s\narchitecture=%s\n' "$GITHUB_SHA" '${{ matrix.architecture }}' >"$artifact_dir/job-identity.txt"
+
+      - name: 上传限定探针诊断
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: partyops-wps-probe-${{ matrix.architecture }}-${{ github.sha }}
+          path: ${{ runner.temp }}/partyops-wps-probe-artifact
+          if-no-files-found: error
+          retention-days: 7
+
   prepare-formatter-managed:
     if: inputs.confirmation == 'BUILD-UNSIGNED-145-RC6'
     name: 冻结原排版源码 AnyCPU 载荷
     runs-on: windows-2022
     timeout-minutes: 30
+    env:
+      PYTHONUTF8: '1'
     steps:
       - name: 检出触发工作流的源码冻结提交
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
