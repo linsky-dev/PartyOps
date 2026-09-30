@@ -155,10 +155,42 @@ fi
 
 PHASE=download
 DMG="$WORK_DIR/WPS_Office_12.1.29166_${ARCH}.dmg"
-/usr/bin/curl --fail --location --silent --show-error --connect-timeout 30 --max-time 900 \
-  --output "$DMG" "$DMG_URL" >"$WORK_DIR/download.stdout.log" 2>"$WORK_DIR/download.stderr.log" || fail OFFICIAL_DMG_DOWNLOAD_FAILED
-ACTUAL_SHA="$(/usr/bin/shasum -a 256 "$DMG" | /usr/bin/awk '{print $1}')"
-[[ "$ACTUAL_SHA" == "$EXPECTED_SHA" ]] || fail OFFICIAL_DMG_SHA256_MISMATCH
+DOWNLOAD_OK=0
+# 两次各最多十分钟，为三十分钟 job 留出安装、探针及诊断上传时间。
+for DOWNLOAD_ATTEMPT in 1 2; do
+  DOWNLOAD_PART="$WORK_DIR/download-attempt-${DOWNLOAD_ATTEMPT}.part"
+  set +e
+  DOWNLOAD_HTTP="$(/usr/bin/curl --fail --location --silent --show-error \
+    --connect-timeout 30 --max-time 600 -w '%{http_code}' \
+    -D "$WORK_DIR/download-attempt-${DOWNLOAD_ATTEMPT}.headers" \
+    --output "$DOWNLOAD_PART" "$DMG_URL" \
+    2>"$WORK_DIR/download-attempt-${DOWNLOAD_ATTEMPT}.stderr.log")"
+  DOWNLOAD_RC=$?
+  set -e
+  DOWNLOAD_BYTES=0
+  if [[ -f "$DOWNLOAD_PART" ]]; then
+    DOWNLOAD_BYTES="$(/usr/bin/stat -f '%z' "$DOWNLOAD_PART")"
+  fi
+  printf 'attempt=%s curl_exit=%s http=%s bytes=%s\n' \
+    "$DOWNLOAD_ATTEMPT" "$DOWNLOAD_RC" "${DOWNLOAD_HTTP:-none}" "$DOWNLOAD_BYTES" >>"$WORK_DIR/download-attempts.log"
+  if [[ $DOWNLOAD_RC -eq 0 && "$DOWNLOAD_HTTP" == 200 ]]; then
+    ACTUAL_SHA="$(/usr/bin/shasum -a 256 "$DOWNLOAD_PART" | /usr/bin/awk '{print $1}')"
+    [[ "$ACTUAL_SHA" == "$EXPECTED_SHA" ]] || fail OFFICIAL_DMG_SHA256_MISMATCH
+    /bin/mv "$DOWNLOAD_PART" "$DMG"
+    DOWNLOAD_OK=1
+    break
+  fi
+  if [[ $DOWNLOAD_ATTEMPT -eq 1 && "$DOWNLOAD_HTTP" == 429 ]]; then
+    /bin/sleep 20
+    continue
+  fi
+  if [[ $DOWNLOAD_ATTEMPT -eq 1 && ( "$DOWNLOAD_HTTP" =~ ^5[0-9][0-9]$ || $DOWNLOAD_RC -eq 28 ) ]]; then
+    /bin/sleep 2
+    continue
+  fi
+  fail OFFICIAL_DMG_DOWNLOAD_FAILED
+done
+[[ "$DOWNLOAD_OK" == 1 && -f "$DMG" ]] || fail OFFICIAL_DMG_DOWNLOAD_FAILED
 
 PHASE=dmg-verify-and-mount
 /usr/bin/hdiutil attach -readonly -nobrowse -mountpoint "$MOUNT_DIR" "$DMG" >"$WORK_DIR/dmg-attach.log" 2>&1 || fail DMG_READONLY_MOUNT_FAILED

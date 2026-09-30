@@ -32,7 +32,7 @@ on inspectWelcome(theProcess)
                 set windowName to (name of theWindow) as text
             end try
             set treeText to treeText & "window=" & windowName & linefeed
-            set checkboxes to {}
+            set checkboxCandidates to {}
             set startButtons to {}
             set hasLicenseText to false
             set elementList to entire contents of theWindow
@@ -47,11 +47,11 @@ on inspectWelcome(theProcess)
                 set treeText to treeText & roleText & " | " & nameText & " | " & descriptionText & " | " & valueText & linefeed
                 set combinedText to nameText & " " & descriptionText & " " & valueText
                 if combinedText contains "License Agreements" or combinedText contains "Privacy Policies" then set hasLicenseText to true
-                if roleText is "AXCheckBox" then set end of checkboxes to theElement
+                if roleText is "AXCheckBox" then set end of checkboxCandidates to theElement
                 if roleText is "AXButton" and (nameText is "Start Now" or descriptionText is "Start Now") then set end of startButtons to theElement
             end repeat
-            if (count of checkboxes) is 1 and (count of startButtons) is 1 and hasLicenseText then
-                set end of matches to {theWindow, item 1 of checkboxes, item 1 of startButtons}
+            if (count of checkboxCandidates) is 1 and (count of startButtons) is 1 and hasLicenseText then
+                set end of matches to {theWindow, item 1 of checkboxCandidates, item 1 of startButtons}
             end if
         end repeat
         return {treeText, matches}
