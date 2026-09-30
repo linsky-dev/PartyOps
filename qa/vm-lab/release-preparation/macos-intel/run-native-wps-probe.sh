@@ -154,10 +154,25 @@ if /usr/bin/mdfind 'kMDItemCFBundleIdentifier == "com.kingsoft.wpsoffice.mac"' >
 fi
 
 PHASE=download
-DMG="$WORK_DIR/WPS_Office_12.1.29166_${ARCH}.dmg"
+CACHE_DIR="$RUNNER_TEMP/partyops-wps-inputs"
+/bin/mkdir -p "$CACHE_DIR"
+CACHE_DMG="$CACHE_DIR/WPS_Office_12.1.29166_${ARCH}.dmg"
+DMG="$CACHE_DMG"
 DOWNLOAD_OK=0
+if [[ -L "$CACHE_DMG" ]]; then
+  fail OFFICIAL_DMG_CACHE_LINK_REJECTED
+fi
+if [[ -f "$CACHE_DMG" ]]; then
+  ACTUAL_SHA="$(/usr/bin/shasum -a 256 "$CACHE_DMG" | /usr/bin/awk '{print $1}')"
+  printf 'source=cache bytes=%s sha256=%s\n' "$(/usr/bin/stat -f '%z' "$CACHE_DMG")" "$ACTUAL_SHA" >"$WORK_DIR/download-source.txt"
+  [[ "$ACTUAL_SHA" == "$EXPECTED_SHA" ]] || fail OFFICIAL_DMG_CACHE_SHA256_MISMATCH
+  DOWNLOAD_OK=1
+elif [[ "${PARTYOPS_WPS_CACHE_HIT:-}" == true ]]; then
+  fail OFFICIAL_DMG_CACHE_FILE_MISSING
+fi
 # 两次各最多十分钟，为三十分钟 job 留出安装、探针及诊断上传时间。
 for DOWNLOAD_ATTEMPT in 1 2; do
+  [[ "$DOWNLOAD_OK" == 0 ]] || break
   DOWNLOAD_PART="$WORK_DIR/download-attempt-${DOWNLOAD_ATTEMPT}.part"
   set +e
   DOWNLOAD_HTTP="$(/usr/bin/curl --fail --location --silent --show-error \
@@ -176,7 +191,8 @@ for DOWNLOAD_ATTEMPT in 1 2; do
   if [[ $DOWNLOAD_RC -eq 0 && "$DOWNLOAD_HTTP" == 200 ]]; then
     ACTUAL_SHA="$(/usr/bin/shasum -a 256 "$DOWNLOAD_PART" | /usr/bin/awk '{print $1}')"
     [[ "$ACTUAL_SHA" == "$EXPECTED_SHA" ]] || fail OFFICIAL_DMG_SHA256_MISMATCH
-    /bin/mv "$DOWNLOAD_PART" "$DMG"
+    /bin/mv "$DOWNLOAD_PART" "$CACHE_DMG"
+    printf 'source=download attempt=%s bytes=%s sha256=%s\n' "$DOWNLOAD_ATTEMPT" "$DOWNLOAD_BYTES" "$ACTUAL_SHA" >"$WORK_DIR/download-source.txt"
     DOWNLOAD_OK=1
     break
   fi
@@ -266,6 +282,23 @@ for _ in {1..10}; do
     break
   fi
 done
+if [[ "$WELCOME_CLOSED" != 1 ]]; then
+  /bin/cp "$WORK_DIR/welcome-after.txt" "$WORK_DIR/welcome-axpress-after.txt"
+  if [[ -x /usr/sbin/screencapture ]]; then
+    /usr/sbin/screencapture -x "$WORK_DIR/welcome-axpress-after.png" >"$WORK_DIR/welcome-axpress-screenshot.log" 2>&1 || true
+  fi
+  PHASE=welcome-bounds-fallback
+  /usr/bin/osascript "$WELCOME_SCRIPT" bounds-click >"$WORK_DIR/welcome-bounds-action.txt" 2>"$WORK_DIR/welcome-bounds.stderr.log" || fail WPS_WELCOME_BOUNDS_CLICK_FAILED
+  /usr/bin/grep -q '^bounds_click_once=true$' "$WORK_DIR/welcome-bounds-action.txt" || fail WPS_WELCOME_BOUNDS_CLICK_UNCONFIRMED
+  for _ in {1..10}; do
+    /bin/sleep 1
+    /usr/bin/osascript "$WELCOME_SCRIPT" inspect >"$WORK_DIR/welcome-after.txt" 2>"$WORK_DIR/welcome-after.stderr.log" || fail WPS_WELCOME_AFTER_TREE_FAILED
+    if /usr/bin/grep -q '^matching_welcome_windows=0$' "$WORK_DIR/welcome-after.txt"; then
+      WELCOME_CLOSED=1
+      break
+    fi
+  done
+fi
 if [[ -x /usr/sbin/screencapture ]]; then
   /usr/sbin/screencapture -x "$WORK_DIR/welcome-after.png" >"$WORK_DIR/welcome-after-screenshot.log" 2>&1 || true
 fi

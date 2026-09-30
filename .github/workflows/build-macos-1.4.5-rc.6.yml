@@ -33,8 +33,10 @@ jobs:
         include:
           - architecture: arm64
             runner: macos-15
+            wps_sha256: f493b07f48e4911d5836d51afd8b4254e2b12aa16d2d0816b1474c3fa0785c31
           - architecture: x86_64
             runner: macos-15-intel
+            wps_sha256: 79d121a5269ce2b2b0422fbf0d61c1e21b382c1b46b41be24ce3e4b8021b8d46
     steps:
       - name: 检出触发工作流的源码冻结提交
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -48,9 +50,37 @@ jobs:
           /usr/bin/osacompile -o "$RUNNER_TEMP/wps-welcome.scpt" \
             qa/vm-lab/release-preparation/macos-intel/handle-wps-welcome.applescript
 
+      - name: 恢复固定哈希的官方 WPS 输入
+        id: wps-cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: ${{ runner.temp }}/partyops-wps-inputs
+          key: partyops-wps-12.1.29166-${{ matrix.architecture }}-${{ matrix.wps_sha256 }}
+
       - name: 验证官方 WPS 安装输入与真实 GUI JSAPI 链路
         shell: bash
+        env:
+          PARTYOPS_WPS_CACHE_HIT: ${{ steps.wps-cache.outputs.cache-hit }}
         run: bash qa/vm-lab/release-preparation/macos-intel/run-native-wps-probe.sh
+
+      - name: 复核待缓存官方输入
+        if: always() && steps.wps-cache.outputs.cache-hit != 'true'
+        id: wps-cache-verify
+        shell: bash
+        run: |
+          dmg="$RUNNER_TEMP/partyops-wps-inputs/WPS_Office_12.1.29166_${{ matrix.architecture }}.dmg"
+          if [[ -f "$dmg" ]] && [[ "$(shasum -a 256 "$dmg" | awk '{print $1}')" == '${{ matrix.wps_sha256 }}' ]]; then
+            printf 'valid=true\n' >>"$GITHUB_OUTPUT"
+          else
+            printf 'valid=false\n' >>"$GITHUB_OUTPUT"
+          fi
+
+      - name: 保存已校验官方 WPS 输入
+        if: always() && steps.wps-cache.outputs.cache-hit != 'true' && steps.wps-cache-verify.outputs.valid == 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: ${{ runner.temp }}/partyops-wps-inputs
+          key: partyops-wps-12.1.29166-${{ matrix.architecture }}-${{ matrix.wps_sha256 }}
 
       - name: 收集限定诊断文件
         if: always()
@@ -62,7 +92,7 @@ jobs:
           while IFS= read -r work_dir; do
             while IFS= read -r file; do
               case "$(basename "$file")" in
-                status.json|probe-evidence.json|failure.txt|python-version.txt|wps-version.txt|wps-executable-architectures.txt|preexisting-wps-processes.txt|wps-processes.txt|codesign-details.txt|welcome-before.txt|welcome-action.txt|welcome-after.txt|*.log|*.headers|*.body|*.png|*.docx)
+                status.json|probe-evidence.json|failure.txt|python-version.txt|wps-version.txt|wps-executable-architectures.txt|preexisting-wps-processes.txt|wps-processes.txt|codesign-details.txt|download-source.txt|welcome-before.txt|welcome-action.txt|welcome-axpress-after.txt|welcome-bounds-action.txt|welcome-after.txt|*.log|*.headers|*.body|*.png|*.docx)
                   cp "$file" "$artifact_dir/$(basename "$work_dir")-$(basename "$file")"
                   ;;
               esac

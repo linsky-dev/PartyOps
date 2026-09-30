@@ -61,7 +61,7 @@ end inspectWelcome
 on run argv
     if (count of argv) is not 1 then error "WPS_WELCOME_MODE_REQUIRED"
     set operation to item 1 of argv
-    if operation is not "inspect" and operation is not "accept" then error "WPS_WELCOME_MODE_INVALID"
+    if operation is not "inspect" and operation is not "accept" and operation is not "bounds-click" then error "WPS_WELCOME_MODE_INVALID"
     tell application "System Events"
         if UI elements enabled is false then error "WPS_WELCOME_ACCESSIBILITY_UNAVAILABLE"
         set processList to application processes whose name is "wpsoffice"
@@ -74,12 +74,36 @@ on run argv
         if operation is "inspect" then return treeText & "matching_welcome_windows=" & (count of matches) & linefeed
         if (count of matches) is not 1 then error "WPS_WELCOME_CONTROLS_NOT_UNIQUE"
         set target to item 1 of matches
+        set theWindow to item 1 of target
         set theCheckBox to item 2 of target
         set theStartButton to item 3 of target
         set beforeValue to ""
         try
             set beforeValue to (value of theCheckBox) as text
         end try
+        if operation is "bounds-click" then
+            if beforeValue is not "1" and beforeValue is not "true" then error "WPS_WELCOME_CHECKBOX_NOT_SELECTED"
+            if (frontmost of theProcess) is not true then error "WPS_WELCOME_PROCESS_NOT_FRONTMOST"
+            if (enabled of theStartButton) is not true then error "WPS_WELCOME_BUTTON_DISABLED"
+            set buttonPosition to position of theStartButton
+            set buttonSize to size of theStartButton
+            set windowPosition to position of theWindow
+            set windowSize to size of theWindow
+            set leftEdge to (item 1 of buttonPosition) as integer
+            set topEdge to (item 2 of buttonPosition) as integer
+            set buttonWidth to (item 1 of buttonSize) as integer
+            set buttonHeight to (item 2 of buttonSize) as integer
+            set windowLeft to (item 1 of windowPosition) as integer
+            set windowTop to (item 2 of windowPosition) as integer
+            set windowWidth to (item 1 of windowSize) as integer
+            set windowHeight to (item 2 of windowSize) as integer
+            if buttonWidth < 1 or buttonHeight < 1 or windowWidth < 1 or windowHeight < 1 then error "WPS_WELCOME_INVALID_BOUNDS"
+            set centerX to leftEdge + (buttonWidth div 2)
+            set centerY to topEdge + (buttonHeight div 2)
+            if centerX < windowLeft or centerX >= windowLeft + windowWidth or centerY < windowTop or centerY >= windowTop + windowHeight then error "WPS_WELCOME_BUTTON_OUTSIDE_WINDOW"
+            tell theProcess to click at {centerX, centerY}
+            return "button_bounds=" & leftEdge & "," & topEdge & "," & buttonWidth & "," & buttonHeight & linefeed & "window_bounds=" & windowLeft & "," & windowTop & "," & windowWidth & "," & windowHeight & linefeed & "bounds_click_center=" & centerX & "," & centerY & linefeed & "bounds_click_once=true" & linefeed
+        end if
         if beforeValue is "0" or beforeValue is "false" then
             click theCheckBox
             delay 0.3
