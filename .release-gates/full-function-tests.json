@@ -1,27 +1,31 @@
 {
   "schema": 3,
   "status": "passed",
-  "tested_at": "2026-08-31T21:09:45+08:00",
+  "tested_at": "2026-09-30T09:22:01+08:00",
   "timezone": "Asia/Shanghai",
   "fingerprint_canonicalization": "text-lf-v1",
   "source_fingerprints": {
     "package": {
-      "sha256": "c90d9520c028f42e79d4836cbef4cd37730d7a2a6d3e980543a8d1a86b1bca5c",
-      "file_count": 600
+      "sha256": "25601a0ef5e01aad4c0f20dc0004ff53b9e28004cbabb9c18abb035dc9add1ab",
+      "file_count": 1597
     },
     "website": {
-      "sha256": "dbce0303fae625e1df9d8d95c17c14db089eef74fea7939c600aa6d30faf435d",
+      "sha256": "2c3dfa42cea38a8e5bdabe7584e4aafa8446561e937453a36f551fed196e04dc",
       "file_count": 74
     },
     "full": {
-      "sha256": "f0f8f50844e3b12441f96dfa233bb821e4039c970ec68db9f110bd7fa317a198",
-      "file_count": 674
+      "sha256": "01ff59ec8183962aec9dc39589f80e850ae9493dd904daed35758c6c0b73dca5",
+      "file_count": 1671
     }
   },
   "suite": "scripts/test.ps1",
   "scope": [
     "document-formatter-source-release-x64-x86-build-and-regression",
+    "document-formatter-source-host-x64-x86-user-golden-parity",
+    "document-formatter-source-host-x64-x86-six-feature-12-scenario-real-wps-e2e",
+    "document-formatter-cross-platform-package-contract-manifest-hash-and-selftest-tests",
     "backend-full-pytest-and-coverage",
+    "backend-mypy-no-incremental",
     "frontend-typecheck-tests-coverage-build",
     "website-tests-coverage-build",
     "dependency-audits-secret-scan-static-analysis"

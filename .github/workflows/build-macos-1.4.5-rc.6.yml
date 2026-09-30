@@ -22,8 +22,48 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  prepare-formatter-managed:
+    if: inputs.confirmation == 'BUILD-UNSIGNED-145-RC6'
+    name: 冻结原排版源码 AnyCPU 载荷
+    runs-on: windows-2022
+    timeout-minutes: 30
+    steps:
+      - name: 检出触发工作流的源码冻结提交
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: 配置 Python 3.11
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.11'
+          architecture: x64
+
+      - name: 从锁定源码构建架构中立规则载荷
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $stage = Join-Path $PWD '.release-gates\formatter-managed-anycpu'
+          .\scripts\build-document-formatter-host.ps1 `
+            -Platform AnyCPU `
+            -PythonPath (Get-Command python).Source `
+            -StageDirectory $stage
+          if (-not (Test-Path -LiteralPath (Join-Path $stage 'PartyOps.DocumentFormatter.Host.exe'))) {
+            throw '[MACOS_FORMATTER_MANAGED_STAGE_MISSING] AnyCPU 宿主未生成。'
+          }
+
+      - name: 传递原排版源码 AnyCPU 载荷
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: formatter-managed-anycpu-${{ github.sha }}
+          path: ${{ github.workspace }}/.release-gates/formatter-managed-anycpu
+          if-no-files-found: error
+          retention-days: 1
+
   build:
     if: inputs.confirmation == 'BUILD-UNSIGNED-145-RC6'
+    needs: prepare-formatter-managed
     name: ${{ matrix.architecture }} 原生构建
     timeout-minutes: 240
     strategy:
@@ -59,6 +99,12 @@ jobs:
         with:
           node-version: '22'
 
+      - name: 下载原排版源码 AnyCPU 载荷
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: formatter-managed-anycpu-${{ github.sha }}
+          path: ${{ runner.temp }}/formatter-managed-anycpu
+
       - name: 验证原生架构与准备工具
         shell: bash
         run: |
@@ -70,10 +116,12 @@ jobs:
           corepack prepare 'pnpm@11.9.0' --activate
           command -v cmake >/dev/null 2>&1 || brew install cmake
           command -v ninja >/dev/null 2>&1 || brew install ninja
+          command -v mkbundle >/dev/null 2>&1 || brew install mono
           chmod 0755 \
             packaging/macos/build-native-runtimes.sh \
             packaging/macos/build-pkg.sh \
             packaging/macos/validate-bundle.sh \
+            scripts/build-document-formatter-host-unix.sh \
             scripts/prepare-libreoffice-macos.sh
           df -h /
 
@@ -116,12 +164,28 @@ jobs:
           ! otool -L "$llama" | awk 'NR > 1 {print $1}' | grep -Ev '^(/usr/lib/|/System/Library/)'
           python3.11 scripts/verify-full-function-gate.py verify --root "$PWD" --scope package
 
+      - name: 在当前 Mac 架构封装原排版源码宿主
+        shell: bash
+        run: |
+          set -euo pipefail
+          formatter="$RUNNER_TEMP/partyops-formatter/formatter-${{ matrix.architecture }}"
+          scripts/build-document-formatter-host-unix.sh \
+            --managed-runtime "$RUNNER_TEMP/formatter-managed-anycpu" \
+            --output "$formatter" \
+            --platform macos \
+            --architecture '${{ matrix.architecture }}'
+          test "$(lipo -archs "$formatter/partyops-document-formatter-host")" = '${{ matrix.architecture }}'
+          python3.11 scripts/validate-source-formatter-runtime.py \
+            --runtime "$formatter" --platform macos \
+            --architecture '${{ matrix.architecture }}'
+
       - name: 冻结应用并生成未公证候选 PKG
         shell: bash
         env:
           PARTYOPS_MACOS_OCR_RUNTIME: ${{ runner.temp }}/partyops-runtimes/ocr-${{ matrix.architecture }}
           PARTYOPS_MACOS_LLAMA_RUNTIME: ${{ runner.temp }}/partyops-runtimes/llama-${{ matrix.architecture }}
           PARTYOPS_MACOS_OFFICE_RUNTIME: ${{ runner.temp }}/partyops-runtimes/office-${{ matrix.architecture }}
+          PARTYOPS_MACOS_FORMATTER_RUNTIME: ${{ runner.temp }}/partyops-formatter/formatter-${{ matrix.architecture }}
         run: |
           set -euo pipefail
           packaging/macos/build-pkg.sh \
