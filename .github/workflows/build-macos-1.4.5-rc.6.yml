@@ -42,6 +42,12 @@ jobs:
           ref: ${{ github.sha }}
           persist-credentials: false
 
+      - name: 静态编译 WPS 欢迎页 UI 脚本
+        shell: bash
+        run: |
+          /usr/bin/osacompile -o "$RUNNER_TEMP/wps-welcome.scpt" \
+            qa/vm-lab/release-preparation/macos-intel/handle-wps-welcome.applescript
+
       - name: 验证官方 WPS 安装输入与真实 GUI JSAPI 链路
         shell: bash
         run: bash qa/vm-lab/release-preparation/macos-intel/run-native-wps-probe.sh
@@ -56,7 +62,7 @@ jobs:
           while IFS= read -r work_dir; do
             while IFS= read -r file; do
               case "$(basename "$file")" in
-                status.json|probe-evidence.json|failure.txt|python-version.txt|wps-version.txt|wps-executable-architectures.txt|preexisting-wps-processes.txt|wps-processes.txt|codesign-details.txt|*.log|*.headers|*.body|*.png|*.docx)
+                status.json|probe-evidence.json|failure.txt|python-version.txt|wps-version.txt|wps-executable-architectures.txt|preexisting-wps-processes.txt|wps-processes.txt|codesign-details.txt|welcome-before.txt|welcome-action.txt|welcome-after.txt|*.log|*.headers|*.body|*.png|*.docx)
                   cp "$file" "$artifact_dir/$(basename "$work_dir")-$(basename "$file")"
                   ;;
               esac

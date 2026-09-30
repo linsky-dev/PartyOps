@@ -100,7 +100,7 @@ on_exit() {
 trap on_exit EXIT
 
 PHASE=toolchain
-for required in /usr/bin/uname /usr/bin/stat /bin/launchctl /usr/bin/curl /usr/bin/shasum /usr/bin/hdiutil /usr/bin/codesign /usr/bin/lipo /usr/bin/ditto /usr/bin/open /usr/bin/sudo; do
+for required in /usr/bin/uname /usr/bin/stat /bin/launchctl /usr/bin/curl /usr/bin/shasum /usr/bin/hdiutil /usr/bin/codesign /usr/bin/lipo /usr/bin/ditto /usr/bin/open /usr/bin/sudo /usr/bin/osascript; do
   [[ -x "$required" ]] || fail "REQUIRED_TOOL_MISSING:${required}"
 done
 if command -v python3.11 >/dev/null 2>&1; then
@@ -199,6 +199,45 @@ PHASE=launch-wps
 /usr/bin/open -a "$DEST_APP" >"$WORK_DIR/open-wps.stdout.log" 2>"$WORK_DIR/open-wps.stderr.log" || fail WPS_OPEN_FAILED
 /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$DEST_APP/Contents/Info.plist" >"$WORK_DIR/wps-version.txt" 2>"$WORK_DIR/wps-version.stderr.log" || fail WPS_VERSION_READ_FAILED
 [[ "$(cat "$WORK_DIR/wps-version.txt")" == 12.1.29166 ]] || fail WPS_VERSION_MISMATCH
+
+PHASE=welcome-inspect
+WELCOME_SCRIPT="$SCRIPT_DIR/handle-wps-welcome.applescript"
+[[ -f "$WELCOME_SCRIPT" ]] || fail WPS_WELCOME_SCRIPT_MISSING
+if [[ -x /usr/sbin/screencapture ]]; then
+  /usr/sbin/screencapture -x "$WORK_DIR/welcome-before.png" >"$WORK_DIR/welcome-before-screenshot.log" 2>&1 || true
+fi
+WELCOME_READY=0
+for _ in {1..20}; do
+  if ! /usr/bin/pgrep -x wpsoffice >/dev/null 2>&1; then
+    /bin/sleep 1
+    continue
+  fi
+  /usr/bin/osascript "$WELCOME_SCRIPT" inspect >"$WORK_DIR/welcome-before.txt" 2>"$WORK_DIR/welcome-inspect.stderr.log" || fail WPS_WELCOME_ACCESSIBILITY_OR_TREE_FAILED
+  if /usr/bin/grep -q '^matching_welcome_windows=1$' "$WORK_DIR/welcome-before.txt"; then
+    WELCOME_READY=1
+    break
+  fi
+  /usr/bin/grep -q '^matching_welcome_windows=0$' "$WORK_DIR/welcome-before.txt" || fail WPS_WELCOME_CONTROLS_NOT_UNIQUE
+  /bin/sleep 1
+done
+[[ "$WELCOME_READY" == 1 ]] || fail WPS_WELCOME_CONTROLS_MISSING
+
+PHASE=welcome-accept
+/usr/bin/osascript "$WELCOME_SCRIPT" accept >"$WORK_DIR/welcome-action.txt" 2>"$WORK_DIR/welcome-accept.stderr.log" || fail WPS_WELCOME_ACTION_FAILED
+/usr/bin/grep -q '^start_now_clicked=true$' "$WORK_DIR/welcome-action.txt" || fail WPS_WELCOME_ACTION_UNCONFIRMED
+WELCOME_CLOSED=0
+for _ in {1..10}; do
+  /bin/sleep 1
+  /usr/bin/osascript "$WELCOME_SCRIPT" inspect >"$WORK_DIR/welcome-after.txt" 2>"$WORK_DIR/welcome-after.stderr.log" || fail WPS_WELCOME_AFTER_TREE_FAILED
+  if /usr/bin/grep -q '^matching_welcome_windows=0$' "$WORK_DIR/welcome-after.txt"; then
+    WELCOME_CLOSED=1
+    break
+  fi
+done
+if [[ -x /usr/sbin/screencapture ]]; then
+  /usr/sbin/screencapture -x "$WORK_DIR/welcome-after.png" >"$WORK_DIR/welcome-after-screenshot.log" 2>&1 || true
+fi
+[[ "$WELCOME_CLOSED" == 1 ]] || fail WPS_WELCOME_STILL_VISIBLE
 
 PHASE=relay-version
 TRANSIENT_RETRIED=0
