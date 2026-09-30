@@ -324,6 +324,87 @@ if [[ -x /usr/sbin/screencapture ]]; then
 fi
 [[ "$WELCOME_CLOSED" == 1 ]] || fail WPS_WELCOME_STILL_VISIBLE
 
+PHASE=relay-handler-proof
+# 只接受已验签 WPS 包内实际声明协议的应用；优先 cloud server 子应用。
+set +e
+RELAY_HANDLER_RELATIVE="$("$PYTHON" - "$DEST_APP" "$WORK_DIR/relay-handler.txt" <<'PY'
+import os
+import pathlib
+import plistlib
+import sys
+
+root = pathlib.Path(sys.argv[1]).resolve(strict=True)
+proof = pathlib.Path(sys.argv[2])
+scheme = "ksoWPSCloudSvr"
+root_registration = []
+child_matches = []
+for directory, children, _ in os.walk(root, followlinks=False):
+    children[:] = [name for name in children if not (pathlib.Path(directory) / name).is_symlink()]
+    app = pathlib.Path(directory)
+    if app.suffix.lower() != ".app":
+        continue
+    info = app / "Contents" / "Info.plist"
+    if not info.is_file() or info.is_symlink():
+        continue
+    with info.open("rb") as stream:
+        metadata = plistlib.load(stream)
+    executable = metadata.get("CFBundleExecutable", "")
+    if app != root and executable.lower() != "wpscloudsvr" and "wpscloudsvr" not in app.name.lower():
+        continue
+    types = metadata.get("CFBundleURLTypes", [])
+    registered = [item for entry in types if isinstance(entry, dict)
+                  for item in entry.get("CFBundleURLSchemes", [])
+                  if isinstance(item, str) and item.lower() == scheme.lower()]
+    if registered:
+        resolved = app.resolve(strict=True)
+        if not resolved.is_relative_to(root):
+            proof.write_text("handler=outside_verified_bundle\n", encoding="utf-8")
+            sys.exit(3)
+        relative = resolved.relative_to(root).as_posix()
+        if any(char in relative for char in "\r\n\t"):
+            proof.write_text("handler=invalid_relative_path\n", encoding="utf-8")
+            sys.exit(3)
+        if app == root:
+            root_registration = registered
+        else:
+            child_matches.append((relative, registered))
+if len(child_matches) > 1 or any(len(registered) != 1 for _, registered in child_matches):
+    proof.write_text("handler=not_unique\n", encoding="utf-8")
+    sys.exit(3)
+if child_matches:
+    relative, registered = child_matches[0]
+    selected = "wpscloudsvr_child"
+elif len(root_registration) == 1:
+    relative, registered = ".", root_registration
+    selected = "root_app"
+elif root_registration:
+    proof.write_text("handler=not_unique\n", encoding="utf-8")
+    sys.exit(3)
+else:
+    proof.write_text("handler=missing\n", encoding="utf-8")
+    sys.exit(2)
+proof.write_text(f"scheme={registered[0]}\nselected={selected}\nrelative_app={relative}\n", encoding="utf-8")
+print(relative)
+PY
+)"
+HANDLER_RC=$?
+set -e
+case "$HANDLER_RC" in
+  0) ;;
+  2) fail WPS_RELAY_SCHEME_HANDLER_MISSING ;;
+  *) fail WPS_RELAY_SCHEME_HANDLER_INVALID ;;
+esac
+RELAY_HANDLER_APP="$DEST_APP/$RELAY_HANDLER_RELATIVE"
+/usr/bin/codesign --verify --strict "$RELAY_HANDLER_APP" >"$WORK_DIR/relay-handler-codesign.stdout.log" 2>"$WORK_DIR/relay-handler-codesign.stderr.log" || fail WPS_RELAY_HANDLER_SIGNATURE_INVALID
+/usr/bin/codesign -dv --verbose=4 "$RELAY_HANDLER_APP" >"$WORK_DIR/relay-handler-details.stdout.log" 2>"$WORK_DIR/relay-handler-details.stderr.log" || fail WPS_RELAY_HANDLER_SIGNATURE_INVALID
+RELAY_HANDLER_TEAM="$(/usr/bin/sed -n 's/^TeamIdentifier=//p' "$WORK_DIR/relay-handler-details.stderr.log" | /usr/bin/head -n 1)"
+[[ "$RELAY_HANDLER_TEAM" == YK4WKE5WAM ]] || fail WPS_RELAY_HANDLER_TEAM_MISMATCH
+
+PHASE=relay-start
+# 显式指定上面已核实的官方应用，避免同名 URI 被其他应用接管；只发送一次。
+/usr/bin/open -g -a "$RELAY_HANDLER_APP" 'ksoWPSCloudSvr://start=RelayHttpServer' >"$WORK_DIR/relay-start.stdout.log" 2>"$WORK_DIR/relay-start.stderr.log" || fail WPS_RELAY_PROTOCOL_OPEN_FAILED
+printf 'scheme=ksoWPSCloudSvr\nrelative_app=%s\nopen_result=accepted\n' "$RELAY_HANDLER_RELATIVE" >"$WORK_DIR/relay-start.txt"
+
 PHASE=relay-version
 TRANSIENT_RETRIED=0
 RATE_LIMIT_RETRIED=0

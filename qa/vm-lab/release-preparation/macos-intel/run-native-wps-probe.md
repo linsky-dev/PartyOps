@@ -1,6 +1,8 @@
 # GitHub 原生 macOS WPS JSAPI 探针
 
-状态：run 36672407746 的双架构探针均失败于 `WPS_WELCOME_BUTTON_DISABLED`：AX 勾选值已变为 1，但 `Start Now` 仍禁用。真实鼠标 down/up 修复尚未在 macOS runner 运行；既有失败回执保持原样。此脚本只适用于一次性、原生架构 GitHub macOS runner，不是 PartyOps 产品安装或排版通过证明。
+状态：run 36674097319 双架构的欢迎页已关闭，但均在 `relay-version` 因 58890 connection refused 失败。此前 run 36672407746 的禁用按钮失败回执仍保留。下面的协议处理尚未在 macOS runner 运行；此脚本只适用于一次性、原生架构 GitHub macOS runner，不是 PartyOps 产品安装或排版通过证明。
+
+欢迎页关闭后，脚本读取已验签官方 WPS 主应用及实际 `wpscloudsvr` 子应用的 `Contents/Info.plist`，核 `CFBundleURLTypes` 是否声明 `ksoWPSCloudSvr`。若两者均合法声明，确定性优先子应用；仅主应用声明时回退主应用。缺失、同一候选重复、越出安装包或所选应用签名不符即失败；证据只记录协议名、所选位置及包内相对路径。通过时显式指定该应用，使用系统 `open -g -a` 对固定 `ksoWPSCloudSvr://start=RelayHttpServer` URI 发送一次启动请求，不依赖其他应用对同名协议的默认处理。`open` 接受请求只记录为请求成功，不能算 relay 已就绪；后续仍按严格 relay 轮询和既有探针验收。
 
 从仓库根目录调用：
 
@@ -19,4 +21,4 @@ relay 检查要求 `http://127.0.0.1:58890/version` 返回 HTTP 200 和非空响
 
 每次运行在 `$RUNNER_TEMP/partyops-wps-native-probe.*` 留下独立目录。运行目录可能包含完整第三方安装器 DMG；它不属于可发布或可上传的诊断产物。GitHub 工作流仅复制顶层明确列出的诊断文件到独立 artifact 目录，排除 `gui-launchctl.txt`、`artifact-manifest.txt`、`*.dmg`、挂载目录、`.app` 和应用程序；脚本本身不上传产物。成功证据包含签名/架构记录、relay 响应、探针 stdout/stderr、输出 DOCX、evidence JSON 与 status JSON。失败目录还记录失败阶段/码、WPS 相关进程列表；若系统允许截屏则保存 `failure-screen.png`。HTTP 406 时既有探针会在 `probe.stderr.log` 记录 `WPS_PROBE_INVOKE_FAILED`、HTTP 状态和受限响应摘要，以及已收到的加载项服务请求路径；保留该日志和 relay-version 文件作为失败证据，不把 `/version` 成功计作 JSAPI 成功。若需要把诊断文件留出 runner 生命周期，仅能按此白名单收集到已配置的内部证据存储；不得把日志或文档上传到外部服务。
 
-当前步骤已接入 rc.6 工作流的独立双架构 `PROBE-WPS-145-RC6` 作业；真实鼠标处理只针对 run 36672407746 已取证的禁用按钮根因，不声称新版脚本已运行或排版通过。旧 Mac VM runbook 仍在 `wps-jsapi-probe-runbook-20260927.md`；官方 relay 406 注意事项见 `official-relay-update-20260930.md`。
+当前步骤已接入 rc.6 工作流的独立双架构 `PROBE-WPS-145-RC6` 作业；协议启动处理只针对 run 36674097319 已取证的 relay 拒绝连接，不声称新版脚本已运行或排版通过。旧 Mac VM runbook 仍在 `wps-jsapi-probe-runbook-20260927.md`；官方 relay 406 注意事项见 `official-relay-update-20260930.md`。

@@ -100,7 +100,7 @@ jobs:
           while IFS= read -r work_dir; do
             while IFS= read -r file; do
               case "$(basename "$file")" in
-                status.json|probe-evidence.json|failure.txt|python-version.txt|wps-version.txt|wps-executable-architectures.txt|preexisting-wps-processes.txt|wps-processes.txt|codesign-details.txt|download-source.txt|welcome-before.txt|welcome-consent-mouse.txt|welcome-consent-state.txt|welcome-action.txt|welcome-axpress-after.txt|welcome-bounds-action.txt|welcome-after.txt|*.log|*.headers|*.body|*.png|*.docx)
+                status.json|probe-evidence.json|failure.txt|python-version.txt|wps-version.txt|wps-executable-architectures.txt|preexisting-wps-processes.txt|wps-processes.txt|codesign-details.txt|download-source.txt|welcome-before.txt|welcome-consent-mouse.txt|welcome-consent-state.txt|welcome-action.txt|welcome-axpress-after.txt|welcome-bounds-action.txt|welcome-after.txt|relay-handler.txt|relay-start.txt|*.log|*.headers|*.body|*.png|*.docx)
                   cp "$file" "$artifact_dir/$(basename "$work_dir")-$(basename "$file")"
                   ;;
               esac
