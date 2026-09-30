@@ -61,7 +61,7 @@ end inspectWelcome
 on run argv
     if (count of argv) is not 1 then error "WPS_WELCOME_MODE_REQUIRED"
     set operation to item 1 of argv
-    if operation is not "inspect" and operation is not "accept" and operation is not "bounds-click" then error "WPS_WELCOME_MODE_INVALID"
+    if operation is not "inspect" and operation is not "accept" and operation is not "bounds-click" and operation is not "state" then error "WPS_WELCOME_MODE_INVALID"
     tell application "System Events"
         if UI elements enabled is false then error "WPS_WELCOME_ACCESSIBILITY_UNAVAILABLE"
         set processList to application processes whose name is "wpsoffice"
@@ -81,6 +81,10 @@ on run argv
         try
             set beforeValue to (value of theCheckBox) as text
         end try
+        if operation is "state" then
+            set startEnabled to enabled of theStartButton
+            return "checkbox_value=" & beforeValue & linefeed & "start_enabled=" & startEnabled & linefeed
+        end if
         if operation is "bounds-click" then
             if beforeValue is not "1" and beforeValue is not "true" then error "WPS_WELCOME_CHECKBOX_NOT_SELECTED"
             if (frontmost of theProcess) is not true then error "WPS_WELCOME_PROCESS_NOT_FRONTMOST"
@@ -115,6 +119,7 @@ on run argv
             set afterValue to (value of theCheckBox) as text
         end try
         if afterValue is not "1" and afterValue is not "true" then error "WPS_WELCOME_CHECKBOX_NOT_SELECTED"
+        if (enabled of theStartButton) is not true then error "WPS_WELCOME_BUTTON_DISABLED"
         click theStartButton
         return "welcome_checkbox_before=" & beforeValue & linefeed & "welcome_checkbox_after=" & afterValue & linefeed & "start_now_clicked=true" & linefeed
     end tell

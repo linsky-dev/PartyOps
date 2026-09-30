@@ -50,6 +50,14 @@ jobs:
           /usr/bin/osacompile -o "$RUNNER_TEMP/wps-welcome.scpt" \
             qa/vm-lab/release-preparation/macos-intel/handle-wps-welcome.applescript
 
+      - name: 编译已验证控件的真实鼠标事件辅助程序
+        shell: bash
+        run: |
+          /usr/bin/xcrun swiftc -O \
+            qa/vm-lab/release-preparation/macos-intel/click-wps-consent-checkbox.swift \
+            -framework AppKit -framework ApplicationServices \
+            -o "$RUNNER_TEMP/wps-consent-click"
+
       - name: 恢复固定哈希的官方 WPS 输入
         id: wps-cache
         uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
@@ -92,7 +100,7 @@ jobs:
           while IFS= read -r work_dir; do
             while IFS= read -r file; do
               case "$(basename "$file")" in
-                status.json|probe-evidence.json|failure.txt|python-version.txt|wps-version.txt|wps-executable-architectures.txt|preexisting-wps-processes.txt|wps-processes.txt|codesign-details.txt|download-source.txt|welcome-before.txt|welcome-action.txt|welcome-axpress-after.txt|welcome-bounds-action.txt|welcome-after.txt|*.log|*.headers|*.body|*.png|*.docx)
+                status.json|probe-evidence.json|failure.txt|python-version.txt|wps-version.txt|wps-executable-architectures.txt|preexisting-wps-processes.txt|wps-processes.txt|codesign-details.txt|download-source.txt|welcome-before.txt|welcome-consent-mouse.txt|welcome-consent-state.txt|welcome-action.txt|welcome-axpress-after.txt|welcome-bounds-action.txt|welcome-after.txt|*.log|*.headers|*.body|*.png|*.docx)
                   cp "$file" "$artifact_dir/$(basename "$work_dir")-$(basename "$file")"
                   ;;
               esac

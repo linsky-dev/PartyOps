@@ -270,6 +270,26 @@ for _ in {1..20}; do
 done
 [[ "$WELCOME_READY" == 1 ]] || fail WPS_WELCOME_CONTROLS_MISSING
 
+PHASE=welcome-consent-mouse
+CONSENT_MOUSE="$RUNNER_TEMP/wps-consent-click"
+[[ -x "$CONSENT_MOUSE" ]] || fail WPS_CONSENT_MOUSE_HELPER_MISSING
+"$CONSENT_MOUSE" >"$WORK_DIR/welcome-consent-mouse.txt" 2>"$WORK_DIR/welcome-consent-mouse.stderr.log" || fail WPS_CONSENT_MOUSE_FAILED
+/usr/bin/grep -q '^mouse_down_up_posted=true$' "$WORK_DIR/welcome-consent-mouse.txt" || fail WPS_CONSENT_MOUSE_UNCONFIRMED
+CONSENT_READY=0
+for _ in {1..10}; do
+  /bin/sleep 1
+  /usr/bin/osascript "$WELCOME_SCRIPT" state >"$WORK_DIR/welcome-consent-state.txt" 2>"$WORK_DIR/welcome-consent-state.stderr.log" || fail WPS_CONSENT_STATE_UNAVAILABLE
+  if /usr/bin/grep -q '^checkbox_value=1$' "$WORK_DIR/welcome-consent-state.txt" &&
+    /usr/bin/grep -q '^start_enabled=true$' "$WORK_DIR/welcome-consent-state.txt"; then
+    CONSENT_READY=1
+    break
+  fi
+done
+if [[ -x /usr/sbin/screencapture ]]; then
+  /usr/sbin/screencapture -x "$WORK_DIR/welcome-consent-after.png" >"$WORK_DIR/welcome-consent-screenshot.log" 2>&1 || true
+fi
+[[ "$CONSENT_READY" == 1 ]] || fail WPS_CONSENT_DID_NOT_ENABLE_START
+
 PHASE=welcome-accept
 /usr/bin/osascript "$WELCOME_SCRIPT" accept >"$WORK_DIR/welcome-action.txt" 2>"$WORK_DIR/welcome-accept.stderr.log" || fail WPS_WELCOME_ACTION_FAILED
 /usr/bin/grep -q '^start_now_clicked=true$' "$WORK_DIR/welcome-action.txt" || fail WPS_WELCOME_ACTION_UNCONFIRMED
