@@ -1,6 +1,6 @@
 #!/bin/bash
 # 在一次性原生 macOS runner 上安装锁定版 WPS 并运行既有最小 JSAPI 探针。
-# 不自动处理 WPS 欢迎/许可界面，不修改系统安全设置，不上传任何产物。
+# 受限处理 WPS 欢迎/许可界面；不修改系统安全设置，不上传任何产物。
 set -Eeuo pipefail
 umask 077
 
@@ -68,6 +68,89 @@ pathlib.Path(path).write_text(json.dumps(payload, indent=2) + "\n", encoding="ut
 PY
 }
 
+collect_relay_diagnostics() {
+  local label url http curl_rc pid executable_path endpoint process_name expected_paths
+
+  if [[ -x /usr/sbin/lsof ]]; then
+    /usr/sbin/lsof -nP -iTCP:58890 -iTCP:58891 -sTCP:LISTEN \
+      >"$WORK_DIR/relay-diagnostic-all-listeners.log" \
+      2>"$WORK_DIR/relay-diagnostic-all-listeners.stderr.log"
+    printf 'lsof_exit=%s\n' "$?" >>"$WORK_DIR/relay-diagnostic-all-listeners.log"
+
+    : >"$WORK_DIR/relay-diagnostic-official-wps-listeners.log"
+    : >"$WORK_DIR/relay-diagnostic-official-wps-listeners.stderr.log"
+    for process_name in wpsoffice wpscloudsvr; do
+      if [[ "$process_name" == wpsoffice ]]; then
+        expected_paths="$DEST_APP/Contents/MacOS/$EXECUTABLE"
+      else
+        expected_paths="$("$PYTHON" - "$DEST_APP" <<'PY' 2>>"$WORK_DIR/relay-diagnostic-official-wps-listeners.stderr.log"
+import os
+import pathlib
+import plistlib
+import sys
+
+root = pathlib.Path(sys.argv[1]).resolve(strict=True)
+for directory, children, _ in os.walk(root, followlinks=False):
+    children[:] = [name for name in children if not (pathlib.Path(directory) / name).is_symlink()]
+    app = pathlib.Path(directory)
+    if app == root or app.suffix.lower() != ".app":
+        continue
+    info = app / "Contents" / "Info.plist"
+    if not info.is_file() or info.is_symlink():
+        continue
+    with info.open("rb") as stream:
+        executable = plistlib.load(stream).get("CFBundleExecutable", "")
+    if not isinstance(executable, str) or executable.lower() != "wpscloudsvr":
+        continue
+    binary = (app / "Contents" / "MacOS" / executable).resolve(strict=False)
+    if binary.is_relative_to(root) and binary.is_file() and not any(char in str(binary) for char in "\r\n\t"):
+        print(binary)
+PY
+)"
+      fi
+      while IFS= read -r pid; do
+        [[ -n "$pid" ]] || continue
+        while IFS= read -r executable_path; do
+          [[ -n "$executable_path" ]] || continue
+          if /usr/sbin/lsof -nP -a -p "$pid" -d txt -Fn \
+            2>>"$WORK_DIR/relay-diagnostic-official-wps-listeners.stderr.log" |
+            /usr/bin/grep -Fx -- "n$executable_path" >/dev/null; then
+            printf 'official_process=%s pid=%s executable=%s\n' \
+              "$process_name" "$pid" "$executable_path" \
+              >>"$WORK_DIR/relay-diagnostic-official-wps-listeners.log"
+            /usr/sbin/lsof -nP -a -p "$pid" -iTCP -sTCP:LISTEN \
+              >>"$WORK_DIR/relay-diagnostic-official-wps-listeners.log" \
+              2>>"$WORK_DIR/relay-diagnostic-official-wps-listeners.stderr.log"
+            break
+          fi
+        done <<<"$expected_paths"
+      done < <(/usr/bin/pgrep -x "$process_name" 2>/dev/null || true)
+    done
+  else
+    printf 'lsof_available=false\n' >"$WORK_DIR/relay-diagnostic-all-listeners.log"
+    printf 'lsof_available=false\n' >"$WORK_DIR/relay-diagnostic-official-wps-listeners.log"
+  fi
+
+  for endpoint in \
+    'ipv4-http http://127.0.0.1:58890/version' \
+    'ipv4-https https://127.0.0.1:58891/version' \
+    'ipv6-http http://[::1]:58890/version' \
+    'ipv6-https https://[::1]:58891/version'; do
+    label=${endpoint%% *}
+    url=${endpoint#* }
+    http=none
+    http="$(/usr/bin/curl --noproxy '*' --silent --show-error --max-time 3 \
+      -D "$WORK_DIR/relay-diagnostic-${label}.headers" \
+      -o "$WORK_DIR/relay-diagnostic-${label}.body" \
+      -w '%{http_code}' -X POST -H 'Content-Type: application/json' --data '{}' \
+      "$url" 2>"$WORK_DIR/relay-diagnostic-${label}.curl.stderr.log")"
+    curl_rc=$?
+    # 将 curl 退出码与 HTTP 状态写入独立诊断记录，不改变原验收状态。
+    printf 'endpoint=%s\ncurl_exit=%s\nhttp_status=%s\ntls_verification=default\nretry=none\n' \
+      "$label" "$curl_rc" "${http:-none}" >"$WORK_DIR/relay-diagnostic-${label}.log"
+  done
+}
+
 on_exit() {
   local rc=$?
   trap - EXIT
@@ -85,6 +168,9 @@ on_exit() {
     done
     if [[ -x /usr/sbin/screencapture ]]; then
       /usr/sbin/screencapture -x "$WORK_DIR/failure-screen.png" >>"$WORK_DIR/screencapture.log" 2>&1
+    fi
+    if [[ -f "$WORK_DIR/relay-start.txt" && ( "$PHASE" == relay-version || "$PHASE" == probe ) ]]; then
+      collect_relay_diagnostics
     fi
     if [[ -n "${PYTHON:-}" && -x "$PYTHON" ]]; then
       write_status "$rc" >>"$WORK_DIR/status-write.log" 2>&1
