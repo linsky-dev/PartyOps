@@ -26,9 +26,11 @@ import urllib.parse
 import urllib.request
 import webbrowser
 import zipfile
+from collections.abc import Callable, Mapping
 from datetime import datetime, timezone
 from logging.handlers import RotatingFileHandler
 from pathlib import Path, PurePosixPath
+from typing import Any, cast
 
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
@@ -38,8 +40,9 @@ from cryptography.x509.oid import NameOID
 from .enrollment_codes import normalize_enrollment_code as _normalize_enrollment_code
 from .platform_info import detect_platform_info
 from .schemas import serialize_api_datetime
+from .time_utils import beijing_iso
 
-AGENT_VERSION = "1.4.5-rc.4"
+AGENT_VERSION = "1.4.5-rc.6"
 AGENT_PROTOCOL_VERSION = 2
 AUTHENTICATION_EXIT_CODE = 4
 _ACTIVE_SSL_CONTEXT = None
@@ -92,7 +95,7 @@ def _record_agent_failure(
     status = getattr(exc, "code", None)
     logger.warning("operation_failed operation=%s type=%s status=%s", operation, type(exc).__name__, status or "")
     config["last_agent_error"] = operation
-    config["last_agent_error_at"] = datetime.now(timezone.utc).isoformat()
+    config["last_agent_error_at"] = beijing_iso()
     authentication_failed = (
         isinstance(exc, urllib.error.HTTPError) and exc.code in {401, 403}
     )
@@ -151,9 +154,9 @@ def _validated_transfer_geometry(
 
     fallback = fallback or {}
     try:
-        chunk_size = int(status.get("chunk_size", fallback.get("chunk_size", 0)))
-        total_chunks = int(status.get("total_chunks", fallback.get("total_chunks", 0)))
-        size_bytes = int(status.get("size_bytes", fallback.get("size_bytes", 0)))
+        chunk_size = int(cast(str | int | float, status.get("chunk_size", fallback.get("chunk_size", 0))))
+        total_chunks = int(cast(str | int | float, status.get("total_chunks", fallback.get("total_chunks", 0))))
+        size_bytes = int(cast(str | int | float, status.get("size_bytes", fallback.get("size_bytes", 0))))
     except (TypeError, ValueError) as exc:
         raise AgentCommandError("TRANSFER_METADATA_INVALID", "主机返回的传输参数无效") from exc
     expected_chunks = (
@@ -444,6 +447,7 @@ def _json_request(
     url: str,
     *,
     token: str | None = None,
+    enrollment_code: str | None = None,
     payload: dict[str, object] | None = None,
     method: str = "GET",
     timeout: int = 15,
@@ -452,6 +456,9 @@ def _json_request(
     data = None
     if token:
         headers["X-PartyOps-Device-Token"] = token
+    if enrollment_code:
+        # 入网码只用于 /devices/enroll；调用方不得把它复用为设备令牌。
+        headers["X-PartyOps-Enrollment-Code"] = enrollment_code
     if payload is not None:
         headers["Content-Type"] = "application/json"
         data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -646,7 +653,7 @@ def enroll_device(
                 [x509.NameAttribute(NameOID.COMMON_NAME, normalized_name)]
             )
         )
-        .sign(private_key, hashes.SHA256())
+        .sign(cast(Any, private_key), hashes.SHA256())
     )
     payload = {
         **device_metadata(),
@@ -683,6 +690,7 @@ def enroll_device(
             try:
                 result = _json_request(
                     f"{normalized_host}/api/v1/devices/enroll",
+                    enrollment_code=normalized_code,
                     payload=payload,
                     method="POST",
                 )
@@ -885,7 +893,7 @@ def refresh_shared_root_statuses(
     return roots
 
 
-def _save_config(path: Path, config: dict[str, object]) -> None:
+def _save_config(path: Path, config: Mapping[str, object]) -> None:
     temporary = path.with_suffix(path.suffix + ".tmp")
     temporary.write_text(
         json.dumps(config, ensure_ascii=False, indent=2),
@@ -1026,8 +1034,8 @@ def _open_shared_file(
             break
     if root_path is None or relative is None:
         raise AgentCommandError("ROOT_NOT_APPROVED", "共享目录尚未获批")
-    directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
-    file_flags = os.O_RDONLY | os.O_NOFOLLOW
+    directory_flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+    file_flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
     directory_fd = os.open(root_path, directory_flags)
     try:
         for part in relative.parts[:-1]:
@@ -1200,7 +1208,7 @@ def send_device_heartbeat(
     payload = {
         **device_metadata(),
         "root_count": len(_safe_shared_roots(config)),
-        "indexed_file_count": int(config.get("indexed_file_count", 0) or 0),
+        "indexed_file_count": int(cast(str | int | float, config.get("indexed_file_count", 0) or 0)),
     }
     request = urllib.request.Request(
         f"{host_url.rstrip('/')}/api/v1/devices/heartbeat",
@@ -1335,7 +1343,7 @@ def upload_transfer(
     remote_file_key = str(payload.get("remote_file_key", ""))
     source_path = _resolve_shared_file(config, remote_file_key)
     before = source_path.stat(follow_symlinks=False)
-    expected_size = int(payload.get("size_bytes", 0) or 0)
+    expected_size = int(cast(str | int | float, payload.get("size_bytes", 0) or 0))
     if expected_size and before.st_size != expected_size:
         raise AgentCommandError("SOURCE_CHANGED", "源文件大小已变化")
     expected_modified = str(payload.get("modified_at", ""))
@@ -1345,8 +1353,8 @@ def upload_transfer(
             raise AgentCommandError("SOURCE_CHANGED", "源文件修改时间已变化")
     status = get_transfer_status(host_url, token, transfer_id)
     completed = {
-        int(value)
-        for value in status.get("completed_chunks", [])
+        int(cast(str | int | float, value))
+        for value in cast(list[object], status.get("completed_chunks", []))
         if isinstance(value, int) or str(value).isdigit()
     }
     chunk_size, total_chunks, _size_bytes = _validated_transfer_geometry(
@@ -1418,8 +1426,8 @@ def _upload_local_path(
     transfer_id = _validated_transfer_id(transfer_id)
     status = get_transfer_status(host_url, token, transfer_id)
     completed = {
-        int(value)
-        for value in status.get("completed_chunks", [])
+        int(cast(str | int | float, value))
+        for value in cast(list[object], status.get("completed_chunks", []))
         if isinstance(value, int) or str(value).isdigit()
     }
     chunk_size, total_chunks, _size_bytes = _validated_transfer_geometry(
@@ -1479,7 +1487,7 @@ def upload_bundle_transfer(
     if not isinstance(raw_items, list) or not raw_items:
         raise AgentCommandError("BUNDLE_ITEMS_INVALID", "主机未提供有效的压缩项目")
     transfer_id = _validated_transfer_id(payload.get("transfer_id", ""))
-    max_bytes = int(payload.get("max_bytes", 20 * 1024**3) or 20 * 1024**3)
+    max_bytes = int(cast(str | int | float, payload.get("max_bytes", 20 * 1024**3) or 20 * 1024**3))
     receive_dir = Path(
         str(config.get("receive_dir", Path.home() / "PartyOps-接收文件"))
     ).expanduser().resolve()
@@ -1807,9 +1815,9 @@ def apply_update_command(
     official_online = payload.get("official_online") is True
     expected_hash = ""
     expected_size = 0
-    response_factory = None
-    resume_offset_helper = None
-    partial_open_helper = None
+    response_factory: Callable[[int], Any] | None = None
+    resume_offset_helper: Callable[..., Any] | None = None
+    partial_open_helper: Callable[..., Any] | None = None
     if official_online:
         try:
             # 下载地址不接受主机命令传入。协同机使用自己冻结运行时中的
@@ -1826,7 +1834,7 @@ def apply_update_command(
             if not bool(catalog["available"]) or str(catalog["version"]) != expected_version:
                 raise ValueError("官方目录目标版本与主机升级命令不一致")
             expected_hash = str(catalog["package_sha256"])
-            expected_size = int(catalog["package_size"])
+            expected_size = int(cast(str | int | float, catalog["package_size"]))
             filename = (
                 f"official-{expected_version}-{expected_hash[:12]}.partyops-update"
             )
@@ -1920,6 +1928,8 @@ def apply_update_command(
                         "更新服务器未返回可安全使用的完整内容或断点范围",
                     )
                 if official_online:
+                    assert temporary is not None
+                    assert partial_open_helper is not None
                     handle_context = partial_open_helper(
                         temporary,
                         offset=write_offset,
@@ -2232,7 +2242,7 @@ def poll_desktop_notifications(
     if not summary:
         return False
     revision = str(summary["revision"])
-    count = int(summary["unread_count"])
+    count = int(cast(str | int | float, summary["unread_count"]))
     revision_path = destination / ".notification-revision"
     previous = (
         revision_path.read_text(encoding="utf-8").strip()

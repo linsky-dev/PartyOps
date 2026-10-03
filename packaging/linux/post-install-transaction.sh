@@ -10,7 +10,7 @@ if [ "$SCRIPT_DIR" != "/opt/partyops" ] && [ "${PARTYOPS_PACKAGE_TESTING:-0}" = 
 fi
 
 case "$EXPECTED_ARCH" in
-  amd64|arm64) ;;
+  amd64|arm64|loong64) ;;
   *)
     echo '[PACKAGE_SCRIPT_ARGUMENT_INVALID] 安装后事务缺少有效处理器架构。' >&2
     exit 2

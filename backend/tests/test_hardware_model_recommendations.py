@@ -41,7 +41,7 @@ def test_model_catalog_spans_basic_to_flagship_and_reserves_capacity() -> None:
     assert any(item["kind"] == "intent_router" for item in MODEL_CATALOG)
     results = recommend_models(_profile())
     by_id = {item["id"]: item for item in results}
-    assert by_id["qwen3-0.6b-gguf"]["status"] == "流畅"
+    assert by_id["qwen3-0.6b-q8_0"]["status"] == "流畅"
     assert by_id["qwen3-32b-gguf"]["status"] == "不建议"
     assert by_id["qwen3-235b-a22b-gguf"]["delivery"] == "official"
     low_disk = recommend_models(_profile(model_disk_free_mb=500))
@@ -173,6 +173,12 @@ def test_cpu_process_and_gpu_probes_degrade_without_breaking_startup(monkeypatch
     monkeypatch.setattr(Path, "read_text", lambda self, **kwargs: (_ for _ in ()).throw(OSError()))
     assert hardware_profile._cpu_flags() == ["avx", "avx2"]
     assert hardware_profile._process_rss_bytes() == 0
+    monkeypatch.setattr(hardware_profile.platform, "system", lambda: "Other")
+    assert hardware_profile._cpu_flags() == ["avx", "avx2"]
+
+    monkeypatch.setattr(hardware_profile.platform, "system", lambda: "Linux")
+    monkeypatch.setattr(Path, "read_text", lambda self, **kwargs: "Name: partyops\n")
+    assert hardware_profile._process_rss_bytes() == 0
 
     class Psapi:
         @staticmethod
@@ -193,6 +199,19 @@ def test_cpu_process_and_gpu_probes_degrade_without_breaking_startup(monkeypatch
         raising=False,
     )
     assert hardware_profile._process_rss_bytes() == 54321
+
+    class EmptyPsapi:
+        @staticmethod
+        def GetProcessMemoryInfo(process, pointer, size) -> bool:
+            return False
+
+    monkeypatch.setattr(
+        hardware_profile.ctypes,
+        "windll",
+        SimpleNamespace(psapi=EmptyPsapi(), kernel32=Kernel32()),
+        raising=False,
+    )
+    assert hardware_profile._process_rss_bytes() == 0
     monkeypatch.setattr(
         hardware_profile.ctypes,
         "windll",
@@ -212,6 +231,12 @@ def test_cpu_process_and_gpu_probes_degrade_without_breaking_startup(monkeypatch
     monkeypatch.setattr(hardware_profile.platform, "system", lambda: "Linux")
     backends, memory, names = hardware_profile._gpu_profile()
     assert backends == ["cuda"] and memory == 24564 and names == ["RTX 4090"]
+    monkeypatch.setattr(
+        hardware_profile.subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(stdout=""),
+    )
+    assert hardware_profile._gpu_profile() == ([], None, [])
     monkeypatch.setattr(
         hardware_profile.subprocess,
         "run",

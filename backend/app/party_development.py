@@ -10,7 +10,7 @@ import calendar
 import re
 import uuid
 from collections import defaultdict
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -38,6 +38,7 @@ from .schemas import (
     PartyDevelopmentNodeOut,
     PartyDevelopmentResultOut,
 )
+from .time_utils import beijing_now
 
 RULE_VERSION = "2026.05"
 RULE_ISSUED_AT = date(2026, 5, 11)
@@ -82,6 +83,52 @@ REFERENCE_NODE_MAP: dict[str, str] = {
     "transition_branch_meeting": "transition_branch_target",
     "transition_approval_deadline": "transition_approval_target",
     "archive": "archive_target",
+}
+
+# 时间轴对外返回的稳定中文标题。机器键仅用于接口兼容和规则计算，
+# 不能直接暴露到生产界面，避免导入数据后出现英文内部字段。
+NODE_LABELS: dict[str, str] = {
+    "application": "提交入党申请书",
+    "conversation_window": "派人谈话建议窗口",
+    "conversation_deadline": "派人谈话截止",
+    "conversation_target": "派人谈话参考目标",
+    "conversation": "派人谈话",
+    "activist_date": "确定入党积极分子",
+    "activist_reference": "确定入党积极分子参考时间",
+    "activist_publicity_start": "积极分子公示",
+    "first_half_year_assessment": "首次半年考察",
+    "first_half_year_assessment_reference": "首次半年考察参考时间",
+    "development_object_earliest": "列为发展对象最早日期",
+    "development_object_reference": "列为发展对象参考时间",
+    "development_object_publicity": "发展对象公示",
+    "development_object_date": "确定发展对象",
+    "political_review": "政治审查",
+    "political_review_target": "政治审查参考目标",
+    "political_review_completed": "政治审查完成",
+    "training": "集中培训",
+    "training_completed": "集中培训完成",
+    "pre_review_approved": "上级党委预审",
+    "pre_review_target": "上级党委预审参考目标",
+    "branch_acceptance_deadline": "支部大会讨论截止",
+    "branch_acceptance_target": "支部大会讨论参考目标",
+    "branch_acceptance": "接收预备党员",
+    "committee_approval": "党委审批期限",
+    "committee_approval_target": "党委审批参考目标",
+    "committee_approval_actual": "党委审批完成",
+    "oath_deadline": "入党宣誓截止",
+    "oath_target": "入党宣誓参考目标",
+    "oath": "入党宣誓",
+    "probationary_status": "列为预备党员",
+    "probation_end": "预备期满",
+    "probation_end_reference": "预备期满参考时间",
+    "transition_application": "提交转正申请",
+    "transition_branch_meeting": "转正支部大会",
+    "transition_branch_target": "转正支部大会参考目标",
+    "transition_approval_deadline": "转正审批截止",
+    "transition_approval_target": "转正审批参考目标",
+    "transition_approval": "转正审批完成",
+    "archive": "材料归档",
+    "archive_target": "材料归档参考目标",
 }
 
 PHASE_LABELS = {
@@ -436,7 +483,7 @@ def calculate_party_development(
     *,
     today: date | None = None,
 ) -> PartyDevelopmentResultOut:
-    today = today or datetime.now(timezone.utc).date()
+    today = today or beijing_now().date()
     actual = payload.actual_dates
     calendar_rows = list(calendar_entries)
     workdays = WorkdayCalendar(calendar_rows)
@@ -1030,5 +1077,5 @@ def export_result_docx(result: PartyDevelopmentResultOut, exports_dir: Path) -> 
         indent=False,
     )
     generated.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-    document.save(path)
+    document.save(str(path))
     return path

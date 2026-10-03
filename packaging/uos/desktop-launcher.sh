@@ -205,15 +205,29 @@ read_browser_url() {
   printf '%s' "$url"
 }
 
+launch_browser_detached() {
+  local opener_pid
+  # 部分桌面下 xdg-open 会一直等待浏览器退出。不能用 timeout 杀掉它的
+  # 整个进程组，否则首次打开的浏览器会在 15 秒后消失。独立交接并关闭
+  # 启动锁描述符，仍检查立即失败的打开器，以便继续尝试系统备用入口。
+  nohup "$@" </dev/null >>"$LAUNCH_LOG" 2>&1 9>&- &
+  opener_pid=$!
+  sleep 1
+  if kill -0 "$opener_pid" 2>/dev/null; then
+    return 0
+  fi
+  wait "$opener_pid"
+}
+
 open_browser_url() {
   local url="$1"
   [[ "$url" =~ ^https?://[^[:space:]]+$ ]] || return 1
   if command -v xdg-open >/dev/null 2>&1 &&
-    timeout 15s xdg-open "$url" >>"$LAUNCH_LOG" 2>&1; then
+    launch_browser_detached xdg-open "$url"; then
     return 0
   fi
   if command -v gio >/dev/null 2>&1 &&
-    timeout 15s gio open "$url" >>"$LAUNCH_LOG" 2>&1; then
+    launch_browser_detached gio open "$url"; then
     return 0
   fi
   return 1
@@ -303,9 +317,6 @@ launch_browser_tool() {
       case "$argument" in
         partyops-client://reconfigure|partyops-client://reconfigure/)
           marker_name="wizard.url"
-          ;;
-        partyops-client://official-format/*)
-          marker_name="official-format.url"
           ;;
       esac
     done
@@ -542,17 +553,36 @@ elif [[ "$MODE" == "host" && -f /etc/partyops/partyops.env ]]; then
   HOST_CONFIG=/etc/partyops/partyops.env
 fi
 if [[ ( "$MODE" == "host" || "$MODE" == "personal" ) && -f "$HOST_CONFIG" ]]; then
+  PREPARED_CONFIG="$(mktemp "$LOG_ROOT/.launch-env.XXXXXX" 2>/dev/null || true)"
+  if [[ -z "$PREPARED_CONFIG" ]] ||
+    ! "$APP_ROOT/partyops-wizard" --prepare-launch-environment \
+      --config-file "$HOST_CONFIG" --expected-mode "$MODE" \
+      --output-file "$PREPARED_CONFIG" >>"$LAUNCH_LOG" 2>&1; then
+    [[ -z "$PREPARED_CONFIG" ]] || rm -f -- "$PREPARED_CONFIG"
+    LAST_HEALTH_ERROR="[CONFIG_INVALID] 原配置没有被执行，精确解析原因见桌面启动日志。"
+    show_launch_failure \
+      "配置文件损坏或权限异常（诊断码 CONFIG_INVALID）。系统将打开修复向导，原业务数据不会删除。"
+    if launch_browser_tool --reconfigure --initial-role "$MODE"; then
+      exit 0
+    fi
+    exit 2
+  fi
   set -a
+  # 只执行内置向导刚生成、权限为 0600 的一次性白名单环境；原始用户配置
+  # 永远只作为数据解析，避免 rc.4 的截断误报与 Shell 执行风险。
   # shellcheck disable=SC1090
   set +u
-  if ! source "$HOST_CONFIG"; then
+  if ! source "$PREPARED_CONFIG"; then
     set -u
     set +a
-    show_launch_failure "配置文件无法读取（诊断码 CONFIG_INVALID），请重新打开配置向导修复。"
+    rm -f -- "$PREPARED_CONFIG"
+    show_launch_failure \
+      "内置向导生成的一次性启动配置未通过 Bash 自检（诊断码 CONFIG_SANITIZE_FAILED），请使用同版本安装包修复安装。"
     exit 2
   fi
   set -u
   set +a
+  rm -f -- "$PREPARED_CONFIG"
   PORT="${PARTYOPS_PORT:-18765}"
   SCHEME="http"
   [[ "${PARTYOPS_TLS_ENABLED:-false}" == "true" ]] && SCHEME="https"

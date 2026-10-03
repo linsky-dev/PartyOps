@@ -213,8 +213,13 @@ def test_personal_startup_failure_trims_partial_large_log_line(tmp_path) -> None
     log_path = tmp_path / "launcher.log"
     log_path.write_bytes(b"x" * 9000 + b"\ncurrent failure")
 
+    metadata = log_path.stat()
+
     class ExitedProcess:
         returncode = 7
+        _partyops_log_boundary = {"path": str(log_path.resolve()), "offset": 0,
+                                 "device": metadata.st_dev, "inode": metadata.st_ino,
+                                 "prefix_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"}
 
         @staticmethod
         def poll():
@@ -230,7 +235,7 @@ def test_personal_startup_failure_trims_partial_large_log_line(tmp_path) -> None
             process=ExitedProcess(),
         )
     assert failure.value.code == CHILD_EXITED
-    assert failure.value.detail == "current failure"
+    assert failure.value.detail == "个人进程退出码 7；本次启动日志：\ncurrent failure"
 
 
 @pytest.mark.parametrize(

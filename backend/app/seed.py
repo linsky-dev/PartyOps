@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import secrets
 from datetime import timedelta
+from typing import Any, TypedDict
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -71,7 +72,17 @@ TEMPLATE_DEFINITIONS = [
 ]
 
 
-ARCHIVE_CATEGORY_DEFINITIONS = [
+class ArchiveCategoryDefinition(TypedDict):
+    """内置档案类别的种子字段，不改变初始化内容。"""
+
+    name: str
+    code: str
+    description: str
+    record_mode: ArchiveRecordMode
+    field_schema: list[dict[str, Any]]
+
+
+ARCHIVE_CATEGORY_DEFINITIONS: list[ArchiveCategoryDefinition] = [
     {
         "name": "人事调动文件",
         "code": "personnel_transfer",

@@ -8,7 +8,6 @@ import json
 import re
 import typing
 import zipfile
-from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, Header, Query, Request
@@ -82,6 +81,7 @@ from ..task_service import (
     task_to_out,
     task_visibility_clause,
 )
+from ..time_utils import beijing_now
 from ..workspace import search_workspace_files
 from ..workspace_access import workspace_root_permissions
 
@@ -248,10 +248,8 @@ def global_search(
                     "title": file.name,
                     "subtitle": f"{file.extension or '文件'} · {file.availability.value}",
                     "route": f"/workspace?file={file.id}",
-                    "updated_at": serialize_api_datetime(
-                        file.modified_at or file.last_seen_at
-                    )
-                    if file.modified_at or file.last_seen_at
+                    "updated_at": serialize_api_datetime(file_time)
+                    if (file_time := file.modified_at or file.last_seen_at)
                     else None,
                 }
             )
@@ -318,8 +316,8 @@ def global_search(
         ).all()
         for entry in entries:
             if entry.task_id:
-                task = db.get(Task, entry.task_id)
-                if not task or not can_view_task(db, task, user):
+                journal_task = db.get(Task, entry.task_id)
+                if not journal_task or not can_view_task(db, journal_task, user):
                     continue
             if not matches(entry.title, entry.content):
                 continue
@@ -356,19 +354,19 @@ def global_search(
                 break
 
     if len(items) < limit:
-        for entry in db.scalars(
+        for knowledge_entry in db.scalars(
             select(KnowledgeEntry).order_by(KnowledgeEntry.updated_at.desc()).limit(limit)
         ).all():
-            if not matches(entry.title, entry.category, entry.body):
+            if not matches(knowledge_entry.title, knowledge_entry.category, knowledge_entry.body):
                 continue
             items.append(
                 {
                     "type": "knowledge",
-                    "id": entry.id,
-                    "title": entry.title,
-                    "subtitle": entry.category or "知识条目",
-                    "route": f"/knowledge?entry={entry.id}",
-                    "updated_at": serialize_api_datetime(entry.updated_at),
+                    "id": knowledge_entry.id,
+                    "title": knowledge_entry.title,
+                    "subtitle": knowledge_entry.category or "知识条目",
+                    "route": f"/knowledge?entry={knowledge_entry.id}",
+                    "updated_at": serialize_api_datetime(knowledge_entry.updated_at),
                 }
             )
             if len(items) >= limit:
@@ -932,7 +930,7 @@ def create_handover(
         ],
     }
     # 同一秒内重复生成交接包也必须得到独立文件名，避免唯一索引冲突。
-    filename = f"PartyOps-交接清单-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S%f')}.zip"
+    filename = f"PartyOps-交接清单-{beijing_now().strftime('%Y%m%d%H%M%S%f')}.zip"
     path = get_settings().exports_dir / filename
     manifest_bytes = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
     checksums = [f"{hashlib.sha256(manifest_bytes).hexdigest()}  manifest.json"]

@@ -12,6 +12,12 @@ HEALTH_BODY_FILE="$TEST_ROOT/health-body.json"
 SERVER_PID=""
 
 cleanup() {
+  local status=$?
+  if [[ "$status" -ne 0 ]]; then
+    printf 'Linux 桌面启动回归失败，测试根：%s\n' "$TEST_ROOT" >&2
+    [[ ! -f "$HOME_DIR/.config/partyops/desktop-launch.log" ]] ||
+      tail -n 160 "$HOME_DIR/.config/partyops/desktop-launch.log" >&2
+  fi
   [[ -z "$SERVER_PID" ]] || kill "$SERVER_PID" >/dev/null 2>&1 || true
   pkill -f "$RUNTIME/partyops-wizard" >/dev/null 2>&1 || true
   pkill -f "$RUNTIME/partyops-client" >/dev/null 2>&1 || true
@@ -24,7 +30,7 @@ trap cleanup EXIT INT TERM
 
 mkdir -p "$RUNTIME" "$HOME_DIR/.config/partyops" "$BIN_DIR"
 cp "$ROOT/packaging/uos/desktop-launcher.sh" "$RUNTIME/"
-printf '1.4.5-rc.4\n' >"$RUNTIME/VERSION"
+printf '1.4.5-rc.6\n' >"$RUNTIME/VERSION"
 chmod 0755 "$RUNTIME/desktop-launcher.sh"
 
 cat >"$RUNTIME/install-desktop-shortcut.sh" <<'EOF'
@@ -55,10 +61,30 @@ exit 0
 EOF
 cat >"$RUNTIME/partyops-wizard" <<'EOF'
 #!/usr/bin/env bash
+if [[ "${1:-}" == "--prepare-launch-environment" ]]; then
+  config=""
+  output=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --config-file) config="$2"; shift 2 ;;
+      --output-file) output="$2"; shift 2 ;;
+      *) shift ;;
+    esac
+  done
+  if ! bash -n "$config" 2>/dev/null; then
+    printf '%s\n' \
+      '[CONFIG_INVALID] 第 4 行 PARTYOPS_DATA_DIR 的引号不完整' >&2
+    exit 2
+  fi
+  cp -- "$config" "$output"
+  chmod 0600 "$output"
+  exit 0
+fi
 marker=wizard.url
 for argument in "$@"; do
   [[ "$argument" == "--manage-shared-roots" ]] && marker=shared-root-manager.url
 done
+printf '%s\n' "$*" >>"$TEST_ROOT/wizard-arguments.log"
 printf '%s\n' "$$" >>"$TEST_ROOT/wizard-starts.log"
 sleep "${FAKE_WIZARD_MARKER_DELAY:-0}"
 config_root="${XDG_CONFIG_HOME:-$HOME/.config}/partyops"
@@ -96,7 +122,7 @@ exit 0
 EOF
 chmod 0755 "$RUNTIME"/* "$BIN_DIR"/*
 
-printf '{"status":"ok","app_version":"1.4.5-rc.4"}\n' >"$HEALTH_BODY_FILE"
+printf '{"status":"ok","app_version":"1.4.5-rc.6"}\n' >"$HEALTH_BODY_FILE"
 export TEST_ROOT TEST_PORT=$((25000 + $$ % 10000)) OPEN_LOG NOTIFY_LOG HEALTH_BODY_FILE
 export HOME="$HOME_DIR" XDG_CONFIG_HOME="$HOME_DIR/.config"
 export PATH="$BIN_DIR:$PATH"
@@ -156,6 +182,25 @@ grep -qx "$CONFIG_ROOT/personal.env" "$TEST_ROOT/started-with-config.log"
 grep -Eq "^http://127\\.0\\.0\\.1:$TEST_PORT/\\?partyops_runtime=[0-9]+$" "$OPEN_LOG"
 rm -f "$CONFIG_ROOT/personal.env" "$OPEN_LOG"
 
+# rc.4 损坏配置不得再由 Bash 执行。启动器应留下精确键名/行号，并自动
+# 打开预选原角色的修复向导，业务数据与原配置都不在诊断中展开。
+cat >"$CONFIG_ROOT/personal.env" <<EOF
+PARTYOPS_MODE=personal
+PARTYOPS_PORT=$TEST_PORT
+PARTYOPS_TLS_ENABLED=false
+PARTYOPS_DATA_DIR='$TEST_ROOT/rc4-truncated-data
+EOF
+rm -f "$TEST_ROOT/started-with-config.log" "$TEST_ROOT/wizard-arguments.log"
+"$RUNTIME/desktop-launcher.sh"
+[[ ! -e "$TEST_ROOT/started-with-config.log" ]]
+grep -q '\[CONFIG_INVALID\] 第 4 行 PARTYOPS_DATA_DIR 的引号不完整' \
+  "$CONFIG_ROOT/desktop-launch.log"
+grep -q -- '--reconfigure --initial-role personal' \
+  "$TEST_ROOT/wizard-arguments.log"
+grep -qx "http://127.0.0.1:$TEST_PORT" "$OPEN_LOG"
+pkill -f "$RUNTIME/partyops-wizard" >/dev/null 2>&1 || true
+rm -f "$CONFIG_ROOT/personal.env" "$CONFIG_ROOT/wizard.url" "$OPEN_LOG"
+
 # 主机模式：用户配置同样走受控启动、健康等待和本机地址。
 cat >"$CONFIG_ROOT/mode.json" <<'EOF'
 {"format_version":1,"mode":"host"}
@@ -190,7 +235,7 @@ set -e
 [[ "$version_mismatch_status" -eq 2 ]]
 grep -q '\[RUNTIME_VERSION_MISMATCH\]' "$CONFIG_ROOT/startup-diagnostic.txt"
 [[ ! -e "$OPEN_LOG" ]]
-printf '{"status":"ok","app_version":"1.4.5-rc.4"}\n' >"$HEALTH_BODY_FILE"
+printf '{"status":"ok","app_version":"1.4.5-rc.6"}\n' >"$HEALTH_BODY_FILE"
 rm -f "$CONFIG_ROOT/personal.env"
 
 # 协同模式：页面令牌通过 0600 文件交接，不依赖隐藏进程内部打开浏览器。

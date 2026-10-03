@@ -132,6 +132,40 @@ def test_user_protocols_never_overwrite_unowned_existing_command(tmp_path: Path)
     assert (base, "PartyOps.AppId") not in registry.values
 
 
+def test_user_protocols_replace_owned_command_after_install_path_changes(
+    tmp_path: Path,
+) -> None:
+    """同一 AppId 的旧命令必须随覆盖安装迁移，不能遗留失效入口。"""
+
+    launcher = load_launcher()
+    runtime = tmp_path / "PartyOps"
+    runtime.mkdir()
+    log = tmp_path / "launcher.log"
+    registry = _MemoryRegistry()
+    base = r"Software\Classes\partyops-file"
+    command_key = base + r"\shell\open\command"
+    registry.keys.update({base, command_key})
+    registry.values[(base, "PartyOps.AppId")] = (
+        launcher.PARTYOPS_APP_ID,
+        registry.REG_SZ,
+    )
+    registry.values[(base, "PartyOps.InstallPath")] = (
+        r"C:\OldPartyOps",
+        registry.REG_SZ,
+    )
+    registry.values[(command_key, "")] = (
+        '"C:\\OldPartyOps\\PartyOpsFileOpen.exe" "%1"',
+        registry.REG_SZ,
+    )
+
+    assert launcher.ensure_user_protocols(runtime, log, registry) == []
+    assert registry.values[(base, "PartyOps.InstallPath")][0] == str(runtime)
+    assert registry.values[(command_key, "")][0] == (
+        f'"{runtime / "PartyOpsFileOpen.exe"}" "%1"'
+    )
+    assert not log.exists()
+
+
 def test_client_desktop_launch_waits_for_page_marker(monkeypatch, tmp_path: Path) -> None:
     launcher = load_launcher()
     runtime = tmp_path / "runtime"
@@ -292,6 +326,43 @@ def test_windows_wizard_wait_allows_slow_legacy_startup() -> None:
     launcher = load_launcher()
 
     assert launcher.WIZARD_WAIT_SECONDS == 180.0
+
+
+def test_desktop_entry_blocks_configuration_when_runtime_dependency_preflight_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    launcher = load_launcher()
+    shown: list[str] = []
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setattr(launcher.sys, "argv", ["PartyOpsLauncher.exe"])
+    monkeypatch.setattr(launcher, "show_launch_failure", shown.append)
+    monkeypatch.setattr(
+        launcher,
+        "_preflight_windows_runtime_dependencies",
+        lambda _executable: (_ for _ in ()).throw(
+            launcher.HostStartupError(
+                launcher.RUNTIME_DEPENDENCY_MISSING,
+                "Python 或 SQLite 依赖缺失。",
+                detail="缺失=_internal/python3.dll",
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        launcher,
+        "ensure_user_protocols",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("依赖闭包失败后不得写注册表或启动配置向导")
+        ),
+    )
+
+    assert launcher.main() == 1
+    assert shown and "RUNTIME_DEPENDENCY_MISSING" in shown[0]
+    assert "_internal/python3.dll" in shown[0]
+    assert "修复安装" in shown[0]
+    log = tmp_path / "PartyOps" / "launcher.log"
+    assert log.is_file()
+    assert "RUNTIME_DEPENDENCY_MISSING" in log.read_text(encoding="utf-8")
 
 
 @pytest.mark.parametrize(

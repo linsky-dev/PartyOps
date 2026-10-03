@@ -19,7 +19,7 @@ from ..config import get_settings
 from ..content_security import may_render_inline
 from ..database import db_runtime, get_session
 from ..device_versions import request_device
-from ..enums import TransferStatus, UserRole
+from ..enums import FileIndexStatus, TransferStatus, UserRole
 from ..models import (
     BackgroundJob,
     FileOpenGrant,
@@ -61,6 +61,7 @@ from ..schemas import (
 )
 from ..security import get_current_user, hash_token, require_admin
 from ..task_service import can_view_task
+from ..time_utils import beijing_iso
 from ..work_journal import record_system_entry
 from ..workspace import (
     file_to_out,
@@ -96,7 +97,7 @@ def is_host_local_request(request: Request) -> bool:
     local_addresses = {get_settings().host}
     try:
         local_addresses.update(
-            item[4][0].split("%", 1)[0]
+            str(item[4][0]).split("%", 1)[0]
             for item in socket.getaddrinfo(socket.gethostname(), None)
         )
     except OSError:
@@ -306,7 +307,7 @@ def create_local_share_action(
         "workspace.local_share_action_create",
         "device",
         device.id,
-        {"expires_at": expires_at.isoformat()},
+        {"expires_at": beijing_iso(expires_at)},
         client_ip(request),
     )
     db.commit()
@@ -494,9 +495,9 @@ def replace_workspace_root_members(
             select(WorkspaceRootMember).where(WorkspaceRootMember.root_id == root.id)
         ).all()
     }
-    for member in existing.values():
-        member.active = False
-        member.version += 1
+    for existing_member in existing.values():
+        existing_member.active = False
+        existing_member.version += 1
     for user_id, item in requested.items():
         member = existing.get(user_id)
         if member is None:
@@ -668,7 +669,7 @@ def list_workspace_folder_options(
         WorkspaceFolderOption(
             path=item.relative_path,
             name=item.name,
-            parent_path=by_id.get(item.parent_id),
+            parent_path=by_id.get(item.parent_id) if item.parent_id is not None else None,
             depth=len(Path(item.relative_path).parts),
             direct_file_count=int(direct_counts.get(item.id, 0)),
             selected=item.relative_path in selected,
@@ -908,7 +909,7 @@ def delete_workspace_root(
     )
     for item in indexed_files:
         item.in_scope = False
-        item.status = "missing"
+        item.status = FileIndexStatus.MISSING
         checkpoints = db.scalars(
             select(SemanticIndexCheckpoint).where(
                 SemanticIndexCheckpoint.object_type.in_(
@@ -1168,7 +1169,7 @@ def create_local_open_link(
     request: Request,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_session),
-) -> dict[str, str]:
+) -> dict[str, str | int]:
     """为主机桌面签发一次性打开链接，由系统默认程序处理文件。"""
 
     device_id = current_device_id(request, db)
@@ -1214,7 +1215,7 @@ def create_local_open_link(
     return {
         "grant_id": grant.id,
         "open_uri": f"partyops-file://open/{token}",
-        "expires_at": expires_at.isoformat(),
+        "expires_at": beijing_iso(expires_at),
         "expires_in_seconds": 300,
         "open_method": "local_helper",
         "status": "created",
@@ -1234,10 +1235,10 @@ def _open_grant_status(grant: FileOpenGrant) -> dict[str, object]:
         "status": status,
         "result_code": grant.result_code,
         "result_detail": grant.result_detail,
-        "expires_at": expires_at.isoformat(),
-        "redeemed_at": grant.redeemed_at.isoformat() if grant.redeemed_at else None,
-        "opened_at": grant.opened_at.isoformat() if grant.opened_at else None,
-        "completed_at": grant.completed_at.isoformat() if grant.completed_at else None,
+        "expires_at": beijing_iso(expires_at),
+        "redeemed_at": beijing_iso(grant.redeemed_at) if grant.redeemed_at else None,
+        "opened_at": beijing_iso(grant.opened_at) if grant.opened_at else None,
+        "completed_at": beijing_iso(grant.completed_at) if grant.completed_at else None,
     }
 
 
@@ -1471,8 +1472,8 @@ def patch_workspace_tags(
         select(WorkspaceFileTag).where(WorkspaceFileTag.file_id == item.id)
     ).all():
         db.delete(tag)
-    for tag in payload.tags:
-        db.add(WorkspaceFileTag(file_id=item.id, tag=tag, created_by=user.id))
+    for tag_name in payload.tags:
+        db.add(WorkspaceFileTag(file_id=item.id, tag=tag_name, created_by=user.id))
     item.version += 1
     write_audit(
         db,

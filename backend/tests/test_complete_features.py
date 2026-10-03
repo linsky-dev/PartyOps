@@ -1095,6 +1095,9 @@ def test_linux_desktop_launcher_covers_every_configured_mode_and_visible_failure
     assert 'readlink -f "/proc/$pid/exe"' in start
     assert "[CHILD_EXITED]" in start
     assert "bash -n" in selftest
+    # 安装后脚本可能从受限的用户家目录被手工/包管理器调用；必须先
+    # 固定到可读的系统目录，避免冻结配置的 ``.env`` 读取误报权限错误。
+    assert "cd /" in selftest
     assert "PACKAGE_DESKTOP_ENTRY_INVALID" in selftest
     assert "Exec=/bin/bash /opt/partyops/desktop-launcher.sh" in main_entry
     assert "--manage-shared-roots" in client_entry
@@ -1295,6 +1298,15 @@ def test_client_agent_rejects_corruption_and_handles_http_states(
 
     monkeypatch.setattr(
         client_agent.urllib.request, "urlopen", lambda *_a, **_k: HashMismatchResponse()
+    )
+    # 该分支验证主机哈希不一致，不能受测试机 C 盘实时余量影响；
+    # 低磁盘空间已由独立参数化用例覆盖。
+    monkeypatch.setattr(
+        client_agent.shutil,
+        "disk_usage",
+        lambda _path: SimpleNamespace(
+            free=client_agent.BACKUP_FREE_SPACE_RESERVE_BYTES + 1024**3
+        ),
     )
     with pytest.raises(ValueError, match="主机校验值"):
         client_agent.pull_backup("http://host", "token", tmp_path / "copies")

@@ -839,22 +839,22 @@ def dashboard(db: Session, user: User) -> DashboardOut:
         (
             "today",
             "今天必须办理",
-            lambda task: due(task) is not None
-            and due(task).date() == now.date()
+            lambda task: (deadline := due(task)) is not None
+            and deadline.date() == now.date()
             and task.status not in {TaskStatus.COMPLETED, TaskStatus.ARCHIVED},
         ),
         (
             "three_days",
             f"{advance_days}日内到期",
-            lambda task: due(task) is not None
-            and now < due(task) <= upcoming
+            lambda task: (deadline := due(task)) is not None
+            and now < deadline <= upcoming
             and task.status not in {TaskStatus.COMPLETED, TaskStatus.ARCHIVED},
         ),
         (
             "overdue",
             "已逾期",
-            lambda task: due(task) is not None
-            and due(task) < now
+            lambda task: (deadline := due(task)) is not None
+            and deadline < now
             and task.status not in {TaskStatus.COMPLETED, TaskStatus.ARCHIVED},
         ),
         (

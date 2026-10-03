@@ -1,0 +1,178 @@
+schema_version: 1
+# 仅登记可信的介质；缺项必须报告 MISSING_MEDIA，不得自动挑选网络整合盘。
+media:
+  virtio-win-arm64:
+    source_page: https://github.com/virtio-win/virtio-win-pkg-scripts/blob/master/README.md
+    url: https://fedorapeople.org/groups/virt/virtio-win/direct-downloads/archive-virtio/virtio-win-0.1.302-1/virtio-win-0.1.302.iso
+    filename: virtio-win-0.1.302.iso
+    sha256: 303f7ae40dad495d6ae474fdc571df58958a4dbc5c37a522d80f9a203867949d
+    size_bytes: 877373440
+    format: iso
+    arch: arm64
+    role: supplemental-windows-drivers
+    storage_root: primary
+    hash_source: local-sha256-after-upstream-download
+    # 上游 CHECKSUM 仅含 RPM MD5；这里不能写成官方 ISO SHA-256。
+    upstream_iso_sha256_published: false
+    catalog_member_signature_verified: true
+    signature_scope: viostor-and-NetKVM-w11-ARM64-inf-sys
+    guest_driver_load_verified: false
+    verified_source_date: '2026-09-08'
+  win10-x86:
+    source_page: https://www.microsoft.com/en-us/software-download/windows10ISO
+    filename: Win10_22H2_Chinese_Simplified_x32v1.iso
+    sha256: c828accb08886622f5e1a127bb83070bae0e9235ef0e31573abc6a8a5cb55286
+    size_bytes: 4364279808
+    format: iso
+    arch: i686
+    storage_root: primary
+    verified_source_date: '2026-09-08'
+  win11-arm64:
+    source_page: https://www.microsoft.com/en-us/software-download/windows11arm64
+    filename: Win11_25H2_Chinese_Simplified_Arm64_v2.iso
+    sha256: fccff2f7eef5b29e756e3e51522203e03f7faeebaff093dac9c6e5b67b082432
+    size_bytes: 8315279360
+    format: iso
+    arch: arm64
+    storage_root: primary
+    verified_source_date: '2026-09-08'
+  win10-arm64:
+    source_page: https://www.microsoft.com/en-us/software-download/windows10ISO
+    arch: arm64
+    format: iso
+    blocked_reason: OFFICIAL_WINDOWS10_ARM64_MEDIA_UNAVAILABLE_UNDER_CURRENT_CONSTRAINTS
+    verified_source_date: '2026-09-08'
+  deepin-25-loong64:
+    source_page: https://www.deepin.org/zh/download/
+    url: https://cdimage.deepin.com/releases/25.2.0/loong64/deepin-desktop-community-25.2.0-loong64.iso
+    checksum_url: https://cdimage.deepin.com/releases/25.2.0/loong64/SHA256SUMS
+    filename: deepin-desktop-community-25.2.0-loong64.iso
+    sha256: 1835726765d5839481572dbdaf8b8fdb5b2403ed8395cbe06f8d509891fb46c1
+    size_bytes: 6304202752
+    format: iso
+    distribution: Deepin
+    os_version: 25.2.0
+    arch: loongarch64
+    storage_root: primary
+    verified_source_date: '2026-09-08'
+  uos-1070-hwe-x64:
+    source_page: https://www.chinauos.com/resource/download-professional
+    download_api: https://www.chinauos.com/api/v1/download/os
+    remote_file: hwe/1072/release/uos-desktop-20-professional-hwe-1070-amd64-202412.iso
+    filename: uos-desktop-20-professional-hwe-1070-amd64-202412.iso
+    size_bytes: 5390493696
+    sha256: bb679427314488d86d428e19d178d9cd705cde6d1f2a9b87d89a89a54dd14066
+    format: iso
+    distribution: UOS
+    os_version: '20-1070'
+    edition: Professional-HWE
+    arch: x86_64
+    storage_root: fallback
+    verified_source_date: '2026-09-05'
+  uos-1070-arm64:
+    source_page: https://www.chinauos.com/resource/download-professional
+    download_api: https://www.chinauos.com/api/v1/download/os
+    remote_file: desktop-professional/1075/release/uos-desktop-20-professional-1070-arm64-202604.iso
+    filename: uos-desktop-20-professional-1070-arm64-202604.iso
+    size_bytes: 4832434176
+    sha256: 3c3d1236ca3e07a75dd43742b26e9638bb45023bddac26abe1b07fb5b976735c
+    format: iso
+    distribution: UOS
+    os_version: '20-1070'
+    edition: Professional
+    arch: aarch64
+    storage_root: fallback
+    verified_source_date: '2026-09-05'
+  openeuler-iso-x64:
+    source_page: https://repo.openeuler.org/openEuler-24.03-LTS-SP2/ISO/x86_64/
+    url: https://repo.openeuler.org/openEuler-24.03-LTS-SP2/ISO/x86_64/openEuler-24.03-LTS-SP2-x86_64-dvd.iso
+    filename: openEuler-24.03-LTS-SP2-x86_64-dvd.iso
+    size_bytes: 4706009088
+    checksum_url: https://repo.openeuler.org/openEuler-24.03-LTS-SP2/ISO/x86_64/openEuler-24.03-LTS-SP2-x86_64-dvd.iso.sha256sum
+    sha256: 6044b168ed08561b171dbd4559f7f3fcfa75ff2f3c286248c1919b601e21e1f2
+    format: iso
+    distribution: openEuler
+    os_version: 24.03-LTS-SP2
+    arch: x86_64
+    storage_root: fallback
+    verified_source_date: '2026-09-05'
+  openeuler-iso-arm64:
+    source_page: https://repo.openeuler.org/openEuler-24.03-LTS-SP2/ISO/aarch64/
+    url: https://repo.openeuler.org/openEuler-24.03-LTS-SP2/ISO/aarch64/openEuler-24.03-LTS-SP2-aarch64-dvd.iso
+    filename: openEuler-24.03-LTS-SP2-aarch64-dvd.iso
+    size_bytes: 4244875264
+    checksum_url: https://repo.openeuler.org/openEuler-24.03-LTS-SP2/ISO/aarch64/openEuler-24.03-LTS-SP2-aarch64-dvd.iso.sha256sum
+    sha256: 63547af29580a98d8d15b44b660382da0a9d40c5de583ac24fca9c8b8bf7fa20
+    format: iso
+    distribution: openEuler
+    os_version: 24.03-LTS-SP2
+    arch: aarch64
+    storage_root: fallback
+    verified_source_date: '2026-09-05'
+  win11-x64:
+    source_page: https://www.microsoft.com/en-us/evalcenter/download-windows-11-enterprise
+    url: https://software-static.download.prss.microsoft.com/dbazure/888969d5-f34g-4e03-ac9d-1f9786c66749/26200.6584.250915-1905.25h2_ge_release_svc_refresh_CLIENTENTERPRISEEVAL_OEMRET_x64FRE_zh-cn.iso
+    checksum_url: https://cdn-dynmedia-1.microsoft.com/is/content/microsoftcorp/microsoft/bade/documents/products-and-services/en-us/owned-and-operated/Verify-Download-Win11-Enterprise.pdf
+    filename: Windows11-Enterprise-Eval-25H2-26200.6584-x64-zh-cn.iso
+    sha256: 7b4ac87391b659f7724229682b642256289a1c00504056249f0f12029157d3d2
+    size_bytes: 7371034624
+    format: iso
+    distribution: Windows Enterprise Evaluation
+    os_version: 11-25H2-26200.6584
+    arch: x86_64
+    license: Microsoft Enterprise 90-day Evaluation
+    verified_source_date: '2026-09-02'
+  deepin-25-x64:
+    source_page: https://cdimage.deepin.com/releases/25.2.0/amd64/
+    url: https://downloads.sourceforge.net/project/deepin/25.2.0/amd64/deepin-desktop-community-25.2.0-amd64.iso
+    mirror: Deepin official SourceForge project
+    checksum_url: https://cdimage.deepin.com/releases/25.2.0/amd64/SHA256SUMS
+    filename: deepin-desktop-community-25.2.0-amd64.iso
+    sha256: f875c9a605bfe6a8425d1d353a3c1ec755bf37f5b0a3231ca19e2145da0ff450
+    size_bytes: 6976131072
+    format: iso
+    distribution: Deepin
+    os_version: 25.2.0
+    arch: x86_64
+    storage_root: fallback
+    verified_source_date: '2026-09-02'
+  deepin-25-arm64:
+    source_page: https://cdimage.deepin.com/releases/25.2.0/arm64/
+    url: https://downloads.sourceforge.net/project/deepin/25.2.0/arm64/deepin-desktop-community-25.2.0-arm64.iso
+    mirror: Deepin official SourceForge project
+    checksum_url: https://cdimage.deepin.com/releases/25.2.0/arm64/SHA256SUMS
+    filename: deepin-desktop-community-25.2.0-arm64.iso
+    sha256: 7c5cb76cec53532313f2b1f435d477a651f9b5f7ca2435dfc12eb7be8d3340fe
+    size_bytes: 5509810176
+    format: iso
+    distribution: Deepin
+    os_version: 25.2.0
+    arch: aarch64
+    storage_root: fallback
+    verified_source_date: '2026-09-02'
+  openeuler-x64:
+    url: https://repo.openeuler.org/openEuler-24.03-LTS-SP2/virtual_machine_img/x86_64/openEuler-24.03-LTS-SP2-x86_64.qcow2.xz
+    checksum_url: https://repo.openeuler.org/openEuler-24.03-LTS-SP2/virtual_machine_img/x86_64/openEuler-24.03-LTS-SP2-x86_64.qcow2.xz.sha256sum
+    filename: openEuler-24.03-LTS-SP2-x86_64.qcow2.xz
+    sha256: ab53fa70b0983121d23e0bc3d83693fd0d5b9f02c13387e2a8b47811be22f534
+    format: qcow2.xz
+    distribution: openEuler
+    os_version: 24.03-LTS-SP2
+    arch: x86_64
+    # 官方通用 VM 镜像不是 cloud-init 云镜像；种子仍携带专用公钥，
+    # 首次账号准备由校验 Guest UUID 的 provision-openeuler.py 完成。
+    cloud_init: true
+    provisioning: verified-official-default-login
+    minimum_expanded_gib: 16
+  openeuler-arm64:
+    url: https://repo.openeuler.org/openEuler-24.03-LTS-SP2/virtual_machine_img/aarch64/openEuler-24.03-LTS-SP2-aarch64.qcow2.xz
+    checksum_url: https://repo.openeuler.org/openEuler-24.03-LTS-SP2/virtual_machine_img/aarch64/openEuler-24.03-LTS-SP2-aarch64.qcow2.xz.sha256sum
+    filename: openEuler-24.03-LTS-SP2-aarch64.qcow2.xz
+    sha256: 7b1d964713d1b753656b25a75511df1c34186053e4c08f8a977d1ec13f212298
+    format: qcow2.xz
+    distribution: openEuler
+    os_version: 24.03-LTS-SP2
+    arch: aarch64
+    cloud_init: true
+    provisioning: verified-official-default-login
+    minimum_expanded_gib: 16

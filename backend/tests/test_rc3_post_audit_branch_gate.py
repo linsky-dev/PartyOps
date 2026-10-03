@@ -487,6 +487,12 @@ def test_personal_and_client_rollbacks_restore_previous_autostart(
         json.dumps({"format_version": 1, "mode": "client"}), encoding="utf-8"
     )
     (config / "client.json").write_text("{}", encoding="utf-8")
+    # 此用例只验证事务回滚；显式固定容量，避免构建机临时盘状态改变断言路径。
+    monkeypatch.setattr(
+        setup_wizard.shutil,
+        "disk_usage",
+        lambda _path: SimpleNamespace(free=4 * 1024**3),
+    )
     monkeypatch.setattr(setup_wizard, "config_root", lambda: config)
     monkeypatch.setattr(
         setup_wizard, "deactivate_windows_host_for_user_mode", lambda: False
@@ -648,7 +654,28 @@ def test_windows_launcher_blocks_all_roles_until_pending_switch_recovers(
     pending.parent.mkdir(parents=True)
     pending.write_text("{}", encoding="utf-8")
     monkeypatch.setenv("PROGRAMDATA", str(program_data))
-    monkeypatch.setattr(launcher.sys, "argv", [str(tmp_path / "PartyOps.exe")])
+    # main 会记录安装根并注册当前用户协议；测试必须全部限定在临时环境。
+    local_data = tmp_path / "LocalAppData"
+    runtime = tmp_path / "installed-runtime"
+    runtime.mkdir()
+    monkeypatch.setenv("LOCALAPPDATA", str(local_data))
+    monkeypatch.setattr(launcher.sys, "executable", str(runtime / "PartyOpsLauncher.exe"))
+    monkeypatch.setattr(launcher.sys, "argv", [str(runtime / "PartyOpsLauncher.exe")])
+    protocol_calls: list[tuple[Path, Path]] = []
+    monkeypatch.setattr(
+        launcher,
+        "ensure_user_protocols",
+        lambda root, log: protocol_calls.append((root, log)) or [],
+    )
+    writes: list[Path] = []
+    write_text = Path.write_text
+
+    def isolated_write(path: Path, *args, **kwargs):
+        assert path.resolve().is_relative_to(tmp_path.resolve()), "不得写入真实用户配置"
+        writes.append(path)
+        return write_text(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "write_text", isolated_write)
     launched: list[tuple[Path, Path, list[str]]] = []
     monkeypatch.setattr(
         launcher,
@@ -665,7 +692,11 @@ def test_windows_launcher_blocks_all_roles_until_pending_switch_recovers(
     monkeypatch.setattr(
         launcher.sys,
         "argv",
-        [str(tmp_path / "PartyOps.exe"), "--background"],
+        [str(runtime / "PartyOpsLauncher.exe"), "--background"],
     )
     assert launcher.main() == 1
     assert launched == []
+    local = local_data / "PartyOps"
+    assert (local / "install-root.txt").read_text(encoding="utf-8") == str(runtime.resolve())
+    assert writes == [local / "install-root.tmp", local / "install-root.tmp"]
+    assert protocol_calls == [(runtime, local / "launcher.log")] * 2

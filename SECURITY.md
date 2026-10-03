@@ -6,7 +6,7 @@ PartyOps 尚未发布首个通过全部门禁的稳定 Release。安全修复优
 
 ## 私密报告漏洞
 
-请优先使用 GitHub 的 [Private vulnerability reporting](https://github.com/pl1505031156-droid/PartyOps/security/advisories/new)。报告至少包含受影响版本、操作系统/架构、主机或协同机角色、复现条件、影响、最小复现和建议缓解方式。
+请优先使用 GitHub 的 [Private vulnerability reporting](https://github.com/linsky-dev/PartyOps/security/advisories/new)。报告至少包含受影响版本、操作系统/架构、主机或协同机角色、复现条件、影响、最小复现和建议缓解方式。
 
 不要在公开 Issue、截图或附件中提供：
 

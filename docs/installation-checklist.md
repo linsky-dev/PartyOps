@@ -1,6 +1,6 @@
-# PartyOps 1.4.3 安装与上线检查清单
+# PartyOps 1.4.5-rc.6 安装与上线检查清单
 
-适用于 Windows 10/11 x64、Windows 7 SP1 x64/x86、麒麟/UOS/deepin amd64/arm64 和 openEuler x86_64/aarch64 的主机与协同机。当前 `v1.4.4` 按平台标记 `preview` 或 `unavailable`；Windows 7 与国产 Linux 制品未真机验证，未关闭项不得勾选为通过。Win7 还必须确认 SP1、Universal CRT，并具备 `KB2533623` 或后续累积更新提供的安全 DLL 加载 API；仅在受控局域网使用。Win7 不得使用文件名只有 `windows_amd64` 的 Windows 10/11 通用包。
+适用于 Windows 10/11 x64、Windows 7 SP1 x64/x86、麒麟/UOS/deepin amd64/arm64 和 openEuler x86_64/aarch64 的主机与协同机。当前 `v1.4.5-rc.6` 八包为限域 `preview`，已记录对应实际虚拟机环境；其他系统、完整生命周期及未关闭项不得勾选为通过。Mac 本批延期，保留 RC.4 历史包。Win7 还必须确认 SP1、Universal CRT，并具备 `KB2533623` 或后续累积更新提供的安全 DLL 加载 API；仅在受控局域网使用。Win7 不得使用文件名只有 `windows_amd64` 的 Windows 10/11 通用包。
 
 ## 制品
 
@@ -60,4 +60,4 @@
 - [ ] 20GB、断线续传、主机重启、哈希失败、权限中途撤销和 24 小时连续运行通过。
 - [ ] 发布签名、升级、原位回滚、备份恢复和小范围试运行证据齐全。
 
-任一未勾选的正式放行项都使对应平台的 `stable` 结论保持 **NO-GO**；这不阻止在原生构建和自动门禁全部通过后，将明确标注未真机验证的 1.4.4 制品作为 `preview` 发布。详细命令与配置见[部署说明](deployment.md)、[1.4.4 升级与回滚](upgrade-1.4.4.md)，发布就绪判定以官网和 GitHub Release 同步公开的记录为准。
+任一未勾选的正式放行项都使对应平台的 `stable` 结论保持 **NO-GO**；本批 RC.6 八包按已批准的对应验证范围作为 `preview` 发布，真实环境和未覆盖事项见[当前发布说明](release-notes-v1.4.5-rc.6.md)。详细命令与配置见[部署说明](deployment.md)、[历史 1.4.4 升级与回滚](upgrade-1.4.4.md)，发布就绪判定以官网和 GitHub Release 同步公开的记录为准。

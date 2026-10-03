@@ -24,7 +24,9 @@ node_modules/
 artifacts/
 artifacts/release-keys/
 output/
-vendor/
+vendor/*
+!vendor/document-formatter-source/
+!vendor/document-formatter-source/**
 *.log
 *.sqlite
 *.sqlite3
@@ -46,7 +48,9 @@ partyops.env
 *.deb
 .build-*/
 .test-*/
+.smoke-rc4-*/
 .qa-*/
+.qa/
 .run-*/
 .remote-audit-partyops/
 .playwright-cli/
@@ -54,3 +58,18 @@ partyops.env
 .codex/
 .workbuddy/
 .gstack/
+qa/vm-lab/.local/
+qa/vm-lab/reports/
+qa/vm-lab/.coverage*
+*.qcow2
+*.vmdk
+*.vhdx
+*.iso
+
+# .NET 4.8 官方离线安装器超过 GitHub 普通对象上限，由本地构建脚本按固定
+# 微软 URL 下载并校验后缓存；来源清单必须进入版本控制，二进制继续忽略。
+!vendor/windows/
+vendor/windows/*
+!vendor/windows/dotnet-framework-4.8/
+vendor/windows/dotnet-framework-4.8/*
+!vendor/windows/dotnet-framework-4.8/SOURCE.json

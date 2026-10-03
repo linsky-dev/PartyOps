@@ -6,8 +6,9 @@ import ast
 import base64
 import hashlib
 import importlib.util
+import json
 import plistlib
-import re
+import sqlite3
 import subprocess
 import sys
 from pathlib import Path
@@ -47,8 +48,7 @@ def test_macos_python_entrypoints_parse_and_use_native_user_paths() -> None:
     assert "app_version" in launcher and "payload.get(\"mode\")" in launcher
     assert "_consume_reconfigure_request" in launcher
     assert "partyops-client://reconfigure" in launcher
-    assert "partyops-client://official-format/" in launcher
-    assert 'str(_runtime_root() / "partyops-wizard")' in launcher
+    assert "partyops-client://official-format/" not in launcher
     assert "os.execve" in agent
     assert 'not key.startswith("PARTYOPS_")' in agent
     assert ".partyops-personal-process.json" in agent
@@ -171,8 +171,30 @@ def test_macos_build_is_native_strict_signed_and_notarized() -> None:
     assert 'resources = runtime.parent / "Resources"' in package_selftest
     assert 'parent.parent / "Resources"' in app_main
     assert '"$LLAMA_RUNTIME/llama-server" "$APP/Contents/MacOS/llama-server"' in build
+    assert "PARTYOPS_MACOS_OFFICE_RUNTIME" in build
+    assert "MACOS_OFFICE_RUNTIME_MISSING" in build
+    assert "PARTYOPS_MACOS_FORMATTER_RUNTIME" in build
+    assert "MACOS_FORMATTER_RUNTIME_MISSING" in build
+    assert "validate-source-formatter-runtime.py" in build
+    assert "verify-document-formatter-parity.py" in build
+    assert "verify-document-formatter-features-e2e.py" in build
+    assert "probe-wps-native-bridge.py" not in build
+    assert "--bridge-evidence" not in build
+    assert "verify-formatter-runtime-evidence.py" in build
+    assert "runtime-evidence.json" in validation
+    assert "word-vtable-map.json" in validation
+    assert "LICENSE-WPS-SDK.txt" in validation
+    assert "LICENSE-MONO-RUNTIME.txt" in validation
+    assert "Resources/formatter-host/partyops-document-formatter-host" in build
+    assert "refresh_formatter_manifest_hash" in build
+    assert "MACOS_OFFICE_RUNTIME_ARCH_MISMATCH" in build
+    assert "MACOS_OFFICE_RUNTIME_SYMLINK_INVALID" in build
+    assert '"$OFFICE_RUNTIME" "$APP/Contents/Resources/office-runtime"' in build
     assert "PARTYOPS_MACOS_OCR_RUNTIME" not in spec
     assert "PARTYOPS_MACOS_LLAMA_RUNTIME" not in spec
+    assert "PARTYOPS_MACOS_OFFICE_RUNTIME" not in spec
+    assert "PARTYOPS_MACOS_FORMATTER_RUNTIME" not in spec
+    assert "MACOS_FORMATTER_RUNTIME_INCOMPLETE" in validation
     assert '(str(ocr_runtime), "ocr")' not in spec
     assert '(str(llama_runtime), ".")' not in spec
     update_key = ROOT / "packaging" / "uos" / "update-public-key.txt"
@@ -190,6 +212,10 @@ def test_macos_build_is_native_strict_signed_and_notarized() -> None:
     assert "不使用 Docker" in runbook
     assert "UNSIGNED-DO-NOT-PUBLISH" in runbook
     assert "公开测试候选升级为稳定版的必要条件" in runbook
+    assert "PARTYOPS_MACOS_FORMATTER_RUNTIME" in runbook
+    assert "目标机生成的 `runtime-evidence.json`" in runbook
+    assert "当前已验证的 WPS RPC 适配路径是 Linux" in runbook
+    assert "不得通过跳过测试" in runbook
 
 
 def test_macos_reconfigure_marker_is_short_lived_and_single_use(
@@ -233,8 +259,15 @@ def test_macos_unsigned_candidate_and_remote_native_builder_are_explicit() -> No
     runtimes = (MACOS / "build-native-runtimes.sh").read_text(encoding="utf-8")
     validation = (MACOS / "validate-bundle.sh").read_text(encoding="utf-8")
     workflow = (
-        ROOT / ".github" / "workflows" / "build-macos-1.4.5-rc.4.yml"
+        ROOT / ".github" / "workflows" / "build-macos-1.4.5-rc.6.yml"
     ).read_text(encoding="utf-8")
+    office = (ROOT / "scripts" / "prepare-libreoffice-macos.sh").read_text(
+        encoding="utf-8"
+    )
+    package_selftest = (ROOT / "backend" / "app" / "package_selftest.py").read_text(
+        encoding="utf-8"
+    )
+    readme = (MACOS / "README.md").read_text(encoding="utf-8")
 
     assert "--unsigned-candidate" in build
     assert "setup.py build_static bdist_wheel" in build
@@ -259,22 +292,83 @@ def test_macos_unsigned_candidate_and_remote_native_builder_are_explicit() -> No
     # libpng 在 Apple 平台默认生成 framework；必须显式关闭，避免 OCR
     # 运行时在用户电脑上依赖构建机路径中的 png.framework。
     assert "-DPNG_FRAMEWORK=OFF" in runtimes
+    # OCR 必须能在无 Homebrew 的用户电脑上读取 JPG/TIFF 扫描件；源码、
+    # 哈希、静态构建参数和真实格式探针全部进入同一构建契约。
+    assert "LIBJPEG_TURBO_VERSION='3.1.3'" in runtimes
+    assert "075920b826834ac4ddf97661cc73491047855859affd671d52079c6867c1c6c0" in runtimes
+    assert "LIBTIFF_VERSION='4.7.1'" in runtimes
+    assert "f698d94f3103da8ca7438d84e0344e453fe0ba3b7486e04c5bf7a9a3fabe9b69" in runtimes
+    static_targets = (MACOS / "ocr-static-targets.cmake").read_text(
+        encoding="utf-8"
+    )
+    assert runtimes.count(
+        '-DCMAKE_PROJECT_INCLUDE_BEFORE="$SCRIPT_DIR/ocr-static-targets.cmake"'
+    ) == 2
+    assert 'export PARTYOPS_OCR_PREFIX="$PREFIX"' in runtimes
+    assert "-DSTRICT_CONF=ON" in runtimes
+    assert "add_library(CMath::CMath INTERFACE IMPORTED GLOBAL)" in static_targets
+    assert "INTERFACE_LINK_LIBRARIES m" in static_targets
+    assert "if(NOT _partyops_ocr_try_compile AND NOT TARGET CMath::CMath)" in (
+        static_targets
+    )
+    assert "if(_partyops_ocr_try_compile)\n" not in static_targets
+    assert static_targets.count("if(NOT _partyops_ocr_try_compile") == 2
+    assert "PARTYOPS_OCR_PREFIX is required for the OCR build" in static_targets
+    assert "CMAKE_TRY_COMPILE_PLATFORM_VARIABLES CMAKE_PROJECT_INCLUDE_BEFORE" in (
+        static_targets
+    )
+    assert r"CMakeScratch[/\\\\]TryCompile-" in static_targets
+    for imported_target, archive_name in (
+        ("ZLIB::ZLIB", "libz.a"),
+        ("PNG::PNG", "libpng16.a"),
+        ("JPEG::JPEG", "libjpeg.a"),
+        ("TIFF::TIFF", "libtiff.a"),
+    ):
+        assert f"_partyops_import_ocr_archive({imported_target} {archive_name})" in (
+            static_targets
+        )
+    assert "-DENABLE_JPEG=ON -DENABLE_TIFF=ON" in runtimes
+    assert "-DWITH_JPEG8=ON" in runtimes
+    assert "-DDISABLE_TIFF=OFF" in runtimes
+    assert 'export PKG_CONFIG_LIBDIR="$PREFIX/lib/pkgconfig"' in runtimes
+    assert "-DCMAKE_IGNORE_PREFIX_PATH='/usr/local;/opt/homebrew'" in runtimes
+    assert '-DJPEG_INCLUDE_DIR="$PREFIX/include"' in runtimes
+    assert '-DJPEG_LIBRARY="$PREFIX/lib/libjpeg.a"' in runtimes
+    assert runtimes.count('"${LOCKED_OCR_BASE_FIND_FLAGS[@]}"') == 2
+    assert runtimes.count('"${LOCKED_OCR_FIND_FLAGS[@]}"') == 2
+    assert "MACOS_OCR_FORMAT_SELFTEST_FAILED" in runtimes
+    assert "for image_format in jpeg tiff" in runtimes
     assert "chi_sim.traineddata" in runtimes
     assert "llama-server" in runtimes
+    # 动态依赖门禁必须读取真实 LC_LOAD/LC_RPATH；otool -L 同时包含
+    # LC_ID_DYLIB，会把上游框架自己的安装名误判成外部依赖。
+    assert '/usr/bin/otool -l "$candidate"' in validation
+    assert "LC_(LOAD|LOAD_WEAK|REEXPORT|LAZY_LOAD|LOAD_UPWARD)_DYLIB" in validation
+    assert 'bad_dependency="$candidate -> $external_dependency"' in validation
 
     assert "workflow_dispatch:" in workflow
     assert "push:" not in workflow and "pull_request:" not in workflow
     assert "contents: read" in workflow
     assert "macos-15-intel" in workflow and "macos-15" in workflow
-    assert "BUILD-UNSIGNED-145-RC4" in workflow
-    assert "ref: 30fb1c29af794121925728ad78e64d566224f15e" in workflow
-    assert "建立真实 0023 覆盖升级基线" in workflow
+    assert "BUILD-UNSIGNED-145-RC6" in workflow
+    assert "ref: ${{ github.sha }}" in workflow
+    assert "建立真实 0023/0025 覆盖升级基线" in workflow
     assert "MACOS_0023_UPGRADE_FAILED" in workflow
-    assert "test \"$revision\" = '0024'" in workflow
+    assert "MACOS_0025_UPGRADE_FAILED" in workflow
+    assert "test \"$revision\" = '0026'" in workflow
     assert "rc4-native-upgrade-admin" in workflow
     assert "PartyOps-pre-upgrade-*.partyops-backup" in workflow
     assert "verify_backup" in workflow
-    assert re.search(r"ref: [0-9a-f]{40}", workflow)
+    assert "scripts/prepare-libreoffice-macos.sh" in workflow
+    assert "PARTYOPS_MACOS_OFFICE_RUNTIME" in workflow
+    assert "office-${{ matrix.architecture }}" in workflow
+    assert 'file -b "$RUNTIME/program/soffice"' in office
+    assert 'program/soffice.bin' not in office
+    assert 'file -b "$OFFICE_RUNTIME/LibreOffice.app/Contents/MacOS/soffice"' in build
+    assert 'test -f "$office/program/soffice.bin"' not in workflow
+    assert 'lipo -archs "$office/program/soffice"' in workflow
+    assert "不使用 Linux 的 `program/soffice.bin` 布局" in readme
+    assert "macOS 11" in workflow
     assert "sudo /usr/sbin/installer" in workflow
     assert workflow.count('sudo /usr/sbin/installer -pkg "$package" -target /') == 1
     assert workflow.count("install_package") == 3
@@ -320,6 +414,113 @@ def test_macos_unsigned_candidate_and_remote_native_builder_are_explicit() -> No
     ]
     assert action_lines
     assert all(len(line.rsplit("@", 1)[-1]) == 40 for line in action_lines)
+
+    assert "VERSION='26.2.5.2'" in office
+    assert "c99fb4fe574437fc4cb820a4ca15271bca325920861f7139858b36d7f9df78ad" in office
+    assert "e26180298685274b54aa7fe6e1101c65465a372f457a6748ebd642720811db36" in office
+    assert "downloadarchive.documentfoundation.org" in office
+    assert "hdiutil attach -readonly -nobrowse" in office
+    assert '"$SOURCE_APP" "$RUNTIME/LibreOffice.app"' in office
+    assert "/bin/ln -s ../LibreOffice.app/Contents/MacOS/soffice" in office
+    assert 'codesign --verify --deep --strict --verbose=2 "$SOURCE_APP"' in office
+    assert "subprocess.run(" not in office
+    assert '"--headless",' in package_selftest
+    assert '"--version",' in package_selftest
+    assert '"-env:UserInstallation=' in package_selftest
+    assert "--preserve-metadata=entitlements" in build
+    assert "--preserve-metadata=entitlements,flags" in build
+    assert build.count('$APP/Contents/Resources/office-runtime/') >= 2
+    # 未签名的新增 Mach-O 在首次校验时 codesign --display 会返回非零；
+    # 校验器必须把“未签名”当成允许状态，而不是让 pipefail 静默中止。
+    assert 'done <"$SCAN_LIST"' in validation
+    assert "done < <(/usr/bin/find" not in validation
+    assert "/usr/bin/awk -F= '/TeamIdentifier=/" in validation
+    assert "|| true" in validation
+    assert "MACOS_WIZARD_SELFTEST_FAILED" in validation
+    assert "MACOS_PACKAGE_SELFTEST_FAILED" in validation
+    assert "MACOS_OFFICE_BUNDLE_INCOMPLETE" in validation
+    assert "MACOS_NATIVE_FAILURE_DIAGNOSTICS_BEGIN" in validation
+    assert "PARTYOPS_WIZARD_SELFTEST_REPORT" in validation
+
+
+def test_macos_wizard_gui_selftest_writes_auditable_report(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """无控制台 GUI 入口也必须留下成功或失败原因，不能只返回退出码 1。"""
+
+    module_spec = importlib.util.spec_from_file_location(
+        "partyops_wizard_selftest", ROOT / "packaging" / "uos" / "wizard_entrypoint.py"
+    )
+    assert module_spec and module_spec.loader
+    wizard = importlib.util.module_from_spec(module_spec)
+    module_spec.loader.exec_module(wizard)
+    report = tmp_path / "wizard-selftest.json"
+    monkeypatch.setenv("PARTYOPS_WIZARD_SELFTEST_REPORT", str(report))
+
+    class FakeRoot:
+        def __init__(self) -> None:
+            self.tk = SimpleNamespace(call=lambda *_args: "8.6.14")
+
+        def withdraw(self) -> None:
+            return None
+
+        def update_idletasks(self) -> None:
+            return None
+
+        def destroy(self) -> None:
+            return None
+
+    monkeypatch.setitem(sys.modules, "tkinter", SimpleNamespace(Tk=FakeRoot))
+    assert wizard._frozen_gui_self_test() == 0
+    assert json.loads(report.read_text(encoding="utf-8")) == {
+        "passed": True,
+        "tcl_tk": "8.6.14",
+    }
+
+    def fail_tk() -> None:
+        raise RuntimeError("Tk 框架无法加载")
+
+    monkeypatch.setitem(sys.modules, "tkinter", SimpleNamespace(Tk=fail_tk))
+    assert wizard._frozen_gui_self_test() == 2
+    failure = json.loads(report.read_text(encoding="utf-8"))
+    assert failure["passed"] is False
+    assert failure["code"] == "PACKAGE_WIZARD_GUI_SELFTEST_FAILED"
+    assert failure["error"] == "Tk 框架无法加载"
+
+
+@pytest.mark.parametrize("target_revision", ["0023", "0025"])
+def test_macos_upgrade_fixture_builds_both_real_baselines(
+    tmp_path: Path, target_revision: str
+) -> None:
+    data_root = tmp_path / f"upgrade-{target_revision}"
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "scripts" / "create-0023-upgrade-fixture.py"),
+            "--repo-root",
+            str(ROOT),
+            "--data-root",
+            str(data_root),
+            "--target-revision",
+            target_revision,
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=120,
+    )
+    payload = json.loads(completed.stdout)
+    assert payload["schema_revision"] == target_revision
+    with sqlite3.connect(data_root / "partyops.db") as database:
+        tables = {
+            row[0]
+            for row in database.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            )
+        }
+    assert ("timezone_migration_audits" in tables) is (target_revision == "0025")
+    assert "ai_orchestration_sessions" not in tables
 
 
 def test_macos_is_present_in_platform_release_contracts() -> None:

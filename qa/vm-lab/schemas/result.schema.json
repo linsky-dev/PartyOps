@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["schema_version", "run_id", "generated_at", "target", "status", "source_fingerprint", "package", "system", "environment", "cases", "restart", "distribution_match"],
+  "properties": {
+    "schema_version": {"const": 2},
+    "environment": {
+      "type": "object", "oneOf": [
+        {"required": ["vm_uuid", "media_sha256", "baseline_id", "identity_sha256"], "not": {"required": ["backend"], "properties": {"backend": {"const": "native-host"}}}},
+        {"required": ["backend", "host_id", "identity_sha256"], "properties": {"backend": {"const": "native-host"}}, "not": {"anyOf": [{"required": ["vm_uuid"]}, {"required": ["media_sha256"]}, {"required": ["baseline_id"]}, {"required": ["marker"]}]}}
+      ],
+      "properties": {
+        "backend": {"type": "string"},
+        "host_id": {"$ref": "#/$defs/hash"},
+        "firmware_code_sha256": {"$ref": "#/$defs/hash"},
+        "firmware_vars_template_sha256": {"$ref": "#/$defs/hash"},
+        "baseline_vars_sha256": {"$ref": "#/$defs/hash"},
+        "firmware_vars_sha256": {"$ref": "#/$defs/hash"},
+        "vm_uuid": {"type": "string", "minLength": 8},
+        "media_sha256": {"$ref": "#/$defs/hash"},
+        "baseline_id": {"type": "string", "minLength": 1},
+        "identity_sha256": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "run_id": {"type": "string", "minLength": 8},
+    "generated_at": {"type": "string", "pattern": "\\+08:00$"},
+    "target": {"type": "string", "minLength": 1},
+    "status": {"enum": ["passed", "failed", "blocked", "not_run", "partial"]},
+    "source_fingerprint": {"$ref": "#/$defs/hash"},
+    "distribution_match": {"type": "boolean"},
+    "windows_runtime_evidence": {"type": "object", "required": ["path", "sha256"], "properties": {"path": {"type": "string", "minLength": 1}, "sha256": {"$ref": "#/$defs/hash"}}},
+    "package": {
+      "type": "object", "required": ["id", "sha256", "version"],
+      "properties": {"id": {"type": "string"}, "version": {"type": "string"}, "sha256": {"$ref": "#/$defs/hash"}}
+    },
+    "system": {
+      "type": "object", "required": ["os", "arch", "boot_id", "environment_type"],
+      "properties": {
+        "os": {"enum": ["windows", "linux", "darwin"]},
+        "arch": {"enum": ["x86_64", "i686", "aarch64", "arm64", "loongarch64"]},
+        "os_isa": {"enum": ["x86_64", "i686", "arm64"]},
+        "identity_process_isa": {"enum": ["x86_64", "i686", "arm64"]},
+        "isa_probe_api": {"enum": ["IsWow64Process2", "IsWow64Process+GetNativeSystemInfo"]},
+        "os_version": {"type": "string"},
+        "secure_boot_enabled": {"type": "boolean"},
+        "tpm_spec_version": {"type": "string"},
+        "installation_requirement_bypasses": {"type": "boolean"},
+        "boot_id": {"type": "string", "minLength": 1},
+        "environment_type": {"enum": ["native-host", "hardware-virtualized", "full-system-emulated", "experimental-runtime", "hosted-runner"]}
+      }
+    },
+    "cases": {
+      "type": "array", "minItems": 1,
+      "items": {
+        "type": "object", "required": ["id", "status", "evidence"],
+        "properties": {
+          "id": {"type": "string"},
+          "status": {"enum": ["passed", "failed", "blocked", "not_run", "partial"]},
+          "evidence": {"type": "array", "items": {"type": "object", "required": ["path", "sha256"], "properties": {"path": {"type": "string"}, "sha256": {"$ref": "#/$defs/hash"}}}}
+        }
+      }
+    },
+    "restart": {"type": "object", "required": ["actual", "boot_id_before", "boot_id_after"], "properties": {"actual": {"type": "boolean"}, "boot_id_before": {"type": "string"}, "boot_id_after": {"type": "string"}}}
+  },
+  "$defs": {"hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}
+}

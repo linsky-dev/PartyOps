@@ -2,8 +2,8 @@
 set -euo pipefail
 umask 077
 
-VERSION='1.4.5-rc.4'
-PACKAGE_VERSION='1.4.5.4'
+VERSION='1.4.5-rc.6'
+PACKAGE_VERSION='1.4.5.6'
 MODE='release'
 TARGET_ARCH=''
 while (($#)); do
@@ -53,8 +53,11 @@ export MACOSX_DEPLOYMENT_TARGET='11.0'
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 OUTPUT_DIR="$ROOT/artifacts/release-$VERSION-final"
+python3.11 "$ROOT/scripts/verify-full-function-gate.py" verify --root "$ROOT" --scope package
 OCR_RUNTIME="${PARTYOPS_MACOS_OCR_RUNTIME:-}"
 LLAMA_RUNTIME="${PARTYOPS_MACOS_LLAMA_RUNTIME:-}"
+OFFICE_RUNTIME="${PARTYOPS_MACOS_OFFICE_RUNTIME:-}"
+FORMATTER_RUNTIME="${PARTYOPS_MACOS_FORMATTER_RUNTIME:-}"
 for command in python3.11 uv node corepack sips iconutil pkgbuild pkgutil spctl xcrun \
   curl ditto gzip tar shasum file otool codesign make perl; do
   if ! command -v "$command" >/dev/null 2>&1; then
@@ -71,6 +74,40 @@ if [[ ! -d "$LLAMA_RUNTIME" ]] || [[ ! -f "$LLAMA_RUNTIME/llama-server" ]]; then
   printf '%s\n' '[MACOS_LLM_RUNTIME_MISSING] 请提供当前架构、可审计的 llama.cpp 运行时目录。' >&2
   exit 2
 fi
+if [[ ! -x "$OFFICE_RUNTIME/program/soffice" ]] ||
+  [[ ! -x "$OFFICE_RUNTIME/LibreOffice.app/Contents/MacOS/soffice" ]] ||
+  [[ ! -f "$OFFICE_RUNTIME/LibreOffice.app/Contents/Info.plist" ]] ||
+  [[ ! -f "$OFFICE_RUNTIME/SOURCE.json" ]] ||
+  [[ ! -d "$OFFICE_RUNTIME/licenses" ]]; then
+  printf '%s\n' '[MACOS_OFFICE_RUNTIME_MISSING] 请提供当前架构、包含来源清单和许可证的 LibreOffice headless 运行时。' >&2
+  exit 2
+fi
+if [[ ! -d "$FORMATTER_RUNTIME" ]] ||
+  [[ ! -x "$FORMATTER_RUNTIME/partyops-document-formatter-host" ]] ||
+  [[ ! -f "$FORMATTER_RUNTIME/source-host.json" ]]; then
+  printf '%s\n' '[MACOS_FORMATTER_RUNTIME_MISSING] 请提供当前架构、已通过真实 WPS 金样测试的原源码排版宿主。' >&2
+  exit 2
+fi
+formatter_description="$(file -b "$FORMATTER_RUNTIME/partyops-document-formatter-host")"
+if [[ "$formatter_description" != *Mach-O* ]] ||
+  [[ "$formatter_description" != *"$TARGET_ARCH"* ]]; then
+  printf '[MACOS_FORMATTER_RUNTIME_ARCH_MISMATCH] 排版宿主不是 %s Mach-O。\n' \
+    "$TARGET_ARCH" >&2
+  exit 2
+fi
+python3.11 "$ROOT/scripts/validate-source-formatter-runtime.py" \
+  --runtime "$FORMATTER_RUNTIME" --platform macos --architecture "$TARGET_ARCH"
+OFFICE_RUNTIME="$(cd "$OFFICE_RUNTIME" && pwd -P)"
+while IFS= read -r -d '' link; do
+  resolved="$(python3.11 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$link")"
+  case "$resolved" in
+    "$OFFICE_RUNTIME"/*) ;;
+    *)
+      printf '[MACOS_OFFICE_RUNTIME_SYMLINK_INVALID] LibreOffice 运行时包含越界或损坏链接：%s\n' "$link" >&2
+      exit 2
+      ;;
+  esac
+done < <(/usr/bin/find "$OFFICE_RUNTIME" -type l -print0)
 for binary in "$OCR_RUNTIME/bin/tesseract" "$LLAMA_RUNTIME/llama-server"; do
   description="$(file -b "$binary")"
   if [[ "$description" != *Mach-O* ]] || [[ "$description" != *"$TARGET_ARCH"* ]]; then
@@ -78,8 +115,116 @@ for binary in "$OCR_RUNTIME/bin/tesseract" "$LLAMA_RUNTIME/llama-server"; do
     exit 2
   fi
 done
+office_description="$(file -b "$OFFICE_RUNTIME/LibreOffice.app/Contents/MacOS/soffice")"
+if [[ "$office_description" != *Mach-O* ]] || [[ "$office_description" != *"$TARGET_ARCH"* ]]; then
+  printf '[MACOS_OFFICE_RUNTIME_ARCH_MISMATCH] soffice 不是 %s Mach-O。\n' "$TARGET_ARCH" >&2
+  exit 2
+fi
 
 mkdir -p "$OUTPUT_DIR"
+# 对每个嵌套 Mach-O 和代码目录逐层签名，再签主 App。--deep 只用于最终
+# 验证，不能代替由内向外签名，否则 Python.framework 与主 App 可能出现
+# 不同 Team ID，Finder 会在映射运行时前直接拒绝加载。
+sign_bundle_code() {
+  local identity="$1"; shift
+  local timestamp_args=("$@")
+  while IFS= read -r -d '' candidate; do
+    [[ "$(file -b "$candidate" 2>/dev/null || true)" == *Mach-O* ]] || continue
+    if [[ "$candidate" == "$APP/Contents/Resources/office-runtime/"* ]]; then
+      # LibreOffice 上游入口和框架使用自身经过验证的 Hardened Runtime 标志
+      # 与权限组合。若统一强加 PartyOps 的 runtime 标志，soffice 会在加载
+      # Frameworks 时被 AMFI 以 SIGKILL 终止。重签身份仍统一，但完整保留
+      # 上游 entitlements 与代码签名 flags。
+      codesign --force --preserve-metadata=entitlements,flags \
+        "${timestamp_args[@]}" --sign "$identity" "$candidate"
+    else
+      codesign --force --preserve-metadata=entitlements \
+        "${timestamp_args[@]}" --options runtime --sign "$identity" "$candidate"
+    fi
+  # 调用方在签名阶段先生成候选清单，避免把根可执行文件和嵌套入口
+  # 混在同一次签名中；清单本身也作为制品审计证据留在构建临时目录。
+  done <"$MACHO_CANDIDATE_LIST"
+  /usr/bin/find "$APP/Contents" -depth \
+    \( -name '*.framework' -o -name '*.app' -o -name '*.xpc' -o -name '*.bundle' -o -name '*.plugin' \) \
+    -type d -print0 >"$BUNDLE_DIRECTORY_LIST"
+  while IFS= read -r -d '' bundle; do
+    [[ "$bundle" == "$APP" ]] && continue
+    if [[ "$bundle" == "$APP/Contents/Resources/office-runtime/"* ]]; then
+      codesign --force --preserve-metadata=entitlements,flags \
+        "${timestamp_args[@]}" --sign "$identity" "$bundle"
+    else
+      codesign --force "${timestamp_args[@]}" --options runtime --sign "$identity" "$bundle"
+    fi
+  done <"$BUNDLE_DIRECTORY_LIST"
+}
+
+refresh_formatter_manifest_hash() {
+  local formatter_root="$APP/Contents/Resources/formatter-host"
+  python3.11 - "$formatter_root/partyops-document-formatter-host" \
+    "$formatter_root/source-host.json" <<'PY'
+import hashlib
+import json
+from pathlib import Path
+import sys
+
+host, manifest = map(Path, sys.argv[1:])
+record = json.loads(manifest.read_text(encoding="utf-8"))
+record["host_sha256"] = hashlib.sha256(host.read_bytes()).hexdigest()
+manifest.write_text(
+    json.dumps(record, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+    encoding="utf-8",
+)
+PY
+  python3.11 "$ROOT/scripts/validate-source-formatter-runtime.py" \
+    --runtime "$formatter_root" --platform macos --architecture "$TARGET_ARCH"
+}
+
+record_formatter_evidence() {
+  local formatter_root="$APP/Contents/Resources/formatter-host"
+  local evidence_root="$BUILD_ROOT/formatter-evidence"
+  /bin/mkdir -p "$evidence_root"
+  "$VENV/bin/python" "$ROOT/scripts/verify-document-formatter-parity.py" \
+    --root "$ROOT" \
+    --host "$formatter_root/partyops-document-formatter-host" \
+    --office-bin "$APP/Contents/Resources/office-runtime/LibreOffice.app/Contents/MacOS/soffice" \
+    --workspace "$evidence_root/parity-workspace" \
+    --evidence "$evidence_root/parity.json" \
+    --platform macos --architecture "$TARGET_ARCH"
+  "$VENV/bin/python" "$ROOT/scripts/verify-document-formatter-features-e2e.py" \
+    --root "$ROOT" \
+    --host "$formatter_root/partyops-document-formatter-host" \
+    --workspace "$evidence_root/features-workspace" \
+    --evidence "$evidence_root/features.json" \
+    --platform macos --architecture "$TARGET_ARCH"
+  "$VENV/bin/python" "$ROOT/scripts/verify-formatter-runtime-evidence.py" \
+    --root "$ROOT" \
+    --runtime "$formatter_root" \
+    --platform macos --architecture "$TARGET_ARCH" \
+    --parity-evidence "$evidence_root/parity.json" \
+    --features-evidence "$evidence_root/features.json" \
+    --output "$formatter_root/runtime-evidence.json"
+}
+
+verify_team_ids() {
+  local mode="$1" expected=''
+  if [[ "$mode" == 'release' ]]; then
+    expected="$(codesign --display --verbose=4 "$APP" 2>&1 | awk -F= '/TeamIdentifier=/{print $2; exit}')"
+    [[ -n "$expected" && "$expected" != 'not set' ]] || { printf '%s\n' '[MACOS_TEAM_ID_MISSING] 正式 App 未发现 Team ID。' >&2; exit 2; }
+  fi
+  while IFS= read -r -d '' candidate; do
+    [[ "$(file -b "$candidate" 2>/dev/null || true)" == *Mach-O* ]] || continue
+    team="$(codesign --display --verbose=4 "$candidate" 2>&1 | awk -F= '/TeamIdentifier=/{print $2; exit}')"
+    if [[ "$mode" == 'release' && "$team" != "$expected" ]]; then
+      printf '[MACOS_TEAM_ID_MISMATCH] %s 的 Team ID 为 %s，期望 %s。\n' "$candidate" "${team:-未签名}" "$expected" >&2
+      exit 2
+    fi
+    if [[ "$mode" != 'release' && -n "$team" && "$team" != 'not set' ]]; then
+      printf '[MACOS_TEAM_ID_MISMATCH] 未签名候选仍含非空 Team ID：%s=%s。\n' "$candidate" "$team" >&2
+      exit 2
+    fi
+  done <"$ALL_BUNDLE_FILE_LIST"
+}
+
 if [[ "$MODE" == 'release' ]]; then
   OUTPUT="$OUTPUT_DIR/PartyOps_${VERSION}_macos_${RELEASE_ARCH}.pkg"
   if [[ -z "${PARTYOPS_MACOS_APPLICATION_IDENTITY:-}" ]] ||
@@ -91,7 +236,7 @@ if [[ "$MODE" == 'release' ]]; then
 elif [[ "$MODE" == 'unsigned-candidate' ]]; then
   # 没有 Developer ID 时仍只允许在真实、同架构 Mac 上生成候选。所有
   # Mach-O 使用 ad-hoc 签名，官网与 Release 必须明确标注未公证。
-  OUTPUT="$OUTPUT_DIR/PartyOps_${VERSION}_macos_${RELEASE_ARCH}.pkg"
+  OUTPUT="$OUTPUT_DIR/PartyOps_${VERSION}_macos_${RELEASE_ARCH}-UNSIGNED-UNNOTARIZED-CANDIDATE.pkg"
 else
   OUTPUT="$OUTPUT_DIR/PartyOps_${VERSION}_macos_${RELEASE_ARCH}-UNSIGNED-DO-NOT-PUBLISH.pkg"
 fi
@@ -292,6 +437,8 @@ export PARTYOPS_MACOS_TARGET_ARCH="$TARGET_ARCH"
   --distpath "$BUILD_ROOT/dist" --workpath "$BUILD_ROOT/work" \
   "$SCRIPT_DIR/partyops.spec"
 APP="$BUILD_ROOT/dist/PartyOps.app"
+PYINSTALLER_FILE_LIST="$BUILD_ROOT/pyinstaller-files.bin"
+/usr/bin/find "$APP/Contents" -type f -print0 >"$PYINSTALLER_FILE_LIST"
 # Intel cryptography 必须把固定 OpenSSL 静态收入 Rust 扩展；如果这里仍出现
 # libssl/libcrypto 动态依赖，用户电脑就可能再次遇到构建库与随包库不一致。
 CRYPTOGRAPHY_RUST_BINDING="$(
@@ -323,7 +470,7 @@ if [[ -f "$LEGACY_OPENSSL_PROVIDER" ]]; then
       legacy_inbound_dependency="$candidate"
       break
     fi
-  done < <(/usr/bin/find "$APP/Contents" -type f -print0)
+  done <"$PYINSTALLER_FILE_LIST"
   if [[ -n "$legacy_inbound_dependency" ]]; then
     printf '[MACOS_OPENSSL_LEGACY_PROVIDER_REFERENCED] %s 仍依赖 legacy.dylib。\n' \
       "$legacy_inbound_dependency" >&2
@@ -365,6 +512,15 @@ done
 /bin/mkdir -p "$APP/Contents/Resources/licenses"
 /usr/bin/install -m 0644 "$LLAMA_RUNTIME/licenses/llama.cpp-LICENSE" \
   "$APP/Contents/Resources/licenses/llama.cpp-LICENSE"
+/usr/bin/ditto "$OFFICE_RUNTIME" "$APP/Contents/Resources/office-runtime"
+/bin/mkdir -p "$APP/Contents/Resources/formatter-host"
+/usr/bin/ditto "$FORMATTER_RUNTIME" "$APP/Contents/Resources/formatter-host"
+/usr/bin/chmod 0755 "$APP/Contents/Resources/formatter-host/partyops-document-formatter-host"
+/usr/bin/chmod 0644 \
+  "$APP/Contents/Resources/formatter-host/source-host.json" \
+  "$APP/Contents/Resources/formatter-host/word-vtable-map.json" \
+  "$APP/Contents/Resources/formatter-host/LICENSE-WPS-SDK.txt" \
+  "$APP/Contents/Resources/formatter-host/LICENSE-MONO-RUNTIME.txt"
 # 生产更新器只信任随 PKG 安装且由 root 保护的应用资源。公钥不是可执行
 # 代码，必须放入 Apple 约定的 Resources；放在 MacOS 会被 codesign 当成
 # 未签名嵌套代码。PyInstaller 对 datas 的重排位置也不是运行时契约，因此
@@ -381,8 +537,22 @@ fi
   printf '%s\n' '[MACOS_UPDATE_TRUST_ROOT_COPY_FAILED] 应用内更新根公钥回读不一致。' >&2
   exit 2
 }
+ALL_BUNDLE_FILE_LIST="$BUILD_ROOT/all-bundle-files.bin"
+BUNDLE_DIRECTORY_LIST="$BUILD_ROOT/bundle-directories.bin"
+/usr/bin/find "$APP/Contents" -type f -print0 >"$ALL_BUNDLE_FILE_LIST"
+OCR_BUNDLE_STDERR="$BUILD_ROOT/tesseract-bundle.stderr"
 TESSDATA_PREFIX="$APP/Contents/Resources/ocr/tessdata" \
-  "$APP/Contents/MacOS/tesseract" --list-langs | /usr/bin/grep -qx 'chi_sim'
+  "$APP/Contents/MacOS/tesseract" --list-langs \
+  2>"$OCR_BUNDLE_STDERR" | /usr/bin/grep -qx 'chi_sim' || {
+    printf '%s\n' '[MACOS_OCR_BUNDLE_SELFTEST_FAILED] App 内中文 OCR 运行时无法加载。' >&2
+    /bin/cat "$OCR_BUNDLE_STDERR" >&2
+    exit 2
+  }
+if /usr/bin/grep -Eq 'Error in pixReadMem(Tiff)?|function not present' "$OCR_BUNDLE_STDERR"; then
+  printf '%s\n' '[MACOS_OCR_BUNDLE_DECODER_INCOMPLETE] App 内 OCR 缺少 TIFF 解码能力。' >&2
+  /bin/cat "$OCR_BUNDLE_STDERR" >&2
+  exit 2
+fi
 # Intel 首次加载嵌入的 Metal 运行时在原生 Runner 上实测可能超过 30 秒；
 # 使用 120 秒有界探测，既不把正确程序误判为失败，也不允许构建无限挂死。
 "$VENV/bin/python" - "$APP/Contents/MacOS/llama-server" <<'PY'
@@ -396,8 +566,6 @@ subprocess.run(
     timeout=120,
 )
 PY
-"$SCRIPT_DIR/validate-bundle.sh" "$APP" "$TARGET_ARCH"
-
 # PKG 载荷只携带 App 的不透明 ZIP，不直接携带 .app 目录。pkgbuild 会递归
 # 识别 PyInstaller 内嵌的 Python.framework，并在安装时按“可重定位组件”改写
 # Bundle；结果可能是 App 结构损坏，或只安装空目录。postinstall 会先完整
@@ -452,19 +620,18 @@ if [[ "$MODE" == 'release' ]]; then
   # CFBundleExecutable 是整个 App 的主签名边界。必须先签完新加入的
   # tesseract、llama-server 等嵌套 Mach-O，再签主入口；否则没有预存
   # 签名的全新运行时会令 codesign 在主入口阶段提前失败。
-  /usr/bin/find "$APP/Contents" -type f ! -path "$BUNDLE_EXECUTABLE" -print0 \
-    >"$MACHO_CANDIDATE_LIST"
-  while IFS= read -r -d '' candidate; do
-    [[ "$(file -b "$candidate" 2>/dev/null || true)" == *Mach-O* ]] || continue
-    codesign --force --timestamp --options runtime \
-      --sign "$PARTYOPS_MACOS_APPLICATION_IDENTITY" "$candidate"
-  done <"$MACHO_CANDIDATE_LIST"
+  /usr/bin/find "$APP/Contents" -type f ! -path "$BUNDLE_EXECUTABLE" -print0 >"$MACHO_CANDIDATE_LIST"
+  sign_bundle_code "$PARTYOPS_MACOS_APPLICATION_IDENTITY" --timestamp
+  refresh_formatter_manifest_hash
+  record_formatter_evidence
   codesign --force --timestamp --options runtime \
     --sign "$PARTYOPS_MACOS_APPLICATION_IDENTITY" "$BUNDLE_EXECUTABLE"
   codesign --force --timestamp --options runtime \
     --entitlements "$SCRIPT_DIR/entitlements.plist" \
     --sign "$PARTYOPS_MACOS_APPLICATION_IDENTITY" "$APP"
+  "$SCRIPT_DIR/validate-bundle.sh" "$APP" "$TARGET_ARCH"
   codesign --verify --deep --strict --verbose=2 "$APP"
+  verify_team_ids release
   APP_NOTARY_ARCHIVE="$BUILD_ROOT/PartyOps-notary.zip"
   ditto -c -k --keepParent "$APP" "$APP_NOTARY_ARCHIVE"
   xcrun notarytool submit "$APP_NOTARY_ARCHIVE" \
@@ -494,16 +661,16 @@ if [[ "$MODE" == 'release' ]]; then
 elif [[ "$MODE" == 'unsigned-candidate' ]]; then
   BUNDLE_EXECUTABLE="$APP/Contents/MacOS/partyops-desktop"
   MACHO_CANDIDATE_LIST="$BUILD_ROOT/macho-candidates-adhoc.bin"
-  /usr/bin/find "$APP/Contents" -type f ! -path "$BUNDLE_EXECUTABLE" -print0 \
-    >"$MACHO_CANDIDATE_LIST"
-  while IFS= read -r -d '' candidate; do
-    [[ "$(file -b "$candidate" 2>/dev/null || true)" == *Mach-O* ]] || continue
-    codesign --force --options runtime --sign - "$candidate"
-  done <"$MACHO_CANDIDATE_LIST"
+  /usr/bin/find "$APP/Contents" -type f ! -path "$BUNDLE_EXECUTABLE" -print0 >"$MACHO_CANDIDATE_LIST"
+  sign_bundle_code -
+  refresh_formatter_manifest_hash
+  record_formatter_evidence
   codesign --force --options runtime --sign - "$BUNDLE_EXECUTABLE"
   codesign --force --options runtime \
     --entitlements "$SCRIPT_DIR/entitlements.plist" --sign - "$APP"
+  "$SCRIPT_DIR/validate-bundle.sh" "$APP" "$TARGET_ARCH"
   codesign --verify --deep --strict --verbose=2 "$APP"
+  verify_team_ids unsigned
   stage_pkg_payload
   pkgbuild --root "$PAYLOAD_ROOT" \
     --scripts "$PKG_SCRIPTS" --install-location / --ownership recommended \
@@ -526,7 +693,7 @@ Path(path).write_text(
         {
             "format_version": 1,
             "product": "PartyOps",
-            "version": "1.4.5-rc.4",
+            "version": "1.4.5-rc.6",
             "architecture": architecture,
             "source_commit": source_commit,
             "workflow_commit": workflow_commit,
@@ -547,6 +714,9 @@ Path(path).write_text(
 )
 PY
 else
+  refresh_formatter_manifest_hash
+  record_formatter_evidence
+  "$SCRIPT_DIR/validate-bundle.sh" "$APP" "$TARGET_ARCH"
   stage_pkg_payload
   pkgbuild --root "$PAYLOAD_ROOT" \
     --scripts "$PKG_SCRIPTS" --install-location / --ownership recommended \

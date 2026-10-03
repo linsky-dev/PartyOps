@@ -960,7 +960,7 @@ def test_personal_data_dir_fixed_drive_and_mode_launch_branches(
         "PARTYOPS_PORT": "18775",
         "PARTYOPS_DATA_DIR": str(data_dir),
     }
-    monkeypatch.setattr(setup_wizard, "load_host_environment", lambda _p: personal_env)
+    monkeypatch.setattr(setup_wizard, "load_host_environment", lambda _p, **_kwargs: personal_env)
 
     class _Connection:
         def __enter__(self):
@@ -994,7 +994,7 @@ def test_personal_data_dir_fixed_drive_and_mode_launch_branches(
         "PARTYOPS_DATA_DIR": str(data_dir),
     }
     spawned: list[dict[str, str]] = []
-    monkeypatch.setattr(setup_wizard, "load_host_environment", lambda _p: host_env)
+    monkeypatch.setattr(setup_wizard, "load_host_environment", lambda _p, **_kwargs: host_env)
     monkeypatch.setattr(setup_wizard, "install_host_autostart", lambda _p: None)
     monkeypatch.setattr(
         setup_wizard,

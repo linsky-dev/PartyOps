@@ -14,7 +14,7 @@ from .backups import create_backup
 from .compat import to_thread
 from .config import get_settings
 from .database import db_runtime
-from .enums import UserRole
+from .enums import DeviceStatus, UserRole
 from .local_ai import llm_runtime
 from .models import (
     AutomationRule,
@@ -41,6 +41,7 @@ from .recommendations import index_semantic_batch, refresh_rule_recommendations
 from .recurrence import run_due_rules
 from .routers.business import generate_due_recurring_meetings
 from .storage import purge_expired_deleted_attachments
+from .time_utils import beijing_now
 
 
 def cleanup_transfer_storage(db, settings) -> int:
@@ -425,7 +426,7 @@ def _run_scheduler_cycle(settings, now: datetime, last_backup_day: str | None) -
             if device.status.value in {"revoked", "quarantined", "updating"}:
                 continue
             if not device.last_seen_at:
-                device.status = "offline"
+                device.status = DeviceStatus.OFFLINE
                 continue
             last_seen = (
                 device.last_seen_at
@@ -433,7 +434,7 @@ def _run_scheduler_cycle(settings, now: datetime, last_backup_day: str | None) -
                 else device.last_seen_at.replace(tzinfo=timezone.utc)
             )
             age = (heartbeat_now - last_seen).total_seconds()
-            device.status = "offline" if age > 45 else "stale" if age > 30 else "online"
+            device.status = DeviceStatus.OFFLINE if age > 45 else DeviceStatus.STALE if age > 30 else DeviceStatus.ONLINE
         cleanup_transfer_storage(db, settings)
         cleanup_runtime_retention(db, settings, now=heartbeat_now)
         db.commit()
@@ -450,7 +451,7 @@ async def scheduler_loop(stop_event: asyncio.Event) -> None:
             last_backup_day = await to_thread(
                 _run_scheduler_cycle,
                 settings,
-                datetime.now(),
+                beijing_now(),
                 last_backup_day,
             )
         except Exception:

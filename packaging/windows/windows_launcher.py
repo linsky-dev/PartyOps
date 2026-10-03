@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import stat
 import subprocess
 import sys
 import time
@@ -16,6 +17,8 @@ from pathlib import Path
 from app import __version__
 from app.setup_wizard import (
     HostStartupError,
+    _personal_preflight_io_error,
+    _preflight_windows_runtime_dependencies,
     _start_windows_host_service,
     clear_windows_client_autostart,
     launch_personal,
@@ -27,7 +30,9 @@ from app.windows_host_status import (
     RUNTIME_DEPENDENCY_MISSING,
     RUNTIME_EXECUTABLE_MISSING,
     RUNTIME_NATIVE_CRASH,
+    RUNTIME_PACKAGE_MISMATCH,
     RUNTIME_PERMISSION_DENIED,
+    RUNTIME_SYSTEM_UPDATE_REQUIRED,
     classify_runtime_failure,
 )
 
@@ -43,6 +48,24 @@ def _append_launcher_diagnostic(log_path: Path, message: str) -> None:
             stream.write(message.rstrip() + "\n")
     except OSError:
         return
+
+
+def _persist_user_runtime_root(runtime: Path, local: Path) -> None:
+    """为旧版向导保留当前安装根路径，避免升级后从旧快捷方式找不到启动器。"""
+
+    marker = local / "install-root.txt"
+    temporary = marker.with_suffix(".tmp")
+    try:
+        if marker.is_symlink() or (marker.exists() and not marker.is_file()):
+            return
+        local.mkdir(parents=True, exist_ok=True)
+        temporary.write_text(str(runtime.resolve()), encoding="utf-8")
+        os.replace(temporary, marker)
+    except OSError:
+        try:
+            temporary.unlink(missing_ok=True)
+        except OSError:
+            pass
 
 
 def ensure_user_protocols(runtime: Path, log_path: Path, registry=None) -> list[str]:
@@ -89,7 +112,13 @@ def ensure_user_protocols(runtime: Path, log_path: Path, registry=None) -> list[
                 except OSError:
                     existing_command = ""
                 owner_conflicts = existing_owner not in {"", PARTYOPS_APP_ID}
-                command_conflicts = bool(existing_command) and existing_command != command
+                # 同一 AppId 的旧安装路径属于 PartyOps 自身，升级后必须更新；
+                # 只有没有归属标记且命令不同，才按第三方协议冲突拒绝覆盖。
+                command_conflicts = (
+                    not existing_owner
+                    and bool(existing_command)
+                    and existing_command != command
+                )
                 if owner_conflicts or command_conflicts:
                     warning = (
                         f"[PROTOCOL_USER_REGISTRY_CONFLICT] {protocol} 已由其他程序注册；"
@@ -282,7 +311,7 @@ def launch_wizard_and_wait(runtime: Path, local: Path, arguments: list[str]) -> 
     command = [str(runtime / "PartyOpsWizard.exe"), "--no-browser", *arguments]
     try:
         with log_path.open("ab") as log:
-            process = subprocess.Popen(  # noqa: S603 - 固定随包向导入口。
+            process = subprocess.Popen(
                 command,
                 stdin=subprocess.DEVNULL,
                 stdout=log,
@@ -433,12 +462,40 @@ def prepare_client_page(runtime: Path, config: Path, local: Path) -> bool:
     return open_browser_or_explain(versioned_browser_url(url))
 
 
+def _configuration_read_failed(path: Path, local: Path, error: OSError, *, background: bool) -> int:
+    """已有配置拒读时保留原文件；后台也必须返回失败并保存稳定诊断。"""
+    failure = _personal_preflight_io_error("已保存的模式配置", path, error)
+    message = f"{failure}\n原配置保持不变，未启动首次配置向导。\n故障详情：{failure.detail}"
+    log_path = local / "launcher.log"
+    _append_launcher_diagnostic(log_path, message)
+    if not background:
+        show_launch_failure(message + f"\n诊断日志：{log_path}")
+    return 1
+
+
 def main() -> int:
     background = "--background" in sys.argv[1:]
     runtime = Path(sys.executable).resolve().parent
     local = (
         Path(os.getenv("LOCALAPPDATA", Path.home() / "AppData" / "Local")) / "PartyOps"
     )
+    _persist_user_runtime_root(runtime, local)
+    try:
+        # 配置向导本身能启动，不代表个人主程序的 Python/SQLite/VC 依赖完整。
+        # 每次桌面入口先按安装清单复核，避免把损坏包写成有效模式配置后才失败。
+        _preflight_windows_runtime_dependencies(runtime / "PartyOps.exe")
+    except HostStartupError as exc:
+        detail = f"\n故障详情：{exc.detail[-800:]}" if exc.detail else ""
+        message = (
+            f"PartyOps 安装运行时未通过启动前检查（诊断码 {exc.code}）。\n\n"
+            f"{exc}{detail}\n"
+            "请使用官网下载的同平台、同位数当前版本安装包执行修复安装；"
+            "业务数据不会被删除。"
+        )
+        _append_launcher_diagnostic(local / "launcher.log", message)
+        if not background:
+            show_launch_failure(message + f"\n诊断日志：{local / 'launcher.log'}")
+        return 1
     ensure_user_protocols(runtime, local / "launcher.log")
     pending_switch = (
         Path(os.getenv("PROGRAMDATA", "C:/ProgramData"))
@@ -451,13 +508,15 @@ def main() -> int:
             launch_wizard_and_wait(runtime, local, [])
         return 1
     mode_path = local / "mode.json"
-    if not mode_path.is_file():
+    try:
+        mode = json.loads(mode_path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
         if not background:
             return 0 if launch_wizard_and_wait(runtime, local, []) else 1
         return 0
-    try:
-        mode = json.loads(mode_path.read_text(encoding="utf-8"))
-    except (OSError, ValueError, json.JSONDecodeError):
+    except OSError as exc:
+        return _configuration_read_failed(mode_path, local, exc, background=background)
+    except (ValueError, json.JSONDecodeError):
         if not background:
             return 0 if launch_wizard_and_wait(runtime, local, []) else 1
         return 0
@@ -481,7 +540,13 @@ def main() -> int:
         return 0 if prepare_client_page(runtime, config, local) else 1
     if mode.get("mode") == "personal":
         config = Path(str(mode.get("config_path") or local / "personal.env"))
-        if not config.is_file():
+        try:
+            config_exists = stat.S_ISREG(config.stat().st_mode)
+        except FileNotFoundError:
+            config_exists = False
+        except OSError as exc:
+            return _configuration_read_failed(config, local, exc, background=background)
+        if not config_exists:
             if not background:
                 return (
                     0
@@ -493,7 +558,10 @@ def main() -> int:
             return 1
         personal_log = local / "launcher.log"
         try:
-            personal_values = load_host_environment(config)
+            try:
+                personal_values = load_host_environment(config, inherit_environment=False)
+            except OSError as exc:
+                return _configuration_read_failed(config, local, exc, background=background)
             personal_log = (
                 Path(personal_values["PARTYOPS_DATA_DIR"]) / "launcher.log"
             )
@@ -510,6 +578,8 @@ def main() -> int:
                     message = {
                         RUNTIME_EXECUTABLE_MISSING: "PartyOps 主程序缺失，请使用当前安装包执行修复安装。",
                         RUNTIME_DEPENDENCY_MISSING: "Windows 缺少 PartyOps 所需 DLL 或系统 API，请执行修复安装并复制诊断摘要。",
+                        RUNTIME_PACKAGE_MISMATCH: "安装包与当前 Windows 版本不匹配；Win7 必须使用文件名含 windows7 的专用包。",
+                        RUNTIME_SYSTEM_UPDATE_REQUIRED: "Windows 7 缺少安全 DLL 加载更新；请安装 KB2533623 或后续汇总更新并重启。",
                         RUNTIME_BINARY_INCOMPATIBLE: "PartyOps 程序架构或系统 API 与当前 Windows 不兼容，请安装匹配的 x86/x64 版本。",
                         RUNTIME_NATIVE_CRASH: "PartyOps 原生运行时在进入业务代码前异常退出，请复制诊断摘要。",
                         RUNTIME_PERMISSION_DENIED: "当前账号无法读取或启动 PartyOps 运行文件，请检查安全软件和安装目录权限。",
@@ -517,9 +587,12 @@ def main() -> int:
                 else:
                     code = "PERSONAL_CONFIG_INVALID"
                     message = "个人模式配置无法读取，系统没有继续启动。"
+                safe_detail = ""
+                if isinstance(exc, HostStartupError) and exc.detail:
+                    safe_detail = f"\n故障详情：{exc.detail[-800:]}"
                 show_launch_failure(
                     f"个人模式未能启动（诊断码 {code}）。\n\n"
-                    f"{message}\n诊断日志：{personal_log}"
+                    f"{message}{safe_detail}\n诊断日志：{personal_log}"
                 )
                 launch_wizard_and_wait(
                     runtime, local, ["--initial-role", "personal"]

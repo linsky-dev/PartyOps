@@ -612,9 +612,12 @@ def add_comment(
             select(TaskParticipant.user_id).where(TaskParticipant.task_id == task.id)
         ).all()
     )
-    recipients.update({task.owner_id, task.reviewer_id, parent.author_id if parent else None})
+    recipients.update(
+        recipient_id
+        for recipient_id in (task.owner_id, task.reviewer_id, parent.author_id if parent else None)
+        if recipient_id is not None
+    )
     recipients.update(mentioned_ids)
-    recipients.discard(None)
     recipients.discard(user.id)
     excerpt = comment.body[:160]
     for recipient_id in recipients:

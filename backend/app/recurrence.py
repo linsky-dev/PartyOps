@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import calendar
+from collections.abc import Sequence
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
@@ -191,13 +192,13 @@ def instantiate_template(
     internal_due_at: datetime | None = None,
     recurrence_rule: RecurrenceRule | None = None,
     previous_task: Task | None = None,
-) -> object:
-    steps = db.scalars(
+) -> Task:
+    steps: Sequence[TemplateStep | TaskStep] = db.scalars(
         select(TemplateStep)
         .where(TemplateStep.template_id == template.id)
         .order_by(TemplateStep.sort_order)
     ).all()
-    materials = db.scalars(
+    materials: Sequence[TemplateMaterial | MaterialItem] = db.scalars(
         select(TemplateMaterial).where(TemplateMaterial.template_id == template.id)
     ).all()
     if previous_task:

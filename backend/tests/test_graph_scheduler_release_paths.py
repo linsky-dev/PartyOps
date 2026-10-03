@@ -115,9 +115,36 @@ def test_describe_object_enforces_every_object_boundary(monkeypatch) -> None:
         object_graph.describe_object(db, ObjectType.WORKSPACE_FILE, "file-1", staff)
     assert denied.value.code == "OBJECT_NOT_FOUND"
 
+    objects[(WorkspaceFile, "file-1")].in_scope = True
+    saved_root = objects.pop((WorkspaceRoot, "root-1"))
+    with pytest.raises(ProblemException):
+        object_graph.describe_object(db, ObjectType.WORKSPACE_FILE, "file-1", staff)
+    objects[(WorkspaceRoot, "root-1")] = saved_root
+    saved_root.enabled = False
+    with pytest.raises(ProblemException):
+        object_graph.describe_object(db, ObjectType.WORKSPACE_FILE, "file-1", staff)
+    saved_root.enabled = True
+    saved_root.approval_status = "pending"
+    with pytest.raises(ProblemException):
+        object_graph.describe_object(db, ObjectType.WORKSPACE_FILE, "file-1", staff)
+    saved_root.approval_status = "approved"
+
     objects[(TopicSpace, "topic-1")].owner_id = "other"
     with pytest.raises(ProblemException):
         object_graph.describe_object(db, ObjectType.TOPIC, "topic-1", staff)
+
+    # 所有可选对象类型缺失时均统一返回不可枚举的 404，而不是泄露类型差异。
+    for kind, object_id in (
+        (ObjectType.ARCHIVE_RECORD, "archive-missing"),
+        (ObjectType.JOURNAL, "journal-missing"),
+        (ObjectType.PERIOD_REPORT, "report-missing"),
+        (ObjectType.KNOWLEDGE, "knowledge-missing"),
+        (ObjectType.CONTACT, "contact-missing"),
+        (ObjectType.TOPIC, "topic-missing"),
+    ):
+        with pytest.raises(ProblemException) as missing:
+            object_graph.describe_object(db, kind, object_id, staff)
+        assert missing.value.code == "OBJECT_NOT_FOUND"
 
 
 def test_visible_links_filters_inaccessible_related_objects(monkeypatch) -> None:

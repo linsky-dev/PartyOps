@@ -13,7 +13,9 @@ from docx import Document
 from fastapi import APIRouter, Depends, Header, Request, Response, status
 from fastapi.responses import FileResponse, StreamingResponse
 from openpyxl import Workbook
+from openpyxl.cell.cell import Cell
 from openpyxl.styles import Alignment, Font
+from openpyxl.worksheet.worksheet import Worksheet
 from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -36,6 +38,7 @@ from ..models import (
 )
 from ..party_development import (
     NATIONAL_MATERIALS,
+    NODE_LABELS,
     PHASE_LABELS,
     calculate_party_development,
     calculate_reference_plan,
@@ -68,10 +71,19 @@ from ..schemas import (
 )
 from ..security import get_current_user, require_admin
 from ..spreadsheet_security import safe_spreadsheet_row
+from ..time_utils import beijing_iso
 from .router_utils import client_ip, parse_if_match
 
 router = APIRouter(tags=["party-development"])
 settings = get_settings()
+
+
+@typing.overload
+def _as_datetime(value: date) -> datetime: ...
+
+
+@typing.overload
+def _as_datetime(value: None) -> None: ...
 
 
 def _as_datetime(value: date | None) -> datetime | None:
@@ -80,6 +92,14 @@ def _as_datetime(value: date | None) -> datetime | None:
 
 def _as_date(value: datetime | None) -> date | None:
     return value.date() if value else None
+
+
+@typing.overload
+def _aware(value: datetime) -> datetime: ...
+
+
+@typing.overload
+def _aware(value: None) -> None: ...
 
 
 def _aware(value: datetime | None) -> datetime | None:
@@ -139,7 +159,7 @@ def _case_payload(
     return PartyDevelopmentCalculateRequest(
         name=item.name,
         application_date=item.application_at.date(),
-        actual_dates=PartyDevelopmentActualDates(**actual_values),
+        actual_dates=PartyDevelopmentActualDates.model_validate(actual_values),
     )
 
 
@@ -439,7 +459,7 @@ def create_case(
         "name": profile.name,
         "version": profile.version,
         "assumptions": dict(profile.assumptions),
-        "captured_at": utcnow().isoformat(),
+        "captured_at": beijing_iso(utcnow()),
     }
     item = PartyDevelopmentCase(
         party_committee=payload.party_committee.strip(),
@@ -614,7 +634,7 @@ def create_case_from_calculation(
             "name": profile.name,
             "version": profile.version,
             "assumptions": dict(profile.assumptions),
-            "captured_at": utcnow().isoformat(),
+            "captured_at": beijing_iso(utcnow()),
         },
         created_by=user.id,
     )
@@ -668,11 +688,11 @@ def get_case_timeline(
             visual_state = "upcoming"
         else:
             visual_state = "planned"
-        timeline.append({**milestone, "actual_at": actual, "progress_event": fact, "visual_state": visual_state, "is_reference": bool(milestone["adjusted_at"] or milestone["plan_kind"] == "reference")})
+        timeline.append({**milestone, "title_zh": NODE_LABELS.get(milestone["milestone_type"], "待确认节点"), "actual_at": actual, "progress_event": fact, "visual_state": visual_state, "is_reference": bool(milestone["adjusted_at"] or milestone["plan_kind"] == "reference")})
     present = {row["milestone_type"] for row in timeline}
     for event_type, fact in facts.items():
         if event_type not in present:
-            timeline.append({"id": f"fact:{fact['id']}", "milestone_type": event_type, "actual_at": fact["actual_at"], "legal_earliest_at": None, "legal_deadline_at": None, "planned_at": None, "adjusted_at": None, "legal_basis": "", "planning_basis": "", "plan_kind": "fact", "reminder_days": [], "version": fact["version"], "progress_event": fact, "visual_state": "completed", "is_reference": False})
+            timeline.append({"id": f"fact:{fact['id']}", "milestone_type": event_type, "title_zh": NODE_LABELS.get(event_type, "待确认节点"), "actual_at": fact["actual_at"], "legal_earliest_at": None, "legal_deadline_at": None, "planned_at": None, "adjusted_at": None, "legal_basis": "", "planning_basis": "", "plan_kind": "fact", "reminder_days": [], "version": fact["version"], "progress_event": fact, "visual_state": "completed", "is_reference": False})
     def sort_key(row: dict[str, typing.Any]) -> float:
         value = row["actual_at"] or row["adjusted_at"] or row["legal_deadline_at"] or row["planned_at"]
         if isinstance(value, str):
@@ -976,7 +996,7 @@ def generate_case_milestones(
         generated.add(node.key)
         row = previous.get(node.key)
         is_new = row is None
-        if is_new:
+        if row is None:
             row = PartyDevelopmentMilestone(case_id=item.id, milestone_type=node.key, version=1)
             db.add(row)
         row.actual_at = _as_datetime(node.actual_at)
@@ -1021,7 +1041,10 @@ def patch_milestone(
     row.version += 1
     write_audit(db, user, "party_development.milestone_update", "party_development_milestone", row.id, {"fields": sorted(payload.model_fields_set)}, client_ip(request))
     db.commit()
-    return _case_out(db, db.get(PartyDevelopmentCase, row.case_id))
+    case = db.get(PartyDevelopmentCase, row.case_id)
+    if case is None:
+        raise ProblemException(404, "PARTY_DEVELOPMENT_CASE_NOT_FOUND", "档案不存在", "请刷新后重试。")
+    return _case_out(db, case)
 
 
 @router.get("/party-development/statistics", response_model=dict)
@@ -1155,7 +1178,7 @@ def export_development_cases_xlsx(
 
     cases = list(db.scalars(_export_cases_query(party_committee, party_branch)).all())
     workbook = Workbook()
-    sheet = workbook.active
+    sheet = typing.cast(Worksheet, workbook.active)
     sheet.title = "党员发展情况"
     sheet.append(DEVELOPMENT_EXPORT_HEADERS)
     for row in _development_export_rows(cases):
@@ -1166,7 +1189,7 @@ def export_development_cases_xlsx(
         cell.font = Font(bold=True)
         cell.alignment = Alignment(horizontal="center", vertical="center")
     for column in sheet.columns:
-        letter = column[0].column_letter
+        letter = typing.cast(Cell, column[0]).column_letter
         sheet.column_dimensions[letter].width = min(28, max(12, max(len(str(cell.value or "")) for cell in column) + 2))
     output = io.BytesIO()
     workbook.save(output)

@@ -12,6 +12,7 @@ DATA_DIR_FULL = "DATA_DIR_FULL"
 DATABASE_STARTUP_FAILED = "DATABASE_STARTUP_FAILED"
 UPGRADE_BACKUP_FAILED = "UPGRADE_BACKUP_FAILED"
 SQLITE_RUNTIME_FAILED = "SQLITE_RUNTIME_FAILED"
+INSTANCE_ALREADY_RUNNING = "INSTANCE_ALREADY_RUNNING"
 
 
 PUBLIC_STARTUP_MESSAGES = {
@@ -23,6 +24,7 @@ PUBLIC_STARTUP_MESSAGES = {
     DATABASE_STARTUP_FAILED: "数据库初始化未完成。系统已保留原数据，请打开日志目录并提供诊断编号。",
     UPGRADE_BACKUP_FAILED: "升级前安全备份未完成，系统没有迁移或改动原数据库。请检查磁盘空间、数据目录权限和安全软件拦截后重试。",
     SQLITE_RUNTIME_FAILED: "SQLite 运行时、版本或 FTS5 能力不满足启动要求。系统已保留原数据，请重新安装与当前系统匹配的完整安装包。",
+    INSTANCE_ALREADY_RUNNING: "同一数据目录已有 PartyOps 进程运行。系统没有启动第二个进程，也没有改动或删除业务数据。",
 }
 
 

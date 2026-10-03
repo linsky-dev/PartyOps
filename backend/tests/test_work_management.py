@@ -110,6 +110,27 @@ def test_period_report_auto_fill_removes_legacy_duplicate_task_items(
 def test_period_report_journal_templates_and_status(
     client: TestClient, admin: dict
 ) -> None:
+    # 使用不会与“当前日期 + 相对偏移”类用例重叠的远期周期，并先建立人工
+    # 周报再创建关联事项。关联事项安排在报告投影窗口之外，确保本用例验证
+    # 的是人工新增条目，而不是与异步自动归集竞争同一个来源任务。
+    anchor_at = "6888-09-09T10:00:00+08:00"
+    expected_period_key = period_bounds(
+        PeriodType.WEEK, datetime.fromisoformat(anchor_at)
+    )[0]
+    response = client.post(
+        "/api/v1/period-reports",
+        json={
+            "period_type": "week",
+            "anchor_at": anchor_at,
+            "title": "远期周工作报告",
+            "summary": "周工作汇总",
+            "auto_fill": False,
+        },
+    )
+    assert response.status_code == 201, response.text
+    report = response.json()
+    assert report["period_key"] == expected_period_key
+
     task = create_task(
         client,
         admin["id"],
@@ -118,30 +139,17 @@ def test_period_report_journal_templates_and_status(
         work_area="组织建设",
         annual_focus="年度重点任务",
         reporting_scope="党委会周报",
-        planned_start_at="2026-09-07T09:00:00+08:00",
-        planned_end_at="2026-09-11T17:00:00+08:00",
+        planned_start_at="6888-10-07T09:00:00+08:00",
+        planned_end_at="6888-10-11T17:00:00+08:00",
         steps=[],
         materials=[],
     )
     assert task["work_area"] == "组织建设"
 
-    response = client.post(
-        "/api/v1/period-reports",
-        json={
-            "period_type": "week",
-            "anchor_at": "2026-09-09T10:00:00+08:00",
-            "title": "第 37 周工作报告",
-            "summary": "周工作汇总",
-            "auto_fill": False,
-        },
-    )
-    assert response.status_code == 201, response.text
-    report = response.json()
-    assert report["period_key"] == "2026-W37"
-
+    latest_report = client.get(f"/api/v1/period-reports/{report['id']}").json()
     item = client.post(
         f"/api/v1/period-reports/{report['id']}/items",
-        headers={"If-Match": str(report["version"])},
+        headers={"If-Match": str(latest_report["version"])},
         json={
             "section": "next_plan",
             "source_type": "task",
@@ -186,7 +194,7 @@ def test_period_report_journal_templates_and_status(
     assert journal.status_code == 201, journal.text
     assert journal.json()["actor_name"] == admin["display_name"]
     assert journal.json()["actor_role_label"] == "管理员"
-    assert journal.json()["created_at"].endswith("Z")
+    assert journal.json()["created_at"].endswith("+08:00")
     changed = client.patch(
         f"/api/v1/work-journal/{journal.json()['id']}",
         headers={"If-Match": str(journal.json()["version"])},
@@ -228,7 +236,7 @@ def test_period_report_journal_templates_and_status(
     assert status.status_code == 200, status.text
     body = status.json()
     assert body["app_version"] == get_settings().app_version
-    assert body["schema_revision"] == "0024"
+    assert body["schema_revision"] == "0026"
     assert "sse_clients" in body["service"]
 
 

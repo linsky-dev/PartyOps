@@ -21,7 +21,7 @@ import type {
   User,
   WorkspaceRoot,
 } from "../types";
-import { formatServerTime } from "../utils/datetime";
+import { beijingNowIso, formatServerTime } from "../utils/datetime";
 import { auditActionLabel, auditEntityLabel, zhLabel } from "../utils/labels";
 import PageHelp from "../components/PageHelp.vue";
 
@@ -239,6 +239,13 @@ const loadWarning = ref("");
 const modelPackUploading = ref(false);
 const hardwareProfile = ref<HardwareProfile | null>(null);
 const modelRecommendations = ref<ModelRecommendation[]>([]);
+const visibleModelRecommendations = computed(() => modelRecommendations.value.filter((model) => modelCapabilitySupported(model.kind)));
+const localAIProfileUnavailable = computed(() => {
+  const supported = localAIRuntime.value?.supported_capabilities;
+  return Array.isArray(supported)
+    && !supported.includes("semantic_rerank")
+    && !supported.includes("local_llm");
+});
 const hardwareChecking = ref(false);
 const benchmarkRunning = ref(false);
 const hardwareBenchmark = ref<HardwareBenchmark | null>(null);
@@ -521,6 +528,14 @@ function recommendationColor(status: ModelRecommendation["status"]) {
   return status === "流畅" ? "green" : status === "可用" ? "orange" : "red";
 }
 
+function modelCapabilitySupported(capability: AIModelPack["capabilities"][number] | ModelRecommendation["kind"]): boolean {
+  if (capability === "intent_router") return true;
+  const requiredCapability = capability === "embedding" ? "semantic_rerank" : "local_llm";
+  const supported = localAIRuntime.value?.supported_capabilities;
+  // 旧服务端没有包档能力字段时保持原界面行为；显式空数组则表示不支持本地 AI。
+  return !Array.isArray(supported) || supported.includes(requiredCapability);
+}
+
 async function activateModelPack(pack: AIModelPack, capability: "embedding" | "llm" | "intent_router") {
   try {
     await api.post<AIModelPack>(`/admin/ai/model-packs/${pack.id}/activate?capability=${capability}`);
@@ -622,7 +637,7 @@ async function prepareOnlineUpdate() {
       JSON.stringify({
         packageId: prepared.id,
         version: prepared.version,
-        startedAt: new Date().toISOString(),
+        startedAt: beijingNowIso(),
       }),
     );
     onlineUpdatePollFailures = 0;
@@ -716,7 +731,7 @@ function scheduleUpdatePoll(delay = 3000) {
 function startUpdateMonitor(packageId: string, version: string, includeHost: boolean) {
   localStorage.setItem(
     UPDATE_TASK_KEY,
-    JSON.stringify({ packageId, version, includeHost, startedAt: new Date().toISOString() }),
+    JSON.stringify({ packageId, version, includeHost, startedAt: beijingNowIso() }),
   );
   updatePollFailures = 0;
   updateMissingPolls = 0;
@@ -1648,10 +1663,10 @@ onBeforeUnmount(() => {
                   <div><span>加速后端</span><strong>{{ hardwareProfile.gpu_backends.join('、') || 'CPU' }}</strong><small>{{ hardwareProfile.gpu_memory_mb ? `显存 ${memoryText(hardwareProfile.gpu_memory_mb)}` : '未要求必须有独立显卡' }}</small></div>
                 </div>
                 <a-alert v-if="hardwareBenchmark" :type="hardwareBenchmark.available ? 'success' : 'info'">{{ hardwareBenchmark.message }}<template v-if="hardwareBenchmark.available"> · 本机分值 {{ hardwareBenchmark.score }}</template></a-alert>
-                <details class="model-recommendations">
-                  <summary>查看从基础到旗舰的 {{ modelRecommendations.length }} 个模型建议</summary>
+                <details v-if="visibleModelRecommendations.length" class="model-recommendations">
+                  <summary>查看从基础到旗舰的 {{ visibleModelRecommendations.length }} 个模型建议</summary>
                   <div class="model-recommendation-list">
-                    <article v-for="model in modelRecommendations" :key="model.id">
+                    <article v-for="model in visibleModelRecommendations" :key="model.id">
                       <header><div><span>{{ model.tier }} · {{ model.kind === 'embedding' ? '语义检索' : model.kind === 'intent_router' ? '意图助手' : '本地草稿' }}</span><h4>{{ model.name }}</h4></div><a-tag :color="recommendationColor(model.status)">{{ model.status }}</a-tag></header>
                       <p>{{ model.summary }}</p>
                       <small>{{ model.reason }}</small>
@@ -1662,12 +1677,13 @@ onBeforeUnmount(() => {
                 </details>
               </template>
             </div>
+            <a-alert v-if="localAIProfileUnavailable" type="info" class="update-note">本版本暂不提供本地 AI，其他功能仍可正常使用。</a-alert>
             <a-alert :type="localAIRuntime?.ready ? 'success' : 'info'" class="update-note">
               {{ localAIRuntime?.message || "正在读取本地智能状态" }}
               <template v-if="localAIRuntime"> · 最多 {{ localAIRuntime.max_threads }} 线程 · 内存上限 {{ (localAIRuntime.memory_limit_mb / 1024).toFixed(1) }}GB</template>
             </a-alert>
             <p v-if="localAIRuntime" class="runtime-capabilities">
-              规则推荐：始终可用 · 中文语义：{{ localAIRuntime.embedding_available ? "可用" : "已降级" }} · 本地草稿：{{ localAIRuntime.llm_available ? "可用" : "已降级" }}
+              规则推荐：始终可用 · 中文语义：{{ modelCapabilitySupported('embedding') ? (localAIRuntime.embedding_available ? "可用" : "已降级") : "本版本不提供" }} · 本地草稿：{{ modelCapabilitySupported('llm') ? (localAIRuntime.llm_available ? "可用" : "已降级") : "本版本不提供" }}
             </p>
             <a-table :data="modelPacks" row-key="id" :pagination="false">
               <template #columns>
@@ -1676,7 +1692,37 @@ onBeforeUnmount(() => {
                 <a-table-column title="架构" data-index="architecture" :width="100" />
                 <a-table-column title="签名" :width="100"><template #cell="{ record }">{{ record.signature_valid ? "已验证" : "开发包" }}</template></a-table-column>
                 <a-table-column title="资源" :width="120"><template #cell="{ record }">{{ record.estimated_memory_mb ? `${(record.estimated_memory_mb / 1024).toFixed(1)}GB` : '按运行时判断' }}</template></a-table-column>
-                <a-table-column title="操作" :width="360"><template #cell="{ record }"><a-space wrap><a-button v-if="record.capabilities.includes('embedding')" size="mini" :type="record.active_capabilities.includes('embedding') ? 'outline' : 'primary'" @click="record.active_capabilities.includes('embedding') ? deactivateModelCapability('embedding') : activateModelPack(record, 'embedding')">{{ record.active_capabilities.includes('embedding') ? '停用向量' : '启用向量' }}</a-button><a-button v-if="record.capabilities.includes('llm')" size="mini" :type="record.active_capabilities.includes('llm') ? 'outline' : 'primary'" @click="record.active_capabilities.includes('llm') ? deactivateModelCapability('llm') : activateModelPack(record, 'llm')">{{ record.active_capabilities.includes('llm') ? '停用 LLM' : '启用 LLM' }}</a-button><a-button v-if="record.capabilities.includes('intent_router')" size="mini" :type="record.active_capabilities.includes('intent_router') ? 'outline' : 'primary'" @click="record.active_capabilities.includes('intent_router') ? deactivateModelCapability('intent_router') : activateModelPack(record, 'intent_router')">{{ record.active_capabilities.includes('intent_router') ? '停用意图' : '启用意图' }}</a-button><a-popconfirm v-if="!record.active_capabilities.length" content="卸载只删除本机模型文件，不影响业务数据和历史审计。确认继续？" @ok="uninstallModelPack(record)"><a-button size="mini" type="text" status="danger">卸载</a-button></a-popconfirm></a-space></template></a-table-column>
+                <a-table-column title="操作" :width="360">
+                  <template #cell="{ record }">
+                    <a-space wrap>
+                      <a-button
+                        v-if="record.capabilities.includes('embedding')"
+                        size="mini"
+                        :disabled="!modelCapabilitySupported('embedding') && !record.active_capabilities.includes('embedding')"
+                        :title="modelCapabilitySupported('embedding') ? undefined : '本版本不提供语义检索能力'"
+                        :type="record.active_capabilities.includes('embedding') ? 'outline' : 'primary'"
+                        @click="record.active_capabilities.includes('embedding') ? deactivateModelCapability('embedding') : activateModelPack(record, 'embedding')"
+                      >{{ record.active_capabilities.includes('embedding') ? '停用向量' : modelCapabilitySupported('embedding') ? '启用向量' : '本版本未提供' }}</a-button>
+                      <a-button
+                        v-if="record.capabilities.includes('llm')"
+                        size="mini"
+                        :disabled="!modelCapabilitySupported('llm') && !record.active_capabilities.includes('llm')"
+                        :title="modelCapabilitySupported('llm') ? undefined : '本版本不提供本地大模型能力'"
+                        :type="record.active_capabilities.includes('llm') ? 'outline' : 'primary'"
+                        @click="record.active_capabilities.includes('llm') ? deactivateModelCapability('llm') : activateModelPack(record, 'llm')"
+                      >{{ record.active_capabilities.includes('llm') ? '停用 LLM' : modelCapabilitySupported('llm') ? '启用 LLM' : '本版本未提供' }}</a-button>
+                      <a-button
+                        v-if="record.capabilities.includes('intent_router')"
+                        size="mini"
+                        :type="record.active_capabilities.includes('intent_router') ? 'outline' : 'primary'"
+                        @click="record.active_capabilities.includes('intent_router') ? deactivateModelCapability('intent_router') : activateModelPack(record, 'intent_router')"
+                      >{{ record.active_capabilities.includes('intent_router') ? '停用意图' : '启用意图' }}</a-button>
+                      <a-popconfirm v-if="!record.active_capabilities.length" content="卸载只删除本机模型文件，不影响业务数据和历史审计。确认继续？" @ok="uninstallModelPack(record)">
+                        <a-button size="mini" type="text" status="danger">卸载</a-button>
+                      </a-popconfirm>
+                    </a-space>
+                  </template>
+                </a-table-column>
               </template>
             </a-table>
             <p v-if="!modelPacks.length" class="empty-state">尚未导入本地模型包。规则推荐不依赖模型，仍可正常工作。</p>

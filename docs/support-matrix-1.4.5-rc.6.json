@@ -1,0 +1,129 @@
+{
+  "version": "1.4.5-rc.6",
+  "release_state": "published_prerelease_scoped",
+  "generated_at": "2026-10-03T09:59:37.323910+08:00",
+  "schema_revision": "0026",
+  "models": {
+    "planner": "deepseek-r1-distill-qwen-1.5b-q4_k_m",
+    "intent_router": "needle2-intent",
+    "embedding": "bge-small-zh-v1.5-onnx-fp32",
+    "fallback": "qwen3-0.6b-q8_0",
+    "final_fallback": "rules"
+  },
+  "targets": [
+    {
+      "platform": "windows",
+      "architecture": "amd64",
+      "support": "preview",
+      "artifact": "PartyOps_1.4.5-rc.6_windows_amd64.exe",
+      "sha256": "a7c044b0b830ce416fdf02c84daa2e7aa4929c0833d9b530bc47486d861a81be",
+      "size": 443690896,
+      "validation_scope": "见 validation_environments 中对应 package_id",
+      "package_id": "windows_amd64",
+      "full_lifecycle_verified": false
+    },
+    {
+      "platform": "windows7",
+      "architecture": "amd64",
+      "support": "preview",
+      "artifact": "PartyOps_1.4.5-rc.6_windows7_amd64.exe",
+      "sha256": "996159794407f2171de170fbbf95c3b1f3fe234c026116f35113c2d8d3591d7f",
+      "size": 489713934,
+      "validation_scope": "见 validation_environments 中对应 package_id",
+      "package_id": "windows7_amd64",
+      "full_lifecycle_verified": false
+    },
+    {
+      "platform": "windows7",
+      "architecture": "x86",
+      "support": "preview",
+      "artifact": "PartyOps_1.4.5-rc.6_windows7_x86.exe",
+      "sha256": "b3b77f2a5a319906c641ca693df31b93c3fbcb56e28eaae7a52bdfa94913bf88",
+      "size": 457500557,
+      "validation_scope": "见 validation_environments 中对应 package_id",
+      "package_id": "windows7_x86",
+      "full_lifecycle_verified": false
+    },
+    {
+      "platform": "linux-deb",
+      "architecture": "amd64",
+      "support": "preview",
+      "artifact": "PartyOps_1.4.5-rc.6_linux_amd64.deb",
+      "sha256": "4557129b9f081c1b525d6dd6c6d444f7e0d35d63021b4b1c20c8daeffd4c30ae",
+      "size": 366480042,
+      "validation_scope": "见 validation_environments 中对应 package_id",
+      "package_id": "linux_amd64",
+      "full_lifecycle_verified": false
+    },
+    {
+      "platform": "linux-deb",
+      "architecture": "arm64",
+      "support": "preview",
+      "artifact": "PartyOps_1.4.5-rc.6_linux_arm64.deb",
+      "sha256": "b9c9dfda203a74ac05b4a0f3019acb94294fc723cecf51b6840eb4e6f5a2a71e",
+      "size": 352120914,
+      "validation_scope": "见 validation_environments 中对应 package_id",
+      "package_id": "linux_arm64",
+      "full_lifecycle_verified": false
+    },
+    {
+      "platform": "linux-rpm",
+      "architecture": "amd64",
+      "support": "preview",
+      "artifact": "PartyOps-1.4.5-0.rc.6.1.x86_64.rpm",
+      "sha256": "e7c34a6090689f40dfae3aa3403b7b6ad0b5d4c3748e07005bb73ed1b32632ac",
+      "size": 790114068,
+      "validation_scope": "见 validation_environments 中对应 package_id",
+      "package_id": "rpm_x86_64",
+      "full_lifecycle_verified": false
+    },
+    {
+      "platform": "linux-rpm",
+      "architecture": "arm64",
+      "support": "preview",
+      "artifact": "PartyOps-1.4.5-0.rc.6.1.aarch64.rpm",
+      "sha256": "f507da109c1110e2c553ac9cb44a7f05205156132fb241ba057028571344e4f4",
+      "size": 763753980,
+      "validation_scope": "见 validation_environments 中对应 package_id",
+      "package_id": "rpm_aarch64",
+      "full_lifecycle_verified": false
+    },
+    {
+      "platform": "macos",
+      "architecture": "amd64",
+      "support": "unavailable",
+      "artifact": null,
+      "note": "本批RC6未发布；旧RC4包仅作为历史下载保留"
+    },
+    {
+      "platform": "macos",
+      "architecture": "arm64",
+      "support": "unavailable",
+      "artifact": null,
+      "note": "本批RC6未发布；旧RC4包仅作为历史下载保留"
+    },
+    {
+      "platform": "linux-deb",
+      "architecture": "loong64",
+      "support": "preview",
+      "artifact": "PartyOps_1.4.5-rc.6_linux_loong64.deb",
+      "sha256": "bec5993a12a9a66800fa039045f45329ecc486934cd1d1106c10d5e2ecf78017",
+      "size": 302195420,
+      "validation_scope": "见 validation_environments 中对应 package_id",
+      "package_id": "linux_loong64",
+      "full_lifecycle_verified": false
+    }
+  ],
+  "gates": {
+    "native_builds": false,
+    "model_signatures": false,
+    "coverage": false,
+    "cloudstudio_readback": true,
+    "github_release": true,
+    "edgeone_preview": true,
+    "edgeone_production": true
+  },
+  "note": "八包限域预发布已公开；其他门禁原值保留，不宣称全平台原生构建、模型或完整生命周期全部通过。Mac延期，RC4保留回滚。",
+  "release_manifest": "release-manifest-1.4.5-rc.6.json",
+  "validation_environments": "release-validation-environments-1.4.5-rc.6.json"
+}

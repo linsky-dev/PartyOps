@@ -4,13 +4,21 @@ title = "PartyOps secret scanning"
 useDefault = true
 
 [allowlist]
-description = "只排除本机生成目录，以及明确属于业务幂等标识而非凭据的 recurrence_key 测试字段"
+description = "只排除本机生成目录、明确的业务幂等字段，以及 WPS SDK 固定动态库文件名"
 regexTarget = "line"
 regexes = [
   '''["']recurrence_key["']\s*:''',
+  # LibreOffice 随包携带的 Python distutils 标准库会把 Windows 注册表
+  # 函数赋给同名局部变量；gitleaks 的 generic-api-key 规则会误报这一行。
+  # 只允许该完整标准库赋值，不放宽其它 RegEnumKey 或 API key 文本。
+  '''^\s*RegEnumKey\s*=\s*win32api\.RegEnumKey\s*$''',
+  # WPS 官方 RPC 动态库的固定文件名包含 api/sysqt5，被默认高熵通用密钥
+  # 规则误识别；只允许这两个完整字面量，不放宽其他 api_key 命中。
+  '''"librpcwpsapi_(?:wpsqt|sysqt5)\.so"''',
 ]
 paths = [
   '''(^|/)backend/\.test-data/''',
+  '''(^|/)\.smoke-rc4-/''',
   '''(^|/)frontend/node_modules/''',
   '''(^|/)frontend/dist/''',
   '''(^|/)website/node_modules/''',

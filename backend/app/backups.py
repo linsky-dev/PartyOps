@@ -10,7 +10,6 @@ import stat
 import tempfile
 import zipfile
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 
 from sqlalchemy import select
@@ -21,9 +20,10 @@ from .config import get_settings
 from .database import db_runtime, sqlite3_dbapi
 from .models import BackupRun, User, utcnow
 from .problems import ProblemException
+from .time_utils import beijing_iso, beijing_now
 
 FORMAT_VERSION = 1
-SCHEMA_VERSION = "0024"
+SCHEMA_VERSION = "0026"
 MAX_BACKUP_MANIFEST_BYTES = 1024 * 1024
 _WINDOWS_RESERVED_NAMES = {
     "con",
@@ -225,7 +225,7 @@ def create_backup_archive(
     settings.backups_dir.mkdir(parents=True, exist_ok=True)
     settings.attachments_dir.mkdir(parents=True, exist_ok=True)
     settings.archives_dir.mkdir(parents=True, exist_ok=True)
-    stamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+    stamp = beijing_now().strftime("%Y%m%d-%H%M%S-%f")
     target_name = filename or f"PartyOps-{kind}-{stamp}.partyops-backup"
     if Path(target_name).name != target_name:
         raise RuntimeError("备份文件名包含目录或越界语义")
@@ -285,7 +285,7 @@ def create_backup_archive(
             "format_version": FORMAT_VERSION,
             "schema_version": schema_version,
             "app_version": settings.app_version,
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": beijing_iso(),
             "files": files,
         }
         with zipfile.ZipFile(
@@ -330,7 +330,7 @@ def create_backup(
     ip: str = "",
 ) -> BackupRun:
     settings = get_settings()
-    stamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+    stamp = beijing_now().strftime("%Y%m%d-%H%M%S-%f")
     record = BackupRun(
         filename=f"PartyOps-{kind}-{stamp}.partyops-backup",
         kind=kind,
@@ -550,9 +550,10 @@ def verify_backup(path: Path) -> dict[str, object]:
 def restore_backup(path: Path, actor_id: str | None = None) -> None:
     settings = get_settings()
     manifest = verify_backup(path)
-    required_bytes = int(
-        sum(int(item.get("size", 0)) for item in manifest.get("files", [])) * 2.5
-    )
+    manifest_files = manifest.get("files", [])
+    if not isinstance(manifest_files, list):
+        raise ProblemException(400, "BACKUP_MANIFEST_INVALID", "备份清单无效", "files 必须是数组。")
+    required_bytes = int(sum(int(item.get("size", 0)) for item in manifest_files if isinstance(item, dict)) * 2.5)
     if shutil.disk_usage(settings.data_dir).free < required_bytes:
         raise ProblemException(
             507,

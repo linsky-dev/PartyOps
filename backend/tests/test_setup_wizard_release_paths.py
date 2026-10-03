@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import json
+import shlex
 import subprocess
 import urllib.error
 from pathlib import Path
@@ -34,6 +35,304 @@ def _local_config(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     root.mkdir(parents=True, exist_ok=True)
     monkeypatch.setattr(setup_wizard, "config_root", lambda: root)
     return root
+
+
+def test_linux_launch_environment_is_data_only_and_reports_rc4_corruption(
+    tmp_path: Path,
+) -> None:
+    """rc.6 不再 source rc.4 配置，截断时只报告键名/行号且不执行内容。"""
+
+    marker = tmp_path / "must-not-exist"
+    data_dir = tmp_path / "个人数据 $(touch must-not-exist)"
+    config = tmp_path / "personal.env"
+    output = tmp_path / "launch.env"
+    config.write_text(
+        "\n".join(
+            (
+                "PARTYOPS_MODE=personal",
+                "PARTYOPS_PORT=18775",
+                "PARTYOPS_TLS_ENABLED=false",
+                f"PARTYOPS_DATA_DIR={shlex.quote(str(data_dir))}",
+                "PARTYOPS_BOOTSTRAP_TOKEN='fixed-token-value'",
+                f"UNSUPPORTED_COMMAND=$(touch {marker})",
+            )
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    assert setup_wizard.prepare_linux_launch_environment(
+        config, "personal", output
+    ) == output
+    normalized = output.read_text(encoding="utf-8")
+    assert "UNSUPPORTED_COMMAND" not in normalized
+    assert "PARTYOPS_BIND_HOST=127.0.0.1" in normalized
+    assert shlex.quote(str(data_dir)) in normalized
+    assert not marker.exists()
+
+    config.write_text(
+        "PARTYOPS_MODE=personal\n"
+        "PARTYOPS_PORT=18775\n"
+        "PARTYOPS_TLS_ENABLED=false\n"
+        "PARTYOPS_DATA_DIR='未闭合的数据目录\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match=r"第 4 行 PARTYOPS_DATA_DIR 的引号不完整"):
+        setup_wizard.prepare_linux_launch_environment(config, "personal", output)
+
+    config.write_text(
+        f"PARTYOPS_PORT=18775\nPARTYOPS_DATA_DIR={shlex.quote(str(data_dir))}\n",
+        encoding="utf-8",
+    )
+    setup_wizard.prepare_linux_launch_environment(config, "personal", output)
+    recovered = output.read_text(encoding="utf-8")
+    assert "PARTYOPS_MODE=personal" in recovered
+    assert "PARTYOPS_TLS_ENABLED=false" in recovered
+
+
+def _linux_launch_config(
+    tmp_path: Path,
+    *,
+    mode: str = "personal",
+    port: str = "18775",
+    data_dir: str | None = None,
+    tls: str = "false",
+    extra: tuple[str, ...] = (),
+) -> str:
+    """构造由旧版本可能遗留的 Linux 启动配置。"""
+
+    resolved_data_dir = data_dir or str((tmp_path / "业务数据").resolve())
+    return (
+        "\n".join(
+            (
+                f"PARTYOPS_MODE={mode}",
+                f"PARTYOPS_PORT={port}",
+                f"PARTYOPS_DATA_DIR={shlex.quote(resolved_data_dir)}",
+                f"PARTYOPS_TLS_ENABLED={tls}",
+                *extra,
+            )
+        )
+        + "\n"
+    )
+
+
+@pytest.mark.parametrize(
+    ("content", "message"),
+    (
+        ("缺少等号\n", "第 1 行不是 KEY=VALUE 配置"),
+        ("partyops_port=18775\n", "第 1 行不是 KEY=VALUE 配置"),
+        (
+            "PARTYOPS_PORT=18775\nPARTYOPS_PORT=18776\n",
+            "第 2 行重复定义 PARTYOPS_PORT",
+        ),
+        (
+            "PARTYOPS_PORT=18775 18776\n",
+            "第 1 行 PARTYOPS_PORT 必须只有一个值",
+        ),
+        (
+            "PARTYOPS_PORT=\"18775\n",
+            "第 1 行 PARTYOPS_PORT 的引号不完整",
+        ),
+        (
+            "PARTYOPS_BOOTSTRAP_TOKEN=含\x00空字符\n",
+            "第 1 行 PARTYOPS_BOOTSTRAP_TOKEN 的值越界",
+        ),
+        (
+            "PARTYOPS_BOOTSTRAP_TOKEN=" + "x" * 8193 + "\n",
+            "第 1 行 PARTYOPS_BOOTSTRAP_TOKEN 的值越界",
+        ),
+    ),
+)
+def test_linux_launch_reader_rejects_corrupted_lines_without_leaking_values(
+    tmp_path: Path,
+    content: str,
+    message: str,
+) -> None:
+    config = tmp_path / "personal.env"
+    config.write_text(content, encoding="utf-8")
+
+    with pytest.raises(ValueError, match=message):
+        setup_wizard._read_linux_launch_environment(config)
+
+
+def test_linux_launch_reader_rejects_uncontrolled_oversize_and_non_utf8_files(
+    tmp_path: Path,
+) -> None:
+    missing = tmp_path / "missing.env"
+    with pytest.raises(ValueError, match="配置不是受控普通文件"):
+        setup_wizard._read_linux_launch_environment(missing)
+
+    oversized = tmp_path / "oversized.env"
+    oversized.write_bytes(b"#" * (64 * 1024 + 1))
+    with pytest.raises(ValueError, match="配置超过 64 KiB 上限"):
+        setup_wizard._read_linux_launch_environment(oversized)
+
+    invalid_utf8 = tmp_path / "invalid-utf8.env"
+    invalid_utf8.write_bytes(b"PARTYOPS_PORT=18775\xff\n")
+    with pytest.raises(ValueError, match="配置文件不可读或不是 UTF-8 编码"):
+        setup_wizard._read_linux_launch_environment(invalid_utf8)
+
+    bom_and_comments = tmp_path / "bom-and-comments.env"
+    bom_and_comments.write_text(
+        "# rc.4 配置\n\nPARTYOPS_PORT=\nUNSUPPORTED_KEY=ignored\n",
+        encoding="utf-8-sig",
+    )
+    assert setup_wizard._read_linux_launch_environment(bom_and_comments) == {
+        "PARTYOPS_PORT": ""
+    }
+
+
+@pytest.mark.parametrize(
+    ("content", "mode", "message"),
+    (
+        ("PARTYOPS_MODE=personal\n", "personal", "配置缺少必需项"),
+        (
+            "{base}",
+            "host",
+            "配置角色为 personal，当前入口要求 host",
+        ),
+        ("{bad_port}", "personal", "PARTYOPS_PORT 不是整数"),
+        ("{low_port}", "personal", "PARTYOPS_PORT 必须在 1024—65534 之间"),
+        ("{relative_data}", "personal", "PARTYOPS_DATA_DIR 必须是绝对路径"),
+        ("{bad_tls}", "personal", "PARTYOPS_TLS_ENABLED 只能是 true 或 false"),
+        (
+            "{remote_personal}",
+            "personal",
+            "个人模式的 PARTYOPS_HOST 只能使用本机回环地址",
+        ),
+        ("{personal_tls}", "personal", "个人模式必须使用本机 HTTP"),
+        (
+            "{development}",
+            "personal",
+            "正式安装的 PARTYOPS_ENVIRONMENT 必须是 production",
+        ),
+        ("{bad_strict}", "personal", "PARTYOPS_STRICT_SQLITE 只能是 true 或 false"),
+        ("{bad_seed}", "personal", "PARTYOPS_SEED_DEMO 只能是 true 或 false"),
+        ("{bad_agent}", "personal", "PARTYOPS_AGENT_PORT 不是整数"),
+        ("{wrong_agent}", "personal", "PARTYOPS_AGENT_PORT 必须等于服务端口加一"),
+    ),
+)
+def test_prepare_linux_launch_environment_rejects_invalid_runtime_contracts(
+    tmp_path: Path,
+    content: str,
+    mode: str,
+    message: str,
+) -> None:
+    base = _linux_launch_config(tmp_path)
+    replacements = {
+        "{base}": base,
+        "{bad_port}": _linux_launch_config(tmp_path, port="not-a-port"),
+        "{low_port}": _linux_launch_config(tmp_path, port="1023"),
+        "{relative_data}": _linux_launch_config(tmp_path, data_dir="relative/data"),
+        "{bad_tls}": _linux_launch_config(tmp_path, tls="enabled"),
+        "{remote_personal}": _linux_launch_config(
+            tmp_path, extra=("PARTYOPS_HOST=192.168.8.20",)
+        ),
+        "{personal_tls}": _linux_launch_config(tmp_path, tls="true"),
+        "{development}": _linux_launch_config(
+            tmp_path, extra=("PARTYOPS_ENVIRONMENT=development",)
+        ),
+        "{bad_strict}": _linux_launch_config(
+            tmp_path, extra=("PARTYOPS_STRICT_SQLITE=yes",)
+        ),
+        "{bad_seed}": _linux_launch_config(
+            tmp_path, extra=("PARTYOPS_SEED_DEMO=no",)
+        ),
+        "{bad_agent}": _linux_launch_config(
+            tmp_path, extra=("PARTYOPS_AGENT_PORT=invalid",)
+        ),
+        "{wrong_agent}": _linux_launch_config(
+            tmp_path, extra=("PARTYOPS_AGENT_PORT=18790",)
+        ),
+    }
+    resolved_content = replacements.get(content, content)
+    config = tmp_path / "personal.env"
+    output = tmp_path / "launch.env"
+    config.write_text(resolved_content, encoding="utf-8")
+
+    with pytest.raises(ValueError, match=message):
+        setup_wizard.prepare_linux_launch_environment(config, mode, output)
+
+
+def test_prepare_linux_launch_environment_validates_paths_and_host_defaults(
+    tmp_path: Path,
+) -> None:
+    config = tmp_path / "host.env"
+    output = tmp_path / "launch.env"
+    config.write_text(_linux_launch_config(tmp_path, mode="host"), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="启动模式必须是 personal 或 host"):
+        setup_wizard.prepare_linux_launch_environment(config, "client", output)
+    with pytest.raises(ValueError, match="一次性启动环境路径无效"):
+        setup_wizard.prepare_linux_launch_environment(config, "host", config)
+
+    setup_wizard.prepare_linux_launch_environment(config, "host", output)
+    loopback = output.read_text(encoding="utf-8")
+    assert "PARTYOPS_BIND_HOST=127.0.0.1" in loopback
+    assert "PARTYOPS_ADVERTISE_HOST=127.0.0.1" in loopback
+    assert "PARTYOPS_AGENT_PORT=18776" in loopback
+
+    config.write_text(
+        _linux_launch_config(
+            tmp_path,
+            mode="host",
+            extra=("PARTYOPS_HOST=192.168.8.20",),
+        ),
+        encoding="utf-8",
+    )
+    setup_wizard.prepare_linux_launch_environment(config, "host", output)
+    lan = output.read_text(encoding="utf-8")
+    assert "PARTYOPS_BIND_HOST=0.0.0.0" in lan
+    assert "PARTYOPS_ADVERTISE_HOST=192.168.8.20" in lan
+
+
+def test_prepare_linux_launch_environment_cli_reports_stable_diagnostics(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    config = tmp_path / "personal.env"
+    output = tmp_path / "launch.env"
+    config.write_text(_linux_launch_config(tmp_path), encoding="utf-8")
+    monkeypatch.setattr(
+        setup_wizard.sys,
+        "argv",
+        [
+            "partyops-setup-wizard",
+            "--prepare-launch-environment",
+            "--config-file",
+            str(config),
+            "--output-file",
+            str(output),
+        ],
+    )
+    with pytest.raises(SystemExit) as completed:
+        setup_wizard.main()
+    assert completed.value.code == 0
+    assert output.is_file()
+
+    monkeypatch.setattr(
+        setup_wizard.sys,
+        "argv",
+        ["partyops-setup-wizard", "--prepare-launch-environment"],
+    )
+    with pytest.raises(SystemExit, match="CONFIG_INVALID.*缺少配置文件"):
+        setup_wizard.main()
+
+    config.write_text("PARTYOPS_PORT=not-a-port\n", encoding="utf-8")
+    monkeypatch.setattr(
+        setup_wizard.sys,
+        "argv",
+        [
+            "partyops-setup-wizard",
+            "--prepare-launch-environment",
+            "--config-file",
+            str(config),
+            "--output-file",
+            str(output),
+        ],
+    )
+    with pytest.raises(SystemExit, match="CONFIG_INVALID.*配置缺少必需项"):
+        setup_wizard.main()
 
 
 def test_linux_desktop_tool_marker_and_personal_autostart_are_deterministic(
@@ -218,12 +517,37 @@ def test_runtime_helpers_autostart_and_ca_failure_paths(
         setup_wizard.install_internal_ca(ca)
 
 
-def test_personal_early_exit_reports_personal_launcher_log(tmp_path: Path) -> None:
-    """个人进程退出时必须返回它自己的日志，而不是主机服务日志。"""
+@pytest.mark.parametrize(
+    "output, expected_code",
+    [
+        ("启动阶段\n数据库初始化失败：测试诊断\n", setup_wizard.CHILD_EXITED),
+        ("[RUNTIME_PERMISSION_DENIED] 本轮真实权限拒绝\n", setup_wizard.RUNTIME_PERMISSION_DENIED),
+        ("", setup_wizard.CHILD_EXITED),
+    ],
+)
+def test_personal_early_exit_reports_personal_launcher_log(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, output: str, expected_code: str
+) -> None:
+    """让本轮进程真实追加临时日志；历史错误和主机服务日志不得冒充本轮证据。"""
 
-    (tmp_path / "launcher.log").write_text(
-        "启动阶段\n数据库初始化失败：测试诊断\n", encoding="utf-8"
-    )
+    log_path = tmp_path / "launcher.log"
+    history = "[RUNTIME_PERMISSION_DENIED] 历史故障必须保留但不能追认\n"
+    log_path.write_text(history, encoding="utf-8")
+
+    def popen(_command, **options):
+        # 子进程可在 Popen 返回前写完并早退，边界必须由真实 _spawn 提前捕获。
+        options["stdout"].write(output.encode("utf-8"))
+        options["stdout"].flush()
+        return _ExitedProcess()
+
+    def unexpected(*_args, **_kwargs):
+        pytest.fail("个人进程已退出，不得查询主机日志或发送健康 HTTP 请求")
+
+    monkeypatch.setattr(setup_wizard.subprocess, "Popen", popen)
+    monkeypatch.setattr(setup_wizard, "read_service_status", unexpected)
+    monkeypatch.setattr(setup_wizard, "tail_service_log", unexpected)
+    monkeypatch.setattr(setup_wizard.urllib.request, "urlopen", unexpected)
+    process = setup_wizard._spawn(["fixture-never-executed"], log_path)
     with pytest.raises(setup_wizard.HostStartupError) as captured:
         setup_wizard.wait_for_host_health(
             "127.0.0.1",
@@ -231,10 +555,16 @@ def test_personal_early_exit_reports_personal_launcher_log(tmp_path: Path) -> No
             timeout=5,
             data_dir=tmp_path,
             service_managed=False,
-            process=_ExitedProcess(),  # type: ignore[arg-type]
+            process=process,
         )
-    assert captured.value.code == setup_wizard.CHILD_EXITED
-    assert "数据库初始化失败：测试诊断" in captured.value.detail
+    assert captured.value.code == expected_code
+    assert "个人进程退出码 23" in captured.value.detail
+    assert "历史故障" not in captured.value.detail
+    if output:
+        assert output.strip() in captured.value.detail
+    else:
+        assert "无本轮日志输出" in captured.value.detail
+    assert log_path.read_text(encoding="utf-8") == history + output
 
 
 def test_health_version_mismatch_fails_immediately(monkeypatch) -> None:
@@ -283,7 +613,7 @@ def test_personal_upgrade_replaces_only_recorded_old_process(
     monkeypatch.setattr(
         setup_wizard,
         "load_host_environment",
-        lambda _path: {
+        lambda _path, **_kwargs: {
             "PARTYOPS_PORT": "18775",
             "PARTYOPS_DATA_DIR": str(data_dir),
         },
@@ -348,7 +678,7 @@ def test_personal_existing_unknown_port_is_reassigned_without_health_probe_or_ki
     monkeypatch.setattr(
         setup_wizard,
         "load_host_environment",
-        lambda _path: {"PARTYOPS_PORT": "18775", "PARTYOPS_DATA_DIR": str(data_dir)},
+        lambda _path, **_kwargs: {"PARTYOPS_PORT": "18775", "PARTYOPS_DATA_DIR": str(data_dir)},
     )
     monkeypatch.setattr(
         setup_wizard.socket,
@@ -613,7 +943,7 @@ def test_admin_submit_readiness_reuses_personal_and_recovers_host(
     monkeypatch.setattr(
         setup_wizard,
         "load_host_environment",
-        lambda _path: {
+        lambda _path, **_kwargs: {
             "PARTYOPS_HOST": "192.168.8.20",
             "PARTYOPS_PORT": "18765",
             "PARTYOPS_TLS_ENABLED": "false",

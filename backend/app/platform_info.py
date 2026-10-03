@@ -4,7 +4,11 @@ from __future__ import annotations
 
 import platform
 import sys
+from functools import lru_cache
 from pathlib import Path
+
+from .linux_runtime_identity import installed_linux_identity
+from .windows_runtime_identity import PACKAGE_PROFILES, installed_identity
 
 CORE_CAPABILITIES = (
     "host",
@@ -18,6 +22,12 @@ CORE_CAPABILITIES = (
 AI_CAPABILITIES = ("semantic_rerank", "local_llm")
 
 
+@lru_cache(maxsize=4)
+def _frozen_linux_identity(executable: str, architecture: str) -> dict[str, object]:
+    # 冻结入口在进程生命周期内不变；避免每次查询本地能力时重算大型 ELF 哈希。
+    return installed_linux_identity(Path(executable), architecture)
+
+
 def normalize_architecture(value: str | None = None) -> str:
     """把操作系统架构名称收敛为发布清单使用的名称。"""
 
@@ -27,6 +37,8 @@ def normalize_architecture(value: str | None = None) -> str:
         "amd64": "amd64",
         "aarch64": "arm64",
         "arm64": "arm64",
+        "loongarch64": "loong64",
+        "loong64": "loong64",
         "x86": "x86",
         "i386": "x86",
         "i486": "x86",
@@ -80,14 +92,24 @@ def detect_platform_info(*, os_release_path: Path = Path("/etc/os-release")) -> 
         release, version, _csd, _ptype = platform.win32_ver()
         is_windows7 = release == "7" or version.startswith("6.1")
         distribution = "windows7" if is_windows7 else "windows"
+        if getattr(sys, "frozen", False):
+            # 包能力和更新通道属于实际安装包；OS 仅说明运行环境，不能把兼容包升级成 full。
+            return {
+                "platform_family": "windows", "distribution": distribution,
+                "distribution_version": release or version, "package_format": "exe", "platform": "windows",
+                **installed_identity(Path(sys.executable).resolve(), version),
+            }
         runtime_profile = (
             "legacy-core" if is_windows7 and architecture == "x86"
-            else "legacy-full" if is_windows7
+            else "legacy-smart" if is_windows7 and architecture == "amd64"
+            else "unsupported" if architecture not in {"amd64", "x86"}
             else "full"
         )
-        capabilities = list(CORE_CAPABILITIES)
-        if runtime_profile != "legacy-core":
+        capabilities = list(CORE_CAPABILITIES) if runtime_profile != "unsupported" else []
+        if runtime_profile == "full":
             capabilities.extend(AI_CAPABILITIES)
+        elif runtime_profile == "legacy-smart":
+            capabilities.append("semantic_rerank")
         return {
             "platform_family": "windows",
             "distribution": distribution,
@@ -101,7 +123,7 @@ def detect_platform_info(*, os_release_path: Path = Path("/etc/os-release")) -> 
     if sys.platform.startswith("linux"):
         values = read_os_release(os_release_path)
         distribution = values.get("ID", "linux").strip().lower() or "linux"
-        return {
+        result: dict[str, object] = {
             "platform_family": "linux",
             "distribution": distribution[:40],
             "distribution_version": values.get("VERSION_ID", "")[:40],
@@ -112,6 +134,12 @@ def detect_platform_info(*, os_release_path: Path = Path("/etc/os-release")) -> 
             # 1.4.x 旧服务只认识 windows/uos；精确发行版由新字段承载。
             "platform": "uos",
         }
+        if architecture == "loong64" and getattr(sys, "frozen", False):
+            # 龙芯 core 只能由已安装清单及当前 ELF 共同证明，不能由 CPU 推断。
+            identity = _frozen_linux_identity(sys.executable, architecture)
+            result.update(identity)
+            result["capabilities"] = list(identity["capabilities"])
+        return result
     if sys.platform == "darwin":
         macos_version = platform.mac_ver()[0]
         capabilities = [*CORE_CAPABILITIES, *AI_CAPABILITIES]
@@ -144,8 +172,23 @@ def update_platform_key(info: dict[str, object]) -> str:
     distribution = str(info.get("distribution", "")).lower()
     package_format = str(info.get("package_format", "")).lower()
     if family == "windows":
+        if "package_identity_status" in info:
+            if info.get("package_identity_status") != "verified":
+                return ""
+            package = str(info.get("package_platform", ""))
+            architecture = str(info.get("process_architecture", ""))
+            profile = str(info.get("runtime_profile", ""))
+            if info.get("architecture") != architecture or (package, architecture, profile) not in PACKAGE_PROFILES:
+                return ""
+            return package
+        if info.get("runtime_profile") == "unsupported":
+            return ""
         return "windows7" if distribution == "windows7" else "windows"
     if family == "linux" and package_format in {"deb", "rpm"}:
+        if info.get("architecture") == "loong64" and "package_identity_status" in info:
+            if (info.get("package_identity_status") != "verified"
+                    or info.get("runtime_profile") != "core" or package_format != "deb"):
+                return ""
         return f"linux-{package_format}"
     if family == "macos" and package_format == "pkg":
         return "macos"

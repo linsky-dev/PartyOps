@@ -57,6 +57,11 @@ def describe_object(
     object_id: str,
     user: User,
 ) -> ObjectDescriptor:
+    # 每个对象分支仍保持原权限判断；显式联合类型避免跨分支复用被推断为 Task。
+    item: (
+        Task | WorkspaceFile | ArchiveRecord | WorkJournalEntry | PeriodReport
+        | KnowledgeEntry | Contact | TopicSpace | None
+    )
     if object_type == ObjectType.TASK:
         item = db.get(Task, object_id)
         if item and can_view_task(db, item, user):

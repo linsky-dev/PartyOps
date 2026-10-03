@@ -16,7 +16,15 @@ import zipfile
 from datetime import timedelta
 from pathlib import Path, PurePosixPath
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Header, Query, Request
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    Header,
+    Query,
+    Request,
+    Response,
+)
 from fastapi.responses import FileResponse
 from sqlalchemy import delete, func, or_, select
 from sqlalchemy.orm import Session
@@ -41,7 +49,16 @@ from ..device_versions import (
     start_device_update,
 )
 from ..enrollment_codes import normalize_enrollment_code
-from ..enums import MaterialStage, TaskStatus
+from ..enums import (
+    ContentIndexStatus,
+    DeviceStatus,
+    FileAvailability,
+    FileIndexStatus,
+    MaterialStage,
+    TaskStatus,
+    TransferStatus,
+    UpdateStatus,
+)
 from ..local_secrets import decrypt_local_json, encrypt_local_json
 from ..models import (
     ArchiveAttachment,
@@ -104,6 +121,7 @@ from ..schemas import (
 )
 from ..security import get_current_user, hash_token, require_admin
 from ..task_service import can_edit_task
+from ..time_utils import beijing_iso
 from ..workspace import resolve_workspace_path, store_managed_path
 from ..workspace_access import (
     DEVICE_GRANT_CAPABILITIES,
@@ -721,6 +739,10 @@ def enrollment_status(
 def enroll_device(
     payload: DeviceEnrollRequest,
     request: Request,
+    enrollment_code_header: str | None = Header(
+        default=None,
+        alias="X-PartyOps-Enrollment-Code",
+    ),
     db: Session = Depends(get_session),
 ) -> DeviceEnrollOut:
     try:
@@ -732,6 +754,33 @@ def enroll_device(
             "入网码格式不完整",
             "请在主机设备中心点击“复制完整入网码”后直接粘贴。",
         ) from exc
+    # 生产环境的无会话 Agent 请求必须同时证明持有一次性入网码。中间件
+    # 只按路径和“是否携带”放行，真正的机密比对在这里完成；测试环境保留
+    # 旧的直接路由契约，避免把测试客户端误当作生产浏览器。
+    if get_settings().environment == "production":
+        if not enrollment_code_header:
+            raise ProblemException(
+                403,
+                "ENROLLMENT_TOKEN_REQUIRED",
+                "缺少入网安全令牌",
+                "请使用当前版本配置向导重新提交入网码。",
+            )
+        try:
+            normalized_header = normalize_enrollment_code(enrollment_code_header)
+        except ValueError as exc:
+            raise ProblemException(
+                403,
+                "ENROLLMENT_TOKEN_INVALID",
+                "入网安全令牌无效",
+                "请求头中的入网码格式不正确。",
+            ) from exc
+        if not secrets.compare_digest(normalized_header, normalized_code):
+            raise ProblemException(
+                403,
+                "ENROLLMENT_TOKEN_MISMATCH",
+                "入网安全令牌不匹配",
+                "请从主机重新复制完整入网码后重试。",
+            )
     with db_runtime.write_lock:
         enrollment = db.scalar(
             select(DeviceEnrollment).where(
@@ -906,9 +955,9 @@ def patch_device(
         setattr(device, field, getattr(payload, field))
     device.version += 1
     if payload.active is False:
-        device.status = "revoked"
+        device.status = DeviceStatus.REVOKED
     elif payload.active is True and device.status == "revoked":
-        device.status = "offline"
+        device.status = DeviceStatus.OFFLINE
     write_audit(db, admin, "device.update", "device", device.id, {"fields": sorted(payload.model_fields_set)}, client_ip(request))
     db.commit()
     db.refresh(device)
@@ -957,7 +1006,7 @@ def delete_managed_device(
         metadata = dict(device.device_metadata or {})
         metadata.update(
             {
-                "deleted_at": deleted_at.isoformat(),
+                "deleted_at": beijing_iso(deleted_at),
                 "deleted_by": admin.id,
                 "original_name": original_name,
             }
@@ -965,7 +1014,7 @@ def delete_managed_device(
         device.device_metadata = metadata
         device.name = f"{original_name[:78]}（已删除-{device.id[:8]}）"
         device.active = False
-        device.status = "revoked"
+        device.status = DeviceStatus.REVOKED
         device.allow_host_access = False
         device.allow_device_transfer = False
         device.agent_token_hash = ""
@@ -1017,7 +1066,7 @@ def rotate_device_token(
     request: Request,
     admin: User = Depends(require_admin),
     db: Session = Depends(get_session),
-) -> dict[str, str]:
+) -> dict[str, str | int]:
     device = db.get(Device, device_id)
     if not device or device_is_deleted(device):
         raise ProblemException(404, "DEVICE_NOT_FOUND", "设备不存在", "未找到该协同设备。")
@@ -1071,7 +1120,7 @@ def reauthorize_client_agent(
     if not device.active:
         raise ProblemException(409, "DEVICE_DISABLED", "设备已停用", "请先恢复设备，再重新授权。")
     token = issue_v2_device_credential(db, device)
-    device.status = "offline"
+    device.status = DeviceStatus.OFFLINE
     write_audit(
         db,
         admin,
@@ -1393,7 +1442,7 @@ def create_device_root(
         )
         db.add(root)
         db.flush()
-        if direct_publish:
+        if direct_publish and share_action is not None:
             share_action.consumed_at = utcnow()
         else:
             notify_root_approval_needed(db, root, device)
@@ -1488,7 +1537,7 @@ def disable_device_root(
     root.version += 1
     for item in db.scalars(select(WorkspaceFile).where(WorkspaceFile.root_id == root.id)).all():
         item.in_scope = False
-        item.status = "missing"
+        item.status = FileIndexStatus.MISSING
         for checkpoint in db.scalars(
             select(SemanticIndexCheckpoint).where(
                 SemanticIndexCheckpoint.object_type == "workspace_file_content",
@@ -1509,7 +1558,7 @@ def heartbeat(
     db: Session = Depends(get_session),
 ) -> Device:
     device = authenticated_device(token, db)
-    device.status = "online"
+    device.status = DeviceStatus.ONLINE
     device.last_seen_at = utcnow()
     device.protocol_version = max(device.protocol_version, payload.protocol_version)
     device.credential_state = "active"
@@ -1574,7 +1623,7 @@ def device_update_gate(
 ) -> DeviceUpdateGate:
     value = build_device_gate(db, request_device(request, db, allow_ip_fallback=True))
     db.commit()
-    return DeviceUpdateGate(**value)
+    return DeviceUpdateGate.model_validate(value)
 
 
 @router.post("/device/update-start", response_model=DeviceUpdateGate)
@@ -1594,7 +1643,7 @@ def start_current_device_update(
     db.commit()
     value = build_device_gate(db, device)
     db.commit()
-    return DeviceUpdateGate(**value)
+    return DeviceUpdateGate.model_validate(value)
 
 
 @router.post("/devices/certificate/rotate", response_model=DeviceCertificateOut)
@@ -1693,10 +1742,10 @@ def upload_index_delta(
         # 发送也会被主机丢弃，并在下次语义批处理中清理正文向量。
         current.extracted_text = item.extracted_text if root.semantic_content_enabled else ""
         current.ocr_text = ""
-        current.content_status = "indexed" if current.extracted_text else "metadata_only"
+        current.content_status = ContentIndexStatus.INDEXED if current.extracted_text else ContentIndexStatus.METADATA_ONLY
         current.content_error_code = ""
-        current.status = "indexed"
-        current.availability = "online"
+        current.status = FileIndexStatus.INDEXED
+        current.availability = FileAvailability.ONLINE
         current.indexed_at = now
         current.last_seen_at = now
         current.version = (current.version or 0) + 1
@@ -1712,8 +1761,8 @@ def upload_index_delta(
             )
         )
         if current and current.status != "missing":
-            current.status = "missing"
-            current.availability = "missing"
+            current.status = FileIndexStatus.MISSING
+            current.availability = FileAvailability.MISSING
             current.version += 1
             changed += 1
     root.last_scan_at = now
@@ -1820,12 +1869,12 @@ def ack_command(
     cleanup_part = False
     if transfer:
         if ok and command.command_type == "download_file":
-            transfer.status = "completed"
+            transfer.status = TransferStatus.COMPLETED
             transfer.completed_chunks = transfer.total_chunks
             transfer.error_code = ""
             transfer.error_message = ""
         elif not ok:
-            transfer.status = "failed"
+            transfer.status = TransferStatus.FAILED
             transfer.error_code = str(payload.get("error_code", "AGENT_COMMAND_FAILED"))[:80]
             transfer.error_message = str(payload.get("message", "设备端执行失败。"))[:2_000]
         # 源设备上传成功后目标设备仍需读取主机中转文件；只有目标下载完成，
@@ -1859,7 +1908,7 @@ def ack_command(
         run_id = str(command.payload.get("run_id", ""))
         update_run = db.get(UpdateRun, run_id) if run_id else None
         if update_run:
-            update_run.status = "completed" if ok else "failed"
+            update_run.status = UpdateStatus.COMPLETED if ok else UpdateStatus.FAILED
             update_run.progress = 100 if ok else 0
             update_run.message = str(
                 payload.get(
@@ -2385,7 +2434,7 @@ def create_workspace_download(
                 temporary = target.with_suffix(target.suffix + ".incoming")
                 shutil.copyfile(part, temporary)
                 os.replace(temporary, target)
-                transfer.status = "completed"
+                transfer.status = TransferStatus.COMPLETED
                 transfer.completed_chunks = transfer.total_chunks
                 content_url = f"/api/v1/transfers/{transfer.id}/content"
             else:
@@ -2552,15 +2601,15 @@ def action_transfer(
     if action == "approve":
         if user.role.value != "admin":
             raise ProblemException(403, "ADMIN_APPROVAL_REQUIRED", "需要管理员审批", "危险或跨设备传输由管理员审批。")
-        transfer.status = "queued"
+        transfer.status = TransferStatus.QUEUED
         transfer.approved_by = user.id
         transfer.approval_note = payload.note
     elif action == "pause" and transfer.status in {"queued", "transferring"}:
-        transfer.status = "paused"
+        transfer.status = TransferStatus.PAUSED
     elif action == "resume" and transfer.status == "paused":
-        transfer.status = "queued"
+        transfer.status = TransferStatus.QUEUED
     elif action == "cancel" and transfer.status not in {"completed", "cancelled"}:
-        transfer.status = "cancelled"
+        transfer.status = TransferStatus.CANCELLED
         cleanup_part = True
         db.execute(delete(TransferChunk).where(TransferChunk.transfer_id == transfer.id))
         transfer.completed_chunks = 0
@@ -2571,7 +2620,7 @@ def action_transfer(
             db.execute(delete(TransferChunk).where(TransferChunk.transfer_id == transfer.id))
             transfer.completed_chunks = 0
             transfer.transit_path = ""
-        transfer.status = "queued"
+        transfer.status = TransferStatus.QUEUED
         transfer.error_code = ""
         transfer.error_message = ""
     if transfer.status == "queued":
@@ -2649,7 +2698,7 @@ async def upload_chunk(
     if not transfer or transfer.status not in {"queued", "transferring"} or transfer.source_device_id != device.id:
         raise ProblemException(404, "TRANSFER_NOT_FOUND", "传输任务不可用", "任务不存在、已停止或不属于本设备。")
     if aware_utc(transfer.expires_at) <= utcnow():
-        transfer.status = "expired"
+        transfer.status = TransferStatus.EXPIRED
         db.execute(delete(TransferChunk).where(TransferChunk.transfer_id == transfer.id))
         transfer.completed_chunks = 0
         transfer.transit_path = ""
@@ -2657,7 +2706,7 @@ async def upload_chunk(
         await to_thread(cleanup_transfer_part, transfer.id)
         raise ProblemException(410, "TRANSFER_EXPIRED", "传输任务已过期", "请在主机重新发起传输。")
     if not transfer_sources_still_allowed(db, transfer):
-        transfer.status = "paused"
+        transfer.status = TransferStatus.PAUSED
         transfer.error_code = "GRANT_DENIED"
         transfer.error_message = "传输期间权限已被撤销。"
         db.commit()
@@ -2709,13 +2758,13 @@ async def upload_chunk(
             )
             or 0
         )
-        transfer.status = "transferring"
+        transfer.status = TransferStatus.TRANSFERRING
         transfer.transit_path = str(part.name)
     cleanup_part_after_commit = False
     if transfer.total_chunks and transfer.completed_chunks >= transfer.total_chunks:
         part_size = await to_thread(lambda: part.stat().st_size)
         if part_size != transfer.size_bytes:
-            transfer.status = "failed"
+            transfer.status = TransferStatus.FAILED
             transfer.error_code = "SOURCE_CHANGED"
             transfer.error_message = "源文件大小在传输期间发生变化。"
             db.execute(delete(TransferChunk).where(TransferChunk.transfer_id == transfer.id))
@@ -2732,7 +2781,7 @@ async def upload_chunk(
             }
         total_hash = await to_thread(sha256_path, part)
         if transfer.sha256 and total_hash != transfer.sha256:
-            transfer.status = "failed"
+            transfer.status = TransferStatus.FAILED
             transfer.error_code = "HASH_MISMATCH"
             transfer.error_message = "文件整体校验失败。"
             db.execute(delete(TransferChunk).where(TransferChunk.transfer_id == transfer.id))
@@ -2746,7 +2795,7 @@ async def upload_chunk(
             # inode/修改时间/大小，确认传输期间源文件没有变化，随后显式
             # 调用 finalize。此处提前完成会删除 .part，让协议规定的
             # finalize 必然 409，也可能过早向目标设备交付不稳定快照。
-            transfer.status = "transferring"
+            transfer.status = TransferStatus.TRANSFERRING
         transfer.version += 1
     db.commit()
     if cleanup_part_after_commit:
@@ -2813,7 +2862,7 @@ def finalize_device_upload(
         raise ProblemException(409, "TRANSFER_INCOMPLETE", "文件尚未上传完成", "Agent 将继续断点续传。")
     total_hash = sha256_path(part)
     if transfer.sha256 and transfer.sha256 != total_hash:
-        transfer.status = "failed"
+        transfer.status = TransferStatus.FAILED
         transfer.error_code = "HASH_MISMATCH"
         transfer.error_message = "文件整体校验失败。"
         db.execute(delete(TransferChunk).where(TransferChunk.transfer_id == transfer.id))
@@ -2829,9 +2878,9 @@ def finalize_device_upload(
         temporary = target.with_suffix(target.suffix + ".incoming")
         shutil.copyfile(part, temporary)
         os.replace(temporary, target)
-        transfer.status = "completed"
+        transfer.status = TransferStatus.COMPLETED
     else:
-        transfer.status = "transferring"
+        transfer.status = TransferStatus.TRANSFERRING
         queue_transfer_commands(db, transfer)
     transfer.version += 1
     db.commit()
@@ -2850,13 +2899,13 @@ def download_chunk(
     chunk_no: int,
     token: str | None = Header(default=None, alias="X-PartyOps-Device-Token"),
     db: Session = Depends(get_session),
-) -> FileResponse:
+) -> Response:
     device = authenticated_device(token, db)
     transfer = db.get(Transfer, transfer_id)
     if not transfer or transfer.destination_device_id != device.id or transfer.status not in {"queued", "transferring", "completed"}:
         raise ProblemException(404, "TRANSFER_NOT_FOUND", "传输任务不可用", "任务不存在或不属于本设备。")
     if aware_utc(transfer.expires_at) <= utcnow():
-        transfer.status = "expired"
+        transfer.status = TransferStatus.EXPIRED
         db.execute(delete(TransferChunk).where(TransferChunk.transfer_id == transfer.id))
         transfer.completed_chunks = 0
         transfer.transit_path = ""
@@ -2870,7 +2919,7 @@ def download_chunk(
         transfer.destination_device_id,
         transfer.destination_root_id,
     ):
-        transfer.status = "paused"
+        transfer.status = TransferStatus.PAUSED
         transfer.error_code = "GRANT_DENIED"
         transfer.error_message = "传输期间目标设备权限已被撤销。"
         db.commit()

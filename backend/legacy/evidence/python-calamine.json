@@ -1,0 +1,41 @@
+{
+  "component": "python-calamine",
+  "version": "0.3.2+partyops.1",
+  "upstream": {
+    "url": "https://files.pythonhosted.org/packages/6b/21/387b92059909e741af7837194d84250335d2a057f614752b6364aaaa2f56/python_calamine-0.3.2.tar.gz",
+    "sha256": "5cf12f2086373047cdea681711857b672cba77a34a66dd3755d60686fc974e06",
+    "version": "0.3.2",
+    "access_date": "2026-09-08"
+  },
+  "rust_toolchain": "nightly-2026-08-16",
+  "maturin": "1.15.0",
+  "msvc": "14.29",
+  "targets": [
+    "x86_64-win7-windows-msvc",
+    "i686-win7-windows-msvc"
+  ],
+  "cargo_locked": true,
+  "build_std": [
+    "std",
+    "panic_abort"
+  ],
+  "jobs": 1,
+  "source_changes": "仅将Cargo包及锁文件根版本改为0.3.2+partyops.1；业务解析源码未改动",
+  "wheels": {
+    "amd64": {
+      "wheel": "python_calamine-0.3.2+partyops.1-cp38-cp38-win_amd64.whl",
+      "sha256": "7919d20c951d7e96a4d80df913b722dd4d245c3c249df68fe0070ec938f3b5f0",
+      "pyd_sha256": "e80c7b0473faf22bc3192ec71b26bfe6f7c705cd03e312fde53ca5edf935f25d",
+      "static_pe_passed": true,
+      "original_guest_test": "pending"
+    },
+    "x86": {
+      "wheel": "python_calamine-0.3.2+partyops.1-cp38-cp38-win32.whl",
+      "sha256": "2bebb9666c35c78f7defdb5036af1083f382eeeaad86663b6faefed181389fac",
+      "pyd_sha256": "4bb959466abbf32ed1a2407b72a23ecbc877c653f7d8c0333f487cfe39c24bc7",
+      "static_pe_passed": true,
+      "original_guest_test": "pending"
+    }
+  },
+  "runtime_environment_passed": false
+}

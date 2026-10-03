@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="Current" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Release</Configuration>
+    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
+    <ProjectGuid>{C8DC0FA3-CC5C-48E3-8861-75F9C355524D}</ProjectGuid>
+    <OutputType>WinExe</OutputType>
+    <AssemblyName>PartyOps.DocumentFormatter.Host</AssemblyName>
+    <RootNamespace>PartyOps.DocumentFormatter.Host</RootNamespace>
+    <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
+    <LangVersion>12.0</LangVersion>
+    <Nullable>annotations</Nullable>
+    <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
+    <GenerateBindingRedirectsOutputType>true</GenerateBindingRedirectsOutputType>
+    <Deterministic>true</Deterministic>
+    <Optimize>true</Optimize>
+    <PlatformTarget Condition=" '$(Platform)' == 'x86' ">x86</PlatformTarget>
+    <PlatformTarget Condition=" '$(Platform)' == 'x64' ">x64</PlatformTarget>
+    <PlatformTarget Condition=" '$(Platform)' == 'AnyCPU' Or '$(Platform)' == 'Any CPU' ">AnyCPU</PlatformTarget>
+    <!-- AnyCPU 载荷会在 Linux/macOS 目标机由本机 Mono 原生封装；禁止写入
+         32BITPREFERRED，否则 ARM64 Mono 可能在启动前拒绝程序集。 -->
+    <Prefer32Bit Condition=" '$(Platform)' == 'AnyCPU' Or '$(Platform)' == 'Any CPU' ">false</Prefer32Bit>
+    <OutputPath>bin\$(Platform)\$(Configuration)\</OutputPath>
+    <IntermediateOutputPath>obj\$(Platform)\$(Configuration)\</IntermediateOutputPath>
+    <DocumentFormatterSource Condition=" '$(DocumentFormatterSource)' == '' ">$(MSBuildProjectDirectory)\..\..\..\vendor\document-formatter-source</DocumentFormatterSource>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="System" />
+    <Reference Include="System.Core" />
+    <Reference Include="System.Web.Extensions" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="Program.cs" />
+    <Compile Include="PortableWpsComBridge.cs" />
+    <Compile Include="SourceOptionScope.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="$(DocumentFormatterSource)\src\PartyOps.DocumentFormatter.AddIn\PartyOps.DocumentFormatter.AddIn.csproj">
+      <Project>{8A4E1C33-1D9F-4EA2-9CF1-2673D0A2A591}</Project>
+      <Name>PartyOps.DocumentFormatter.AddIn</Name>
+      <Private>true</Private>
+    </ProjectReference>
+  </ItemGroup>
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+</Project>

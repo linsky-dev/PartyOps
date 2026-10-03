@@ -1,0 +1,546 @@
+{
+  "schema_version": 4,
+  "product": "PartyOps",
+  "version": "1.4.5-rc.6",
+  "release_tag": "v1.4.5-rc.6",
+  "release_tooling_commit": "a8aaf44984c1d9ce85981bd4756e71372c6b8cb8",
+  "release_tooling_file_sha256": "4b2e812d46ebdaf9eda7c30f45f722fd377af5d8fd035319438346178e5f050e",
+  "acceptance": {
+    "scope": "explicit-user-approved-package-use-and-loong64-first-release",
+    "full_lifecycle_verified": false,
+    "plan_sha256": "a15d571a7c8bd5e9a9a3271641677da83f2a437342412ec41fd36622011aa736",
+    "packages": [
+      {
+        "id": "windows_amd64",
+        "filename": "PartyOps_1.4.5-rc.6_windows_amd64.exe",
+        "platform": "windows/amd64",
+        "package_sha256": "a7c044b0b830ce416fdf02c84daa2e7aa4929c0833d9b530bc47486d861a81be",
+        "size": 443690896,
+        "source_fingerprint": "8e0ba223390977948a798761231b62a4e98290bdd747f047be3542181484e300",
+        "source_commit": null,
+        "build_receipt_sha256": "0418240cff070cef489bc64b3f9f5d75f5589569307679198b64872f23d67069",
+        "build_log_sha256": "1376a12bdcc069963f7f701dffa131a36e895456b445548f10dfb2b7f77ceb9e",
+        "targets": [
+          {
+            "target": "win10-x64",
+            "receipt_sha256": "adabea911800e2605b7c17e6ab0e762688becf1301187d59bade627ed6d359c4",
+            "scope": "user-approved-product-use-acceptance",
+            "full_lifecycle_verified": false,
+            "limitations": [
+              "未声明原十三项完整生命周期、公文逐页金样及正式旧发行包升级全部完成。",
+              "历史模型记录包含一次真实推理后低内存暂停，不表示所有内存条件下持续可用。"
+            ]
+          }
+        ],
+        "build_provenance_status": "verified",
+        "runtime_source_fingerprint": "9b5562cb008ed16379ae83d6db61266c228aada5347029ff89e63b0262e7b750",
+        "limitations": [
+          "full_lifecycle_verified=false。",
+          "未声明原十三项完整生命周期、公文逐页金样及正式旧发行包升级全部完成。",
+          "历史模型记录包含一次真实推理后低内存暂停，不表示所有内存条件下持续可用。",
+          "复用原始已验证冻结程序，只重新打包安装器；收据明确不声称重新冻结当前后端。"
+        ],
+        "untested": [
+          "未声明原十三项完整生命周期全部通过。"
+        ],
+        "untested_targets": [
+          "win11-x64-native",
+          "win11-arm64"
+        ],
+        "full_lifecycle_verified": false
+      },
+      {
+        "id": "windows7_amd64",
+        "filename": "PartyOps_1.4.5-rc.6_windows7_amd64.exe",
+        "platform": "windows7/amd64",
+        "package_sha256": "996159794407f2171de170fbbf95c3b1f3fe234c026116f35113c2d8d3591d7f",
+        "size": 489713934,
+        "source_fingerprint": "81ffe7d0cc3241cb96adebeec06e780ff6ec8f81f2ac31450495502baad2718c",
+        "source_commit": null,
+        "build_receipt_sha256": "d5293671e1c5cef276f64cd9f7dd648c238c262f0e1cff930b0c5710f02ab632",
+        "build_log_sha256": "8f7e7c40b7641edbaab23d2bd6c2b9ad85e65a5d06b19f73805d5d0f8f1af30a",
+        "targets": [
+          {
+            "target": "win7-x64",
+            "receipt_sha256": "afcc38e9b76b3b6ed63b090db63a85bba58a34674b0ce703456e9542a008b498",
+            "scope": "安装、普通用户启动、health、自检、中文OCR、数据保留、WPS转换与补字体后排版、真实冷启动",
+            "full_lifecycle_verified": false,
+            "limitations": []
+          }
+        ],
+        "build_provenance_status": "requires_installed_manifest_verification",
+        "runtime_source_fingerprint": null,
+        "limitations": [
+          "full_lifecycle_verified=false；按用户确认不追加完整生命周期复测。",
+          "保留非阻断问题：页码检查将 SimSun 与宋体误判为不同字体，实际文档含正确字体及 PAGE 域。",
+          "Build receipt 保留 requires_installed_manifest_verification 标签；package SHA 与 acceptance 中实际安装目标 SHA 一致，但不改写原标签。"
+        ],
+        "untested": [
+          "未声明原十三项完整生命周期全部通过。"
+        ],
+        "untested_targets": [],
+        "full_lifecycle_verified": false
+      },
+      {
+        "id": "linux_amd64",
+        "filename": "PartyOps_1.4.5-rc.6_linux_amd64.deb",
+        "platform": "linux-deb/amd64",
+        "package_sha256": "4557129b9f081c1b525d6dd6c6d444f7e0d35d63021b4b1c20c8daeffd4c30ae",
+        "size": 366480042,
+        "source_fingerprint": "d0a0ce735e8cee94e4a2d16150d1efc88b91ef864116386ef4b9a2d770cad224",
+        "source_commit": null,
+        "build_receipt_sha256": "45355da219c1204c4ad9184426df028b0abe2dd4a12d7d9fbab4d91911dd49a2",
+        "build_log_sha256": "97e565e28fd34ee68c0f7e3aa0cce7b21e756d9798a54297678cb0578e4483fb",
+        "targets": [
+          {
+            "target": "uos-deb-x64",
+            "receipt_sha256": "5a129c125db6f2626c44891b041790a815c1718e1e2dd0e70042607b7d47f99a",
+            "scope": "user-approved-product-use-acceptance",
+            "full_lifecycle_verified": false,
+            "limitations": [
+              "原生意图识别加速正例未通过，保留局部能力限制。",
+              "不声明旧版覆盖升级或全部原始生命周期矩阵已通过。"
+            ]
+          }
+        ],
+        "build_provenance_status": "requires_installed_manifest_verification",
+        "runtime_source_fingerprint": null,
+        "limitations": [
+          "原生意图识别加速正例未通过，保留局部能力限制。",
+          "不声明旧版覆盖升级或全部原始生命周期矩阵通过。",
+          "部分此前已通过证据绑定早期包；本条只列报告明示的当前包 fresh checks 与保留边界。",
+          "Build receipt 原始 provenance 标签为 requires_installed_manifest_verification；验收报告 package SHA 匹配，不将该标签提升为 verified。",
+          "不声明旧版覆盖升级或全部原始生命周期矩阵已通过。"
+        ],
+        "untested": [
+          "未声明原十三项完整生命周期全部通过。"
+        ],
+        "untested_targets": [],
+        "full_lifecycle_verified": false
+      },
+      {
+        "id": "linux_arm64",
+        "filename": "PartyOps_1.4.5-rc.6_linux_arm64.deb",
+        "platform": "linux-deb/arm64",
+        "package_sha256": "b9c9dfda203a74ac05b4a0f3019acb94294fc723cecf51b6840eb4e6f5a2a71e",
+        "size": 352120914,
+        "source_fingerprint": "e4dc8a429dfd0d52bd250ea8bc446d1e7822078343feb599287c95610f62a9b4",
+        "source_commit": null,
+        "build_receipt_sha256": "9e7a234818623a7b4150a899b72829fb23dc78def1fb31ff668c502dcfe9a5c8",
+        "build_log_sha256": "167e2f21e3acc4c0ed4855b334a0c4478e26865ff3c95745f6e3e20c7caa1d27",
+        "targets": [
+          {
+            "target": "uos-deb-arm64",
+            "receipt_sha256": "6a244bafbec37cc1c16bfdf4a58e4df941bbea44a4ec92c279ef10079e78e3c3",
+            "scope": "user-approved-product-use-acceptance",
+            "full_lifecycle_verified": false,
+            "limitations": [
+              "安装版自检中的LibreOffice --version探测超过120秒，保留失败证据；不声明该项或安装版全部公文功能通过。",
+              "ARM64公文组件在独立构建Guest内已通过6类10用例及逐页金样，此组件证据不冒充本Guest完整公文实测。",
+              "本次未声明完整模型、升级、重启与卸载生命周期通过。"
+            ]
+          }
+        ],
+        "build_provenance_status": "requires_installed_manifest_verification",
+        "runtime_source_fingerprint": null,
+        "limitations": [
+          "安装版自检中的 LibreOffice --version 探测超过 120 秒，保留失败证据。",
+          "独立构建 Guest 的 ARM64 formatter 六类十用例及逐页 golden 不冒充本 Guest 完整公文实测。",
+          "未声明完整模型、升级、重启和卸载生命周期通过。",
+          "Native ARM64 build and transfer reports passed; raw build receipt keeps requires_installed_manifest_verification tag.",
+          "安装版自检中的LibreOffice --version探测超过120秒，保留失败证据；不声明该项或安装版全部公文功能通过。",
+          "ARM64公文组件在独立构建Guest内已通过6类10用例及逐页金样，此组件证据不冒充本Guest完整公文实测。",
+          "本次未声明完整模型、升级、重启与卸载生命周期通过。"
+        ],
+        "untested": [
+          "未声明原十三项完整生命周期全部通过。"
+        ],
+        "untested_targets": [],
+        "full_lifecycle_verified": false
+      },
+      {
+        "id": "rpm_x86_64",
+        "filename": "PartyOps-1.4.5-0.rc.6.1.x86_64.rpm",
+        "platform": "linux-rpm/amd64",
+        "package_sha256": "e7c34a6090689f40dfae3aa3403b7b6ad0b5d4c3748e07005bb73ed1b32632ac",
+        "size": 790114068,
+        "source_fingerprint": "d0a0ce735e8cee94e4a2d16150d1efc88b91ef864116386ef4b9a2d770cad224",
+        "source_commit": null,
+        "build_receipt_sha256": "90e94baa7f3b35356d8efa3c718ee1b61911ed5982aba21a64a273e588293277",
+        "build_log_sha256": "97e565e28fd34ee68c0f7e3aa0cce7b21e756d9798a54297678cb0578e4483fb",
+        "targets": [
+          {
+            "target": "openeuler-iso-x64",
+            "receipt_sha256": "008d735e0eec3a7fc8a95e7005bf315349c8da5df355c34df4c1b7d4ed62934d",
+            "scope": "user-approved-product-use-acceptance",
+            "full_lifecycle_verified": false,
+            "limitations": [
+              "原生意图识别加速正例未通过，普通业务已验证；保留该局部能力限制。",
+              "真实旧版覆盖升级及完整卸载生命周期不在本次用户调整后的使用验收结论中。"
+            ]
+          }
+        ],
+        "build_provenance_status": "requires_installed_manifest_verification",
+        "runtime_source_fingerprint": null,
+        "limitations": [
+          "原生意图识别加速正例未通过，保留局部能力限制。",
+          "真实旧版覆盖升级及完整卸载生命周期不在本次使用验收结论中。",
+          "Build receipt 要求 installed-manifest verification；acceptance 的 package SHA 匹配但不重写 provenance。",
+          "Build receipt 原始 provenance 标签为 requires_installed_manifest_verification；验收报告 package SHA 匹配，不将该标签提升为 verified。",
+          "原生意图识别加速正例未通过，普通业务已验证；保留该局部能力限制。",
+          "真实旧版覆盖升级及完整卸载生命周期不在本次用户调整后的使用验收结论中。"
+        ],
+        "untested": [
+          "未声明原十三项完整生命周期全部通过。"
+        ],
+        "untested_targets": [],
+        "full_lifecycle_verified": false
+      },
+      {
+        "id": "rpm_aarch64",
+        "filename": "PartyOps-1.4.5-0.rc.6.1.aarch64.rpm",
+        "platform": "linux-rpm/arm64",
+        "package_sha256": "f507da109c1110e2c553ac9cb44a7f05205156132fb241ba057028571344e4f4",
+        "size": 763753980,
+        "source_fingerprint": "e4dc8a429dfd0d52bd250ea8bc446d1e7822078343feb599287c95610f62a9b4",
+        "source_commit": null,
+        "build_receipt_sha256": "ab443b2ce240d48e74659c6a14a1ceb5926197b5d30bf843ec3f98a8d163f5c9",
+        "build_log_sha256": "43a1cf200613d6107ed1c81358d67f6fad0d62644664aa4f0ce70dce50a68032",
+        "targets": [
+          {
+            "target": "openeuler-iso-arm64",
+            "receipt_sha256": "2e6f3a2d0c469f049a2ea78cbc4878540eee348a7763bcb403576609335a5751",
+            "scope": "user-approved-product-use-acceptance",
+            "full_lifecycle_verified": false,
+            "limitations": [
+              "本次不声明全部模型、公文、升级、重启和卸载生命周期通过。"
+            ]
+          }
+        ],
+        "build_provenance_status": "requires_installed_manifest_verification",
+        "runtime_source_fingerprint": null,
+        "limitations": [
+          "不声明全部模型、公文、升级、重启和卸载生命周期通过。",
+          "Native ARM64 RPM build and transfer reports passed; raw build receipt keeps requires_installed_manifest_verification tag.",
+          "本次不声明全部模型、公文、升级、重启和卸载生命周期通过。"
+        ],
+        "untested": [
+          "未声明原十三项完整生命周期全部通过。"
+        ],
+        "untested_targets": [],
+        "full_lifecycle_verified": false
+      },
+      {
+        "id": "linux_loong64",
+        "filename": "PartyOps_1.4.5-rc.6_linux_loong64.deb",
+        "platform": "linux-deb/loong64",
+        "package_sha256": "bec5993a12a9a66800fa039045f45329ecc486934cd1d1106c10d5e2ecf78017",
+        "size": 302195420,
+        "source_fingerprint": "a008027d4457f4848cbe655ec3e6950e3376b0d8563633803a8263af5d918c82",
+        "source_commit": "ff24ed9bfc965c571fa59537c4796b6e2ffedf48",
+        "build_receipt_sha256": "a1d444dfdfd52e9abb4ac4718f58ae35f3790d5082ae934a1c18ad8104778ef6",
+        "build_log_sha256": "14e22d2456e7b101f6822b610ba0a2d44ca05f477f472e36d29ec5a571e08297",
+        "targets": [
+          {
+            "target": "deepin-deb-loong64",
+            "scope_audit_sha256": "4d111d7e3b1a2975f0daf45ffbff878db6f3105352714bb36aaa192c59e32521",
+            "scopes": [
+              {
+                "id": "install-and-background-verification",
+                "status": "passed_with_scope_limit"
+              },
+              {
+                "id": "configure-and-business",
+                "status": "passed"
+              },
+              {
+                "id": "actual-reboot-and-after-reboot",
+                "status": "passed"
+              },
+              {
+                "id": "ocr",
+                "status": "passed"
+              },
+              {
+                "id": "core-ai-capability-rejection",
+                "status": "passed_as_capability_rejection_only"
+              },
+              {
+                "id": "rules-intent-preview",
+                "status": "passed_as_rules_preview_only"
+              },
+              {
+                "id": "same-guest-collaboration",
+                "status": "passed_same_guest_only"
+              },
+              {
+                "id": "installed-wps-formatter-nine-features",
+                "status": "passed_9_cases"
+              },
+              {
+                "id": "wps-golden-three-pages",
+                "status": "passed_two_documents_three_pages_each"
+              },
+              {
+                "id": "firefox-gui",
+                "status": "passed"
+              },
+              {
+                "id": "uninstall-keep",
+                "status": "passed"
+              },
+              {
+                "id": "same-package-reinstall-and-recovery",
+                "status": "passed_same_package_recovery"
+              },
+              {
+                "id": "remove-registered-test-data",
+                "status": "passed_guarded_scope"
+              },
+              {
+                "id": "normal-guest-shutdown",
+                "status": "stopped_confirmed"
+              },
+              {
+                "id": "old-same-architecture-upgrade-candidate",
+                "status": "not_applicable_candidate"
+              }
+            ],
+            "full_lifecycle_verified": false
+          }
+        ],
+        "build_provenance_status": "requires_installed_manifest_verification",
+        "runtime_source_fingerprint": null,
+        "limitations": [
+          "原始完整生命周期控制器保持 blocked：升级基线为 null，错误含 OLDER_PACKAGE_REMOVED_BY_RETENTION_POLICY；重启后的原始续跑又因 BUSINESS_CONTEXT_CHANGED_RESTART_FROM_CLEAN_BASELINE 阻断。之后独立实际 after-reboot 阶段已通过，但不改写原始 journal，也不能补成完整 FULL_LIFECYCLE_EVIDENCE。"
+        ],
+        "untested": [
+          "旧版同架构包到本版的升级及旧数据迁移；当前无可用候选包。",
+          "OCR/models/intent及formatter报告中的 runtime_environment_passed 字段仍为 false；本汇总只认各报告明确列出的 scope-specific checks。",
+          "复杂 AI 模型推理、原生意图推理及系统级模型活动未验证；Core 仅测能力拒绝与规则预览。",
+          "跨机协同未验证；collaboration-business 报告明确 separate_machine_enrollment_verified=false。",
+          "未在非 Deepin 25.2.0、非 full-system-emulated 环境验证，也未作性能、压力或长期运行测试。",
+          "安装 WPS 使用系统可用组件；QA 字体为额外测试输入，不能据此声称随包字体覆盖或所有用户字体环境均可用。"
+        ],
+        "untested_targets": [],
+        "full_lifecycle_verified": false
+      },
+      {
+        "id": "windows7_x86",
+        "filename": "PartyOps_1.4.5-rc.6_windows7_x86.exe",
+        "platform": "windows7/x86",
+        "package_sha256": "b3b77f2a5a319906c641ca693df31b93c3fbcb56e28eaae7a52bdfa94913bf88",
+        "size": 457500557,
+        "source_fingerprint": "25601a0ef5e01aad4c0f20dc0004ff53b9e28004cbabb9c18abb035dc9add1ab",
+        "source_commit": null,
+        "build_receipt_sha256": "8b63e3bde797f848f8c123314a25e711fb9cc0c0bdb81f6d50696fe4fbeed30b",
+        "build_log_sha256": "94d1d9985e431908484026a9700c45a636128197491d3480ec32decc5a8f6de7",
+        "targets": [
+          {
+            "target": "win7-x86",
+            "scope": "user-approved-product-use-acceptance",
+            "receipt_sha256": "4a18879915e8d0e988e6d8c6aa481a58443abe708b9ebc32fabd49c94dc842a6",
+            "full_lifecycle_verified": false,
+            "strict_golden_passed": false
+          },
+          {
+            "target": "win10-x86",
+            "scope": "win10-x86-scoped-acceptance-only",
+            "summary_sha256": "aa10ae4212f41fd85f842afd7edc415c1099f36bd19d2992a54afee700dd2910",
+            "overall_release_ready": false,
+            "full_lifecycle_verified": false,
+            "original_statuses": [
+              {
+                "id": "install-initial",
+                "status": "partial"
+              },
+              {
+                "id": "configure",
+                "status": "passed"
+              },
+              {
+                "id": "business-backup-export",
+                "status": "passed"
+              },
+              {
+                "id": "collaboration",
+                "status": "passed"
+              },
+              {
+                "id": "ocr",
+                "status": "passed"
+              },
+              {
+                "id": "reboot",
+                "status": "passed"
+              },
+              {
+                "id": "after-reboot",
+                "status": "passed"
+              },
+              {
+                "id": "wps",
+                "status": "passed"
+              },
+              {
+                "id": "browser-gui",
+                "status": "passed"
+              },
+              {
+                "id": "uninstall-keep",
+                "status": "passed"
+              },
+              {
+                "id": "standalone-reinstall-install",
+                "status": "partial"
+              },
+              {
+                "id": "after-reinstall",
+                "status": "passed"
+              },
+              {
+                "id": "uninstall-remove-test-data",
+                "status": "passed"
+              },
+              {
+                "id": "models-limitation",
+                "status": "failed"
+              }
+            ]
+          }
+        ],
+        "build_provenance_status": "requires_installed_manifest_verification",
+        "runtime_source_fingerprint": null,
+        "limitations": [
+          "范围仅证明本轮Win10 x86安装包的有限普通功能与生命周期；不表示windows7_x86包整体release-ready。",
+          "legacy-core本地AI/models阶段失败HTTP409 LOCAL_AI_PACKAGE_UNSUPPORTED，保留失败证据，不声明AI推理通过。",
+          "协同验证使用同一Guest独立职员会话，separate_machine_enrollment_verified=false，不声明跨机器协作通过。",
+          "uninstall-keep后同包重新安装与after-reinstall数据恢复，不是旧版本升级测试；旧包升级未验证。",
+          "Win7 x86目标当前未完成验收。",
+          "各报告runtime_environment_passed=false；任何报告status=passed都不提升为完整矩阵或整体发布通过。",
+          "第一轮reinstall调用生成的install-50fe standalone诊断报告为partial；after-reinstall恢复入口报告通过并明确引用该receipt，未修改原报告。",
+          "three-PDF-strict-pixel-comparison",
+          "Firefox-new-boot-UI",
+          "remaining-uninstall-reinstall-lifecycle",
+          "full_lifecycle_verified=false。",
+          "win10-arm64 未测试。",
+          "构建来源 requires_installed_manifest_verification；不声称重新冻结当前源码。"
+        ],
+        "untested": [
+          "Win7 严格三PDF逐像素金样未完成，用户明确停止额外金样并批准读取本机字体与排版可用范围。",
+          "Win7 剩余卸载重装与新boot Firefox UI不作通过声明。",
+          "Win10 legacy models/跨机器协作/旧包升级不作通过声明。",
+          "win10-arm64 未测试。"
+        ],
+        "untested_targets": [
+          "win10-arm64"
+        ],
+        "full_lifecycle_verified": false
+      }
+    ],
+    "deferred_packages": [
+      {
+        "id": "macos_x86_64",
+        "targets": [
+          "macos-x64"
+        ],
+        "reason": "2026-10-02 M系列暂停；Intel Mac官方GUI登录后58890接口仍connection refused；本轮两Mac RC6包延期，官网保留原RC4包。"
+      },
+      {
+        "id": "macos_arm64",
+        "targets": [
+          "macos-arm64"
+        ],
+        "reason": "2026-10-02 M系列暂停；Intel Mac官方GUI登录后58890接口仍connection refused；本轮两Mac RC6包延期，官网保留原RC4包。"
+      }
+    ]
+  },
+  "generated_at": "2026-10-02T23:47:26.6255261+08:00",
+  "timezone": "Asia/Shanghai (UTC+8)",
+  "release_type": "prerelease",
+  "prerelease": true,
+  "make_latest": false,
+  "signed": true,
+  "public_key": "1DL332gwydoMifs6UZQZ3knBf1WOlua7NwswgoX0Y1w=",
+  "signing_fingerprint_sha256": "7d9d69a006ab26add736a16d0f9eb4f3667343c63da18d7672daf5d6fa2de2a3",
+  "packaged_platforms": [
+    "windows/amd64",
+    "windows7/amd64",
+    "linux-deb/amd64",
+    "linux-deb/arm64",
+    "linux-rpm/amd64",
+    "linux-rpm/arm64",
+    "linux-deb/loong64",
+    "windows7/x86"
+  ],
+  "unavailable_platforms": [
+    "macos/amd64",
+    "macos/arm64"
+  ],
+  "scope_verified_platforms": [
+    "windows/amd64",
+    "windows7/amd64",
+    "linux-deb/amd64",
+    "linux-deb/arm64",
+    "linux-rpm/amd64",
+    "linux-rpm/arm64",
+    "linux-deb/loong64",
+    "windows7/x86"
+  ],
+  "full_lifecycle_verified": false,
+  "limitations": [
+    "逐包验收仅限 acceptance.packages 所列原始范围；完整十三场景生命周期未通过。",
+    "原始 Loong64 首发审计的旧版同架构升级候选为 N/A，不代表升级已验证。"
+  ],
+  "assets": [
+    {
+      "filename": "PartyOps-1.4.5-0.rc.6.1.aarch64.rpm",
+      "size": 763753980,
+      "sha256": "f507da109c1110e2c553ac9cb44a7f05205156132fb241ba057028571344e4f4",
+      "signature": "tqbgxSxYTDl6+5ttYTEVhRZAl/ZZ/7mXLfAESG2ONAD1/y3zsCB0Z4JD2YmMdeQgqfkt/ckMF82e2yNwbs7MCA=="
+    },
+    {
+      "filename": "PartyOps-1.4.5-0.rc.6.1.x86_64.rpm",
+      "size": 790114068,
+      "sha256": "e7c34a6090689f40dfae3aa3403b7b6ad0b5d4c3748e07005bb73ed1b32632ac",
+      "signature": "3IeMNXAmZACV2nwud+a/QzWvsCVs42fej58+FNxUlI1lL4iBXCiXaZfQ0eUvp2hnYbOfIhLGJJDD/cx1qEo0Dg=="
+    },
+    {
+      "filename": "PartyOps_1.4.5-rc.6_linux_amd64.deb",
+      "size": 366480042,
+      "sha256": "4557129b9f081c1b525d6dd6c6d444f7e0d35d63021b4b1c20c8daeffd4c30ae",
+      "signature": "0nMq/ytAjELAy0vdipqr43B23Rc9Gl0oshkHfQfvcqA/C+09ztQIqObw7BOOizjmb9CzYmAk428bcyA3h+6ACQ=="
+    },
+    {
+      "filename": "PartyOps_1.4.5-rc.6_linux_arm64.deb",
+      "size": 352120914,
+      "sha256": "b9c9dfda203a74ac05b4a0f3019acb94294fc723cecf51b6840eb4e6f5a2a71e",
+      "signature": "WNUGP3vycm9Hkp2lQ06E7olxUjvRjUNgyEbrnCiDCSplsVwtrskxfo84Wo1XhFjIbJrINBmU8PZChd4B/d1iCA=="
+    },
+    {
+      "filename": "PartyOps_1.4.5-rc.6_linux_loong64.deb",
+      "size": 302195420,
+      "sha256": "bec5993a12a9a66800fa039045f45329ecc486934cd1d1106c10d5e2ecf78017",
+      "signature": "38nT95BvrmQ65XfUxf2N4SbnqOn7mrdmlTEfmsfpD5fGEKn3xBvIaR2XqaryWEPZ0918tzfHyrHzcfrku7F0Dg=="
+    },
+    {
+      "filename": "PartyOps_1.4.5-rc.6_windows7_amd64.exe",
+      "size": 489713934,
+      "sha256": "996159794407f2171de170fbbf95c3b1f3fe234c026116f35113c2d8d3591d7f",
+      "signature": "vvgg8lNKjNg1CWvHTTIF3ynYoDOUXM6HZZQBjkiUuyGcVwJZ7HguXLU2gPg2FqTK5ttBKja0wqu/X+qjmRoVBA=="
+    },
+    {
+      "filename": "PartyOps_1.4.5-rc.6_windows7_x86.exe",
+      "size": 457500557,
+      "sha256": "b3b77f2a5a319906c641ca693df31b93c3fbcb56e28eaae7a52bdfa94913bf88",
+      "signature": "gR5/rmJhimabziNeWV8hkiyE7knQPJmgBDdx5cfH+iieMN0KFLKmD3NRENTZSeGrhGpw/UTmPu/mBDIAJ7/OAg=="
+    },
+    {
+      "filename": "PartyOps_1.4.5-rc.6_windows_amd64.exe",
+      "size": 443690896,
+      "sha256": "a7c044b0b830ce416fdf02c84daa2e7aa4929c0833d9b530bc47486d861a81be",
+      "signature": "3lZte+uGz6IHz2Xhw4qHv5hRgQ9uD3srQSs2V2ShAHhhpT767ezvV8Tlr6FLG5USKQWrt7bAI+XNtZ7BaEZKDQ=="
+    }
+  ],
+  "signature": "5mfxy8yHzU5fa3SauMiog9vVGn3IUTmNmL0Qz7ZG+t3J4cdfVBl//xLF7M2051NST6se4epppSwpRBb/TD15Aw=="
+}

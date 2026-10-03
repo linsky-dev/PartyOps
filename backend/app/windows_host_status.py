@@ -8,7 +8,6 @@ import re
 import ssl
 import urllib.error
 import urllib.request
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -19,9 +18,11 @@ from .startup_diagnostics import (
     DATABASE_LOCKED,
     DATABASE_SCHEMA_FAILED,
     DATABASE_STARTUP_FAILED,
+    INSTANCE_ALREADY_RUNNING,
     SQLITE_RUNTIME_FAILED,
     UPGRADE_BACKUP_FAILED,
 )
+from .time_utils import beijing_iso
 
 SERVICE_MISSING = "SERVICE_MISSING"
 SERVICE_STOPPED = "SERVICE_STOPPED"
@@ -34,11 +35,16 @@ RUNTIME_VERSION_MISMATCH = "RUNTIME_VERSION_MISMATCH"
 RUNTIME_EXECUTABLE_MISSING = "RUNTIME_EXECUTABLE_MISSING"
 RUNTIME_DEPENDENCY_MISSING = "RUNTIME_DEPENDENCY_MISSING"
 RUNTIME_BINARY_INCOMPATIBLE = "RUNTIME_BINARY_INCOMPATIBLE"
+RUNTIME_PACKAGE_MISMATCH = "RUNTIME_PACKAGE_MISMATCH"
+RUNTIME_SYSTEM_UPDATE_REQUIRED = "RUNTIME_SYSTEM_UPDATE_REQUIRED"
 RUNTIME_NATIVE_CRASH = "RUNTIME_NATIVE_CRASH"
 RUNTIME_PERMISSION_DENIED = "RUNTIME_PERMISSION_DENIED"
 CONFIG_MIGRATION_FAILED = "CONFIG_MIGRATION_FAILED"
 
 TERMINAL_CODES = {
+    "LOCAL_FORMAT_PORT_IN_USE",
+    "LOCAL_FORMAT_CONFIG_WRITE_FAILED",
+    "LOCAL_FORMAT_SECRET_INVALID",
     CHILD_EXITED,
     PORT_IN_USE,
     DATA_DIR_DENIED,
@@ -53,11 +59,14 @@ TERMINAL_CODES = {
     RUNTIME_EXECUTABLE_MISSING,
     RUNTIME_DEPENDENCY_MISSING,
     RUNTIME_BINARY_INCOMPATIBLE,
+    RUNTIME_PACKAGE_MISMATCH,
+    RUNTIME_SYSTEM_UPDATE_REQUIRED,
     RUNTIME_NATIVE_CRASH,
     RUNTIME_PERMISSION_DENIED,
     SQLITE_RUNTIME_FAILED,
     UPGRADE_BACKUP_FAILED,
     CONFIG_MIGRATION_FAILED,
+    INSTANCE_ALREADY_RUNNING,
 }
 
 
@@ -71,6 +80,20 @@ def classify_runtime_failure(
 
     text = detail[-12000:]
     lowered = text.lower()
+    unsigned = exit_code & 0xFFFFFFFF if exit_code is not None else None
+    # OS 已明确给出的 Loader/架构/原生异常优先于日志文本，不能被旧错误码覆盖。
+    native_exits = {
+        0xC0000135: RUNTIME_DEPENDENCY_MISSING,
+        0xC000007B: RUNTIME_BINARY_INCOMPATIBLE,
+        0xC0000005: RUNTIME_NATIVE_CRASH,
+        0xC0000409: RUNTIME_NATIVE_CRASH,
+    }
+    native_errors = {2: RUNTIME_EXECUTABLE_MISSING, 5: RUNTIME_PERMISSION_DENIED,
+                     126: RUNTIME_DEPENDENCY_MISSING, 193: RUNTIME_BINARY_INCOMPATIBLE}
+    if winerror in native_errors:
+        return native_errors[winerror]
+    if unsigned in native_exits:
+        return native_exits[unsigned]
     known_codes = TERMINAL_CODES | {
         DATABASE_LOCKED,
         DATABASE_CORRUPT,
@@ -82,10 +105,9 @@ def classify_runtime_failure(
     for match in reversed(re.findall(r"\[([A-Z][A-Z0-9_]{2,63})\]", text)):
         if match in known_codes:
             return match
-    unsigned = exit_code & 0xFFFFFFFF if exit_code is not None else None
-    if winerror == 2 or "winerror 2" in lowered or "no such file or directory" in lowered:
+    if "winerror 2" in lowered or "no such file or directory" in lowered:
         return RUNTIME_EXECUTABLE_MISSING
-    if winerror == 126 or unsigned == 0xC0000135 or any(
+    if any(
         marker in lowered
         for marker in (
             "winerror 126", "dll load failed", "module not found", "modulenotfounderror",
@@ -93,13 +115,11 @@ def classify_runtime_failure(
         )
     ):
         return RUNTIME_DEPENDENCY_MISSING
-    if winerror == 193 or unsigned == 0xC000007B or any(
+    if any(
         marker in lowered
         for marker in ("winerror 193", "not a valid win32 application", "bad image", "incorrect format", "不是有效的 win32")
     ):
         return RUNTIME_BINARY_INCOMPATIBLE
-    if unsigned in {0xC0000005, 0xC0000409}:
-        return RUNTIME_NATIVE_CRASH
     if any(
         marker in lowered
         for marker in (
@@ -129,7 +149,7 @@ def classify_runtime_failure(
         return CONFIG_MIGRATION_FAILED
     if any(marker in lowered for marker in ("address already in use", "winerror 10048", "端口", "占用")):
         return PORT_IN_USE
-    if winerror == 5 or any(marker in lowered for marker in ("permission denied", "access is denied", "拒绝访问", "权限")):
+    if any(marker in lowered for marker in ("permission denied", "access is denied", "拒绝访问", "权限")):
         return RUNTIME_PERMISSION_DENIED
     if any(marker in lowered for marker in ("ssl", "tls", "certificate", "证书", "内部 ca")):
         return TLS_INIT_FAILED
@@ -163,7 +183,7 @@ def write_service_status(
     path.parent.mkdir(parents=True, exist_ok=True)
     payload: dict[str, Any] = {
         "format_version": 1,
-        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "updated_at": beijing_iso(),
         "stage": stage,
         "code": code,
         "detail": detail[-2000:],

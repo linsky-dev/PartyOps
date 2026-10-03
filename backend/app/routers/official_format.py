@@ -5,8 +5,6 @@
 
 from __future__ import annotations
 
-from datetime import timezone
-
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -16,14 +14,14 @@ from ..database import get_session
 from ..device_versions import ensure_device_context_secret, request_device
 from ..models import User
 from ..official_format_service import (
+    LOCAL_FORMAT_PORT,
     issue_local_format_ticket,
     normalize_origin,
 )
 from ..problems import ProblemException
+from ..schemas import serialize_api_datetime
 from ..security import get_current_user
 from .workspace import is_host_local_request
-
-UTC = timezone.utc
 
 router = APIRouter(tags=["official-format"])
 
@@ -85,8 +83,16 @@ def create_local_format_ticket(
             )
         secret = device.agent_token_hash
         device_id = device.id
+        local_port = LOCAL_FORMAT_PORT  # 协同助手运行在请求电脑，不能使用主机动态端口。
     elif is_host_local_request(request):
         secret = ensure_device_context_secret(db)
+        formatter = getattr(request.app.state, "official_formatter", None)
+        if formatter is None or not formatter.ready or formatter.secret != secret:
+            raise ProblemException(
+                503, "LOCAL_FORMAT_NOT_READY", "当前实例的公文排版未就绪",
+                "请重新打开 PartyOps；如仍失败，请查看运行诊断中的排版启动信息。",
+            )
+        local_port = formatter.port
         device_id = "host-local"
     else:
         raise ProblemException(
@@ -104,8 +110,8 @@ def create_local_format_ticket(
     )
     db.commit()
     return {
-        "expires_at": expires_at.astimezone(UTC).isoformat().replace("+00:00", "Z"),
-        "local_base_url": f"http://127.0.0.1:{get_settings().official_format_port}",
+        "expires_at": serialize_api_datetime(expires_at),
+        "local_base_url": f"http://127.0.0.1:{local_port}",
         "ticket": ticket,
     }
 

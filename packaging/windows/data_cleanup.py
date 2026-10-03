@@ -21,7 +21,6 @@ from pathlib import Path
 
 from app.setup_wizard import _assert_managed_data_tree_has_no_reparse_points
 
-
 APP_ID = "1C8EFC63-CAFC-46EF-A5E3-D3D119B5BB3A"
 MARKER_NAME = ".partyops-data-root.json"
 
@@ -97,6 +96,40 @@ def _read_client_data_dir(path: Path) -> Path | None:
     return Path(value) if value else None
 
 
+def _read_configured_mode(path: Path) -> str | None:
+    """读取控制目录当前模式；缺失时兼容旧版同时预检全部配置。"""
+
+    if not path.is_file() or path.is_symlink():
+        return None
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    mode = str(payload.get("mode", "")).strip().lower()
+    if mode not in {"personal", "client", "host"}:
+        raise ValueError(f"PartyOps 当前模式配置无效，已停止清理：{path}")
+    return mode
+
+
+def _validate_configured_root(
+    path: Path,
+    expected_scope: str,
+    *,
+    active: bool,
+) -> Path | None:
+    """活动配置必须安全有效；失效的非活动旧配置不得阻断当前模式卸载。
+
+    切换个人、主机或协同模式后，旧版可能遗留另一模式的配置文件。若旧指针
+    仍带有效所有权标记，“彻底卸载”会一并清理；若它已失效或指向无标记
+    目录，则只保留该目录并继续处理当前活动模式，既不误删也不让陈旧配置
+    永久阻塞卸载。
+    """
+
+    try:
+        return _validate_managed_root(path, expected_scope)
+    except ValueError:
+        if active:
+            raise
+        return None
+
+
 def _assert_not_protected_path(path: Path) -> None:
     if not path.is_absolute() or path == Path(path.anchor):
         raise ValueError(f"拒绝清理磁盘根或相对路径：{path}")
@@ -159,16 +192,37 @@ def managed_roots(scope: str) -> list[Path]:
         roots.extend(managed_roots("system"))
     elif scope == "user":
         for config_root in _user_config_roots():
+            mode = _read_configured_mode(config_root / "mode.json")
             personal = _read_env_data_dir(config_root / "personal.env")
             if personal is not None:
-                roots.append(_validate_managed_root(personal, "personal"))
+                validated = _validate_configured_root(
+                    personal,
+                    "personal",
+                    active=mode in {None, "personal"},
+                )
+                if validated is not None:
+                    roots.append(validated)
             client = _read_client_data_dir(config_root / "client.json")
             if client is not None:
-                roots.append(_validate_managed_root(client, "client"))
+                validated = _validate_configured_root(
+                    client,
+                    "client",
+                    active=mode in {None, "client"},
+                )
+                if validated is not None:
+                    roots.append(validated)
     elif scope == "system":
-        host = _read_env_data_dir(_program_data() / "PartyOps" / "partyops.env")
+        control = _program_data() / "PartyOps"
+        mode = _read_configured_mode(control / "mode.json")
+        host = _read_env_data_dir(control / "partyops.env")
         if host is not None:
-            roots.append(_validate_managed_root(host, "host"))
+            validated = _validate_configured_root(
+                host,
+                "host",
+                active=mode in {None, "host"},
+            )
+            if validated is not None:
+                roots.append(validated)
     else:
         raise ValueError("卸载清理范围无效")
     return list(dict.fromkeys(roots))

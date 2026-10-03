@@ -43,7 +43,7 @@ def install_legacy_hashlib_compat() -> None:
 try:
     from enum import StrEnum as StrEnum
 except ImportError:  # pragma: no cover - 仅 Python 3.8 Legacy 运行时进入。
-    class StrEnum(str, Enum):
+    class StrEnum(str, Enum):  # type: ignore[no-redef]  # 仅旧解释器缺少标准 StrEnum 时定义。
         """与 Python 3.11 enum.StrEnum 保持业务所需的字符串语义。"""
 
         def __str__(self) -> str:

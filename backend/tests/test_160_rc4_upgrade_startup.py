@@ -1,4 +1,4 @@
-"""1.4.5-rc.4 原位升级启动事务回归。"""
+"""1.4.5-rc.6 原位升级启动事务回归。"""
 
 from __future__ import annotations
 
@@ -21,6 +21,7 @@ from app.startup_diagnostics import (
     DATA_DIR_FULL,
     DATABASE_IO_FAILED,
     DATABASE_SCHEMA_FAILED,
+    INSTANCE_ALREADY_RUNNING,
     SQLITE_RUNTIME_FAILED,
     UPGRADE_BACKUP_FAILED,
     classify_database_startup_error,
@@ -100,7 +101,7 @@ def test_full_initialize_runtime_upgrades_real_0023_database(monkeypatch, tmp_pa
     with runtime.engine.connect() as connection:
         assert connection.execute(
             text("SELECT version_num FROM alembic_version")
-        ).scalar_one() == "0024"
+        ).scalar_one() == "0026"
         assert connection.execute(
             text("SELECT display_name FROM users WHERE id='rc4-upgrade-admin'")
         ).scalar_one() == "原位升级管理员"
@@ -203,7 +204,7 @@ def test_next_launch_recovers_process_interrupted_during_migration(
                 "WHERE id='rc4-upgrade-admin'"
             )
         )
-    assert _revision(runtime) == "0024"
+    assert _revision(runtime) == "0026"
 
     recovered = upgrades.recover_interrupted_upgrade()
 
@@ -219,7 +220,7 @@ def test_next_launch_recovers_process_interrupted_during_migration(
 
 
 def test_upgrade_backup_is_schema_neutral_until_migration(monkeypatch, tmp_path: Path) -> None:
-    """备份阶段只能生成制品，不能用 0024 ORM 向 0023 的 backup_runs 写入。"""
+    """备份阶段只能生成制品，不能用 0026 ORM 向 0023 的 backup_runs 写入。"""
 
     runtime, settings = _runtime_at_0023(tmp_path)
     _bind_runtime(monkeypatch, runtime, settings)
@@ -267,6 +268,16 @@ def test_windows_launcher_preserves_precise_database_diagnostic(
     detail: str, expected: str
 ) -> None:
     assert classify_runtime_failure(detail) == expected
+
+
+def test_current_instance_marker_wins_over_stale_schema_log_tail() -> None:
+    """截图回归：旧 schema 日志不得覆盖本次双实例根因。"""
+
+    detail = (
+        "sqlite3.OperationalError: table backup_runs has no column named deleted_at\n"
+        "RuntimeError: [INSTANCE_ALREADY_RUNNING] 当前数据目录已有 PartyOps 在运行"
+    )
+    assert classify_runtime_failure(detail) == INSTANCE_ALREADY_RUNNING
 
 
 def test_backend_classifier_does_not_misreport_schema_as_sqlite_runtime() -> None:
@@ -449,7 +460,7 @@ def _mock_runtime_without_database(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(app_main, "configure_logging", lambda: None)
     monkeypatch.setattr(app_main, "validate_bind_host", lambda *_a, **_k: None)
     monkeypatch.setattr(app_main, "validate_transport_security", lambda **_k: None)
-    monkeypatch.setattr(app_main, "upgrade_required", lambda: (False, "0024"))
+    monkeypatch.setattr(app_main, "upgrade_required", lambda: (False, "0026"))
     monkeypatch.setattr(app_main, "ensure_device_context_secret", lambda _db: None)
     monkeypatch.setattr(app_main, "ensure_current_release", lambda _db: None)
 

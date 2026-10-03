@@ -28,6 +28,7 @@ from .enums import ModelPackStatus, TransferStatus
 from .model_packs import active_model_pack, model_pack_root, verify_installed_pack
 from .models import AIModelPack, BackgroundJob, Transfer
 from .needle_intent import needle_intent_runtime
+from .platform_info import detect_platform_info
 from .problems import ProblemException
 
 BUSY_JOB_TYPES = {"backup", "restore", "update", "workspace_scan", "transfer"}
@@ -67,8 +68,8 @@ def _available_memory_mb() -> int | None:
     except (OSError, ValueError, IndexError):
         pass
     try:
-        pages = int(os.sysconf("SC_AVPHYS_PAGES"))
-        page_size = int(os.sysconf("SC_PAGE_SIZE"))
+        pages = int(os.sysconf("SC_AVPHYS_PAGES"))  # type: ignore[attr-defined]
+        page_size = int(os.sysconf("SC_PAGE_SIZE"))  # type: ignore[attr-defined]
         return pages * page_size // 1024**2
     except (AttributeError, OSError, ValueError):
         return None
@@ -107,6 +108,38 @@ def _embedding_runtime_available() -> bool:
     )
 
 
+def _platform_capabilities(info: dict[str, object]) -> list[str]:
+    """从平台探测字典中窄化能力列表，忽略契约外的值。"""
+
+    value = info.get("capabilities", [])
+    if not isinstance(value, list):
+        return []
+    return [capability for capability in value if isinstance(capability, str)]
+
+
+def supported_local_capabilities() -> tuple[str, list[str]]:
+    """模型入口按实际包身份限流；意图路由与规则助手不依赖复杂 AI。"""
+
+    info = detect_platform_info()
+    capabilities = set(_platform_capabilities(info))
+    supported: list[str] = []
+    if "semantic_rerank" in capabilities:
+        supported.append("embedding")
+    if "local_llm" in capabilities:
+        supported.append("llm")
+    if info.get("runtime_profile") != "unsupported":
+        supported.append("intent_router")
+    return str(info.get("runtime_profile", "unsupported")), supported
+
+
+def _require_local_llm_package() -> None:
+    if "llm" not in supported_local_capabilities()[1]:
+        raise ProblemException(
+            503, "LOCAL_AI_PACKAGE_UNSUPPORTED", "当前安装包不支持本地语言模型",
+            "规则助手与其他普通业务仍可使用。",
+        )
+
+
 def local_ai_readiness(
     db: Session,
     capability: str = "all",
@@ -118,6 +151,10 @@ def local_ai_readiness(
     影响。
     """
 
+    _profile, supported = supported_local_capabilities()
+    if capability in {"embedding", "llm"} and capability not in supported:
+        return {"ready": False, "state": "unsupported_package", "message": "当前安装包未提供此本地模型能力",
+                "embedding_available": False, "llm_available": False, "intent_available": False}
     settings = get_settings()
     if settings.mode not in {"host", "personal"}:
         return {"ready": False, "state": "host_only", "message": "本地智能仅在主机或个人模式运行"}
@@ -127,6 +164,8 @@ def local_ai_readiness(
         return {"ready": False, "state": "paused_busy", "message": reason}
 
     def capability_state(name: str) -> dict[str, Any]:
+        if name not in supported:
+            return {"ready": False, "state": "unsupported_package", "message": f"当前安装包未提供{name}能力"}
         pack = active_model_pack(db, name)
         if not pack:
             return {"ready": False, "state": "model_missing", "message": f"尚未启用{name}模型包"}
@@ -261,8 +300,10 @@ class EmbeddingRuntime:
         with self._lock:
             try:
                 import numpy as np
-                import onnxruntime as ort
-                from tokenizers import Tokenizer
+                import onnxruntime as ort  # type: ignore[import-untyped]  # 固定本地运行时。
+                from tokenizers import (  # type: ignore[import-untyped]  # 固定本地运行时。
+                    Tokenizer,
+                )
             except ImportError as exc:
                 raise ProblemException(
                     503,
@@ -384,9 +425,9 @@ class LocalLlmRuntime:
         try:
             import resource
 
-            os.nice(10)
+            os.nice(10)  # type: ignore[attr-defined]  # POSIX 子进程；Windows 不执行此路径。
             memory = get_settings().local_ai_memory_limit_mb * 1024 * 1024
-            resource.setrlimit(resource.RLIMIT_AS, (memory, memory))
+            resource.setrlimit(resource.RLIMIT_AS, (memory, memory))  # type: ignore[attr-defined]
         except (ImportError, OSError, ValueError):
             pass
 
@@ -463,7 +504,7 @@ class LocalLlmRuntime:
             9,
             ctypes.byref(information),
             ctypes.sizeof(information),
-        ) or not kernel32.AssignProcessToJobObject(job, wintypes.HANDLE(process._handle)):
+        ) or not kernel32.AssignProcessToJobObject(job, wintypes.HANDLE(getattr(process, "_handle"))):
             error = ctypes.get_last_error()
             kernel32.CloseHandle(job)
             raise OSError(error, "无法应用本地 LLM 内存限制")
@@ -474,6 +515,8 @@ class LocalLlmRuntime:
             self.stop()
 
     def _ensure_started(self, pack: AIModelPack) -> None:
+        # 即使旧数据库仍保留激活记录，直接调用也不得启动本地模型进程。
+        _require_local_llm_package()
         if self._process and self._process.poll() is None and self._pack_id == pack.id:
             return
         self._raise_if_start_backoff(pack.id)
@@ -526,7 +569,10 @@ class LocalLlmRuntime:
             raise ProblemException(503, "LOCAL_LLM_LIMIT_FAILED", "本地语言模型资源限制失败", "为保护主机内存，系统未启动模型。") from exc
         self._pack_id = pack.id
         endpoint = f"http://127.0.0.1:{settings.local_ai_port}/health"
-        for _ in range(60):
+        # 原版 UOS 的低优先级单核 Guest 实测加载需约 75 秒。以单调时钟
+        # 限定两分钟，避免固定 60 次轮询过早终止仍正常加载的模型。
+        deadline = time.monotonic() + 120
+        while time.monotonic() < deadline:
             if self._process.poll() is not None:
                 break
             try:
@@ -535,12 +581,16 @@ class LocalLlmRuntime:
                     self._start_failures.pop(pack.id, None)
                     return
             except httpx.HTTPError:
-                time.sleep(0.5)
+                pass
+            # llama.cpp 在加载模型时正常返回 503。无论是尚未监听还是加载中，
+            # 都必须等待后重试，避免瞬间耗尽次数并终止仍在加载的进程。
+            time.sleep(0.5)
         self.stop()
         self._record_start_failure(pack.id, "健康检查超时")
         raise ProblemException(503, "LOCAL_LLM_START_FAILED", "本地语言模型启动失败", "请在运行诊断中查看本地智能状态。")
 
     def complete(self, pack: AIModelPack, instruction: str, excerpts: list[str]) -> str:
+        _require_local_llm_package()
         with self._lock:
             self._ensure_started(pack)
             endpoint = f"http://127.0.0.1:{get_settings().local_ai_port}/v1/chat/completions"
@@ -593,17 +643,20 @@ atexit.register(llm_runtime.stop)
 
 
 def local_runtime_status(db: Session) -> dict[str, Any]:
+    runtime_profile, supported = supported_local_capabilities()
     readiness = local_ai_readiness(db)
     running, _pid = llm_runtime.status()
     readiness.update(
         {
-            "llm_running": running,
+            "llm_running": running if "llm" in supported else False,
             "embedding_loaded": bool(
-                readiness.get("embedding_pack_id")
+                "embedding" in supported and readiness.get("embedding_pack_id")
                 and embedding_runtime.loaded_for(str(readiness["embedding_pack_id"]))
             ),
-            "embedding_available": bool(readiness.get("embedding_available", False)),
-            "llm_available": bool(readiness.get("llm_available", False)),
+            "embedding_available": "embedding" in supported and bool(readiness.get("embedding_available", False)),
+            "llm_available": "llm" in supported and bool(readiness.get("llm_available", False)),
+            "runtime_profile": runtime_profile,
+            "supported_capabilities": _platform_capabilities(detect_platform_info()),
             "worker_scope": "host",
             "max_threads": min(4, max(1, get_settings().local_ai_max_threads)),
             "memory_limit_mb": get_settings().local_ai_memory_limit_mb,

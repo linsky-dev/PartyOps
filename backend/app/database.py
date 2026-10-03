@@ -11,13 +11,14 @@ from pathlib import Path
 
 from sqlalchemy import create_engine, event, inspect, text
 from sqlalchemy.engine import Engine
+from sqlalchemy.engine.interfaces import DBAPIConnection
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from .config import Settings, get_settings
 from .problems import ProblemException
 
 try:
-    import pysqlite3 as sqlite3_dbapi
+    import pysqlite3 as sqlite3_dbapi  # type: ignore[import-not-found]  # 平台包提供，Windows 使用下方标准库。
 except ImportError:  # 开发环境可使用 Python 自带 SQLite；生产包强制包含静态版本。
     import sqlite3 as sqlite3_dbapi
 
@@ -128,7 +129,7 @@ class DatabaseRuntime:
         )
 
         @event.listens_for(engine, "connect")
-        def configure_sqlite(dbapi_connection: object, _record: object) -> None:
+        def configure_sqlite(dbapi_connection: DBAPIConnection, _record: object) -> None:
             cursor = dbapi_connection.cursor()
             cursor.execute("PRAGMA foreign_keys=ON")
             cursor.execute("PRAGMA journal_mode=WAL")

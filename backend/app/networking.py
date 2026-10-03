@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ipaddress
 import socket
+from typing import cast
 from urllib.parse import urlsplit
 
 
@@ -13,7 +14,8 @@ def discover_lan_addresses() -> list[str]:
     candidates: set[str] = set()
     try:
         for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
-            candidates.add(info[4][0])
+            # AF_INET 的 sockaddr 首项始终是 IPv4 字符串。
+            candidates.add(cast(str, info[4][0]))
     except OSError:
         pass
     try:

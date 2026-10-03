@@ -1,6 +1,7 @@
 """UOS 安装器慢启动等待策略的回归测试。"""
 
 import hashlib
+import json
 import os
 import struct
 import subprocess
@@ -342,7 +343,7 @@ def test_linux_auxiliary_entrypoints_share_onedir_runtime() -> None:
     assert "partyops partyops-client partyops-wizard partyops-updater" in native_runtime
     assert "create-0023-upgrade-fixture.py" in native_runtime
     assert "NATIVE_0023_UPGRADE_FAILED" in native_runtime
-    assert '[[ "$revision" == 0024' in native_runtime
+    assert '[[ "$revision" == 0026' in native_runtime
     assert "runtime_root != expected_root" in wizard
     assert 'runtime_root.rglob("*.so*")' in wizard
 
@@ -496,11 +497,15 @@ def test_native_linux_packages_embed_upgrade_and_selftest_lifecycle() -> None:
     assert "post-install-transaction.sh %s deb" in build
     assert "sed 's/\\r$//'" in build
     assert "桌面入口换行规范化失败" in build
-    assert 'DEB_VERSION="1.4.5~rc.4"' in build
+    assert 'DEB_VERSION="1.4.5~rc.6"' in build
     assert "Version: $DEB_VERSION" in build
     assert "systemd, util-linux, coreutils, iproute2" in build
     assert "systemd, util-linux, coreutils, iproute" in build
     assert "License: GPL-3.0-or-later AND AGPL-3.0-only" in build
+    assert "PARTYOPS_OFFICE_RUNTIME" in build
+    assert "OFFICE_RUNTIME_MISSING" in build
+    assert "OFFICE_RUNTIME_ARCH_MISMATCH" in build
+    assert 'cp -a "$OFFICE_RUNTIME" "$PKG/opt/partyops/office-runtime"' in build
     transaction = (
         ROOT / "packaging" / "linux" / "post-install-transaction.sh"
     ).read_text(encoding="utf-8")
@@ -526,13 +531,18 @@ def test_native_linux_packages_embed_upgrade_and_selftest_lifecycle() -> None:
     )
     rpm_preun = build.split("%preun", 1)[1].split("%postun", 1)[0]
     assert 'if [ "\\$1" -eq 0 ]; then' in rpm_preun
-    assert "systemctl stop partyops.service partyops-updater.service" in rpm_preun
+    assert "export PARTYOPS_PACKAGE_REMOVE=1" in rpm_preun
+    assert "$RPM_PRE_SCRIPT" in rpm_preun
+    deb_prerm = build.split('>"$PKG/DEBIAN/postinst"', 1)[1].split('cat >"$PKG/DEBIAN/postrm"', 1)[0]
+    assert 'case "${1:-}" in remove|deconfigure)' in deb_prerm
+    assert "export PARTYOPS_PACKAGE_REMOVE=1" in deb_prerm
+    assert 'cat "$ROOT/packaging/linux/pre-install-stop.sh"' in deb_prerm
 
     one_click = (ROOT / "packaging" / "uos" / "one-click-install.sh").read_text(
         encoding="utf-8"
     )
-    assert 'VERSION="${PARTYOPS_VERSION:-1.4.5-rc.4}"' in one_click
-    assert 'PACKAGE_VERSION="${PARTYOPS_PACKAGE_VERSION:-1.4.5~rc.4}"' in one_click
+    assert 'VERSION="${PARTYOPS_VERSION:-1.4.5-rc.6}"' in one_click
+    assert 'PACKAGE_VERSION="${PARTYOPS_PACKAGE_VERSION:-1.4.5~rc.6}"' in one_click
     assert 'DEB="$ARTIFACTS/PartyOps_${VERSION}_linux_${ARCH}.deb"' in one_click
     assert '[[ "$installed_version" == "$PACKAGE_VERSION" ]]' in one_click
     assert 'chown -R "$CURRENT_USER' not in one_click
@@ -540,7 +550,7 @@ def test_native_linux_packages_embed_upgrade_and_selftest_lifecycle() -> None:
     acceptance = (ROOT / "packaging" / "uos" / "target-acceptance.sh").read_text(
         encoding="utf-8"
     )
-    assert 'PACKAGE_VERSION="${PARTYOPS_PACKAGE_VERSION:-1.4.5~rc.4}"' in acceptance
+    assert 'PACKAGE_VERSION="${PARTYOPS_PACKAGE_VERSION:-1.4.5~rc.6}"' in acceptance
     assert 'test "$INSTALLED_VERSION" = "$PACKAGE_VERSION"' in acceptance
     assert "LD_LIBRARY_PATH=/opt/partyops/ocr/lib" in acceptance
 
@@ -675,7 +685,9 @@ def test_linux_freeze_rejects_python_without_shared_runtime() -> None:
 
     assert 'sysconfig.get_config_var("Py_ENABLE_SHARED")' in portable
     assert 'sysconfig.get_config_var("LDLIBRARY")' in portable
-    assert 'candidate = Path(sys.base_prefix) / "lib" / library' in portable
+    assert 'sysconfig.get_config_var("LIBDIR")' in portable
+    assert 'candidates.append(Path(sys.base_prefix) / "lib" / library)' in portable
+    assert 'shared == 1 and library and any(candidate.is_file() for candidate in candidates)' in portable
     assert "发布冻结要求带共享 libpython 的 Python 3.11" in portable
 
 
@@ -770,6 +782,21 @@ def test_windows_installer_is_chinese_branded_and_preserves_custom_paths() -> No
     assert "GetShortName" in installer
     assert "WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall" in installer
     assert "ExtractServiceExecutablePath(ImagePath, ServiceExecutable)" in installer
+    assert "function IsKnownLegacyPartyOpsServiceBinary" in installer
+    assert "function IsDormantLegacyPartyOpsService" in installer
+    assert "GetSHA256OfFile(ExecutablePath)" in installer
+    assert "43babf7f765aff96a14fa4a56fb2ba63b329e358d4db8157d7c6f6c81e6a952d" in installer
+    assert "56c8d58af2d06c81ea8998b28130cec33494e64a322a29affcf6133407ae91ec" in installer
+    assert "89042cbeae03b03c30adcedeed0463f05730eb20149721fb4c3d5b2682de616b" in installer
+    assert "ServiceIsRunning(ServiceName)" in installer
+    assert "(CompareText(ObjectName, 'LocalSystem') = 0)" in installer
+    assert "(ServiceType = 16)" in installer
+    assert installer.index("IsKnownLegacyPartyOpsServiceBinary") < installer.index(
+        "LEGACY_SERVICE_CONFLICT"
+    )
+    assert installer.index("IsDormantLegacyPartyOpsService") < installer.index(
+        "LEGACY_SERVICE_CONFLICT"
+    )
     assert "function StopOwnedServiceThroughScm" in installer
     assert "LEGACY_SERVICE_CONFLICT" in installer
     assert "LEGACY_SERVICE_STOP_FAILED" in installer
@@ -943,6 +970,27 @@ def test_win7_uses_verified_sdk_ucrt_instead_of_build_host_system_dlls() -> None
     assert "ucrt-source.json" in build
     assert 'for directory in (root, root / "_internal")' in validator
     assert "is_verified_ucrt_forwarder" in validator
+    assert "_is_managed_anycpu" in validator
+    assert "COMIMAGE_FLAGS_32BITREQUIRED" in validator
+    assert "verified_universal_hashes" in validator
+    assert "ndp48-x86-x64-allos-enu.exe" in validator
+    assert "expected_dotnet_hash" in validator
+
+
+def test_win7_pins_vc142_instead_of_collecting_build_host_runtime() -> None:
+    build = (ROOT / "packaging" / "windows" / "build-windows.ps1").read_text(
+        encoding="utf-8"
+    )
+    validator = (ROOT / "scripts" / "validate-win7-pe.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert "vc142-14.29.30157-$ucrtArchitecture" in build
+    assert 'vcRuntimeEvidence.version -ne "14.29.30157.0"' in build
+    assert "VC142 运行时写入后哈希不一致" in build
+    assert 'Join-Path $bundleRoot "vc-runtime-source.json"' in build
+    assert 'root / "vc-runtime-source.json"' in validator
+    assert 'vc_source.get("version") != "14.29.30157.0"' in validator
     assert "10.0.19041.0" in validator
     assert '"api-ms-win-core-path-"' in validator
     assert '#define PartyOpsLegacy' in (
@@ -951,6 +999,39 @@ def test_win7_uses_verified_sdk_ucrt_instead_of_build_host_system_dlls() -> None
     assert '#define PartyOpsLegacy' in (
         ROOT / "packaging" / "windows" / "PartyOps-Win7-x86.iss"
     ).read_text(encoding="utf-8")
+
+
+def test_win7_prunes_inert_mixed_architecture_office_installer_payloads() -> None:
+    """Win7 运行闭包不得携带 LibreOffice MSI 的跨架构安装辅助程序。"""
+
+    build = (ROOT / "packaging" / "windows" / "build-windows.ps1").read_text(
+        encoding="utf-8"
+    )
+
+    assert "function Remove-LegacyOfficeInstallerArtifacts" in build
+    assert 'foreach ($installerDirectory in @("System", "System64"))' in build
+    for pattern in (
+        '"cli_*.dll"',
+        '"policy.*.cli_*.dll"',
+        '"spsupp_x86.dll"',
+        '"twain32shim.exe"',
+        '"wininst-*.exe"',
+        '"*_x64.dll"',
+        '"msvcp140.dll"',
+        '"vcruntime140.dll"',
+    ):
+        assert pattern in build
+    assert '-Architecture $targetArchitecture' in build
+    assert '压缩前 PE 门禁' in build
+    copy_index = build.index(
+        "Copy-Item -LiteralPath $OfficeRuntime -Destination $bundledOfficeRuntime"
+    )
+    prune_index = build.index("Remove-LegacyOfficeInstallerArtifacts", copy_index)
+    manifest_index = build.index("generate-release-manifest.py")
+    assert copy_index < prune_index < manifest_index
+    precompression_gate_index = build.index('压缩前 PE 门禁')
+    inno_index = build.index('& $InnoCompiler $innoScript')
+    assert manifest_index < precompression_gate_index < inno_index
 
 
 def test_linux_wizard_freeze_includes_tcl_runtime_and_entrypoint_smoke() -> None:
@@ -984,6 +1065,14 @@ def test_linux_native_install_moves_slow_runtime_health_check_out_of_package_tra
     assert "partyops-install-verify.service" in build
 
 
+def test_linux_install_verification_uses_explicit_beijing_time() -> None:
+    """安装状态的两个对外时间不得继承机器时区或输出无偏移日期。"""
+    verifier = (ROOT / "packaging" / "linux" / "post-install-verify.sh").read_text(encoding="utf-8")
+    expression = "$(TZ=Asia/Shanghai date +%Y-%m-%dT%H:%M:%S%:z)"
+    assert f'STARTED_AT="{expression}"' in verifier
+    assert f'FINISHED_AT="{expression}"' in verifier
+
+
 def test_linux_bundle_only_includes_current_user_documents() -> None:
     """发布后生成的验收/哈希记录不能反向封入制品形成循环或残留旧版本。"""
 
@@ -992,7 +1081,7 @@ def test_linux_bundle_only_includes_current_user_documents() -> None:
     )
 
     assert 'cp -a "$ROOT/docs" "$RUNTIME/"' not in script
-    assert '"release-notes-v1.4.5-rc.4.md"' in script
+    assert '"release-notes-v1.4.5-rc.6.md"' in script
     for document in (
         "user-guide.md",
         "deployment.md",
@@ -1060,7 +1149,7 @@ def test_linux_rpm_rollback_seed_keeps_current_release_generation() -> None:
         encoding="utf-8"
     )
 
-    assert 'RPM_RELEASE="0.rc.4.1"' in script
+    assert 'RPM_RELEASE="0.rc.6.1"' in script
     assert 'SEED_RELEASE="0.rc.2.0"' in script
 
 
@@ -1095,7 +1184,7 @@ def test_arm64_native_package_is_host_wrapped_then_chroot_tested() -> None:
     assert "bash packaging/linux/build-native.sh deb" in script
     assert "rpm) bash packaging/linux/build-native.sh rpm" in script
     assert "test-native-package-runtime.sh" in script
-    assert "artifacts/PartyOps-1.4.5-0.rc.4.1.aarch64.rpm arm64" in script
+    assert "artifacts/PartyOps-1.4.5-0.rc.6.1.aarch64.rpm arm64" in script
     assert "artifacts/PartyOps-1.4.5-0.rc.1.1.aarch64.rpm" not in script
     assert "deb|rpm) bash packaging/linux/build-native.sh '$ACTION'" not in script
 
@@ -1137,21 +1226,36 @@ def test_linux_native_packages_preserve_frozen_runtime_and_verify_identity() -> 
     assert "rpm -qp --queryformat" in script
     assert "元数据与冻结版本/架构不一致" in script
     assert 'find "$PKG/opt/partyops" -type f -exec chmod 0644 {} +' in script
+    assert 'OFFICE_PACKAGE_RUNTIME="$PKG/opt/partyops/office-runtime"' in script
+    assert 'find "$OFFICE_PACKAGE_RUNTIME" -type d -exec chmod 0755 {} +' in script
+    assert 'find "$OFFICE_PACKAGE_RUNTIME" -type f -exec chmod 0644 {} +' in script
+    assert 'find "$OFFICE_PACKAGE_RUNTIME/program" -maxdepth 1 -type f -print0' in script
+    assert '[[ "$office_candidate" != *.so* && "$office_header" == \'#!\' ]]' in script
+    assert '"$office_description" == *ELF*' in script
+    assert script.index(
+        'cp -a "$OFFICE_RUNTIME" "$PKG/opt/partyops/office-runtime"'
+    ) < script.index(
+        'find "$OFFICE_PACKAGE_RUNTIME" -type f -exec chmod 0644 {} +'
+    )
     assert 'find "$PKG/opt/partyops" -type f -perm /111 -print0' in script
     assert "原生包共享库被错误标记为可执行文件" in script
 
 
 def test_portable_builder_uses_an_executable_allowlist() -> None:
-    """共享库和静态资源不得以可执行权限进入便携或原生安装包。"""
+    """目录、共享库和静态资源不得继承 DrvFS 的宽松权限。"""
 
     script = (ROOT / "packaging" / "uos" / "build-portable.sh").read_text(
         encoding="utf-8"
     )
 
-    assert 'find "$RUNTIME" -type f -exec chmod 0644 {} +' in script
+    directory_normalization = 'find "$RUNTIME" -type d -exec chmod 0755 {} +'
+    file_normalization = 'find "$RUNTIME" -type f -exec chmod 0644 {} +'
+    assert directory_normalization in script
+    assert file_normalization in script
     assert 'find "$RUNTIME" -type f -perm /111 -print0' in script
     assert "共享库被错误标记为可执行文件" in script
-    assert script.index('find "$RUNTIME" -type f -exec chmod 0644') < script.index(
+    assert script.index(directory_normalization) < script.index(file_normalization)
+    assert script.index(file_normalization) < script.index(
         'chmod 0755 "$RUNTIME/partyops"'
     )
 
@@ -1168,7 +1272,7 @@ def test_linux_services_cap_restart_storms() -> None:
 
 
 def test_linux_ocr_uses_locked_glibc217_runtime_not_build_host() -> None:
-    """Linux 制品必须封入固定 OCR，不能复用构建机的过时系统版本。"""
+    """现有 full 制品仍封入固定 5.5.3 OCR，不复用构建机系统版本。"""
 
     portable = (ROOT / "packaging" / "uos" / "build-portable.sh").read_text(
         encoding="utf-8"
@@ -1185,7 +1289,8 @@ def test_linux_ocr_uses_locked_glibc217_runtime_not_build_host() -> None:
 
     assert 'OCR_ARCHIVE="$OCR_RUNTIME/tesseract-runtime.tar.gz"' in portable
     assert "validate-portable-tar.py" in portable
-    assert "--expected-root tesseract-5.5.3" in portable
+    assert "OCR_ARCHIVE_ROOT=tesseract-5.5.3" in portable
+    assert '--expected-root "$OCR_ARCHIVE_ROOT"' in portable
     assert "command -v tesseract" not in portable
     assert "/usr/share/tesseract" not in portable
     assert "^tesseract 5\\.5\\.3" in portable
@@ -1226,9 +1331,11 @@ def test_windows_ocr_uses_locked_minimal_runtime_and_runs_during_freeze() -> Non
 
     assert "57825338CEAA141C617F66D2A2210B6BEF396436FFC83D242595E5F5F33BF462" in helper
     assert "8174F4646283567AEF49490393D95F3D89265E7B584FA3D95CF64F7795B90CC5" in helper
+    assert "C874DB36E3D672DDA427B055483A7C33604359F30B88ECCBF585509C77B0CFFB" in helper
     assert "tesseract v5\\.5\\.3" in helper
     assert "tesseract 5\\.5\\.2" in helper
-    assert '$env:PARTYOPS_LEGACY_ARCH -eq "x86"' in helper
+    assert '$legacyArchitecture -eq "x86"' in helper
+    assert '$legacyArchitecture -eq "amd64"' in helper
     assert "chi_sim.traineddata" in helper and "eng.traineddata" in helper
     assert "tesseract-uninstall.exe" in helper and "lstmtraining.exe" in helper
     assert "Expand-VerifiedPartyOpsOcrRuntime" in builder
@@ -1263,6 +1370,37 @@ def test_windows7_x86_ocr_archive_is_locked_native_and_minimal() -> None:
     } <= names
 
 
+def test_windows7_amd64_ocr_archive_is_locked_native_and_minimal() -> None:
+    """Win7 x64 必须封入静态 x64 引擎，不能退回含 Win8 API 的动态包。"""
+
+    archive_path = (
+        ROOT
+        / "vendor"
+        / "windows"
+        / "ocr"
+        / "tesseract-5.5.2-windows7-amd64.zip"
+    )
+    assert hashlib.sha256(archive_path.read_bytes()).hexdigest() == (
+        "c874db36e3d672dda427b055483a7c33604359f30b88eccbf585509c77b0cffb"
+    )
+    with zipfile.ZipFile(archive_path) as archive:
+        names = set(archive.namelist())
+        executable = archive.read("bin/tesseract.exe")
+        source = json.loads(archive.read("SOURCE.json"))
+    pe_offset = struct.unpack_from("<I", executable, 0x3C)[0]
+    machine = struct.unpack_from("<H", executable, pe_offset + 4)[0]
+    assert executable[:2] == b"MZ" and machine == 0x8664
+    assert not any(name.lower().endswith(".dll") for name in names)
+    assert source["architecture"] == "windows7-amd64"
+    assert source["windows_api_floor"] == "_WIN32_WINNT=0x0601"
+    assert {
+        "tessdata/chi_sim.traineddata",
+        "tessdata/eng.traineddata",
+        "tessdata/osd.traineddata",
+        "SOURCE.json",
+    } <= names
+
+
 def test_linux_native_packaging_accepts_only_explicit_validated_cross_payload() -> None:
     """ARM 自检载荷可在 x86_64 封装，但必须显式授权并复核 ELF 架构。"""
 
@@ -1277,3 +1415,177 @@ def test_linux_native_packaging_accepts_only_explicit_validated_cross_payload() 
     assert native.count('--target "$RPM_ARCH"') == 2
     assert "tar --zstd" not in native
     assert 'zstd -dc -- "$PORTABLE_COPY"' in native
+
+
+def test_linux_office_runtime_is_dual_arch_private_and_conversion_tested() -> None:
+    """国产 Linux 公文转换必须同源、自包含并真实覆盖 PDF/DOC。"""
+
+    prepare = (ROOT / "scripts" / "prepare-libreoffice-linux.sh").read_text(
+        encoding="utf-8"
+    )
+    sysroot = (
+        ROOT / "scripts" / "prepare-libreoffice-private-sysroot.sh"
+    ).read_text(encoding="utf-8")
+    collector = (
+        ROOT / "scripts" / "collect-linux-private-runtime.py"
+    ).read_text(encoding="utf-8")
+    native = (ROOT / "packaging" / "linux" / "build-native.sh").read_text(
+        encoding="utf-8"
+    )
+    arm64 = (ROOT / "scripts" / "build-linux-arm64-chroot.sh").read_text(
+        encoding="utf-8"
+    )
+    readme = (ROOT / "packaging" / "linux" / "README.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "VERSION=25.8.7.2" in prepare
+    assert "a893a4f37a8b3fe110da92bb0135f488f8d695cd40cb7ce59c65bb525849bb67" in prepare
+    assert "a47d693dce67d5f5e15ee6f7ed2faaba5a2234fd21c3cd0227cf0567e63f95a4" in prepare
+    assert "The Document Foundation official archive" in prepare
+    assert "--seed-name libsoftokn3.so" in prepare
+    assert "--seed-name libnssckbi.so" in prepare
+    assert "--copy-name libsoftokn3.chk" in prepare
+    assert "libavmediaqt6.so" in prepare and "libofficebean.so" in prepare
+    assert "--convert-to \"$target_format\"" in prepare
+    assert "test -s \"$TEST_ROOT/output/北京时间公文转换验证.pdf\"" in prepare
+    assert "test -s \"$TEST_ROOT/output/北京时间公文转换验证.doc\"" in prepare
+    assert 'if [[ "\\$status" -eq 81 ]]' in prepare
+
+    assert "manylinux_2_34_x86_64@sha256:224ae18" in sysroot
+    assert "manylinux_2_34_aarch64@sha256:b3f10ce" in sysroot
+    assert "dd5ddb478f8863533b48baf2273411ab7c110f4609a74590223f7d9716dcb6cb" in sysroot
+    assert "82b2b3b8c65cc1fcd369b86b0ca0b3b3ed675304898354b8f15143ba57365e90" in sysroot
+    assert "glibc 2.34" in sysroot
+    assert "tree_root / str(target).lstrip" in collector
+    assert '"--seed-name"' in collector and "必须复制并纳入 ELF" in collector
+    assert '"--copy-name"' in collector and "必须复制但无需解析 ELF" in collector
+
+    assert "OFFICE_SOURCE_MISMATCH" in native
+    assert "OFFICE_DLOPEN_RUNTIME_MISSING" in native
+    assert "OFFICE_PRIVATE_RUNTIME_HASH_MISMATCH" in native
+    assert "OFFICE_PRIVATE_PACKAGES_HASH_MISMATCH" in native
+    assert 'chmod 0755 "$OFFICE_PACKAGE_RUNTIME/private-runtime/$OFFICE_LOADER_NAME"' in native
+    assert '! -path "$OFFICE_PACKAGE_RUNTIME/private-runtime/$OFFICE_LOADER_NAME"' in native
+    assert "--convert-to pdf" in arm64
+    assert "--convert-to 'doc:MS Word 97'" in arm64
+    assert "glibc >= 2.17" in native
+    assert "不替换系统 glibc" in readme
+    assert "PRIVATE_RUNTIME_LIBS.txt" in readme
+
+
+def test_linux_native_runtime_gate_allows_only_private_office_loader() -> None:
+    """成品门禁必须允许经架构校验的私有加载器，同时继续拒绝其他可执行库。"""
+
+    runtime_test = (
+        ROOT / "scripts" / "test-native-package-runtime.sh"
+    ).read_text(encoding="utf-8")
+
+    assert "OFFICE_LOADER_NAME=ld-linux-x86-64.so.2" in runtime_test
+    assert "OFFICE_LOADER_NAME=ld-linux-aarch64.so.1" in runtime_test
+    assert 'PRIVATE_OFFICE_LOADER="$RUNTIME/office-runtime/private-runtime/' in runtime_test
+    assert 'file "$PRIVATE_OFFICE_LOADER" | grep -Eq "$EXPECTED_OFFICE_PATTERN"' in runtime_test
+    assert '! -path "$PRIVATE_OFFICE_LOADER" -print -quit' in runtime_test
+    assert runtime_test.index('[[ -f "$PRIVATE_OFFICE_LOADER"') < runtime_test.index(
+        '! -path "$PRIVATE_OFFICE_LOADER" -print -quit'
+    )
+
+
+def test_windows_build_requires_audited_architecture_matched_office_runtime() -> None:
+    """Windows 不能把未知来源或错误架构的办公转换器封进安装包。"""
+
+    build = (ROOT / "packaging" / "windows" / "build-windows.ps1").read_text(
+        encoding="utf-8"
+    )
+    legacy = (ROOT / "packaging" / "windows" / "build-windows7.ps1").read_text(
+        encoding="utf-8"
+    )
+
+    assert "[OFFICE_RUNTIME_MISSING]" in build
+    assert "[OFFICE_RUNTIME_REPARSE_POINT]" in build
+    assert "PE 头越界或签名无效" in build
+    assert "[OFFICE_RUNTIME_ARCH_MISMATCH]" in build
+    assert "soffice.com" in build
+    assert "[OFFICE_RUNTIME_HASH_MISMATCH]" in build
+    assert "[OFFICE_RUNTIME_SIGNATURE_INVALID]" in build
+    assert 'Join-Path $bundleRoot "office-runtime"' in build
+    assert "-OfficeRuntime $OfficeRuntime" in legacy
+    assert "OfficeRuntimeMode" not in build
+    assert "OfficeRuntimeMode" not in legacy
+
+
+def test_windows_packages_embed_and_transactionally_install_dotnet48() -> None:
+    """原源码宿主依赖必须随包闭环，不能只在构建机已有 .NET 时通过。"""
+
+    helper = (ROOT / "packaging" / "windows" / "prepare-dotnet48-runtime.ps1").read_text(
+        encoding="utf-8"
+    )
+    installer = (ROOT / "packaging" / "windows" / "PartyOps.iss").read_text(
+        encoding="utf-8"
+    )
+    for script_name in ("build-windows.ps1", "package-windows.ps1"):
+        script = (ROOT / "packaging" / "windows" / script_name).read_text(
+            encoding="utf-8"
+        )
+        assert "prepare-dotnet48-runtime.ps1" in script
+        assert "Add-VerifiedPartyOpsDotNet48Prerequisite" in script
+        assert script.index("generate-release-manifest.py") < script.index(
+            "Add-VerifiedPartyOpsDotNet48Prerequisite"
+        )
+
+    assert "0A3A390C47E639D0F7FC65B21195FEE6B7F65B066F80F70C60FAB191D14B7E40" in helper
+    assert "Get-AuthenticodeSignature" in helper
+    assert "DOTNET48_SIGNATURE_INVALID" in helper
+    assert "Invoke-WebRequest" in helper
+    assert "Net.SecurityProtocolType]::Tls12" in helper
+    assert "Start-Sleep -Seconds 20" in helper
+    assert "Start-Sleep -Seconds 2" in helper
+    assert 'Excludes: "PartyOpsUpdater.exe,PartyOpsUpdaterService.exe,prerequisites\\*"' in installer
+    assert 'Flags: dontcopy' in installer
+    assert "DotNet48ReleaseMinimum = 528040" in installer
+    assert "function EnsureDotNet48" in installer
+    assert "ExtractTemporaryFile(DotNet48InstallerName)" in installer
+    assert "'/q /norestart'" in installer
+    assert "ResultCode <> 1641" in installer and "ResultCode <> 3010" in installer
+    assert "NeedsRestart := True" in installer
+    assert "WizardSilentAndCanLaunch" in installer
+
+
+def test_windows_formatter_release_host_has_no_debug_or_build_path_dependency() -> None:
+    """直接移植的程序集可以包含原规则，但不得依赖 PDB 或开发机源码路径。"""
+
+    script = (ROOT / "scripts" / "build-document-formatter-host.ps1").read_text(
+        encoding="utf-8"
+    )
+    assert "/p:DebugSymbols=false" in script
+    assert "/p:DebugType=None" in script
+    assert "FORMATTER_HOST_BUILD_PATH_LEAK" in script
+    assert "FORMATTER_HOST_PDB_LEAK" in script
+    assert "$repoRoot, $DocumentFormatterSource" in script
+
+
+def test_linux_packages_require_real_wps_source_formatter_runtime() -> None:
+    """国产系统制品不得在缺少本机 WPS 原源码宿主时继续封包。"""
+
+    portable = (ROOT / "packaging" / "uos" / "build-portable.sh").read_text(
+        encoding="utf-8"
+    )
+    native = (ROOT / "packaging" / "linux" / "build-native.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert "PARTYOPS_LINUX_FORMATTER_RUNTIME" in portable
+    assert "FORMATTER_RUNTIME_MISSING" in portable
+    assert "validate-source-formatter-runtime.py" in portable
+    assert "verify-document-formatter-parity.py" in portable
+    assert "verify-document-formatter-features-e2e.py" in portable
+    assert "probe-wps-native-bridge.py" not in portable
+    assert "--bridge-evidence" not in portable
+    assert "verify-formatter-runtime-evidence.py" in portable
+    assert "runtime-evidence.json" in portable
+    assert "word-vtable-map.json" in portable
+    assert "LICENSE-WPS-SDK.txt" in portable
+    assert "LICENSE-MONO-RUNTIME.txt" in portable
+    assert "formatter-host/partyops-document-formatter-host" in portable
+    assert "formatter-host/partyops-document-formatter-host" in native
+    assert "validate-source-formatter-runtime.py" in native

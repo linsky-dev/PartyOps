@@ -1,15 +1,11 @@
-"""公文本机排版的异常路径、转换器和回环界面对抗测试。"""
+"""公文内嵌排版引擎的异常路径与转换器对抗测试。"""
 
 from __future__ import annotations
 
-import http.client
 import io
 import json
 import os
-import re
-import socket
 import sys
-import threading
 import time
 import types
 import uuid
@@ -138,7 +134,7 @@ def test_normal_style_creation_and_document_grid_diagnosis(tmp_path: Path, monke
         xml = etree.fromstring(package.read("word/document.xml"), parser=formatter.XML_PARSER)
         grid = xml.find(".//w:docGrid", namespaces=formatter.NS)
         assert grid is not None
-        grid.set(formatter._qn("charSpace"), "0")
+        grid.set(formatter._qn("charSpace"), "1")
         package.writestr("word/document.xml", etree.tostring(xml, encoding="UTF-8"))
     warning = formatter.diagnose_docx(formatted, changed_count=0)
     error = formatter.diagnose_docx(formatted, changed_count=1)
@@ -231,6 +227,7 @@ def test_font_inventory_and_issue_branches(tmp_path: Path, monkeypatch: pytest.M
 
     fake_winreg = SimpleNamespace(
         HKEY_LOCAL_MACHINE=object(),
+        HKEY_CURRENT_USER=object(),
         OpenKey=lambda *_args: FontKey(),
         EnumValue=enum_value,
     )
@@ -239,6 +236,44 @@ def test_font_inventory_and_issue_branches(tmp_path: Path, monkeypatch: pytest.M
     assert formatter._font_issues() == []
     fake_winreg.OpenKey = lambda *_args: (_ for _ in ()).throw(OSError())
     assert formatter._font_inventory() == ""
+
+
+@pytest.mark.parametrize("unavailable", [None, "machine", "user"])
+def test_user_font_installation_is_detected_without_restart(monkeypatch: pytest.MonkeyPatch, unavailable: str | None) -> None:
+    """字体安装/移除后下一次检测立即变化，单个注册表范围失败可独立处理。"""
+    entries: dict[str, list[str]] = {"machine": [], "user": []}
+
+    class FontKey:
+        def __init__(self, hive: str) -> None:
+            self.hive = hive
+
+        def __enter__(self) -> "FontKey":
+            if self.hive == unavailable:
+                raise PermissionError("synthetic registry access denied")
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+    def enum_value(key: FontKey, index: int) -> tuple[str, str, int]:
+        try:
+            return entries[key.hive][index], "fixture.ttf", 1
+        except IndexError as exc:
+            raise OSError("end of registry values") from exc
+
+    monkeypatch.setattr(formatter, "os", SimpleNamespace(name="nt"))
+    monkeypatch.setitem(sys.modules, "winreg", SimpleNamespace(
+        HKEY_LOCAL_MACHINE="machine", HKEY_CURRENT_USER="user",
+        OpenKey=lambda hive, _path: FontKey(hive), EnumValue=enum_value,
+    ))
+    assert formatter._font_issues()[0].code == "FONT_CHECK_UNAVAILABLE"
+    available = "machine" if unavailable == "user" else "user"
+    entries[available].append("仿宋 楷体 黑体")
+    assert formatter._font_issues()[0].code == "REQUIRED_FONT_MISSING"
+    entries[available].append("方正小标宋简体")
+    assert formatter._font_issues() == []
+    entries[available].pop()
+    assert "方正小标宋" in formatter._font_issues()[0].detail
 
 
 def test_local_office_conversion_branches(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -250,13 +285,23 @@ def test_local_office_conversion_branches(tmp_path: Path, monkeypatch: pytest.Mo
     executable.write_bytes(b"binary")
     monkeypatch.setattr(formatter, "_office_candidates", lambda: [executable])
 
-    def successful_run(*_args: object, **_kwargs: object) -> SimpleNamespace:
+    observed: dict[str, object] = {}
+
+    def successful_run(*args: object, **kwargs: object) -> SimpleNamespace:
+        observed["command"] = args[0]
+        observed["environment"] = kwargs["env"]
         (workspace / "source.docx").write_bytes(_docx_bytes(tmp_path, "标题"))
         return SimpleNamespace(returncode=0)
 
     monkeypatch.setattr(formatter.subprocess, "run", successful_run)
     assert formatter._convert_with_libreoffice(source, workspace) == workspace / "source.docx"
     assert os.environ.get("HTTP_PROXY") != ""
+    command = observed["command"]
+    environment = observed["environment"]
+    assert isinstance(command, list) and "--safe-mode" in command
+    assert isinstance(environment, dict)
+    assert environment["HTTP_PROXY"] == "http://127.0.0.1:9"
+    assert environment["NO_PROXY"] == "127.0.0.1,localhost"
 
     (workspace / "source.docx").unlink()
     monkeypatch.setattr(formatter.subprocess, "run", lambda *_args, **_kwargs: SimpleNamespace(returncode=1))
@@ -274,11 +319,14 @@ def test_office_candidate_and_windows_com_conversion_matrix(tmp_path: Path, monk
     installed = program_files / "LibreOffice" / "program" / "soffice.exe"
     installed.parent.mkdir(parents=True)
     installed.write_bytes(b"binary")
+    installed_cli = installed.with_suffix(".com")
+    installed_cli.write_bytes(b"console")
     monkeypatch.setattr(formatter.shutil, "which", lambda name: str(executable) if name == "soffice" else None)
     monkeypatch.setenv("PROGRAMFILES", str(program_files))
     monkeypatch.delenv("PROGRAMFILES(X86)", raising=False)
     candidates = formatter._office_candidates()
-    assert executable in candidates and installed in candidates
+    assert executable in candidates and installed in candidates and installed_cli in candidates
+    assert candidates.index(installed_cli) < candidates.index(installed)
     with monkeypatch.context() as patcher:
         patcher.setattr(formatter.os, "name", "posix")
         patcher.setattr(formatter.shutil, "which", lambda _name: None)
@@ -355,6 +403,108 @@ def test_office_candidate_and_windows_com_conversion_matrix(tmp_path: Path, monk
     with monkeypatch.context() as patcher:
         patcher.setattr(formatter.os, "name", "posix")
         assert formatter._convert_with_windows_office(source, workspace) is None
+
+
+def test_frozen_office_candidates_prefer_bundled_runtime_with_explicit_override(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    app_root = tmp_path / "frozen-app"
+    executable = app_root / "partyops"
+    executable.parent.mkdir(parents=True)
+    executable.touch()
+    bundled = app_root / "office-runtime" / "program" / "soffice"
+    bundled.parent.mkdir(parents=True)
+    bundled.touch()
+    explicit = tmp_path / "office-override"
+    explicit.touch()
+    path_soffice = tmp_path / "path-soffice"
+    path_soffice.touch()
+    path_libreoffice = tmp_path / "path-libreoffice"
+    path_libreoffice.touch()
+
+    monkeypatch.setattr(formatter.sys, "executable", str(executable))
+    monkeypatch.setattr(formatter.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(
+        formatter.shutil,
+        "which",
+        lambda name: str(path_soffice if name == "soffice" else path_libreoffice),
+    )
+    monkeypatch.setenv("PARTYOPS_OFFICE_BIN", str(explicit))
+    monkeypatch.delenv("PROGRAMFILES", raising=False)
+    monkeypatch.delenv("PROGRAMFILES(X86)", raising=False)
+
+    candidates = formatter._office_candidates()
+    assert candidates[0] == explicit
+    assert candidates.index(bundled) < candidates.index(path_soffice)
+    assert candidates.index(path_soffice) < candidates.index(path_libreoffice)
+
+
+def test_development_office_candidates_keep_path_before_bundled_with_override(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    app_root = tmp_path / "development-app"
+    executable = app_root / "partyops"
+    executable.parent.mkdir(parents=True)
+    executable.touch()
+    bundled = app_root / "office-runtime" / "program" / "soffice"
+    bundled.parent.mkdir(parents=True)
+    bundled.touch()
+    explicit = tmp_path / "office-override"
+    explicit.touch()
+    path_soffice = tmp_path / "path-soffice"
+    path_soffice.touch()
+    path_libreoffice = tmp_path / "path-libreoffice"
+    path_libreoffice.touch()
+
+    monkeypatch.setattr(formatter.sys, "executable", str(executable))
+    monkeypatch.setattr(formatter.sys, "frozen", False, raising=False)
+    monkeypatch.setattr(
+        formatter.shutil,
+        "which",
+        lambda name: str(path_soffice if name == "soffice" else path_libreoffice),
+    )
+    monkeypatch.setenv("PARTYOPS_OFFICE_BIN", str(explicit))
+    monkeypatch.delenv("PROGRAMFILES", raising=False)
+    monkeypatch.delenv("PROGRAMFILES(X86)", raising=False)
+
+    candidates = formatter._office_candidates()
+    assert candidates[0] == explicit
+    assert candidates.index(path_soffice) < candidates.index(path_libreoffice)
+    assert candidates.index(path_libreoffice) < candidates.index(bundled)
+
+
+@pytest.mark.parametrize("original", [None, "", "/bundle/_internal", "/bundle/_internal:/user/lib"])
+def test_frozen_linux_font_query_uses_system_libraries_and_refreshes(
+    monkeypatch: pytest.MonkeyPatch, original: str | None,
+) -> None:
+    """复现 UOS 的嵌套冻结进程库污染，并验证安装字体后无需重启。"""
+    monkeypatch.setattr(formatter.sys, "platform", "linux")
+    monkeypatch.setattr(formatter.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(formatter.sys, "_MEIPASS", "/bundle/_internal", raising=False)
+    monkeypatch.setattr(formatter.sys, "executable", "/bundle/partyops")
+    monkeypatch.setenv("LD_LIBRARY_PATH", "/bundle/_internal:/bundle/_internal")
+    if original is None:
+        monkeypatch.delenv("LD_LIBRARY_PATH_ORIG", raising=False)
+    else:
+        monkeypatch.setenv("LD_LIBRARY_PATH_ORIG", original)
+    monkeypatch.setattr(formatter.shutil, "which", lambda _name: "/usr/bin/fc-list")
+    inventories = iter(["黑体", "黑体 仿宋 楷体 方正小标宋"])
+
+    def query(_args: list[str], **kwargs: object) -> object:
+        environment = kwargs["env"]
+        assert isinstance(environment, dict)
+        expected = "/user/lib" if original and "/user/lib" in original else None
+        assert environment.get("LD_LIBRARY_PATH") == expected
+        assert "LD_LIBRARY_PATH_ORIG" not in environment
+        return formatter.subprocess.CompletedProcess(_args, 0, stdout=next(inventories))
+
+    monkeypatch.setattr(formatter.subprocess, "run", query)
+    # 暂时切换 os.name 仅覆盖注册表分支，不创建 PosixPath。
+    monkeypatch.setattr(formatter, "Path", type(Path.cwd()))
+    monkeypatch.setattr(formatter.os, "name", "posix")
+    assert formatter._font_inventory() == "黑体"
+    assert formatter._font_inventory() == "黑体 仿宋 楷体 方正小标宋"
+    assert formatter.os.environ["LD_LIBRARY_PATH"] == "/bundle/_internal:/bundle/_internal"
 
 
 def test_posix_font_inventory_and_private_write_cleanup(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -439,6 +589,8 @@ def test_footer_reuse_rejects_unsafe_relationships_and_avoids_duplicates(tmp_pat
         outputs = formatter._add_page_footers(document, settings, relationships, content_types, package)
     assert "word/footer-existing.xml" in outputs
     assert "word/footer-partyops-even.xml" in outputs
+    normalized = formatter._safe_xml(outputs["word/footer-existing.xml"], "word/footer-existing.xml")
+    assert formatter._standard_page_footer_paragraph(formatter._page_field_paragraphs(normalized)[0])
     assert len(content_types.findall(f"{{{formatter.CT}}}Override")) == 1
     relationship_ids = {item.get("Id") for item in relationships}
     assert "rIdPartyOpsFooter2" in relationship_ids
@@ -456,9 +608,8 @@ def test_prepare_docx_and_private_write_branches(tmp_path: Path, monkeypatch: py
     assert formatter.prepare_docx(legacy, tmp_path) == (converted, True)
     monkeypatch.setattr(formatter, "_convert_with_libreoffice", lambda *_args: None)
     monkeypatch.setattr(formatter, "_convert_with_windows_office", lambda *_args: converted)
-    assert formatter.prepare_docx(legacy, tmp_path) == (converted, True)
-    monkeypatch.setattr(formatter, "_convert_with_windows_office", lambda *_args: None)
-    assert _error_code(lambda: formatter.prepare_docx(legacy, tmp_path)) == "OFFICE_SUITE_REQUIRED"
+    # 新内嵌工具禁止退回 Word/WPS COM；随包运行时缺失时必须明确失败。
+    assert _error_code(lambda: formatter.prepare_docx(legacy, tmp_path)) == "BUNDLED_OFFICE_RUNTIME_MISSING"
 
     private = tmp_path / "private.bin"
     formatter._private_write(private, b"content")
@@ -498,176 +649,12 @@ def test_upload_parser_error_and_success_matrix(monkeypatch: pytest.MonkeyPatch)
     assert _error_code(lambda: formatter._extract_upload(_UploadHandler(f"multipart/form-data; boundary={boundary}", valid))) == "FILE_SIZE_LIMIT"
 
 
-def test_stage_log_rotation_and_html_are_content_safe(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_stage_log_rotation_is_content_safe(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     log = tmp_path / "official-format.log"
     log.write_bytes(b"x" * (512 * 1024 + 1))
     formatter._append_stage_log(tmp_path, "diagnose", time.monotonic(), "OK")
     assert (tmp_path / "official-format.log.1").is_file()
     record = json.loads(log.read_text(encoding="utf-8"))
     assert set(record) == {"version", "stage", "duration_ms", "result_code"}
-    issue = formatter.FormatIssue("<code>", "warning", "<标题>", "<细节>", "5.1")
-    escaped = formatter._escape_issue(issue)
-    assert "&lt;标题&gt;" in escaped and "<标题>" not in escaped
-    body = formatter._report_body("<token>", "a" * 32, formatter.FormatReport(True, 1, 0, 0, ()), formatted=False)
-    assert "按 GB/T 9704-2012 一键排版" in body
-    formatted_body = formatter._report_body("token", "a" * 32, formatter.FormatReport(False, 1, 0, 2, (issue,)), formatted=True)
-    assert "公文规范版" in formatted_body and "存在阻断项" in formatted_body
-
     monkeypatch.setattr(formatter.Path, "open", lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError()))
     formatter._append_stage_log(tmp_path, "failure", time.monotonic(), "IO")
-
-
-def _wait_formatter_url(config_dir: Path) -> str:
-    marker = config_dir / "official-format.url"
-    for _ in range(100):
-        if marker.is_file():
-            return marker.read_text(encoding="utf-8").strip()
-        time.sleep(0.05)
-    raise AssertionError("本机排版服务未启动")
-
-
-def _request(url: str, method: str, path: str, body: bytes | None = None, headers: dict[str, str] | None = None) -> tuple[int, bytes]:
-    parsed = formatter.urllib.parse.urlsplit(url)
-    connection = http.client.HTTPConnection(parsed.hostname, parsed.port, timeout=10)
-    connection.request(method, path, body=body, headers=headers or {})
-    response = connection.getresponse()
-    payload = response.read()
-    status = response.status
-    connection.close()
-    return status, payload
-
-
-def test_formatter_loopback_end_to_end(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    config_dir = tmp_path / "config"
-    token = str(uuid.uuid4())
-    errors: list[BaseException] = []
-    monkeypatch.setattr(formatter, "_font_inventory", lambda: "方正小标宋 仿宋 楷体 黑体")
-
-    def target() -> None:
-        try:
-            formatter.run_official_format_tool(token, open_browser=False, config_dir=config_dir)
-        except BaseException as exc:  # noqa: BLE001 - 测试线程需要回传异常。
-            errors.append(exc)
-
-    thread = threading.Thread(target=target)
-    thread.start()
-    url = _wait_formatter_url(config_dir)
-    status, _ = _request(url, "GET", "/")
-    assert status == 403
-    query = formatter.urllib.parse.urlsplit(url).query
-    status, page = _request(url, "GET", f"/?{query}")
-    assert status == 200 and "公文规范排版".encode() in page
-    assert _request(url, "GET", f"/missing?{query}")[0] == 404
-    assert _request(url, "POST", "/unknown", b"")[0] == 403
-    assert _request(url, "POST", f"/unknown?{query}", b"")[0] == 404
-
-    payload = _docx_bytes(tmp_path, "关于开展工作的通知", "请认真落实,按期完成。")
-    boundary = "PartyOpsE2E"
-    body = (
-        f"--{boundary}\r\nContent-Disposition: form-data; name=\"document\"; filename=\"sample.docx\"\r\n"
-        "Content-Type: application/vnd.openxmlformats-officedocument.wordprocessingml.document\r\n\r\n"
-    ).encode() + payload + f"\r\n--{boundary}--\r\n".encode()
-    status, diagnose_page = _request(
-        url,
-        "POST",
-        f"/diagnose?{query}",
-        body,
-        {"Content-Type": f"multipart/form-data; boundary={boundary}", "Content-Length": str(len(body))},
-    )
-    assert status == 200
-    match = re.search(br"/format/([0-9a-f]{32})", diagnose_page)
-    assert match
-    document_id = match.group(1).decode()
-    assert _request(url, "GET", f"/download/{document_id}?{query}")[0] == 410
-    status, formatted_page = _request(url, "POST", f"/format/{document_id}?{query}", b"")
-    assert status == 200 and "排版后复核".encode() in formatted_page
-    status, download = _request(url, "GET", f"/download/{document_id}?{query}")
-    assert status == 200 and download.startswith(b"PK")
-    thread.join(8)
-    assert not thread.is_alive() and errors == []
-    assert not (config_dir / "official-format.url").exists()
-    log = (config_dir / "official-format.log").read_text(encoding="utf-8")
-    assert "sample.docx" not in log and "diagnose" in log and "download" in log
-
-
-def test_formatter_cancel_invalid_transaction_and_browser_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    assert _error_code(lambda: formatter.run_official_format_tool("bad", open_browser=False, config_dir=tmp_path)) == "FORMAT_TRANSACTION_INVALID"
-    token = str(uuid.uuid4())
-    thread = threading.Thread(
-        target=lambda: formatter.run_official_format_tool(token, open_browser=False, config_dir=tmp_path / "cancel")
-    )
-    thread.start()
-    url = _wait_formatter_url(tmp_path / "cancel")
-    query = formatter.urllib.parse.urlsplit(url).query
-    payload = _docx_bytes(tmp_path, "标题", "正文内容。")
-    boundary = "PartyOpsCancel"
-    upload = (
-        f"--{boundary}\r\nContent-Disposition: form-data; name=\"document\"; filename=\"cancel.docx\"\r\n\r\n"
-    ).encode() + payload + f"\r\n--{boundary}--\r\n".encode()
-    status, diagnose_page = _request(
-        url,
-        "POST",
-        f"/diagnose?{query}",
-        upload,
-        {"Content-Type": f"multipart/form-data; boundary={boundary}", "Content-Length": str(len(upload))},
-    )
-    assert status == 200
-    matched = re.search(br"/format/([0-9a-f]{32})", diagnose_page)
-    assert matched
-    document_id = matched.group(1).decode()
-    assert _request(url, "POST", f"/format/{document_id}?{query}", b"")[0] == 200
-    status, body = _request(url, "POST", f"/cancel?{query}", b"")
-    assert status == 200 and "临时文件已清理".encode() in body
-    thread.join(8)
-    assert not thread.is_alive()
-
-    browser_config = tmp_path / "browser"
-
-    def fail_browser(_url: str, **_kwargs: object) -> bool:
-        (browser_config / "official-format.url").write_text("different\n", encoding="utf-8")
-        return False
-
-    monkeypatch.setattr(formatter.webbrowser, "open", fail_browser)
-    assert _error_code(
-        lambda: formatter.run_official_format_tool(
-            str(uuid.uuid4()), open_browser=True, config_dir=browser_config
-        )
-    ) == "BROWSER_OPEN_FAILED"
-    assert (browser_config / "official-format.url").read_text(encoding="utf-8").strip() == "different"
-
-
-def test_formatter_idle_timeout_stops_without_opening_browser(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(formatter, "IDLE_TIMEOUT_SECONDS", 0)
-    assert formatter.run_official_format_tool(
-        str(uuid.uuid4()), open_browser=False, config_dir=tmp_path / "idle"
-    ) == 0
-
-
-def test_loopback_guard_covers_localhost_ipv6_and_raw_socket() -> None:
-    restore = formatter._install_loopback_only_network_guard()
-    try:
-        assert formatter.socket.create_connection
-        with pytest.raises(OSError, match="OFFICIAL_FORMAT_NETWORK_DENIED"):
-            formatter.socket.create_connection("bad-address")
-        with pytest.raises(OSError) as localhost:
-            formatter.socket.create_connection(("localhost", 9), timeout=0.01)
-        assert "OFFICIAL_FORMAT_NETWORK_DENIED" not in str(localhost.value)
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        try:
-            with pytest.raises(OSError, match="OFFICIAL_FORMAT_NETWORK_DENIED"):
-                sock.connect(("8.8.8.8", 443))
-            with pytest.raises(OSError) as local:
-                sock.connect(("127.0.0.1", 9))
-            assert "OFFICIAL_FORMAT_NETWORK_DENIED" not in str(local.value)
-        finally:
-            sock.close()
-        if hasattr(socket, "AF_UNIX"):
-            unix_socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-            try:
-                with pytest.raises(OSError) as local_transport:
-                    unix_socket.connect("partyops-nonexistent.sock")
-                assert "OFFICIAL_FORMAT_NETWORK_DENIED" not in str(local_transport.value)
-            finally:
-                unix_socket.close()
-    finally:
-        restore()

@@ -1,0 +1,30 @@
+{
+  "component": "Microsoft .NET Framework 4.8 offline runtime installer",
+  "version": "4.8",
+  "kb": "KB4503548",
+  "platform": "windows",
+  "architectures": [
+    "x86",
+    "x64"
+  ],
+  "filename": "ndp48-x86-x64-allos-enu.exe",
+  "download_url": "https://go.microsoft.com/fwlink/?linkid=2088631",
+  "official_download_page": "https://dotnet.microsoft.com/en-us/download/dotnet-framework/net48",
+  "official_support_page": "https://support.microsoft.com/en-au/topic/microsoft-net-framework-4-8-offline-installer-for-windows-9d23f658-3b97-68ab-d013-aa3c3e7495e0",
+  "sha256": "0A3A390C47E639D0F7FC65B21195FEE6B7F65B066F80F70C60FAB191D14B7E40",
+  "size": 121346568,
+  "retrieved_at": "2026-09-01T13:41:00+08:00",
+  "timezone": "Asia/Shanghai",
+  "authenticode": {
+    "status": "Valid",
+    "subject": "CN=Microsoft Corporation, O=Microsoft Corporation, L=Redmond, S=Washington, C=US",
+    "certificate_thumbprint": "C2048FB509F1C37A8C3E9EC6648118458AA01780",
+    "timestamp_verified": true
+  },
+  "supported_partyops_targets": [
+    "windows-10-11-amd64",
+    "windows7-sp1-amd64",
+    "windows7-sp1-x86"
+  ],
+  "redistribution_basis": "Microsoft .NET Framework Redistributable license terms carried by the official offline installer"
+}

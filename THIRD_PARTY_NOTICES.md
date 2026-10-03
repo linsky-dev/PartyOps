@@ -1,6 +1,17 @@
-# 第三方开源软件声明
+# 第三方软件声明
 
-PartyOps 1.4.3 使用下列直接运行依赖；完整的直接与传递依赖可在
+## Microsoft Visual Studio Tools for Office 支持库
+
+`vendor/document-formatter-source/lib/Microsoft.Office.Tools.Common.v4.0.Utilities.dll`
+为排版项目引用的 Microsoft 支持库，不属于本项目开源许可证的授权范围。
+Microsoft 官方 [Visual Studio 可再分发组件列表](https://learn.microsoft.com/en-us/visualstudio/releases/2026/redistribution)
+列出该文件，允许在遵守相应软件许可条款的前提下随程序分发未经修改的文件。
+本地文件于 2026-09-27 核验：版本 `10.0.30319.1`，32,664 字节，
+SHA-256 `8cb09317c326e9b0f83c337eae7ccdeaad3e45e5da3603e1ebc90c5a06ad1702`；
+Authenticode 状态为 `Valid`，签名主体为 Microsoft Corporation。
+此记录补充当前文件身份与分发依据，不声称已经找回原始下载记录或 NuGet 锁文件。
+
+PartyOps 1.4.5-rc.6 使用下列直接运行依赖；完整的直接与传递依赖可在
 [Python CycloneDX SBOM](docs/sbom-python.cdx.json) 和
 [前端 CycloneDX SBOM](docs/sbom-frontend.cdx.json) 中审计。版本由
 `backend/requirements*.txt`、`backend/pyproject.toml` 与
@@ -60,8 +71,30 @@ GPLv3 第 13 节，GPLv3 与 AGPLv3 可以组合，但组合的软件需要遵�
 | Inno Setup | 6.7.3 | 生成 Windows 单文件安装器 | <https://github.com/jrsoftware/issrc/tree/is-6_7_3>，Inno Setup License |
 | Simplified Chinese messages | `is-6_7_3` | PartyOps 安装器简体中文界面 | `Files/Languages/Unofficial/ChineseSimplified.isl`，维护者 Zhenghan Yang，随 Inno Setup 源码按 Inno Setup License 分发 |
 | Microsoft Universal C Runtime | Windows SDK `10.0.19041.0` | Win7 x64/x86 app-local UCRT 与 APISet 转发器 | Microsoft Windows SDK 可再发行文件；精确 DLL 哈希、SDK 许可和第三方声明随安装目录 `ucrt-source.json`、`ucrt-sdk-license.rtf`、`ucrt-sdk-third-party-notices.rtf` 提供 |
+| Microsoft Visual C++ Runtime | VC142 `14.29.30157.0` | Win7 x64/x86 app-local C/C++ 运行库 | Microsoft Visual Studio 2019 可再发行文件；架构、精确 DLL 哈希、来源路径和官方许可说明随安装目录 `vc-runtime-source.json` 提供 |
+| Microsoft .NET Framework | 4.8 / KB4503548 | Windows 原排版源码宿主运行时；缺少时由安装包离线安装 | 微软官方离线运行时 `ndp48-x86-x64-allos-enu.exe`；版本、SHA-256、Authenticode 签名与来源记录见 `vendor/windows/dotnet-framework-4.8/SOURCE.json`，许可条款由官方安装程序携带 |
 
 仓库内的中文消息文件仅规范化了行尾空白；PartyOps 专属标题、路径说明和诊断文案仅在 `PartyOps.iss` 的 `[Messages]` 与 `[Code]` 中覆盖。
+
+## WPS 本机加载项桥接
+
+- PartyOps 的 Linux/macOS 公文排版适配器参考金山官方公开示例
+  `zouyf/wps`，固定提交 `5bf5c1b26245c4b3e07737b14984fd7810b4fcad`，
+  按 BSD-3-Clause 风格条款使用。
+- 安装包只携带 PartyOps 自有桥接加载项与许可证声明，不携带 WPS Office；
+  目标电脑须已安装支持加载项的 WPS。
+- 完整版权与免责声明随包位于
+  `formatter-host/wps-bridge/LICENSE-WPS-SDK.txt`。
+
+## Linux/macOS 原排版源码宿主运行时
+
+- PartyOps 使用 Mono 6.8 `mkbundle`，在目标架构本机把原排版源码的 AnyCPU
+  程序集封装成单一 ELF 或 Mach-O 宿主；用户电脑不需要另装 Mono 或 .NET。
+- Mono 运行时与主要类库采用 MIT，少量运行时代码采用 BSD-3-Clause；随包
+  保留 `formatter-host/LICENSE-MONO-RUNTIME.txt`，完整上游清单固定于
+  <https://github.com/mono/mono/blob/mono-6.8.0.123/LICENSE>。
+- WPS 不进入 PartyOps 安装包；Linux/macOS 正式排版仍需要目标电脑已安装
+  WPS，宿主在页面内静默调用 WPS RPC，不启动 PartyOps 系统外处理窗口。
 
 ## 文件中心文档解析组件
 

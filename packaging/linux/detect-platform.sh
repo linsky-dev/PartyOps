@@ -14,6 +14,7 @@ fi
 case "$(uname -m)" in
   x86_64|amd64) architecture=amd64 ;;
   aarch64|arm64) architecture=arm64 ;;
+  loongarch64|loong64) architecture=loong64 ;;
   *) echo "不支持的处理器架构：$(uname -m)" >&2; exit 2 ;;
 esac
 case "$(printf '%s %s' "$id" "$id_like" | tr '[:upper:]' '[:lower:]')" in

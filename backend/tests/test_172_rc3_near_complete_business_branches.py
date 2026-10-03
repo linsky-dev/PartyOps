@@ -19,7 +19,7 @@ from app import (
     windows_host_status,
     workspace,
 )
-from app.enums import FileIndexStatus, ModelPackStatus, Sensitivity
+from app.enums import FileIndexStatus, ModelPackStatus, Sensitivity, TaskType
 from app.problems import ProblemException
 from app.routers import updates
 
@@ -250,6 +250,68 @@ def test_recurrence_month_day_and_exhausted_workday_calendars() -> None:
         "WORK_CALENDAR_INVALID",
         lambda: recurrence.adjusted_internal_due(db, "owner", base, 0),
     )
+
+
+def test_recurrence_pause_and_previous_empty_collections(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """验证暂停规则不会读取后续数据，并保留空的历史步骤/材料。"""
+
+    rule = SimpleNamespace(
+        active=True,
+        paused_until=datetime.now(UTC) + timedelta(days=1),
+    )
+
+    class PausedDb:
+        def scalars(self, _statement):
+            return _Rows([rule])
+
+        def commit(self):
+            return None
+
+    assert recurrence.run_due_rules(PausedDb(), SimpleNamespace(id="actor")) == []
+
+    template = SimpleNamespace(
+        id="template-1",
+        name="空历史模板",
+        description="说明",
+        task_type=TaskType.QUICK,
+        category="综合",
+    )
+    previous = SimpleNamespace(
+        id="previous-1",
+        description="历史说明",
+        experience_notes="历史经验",
+        contact_ids=[],
+    )
+
+    class EmptyHistoryDb:
+        def __init__(self):
+            self.calls = 0
+
+        def scalars(self, _statement):
+            self.calls += 1
+            return _Rows([])
+
+    db = EmptyHistoryDb()
+    captured = {}
+
+    def capture_create(_db, payload, _actor):
+        captured["payload"] = payload
+        return SimpleNamespace(id="created")
+
+    monkeypatch.setattr(recurrence, "create_task", capture_create)
+    result = recurrence.instantiate_template(
+        db,
+        template,
+        "owner-1",
+        SimpleNamespace(id="actor"),
+        previous_task=previous,
+    )
+    assert result.id == "created"
+    assert db.calls == 4
+    assert captured["payload"].steps == []
+    assert captured["payload"].materials == []
 
 
 @pytest.mark.parametrize(

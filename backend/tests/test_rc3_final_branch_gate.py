@@ -435,16 +435,26 @@ def test_installed_deb_snapshot_copies_regular_symlink_and_control_files(
         return target
 
     def relative_to(path: Path, other, *args, **kwargs):
-        # 该函数只在 Linux 更新器运行；Windows 测试机把盘符后的部分映射成
-        # Linux 根路径下的相对成员，以验证相同的归档复制分支。
+        # 把临时安装树视作 Linux 根目录；不要把宿主测试目录再次嵌入归档，
+        # 否则 Windows 的长临时路径会被重复拼接，掩盖实际复制行为。
         if str(other) in {"/", "\\"}:
-            return Path(*path.parts[1:])
+            return original_relative_to(path, tmp_path)
         return original_relative_to(path, other, *args, **kwargs)
 
     def run(command, **_kwargs):
         if command[:3] == ["dpkg-query", "-L", "partyops"]:
             return subprocess.CompletedProcess(command, 0, listed, "")
         if command[:2] == ["dpkg-deb", "--build"]:
+            package_root = Path(command[2])
+            assert (package_root / "program" / "partyops").read_bytes() == b"runtime"
+            assert (package_root / "runtime-link").is_symlink()
+            assert (package_root / "runtime-link").resolve() == source.resolve()
+            assert not (package_root / "directory").exists()
+            assert not (package_root / "missing").exists()
+            assert (package_root / "DEBIAN" / "preinst").read_bytes() == b"maintainer-script"
+            control = (package_root / "DEBIAN" / "control").read_text(encoding="utf-8")
+            assert "Version: 1.4.3~rc3" in control
+            assert "Architecture: amd64" in control
             destination.write_bytes(b"deb")
             return subprocess.CompletedProcess(command, 0, "", "")
         raise AssertionError(command)

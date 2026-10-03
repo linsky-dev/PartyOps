@@ -56,17 +56,29 @@ case "$PACKAGE" in
     fi
     ;;
   *.rpm)
-    command -v rpm2cpio >/dev/null 2>&1 && command -v cpio >/dev/null 2>&1 || {
-      echo "缺少 rpm2cpio/cpio，无法展开 RPM 成品。" >&2
+    command -v rpm >/dev/null 2>&1 && command -v rpm2cpio >/dev/null 2>&1 && \
+      command -v cpio >/dev/null 2>&1 || {
+      echo "缺少 rpm/rpm2cpio/cpio，无法审计和展开 RPM 成品。" >&2
       exit 2
     }
+    RPM_REQUIRES="$(rpm -qp --requires "$PACKAGE")"
+    printf '%s\n' "$RPM_REQUIRES" | grep -Fxq 'glibc >= 2.17' || {
+      echo "RPM 缺少经审计的 glibc 2.17 最低依赖。" >&2
+      exit 2
+    }
+    if printf '%s\n' "$RPM_REQUIRES" | \
+      grep -E 'GLIBC_|lib(Qt|KF|uno)|\.so(\.|$|\()|^/usr/bin/env$' >/dev/null; then
+      echo "RPM 泄漏了包内运行时的自动宿主依赖：" >&2
+      printf '%s\n' "$RPM_REQUIRES" >&2
+      exit 2
+    fi
     (cd "$ROOT" && rpm2cpio "$PACKAGE" | cpio -idm --quiet --no-absolute-filenames)
     ;;
   *) echo "只接受 DEB/RPM 成品。" >&2; exit 2 ;;
 esac
 
 RUNTIME="$ROOT/opt/partyops"
-[[ "$(cat "$RUNTIME/VERSION" 2>/dev/null || true)" == "1.4.5-rc.4" ]] || {
+[[ "$(cat "$RUNTIME/VERSION" 2>/dev/null || true)" == "1.4.5-rc.6" ]] || {
   echo "成品缺少正确的冻结版本标识。" >&2
   exit 2
 }
@@ -78,7 +90,48 @@ for runtime_entrypoint in \
     exit 2
   }
 done
-if find "$RUNTIME" -type f -name '*.so*' -perm /111 -print -quit | grep -q .; then
+[[ -x "$RUNTIME/formatter-host/partyops-document-formatter-host" ]] || {
+  echo "成品缺少本机 WPS 原源码排版宿主。" >&2
+  exit 2
+}
+[[ -f "$RUNTIME/formatter-host/source-host.json" ]] || {
+  echo "成品缺少原源码排版宿主来源清单。" >&2
+  exit 2
+}
+[[ -f "$RUNTIME/formatter-host/runtime-evidence.json" ]] || {
+  echo "成品缺少目标平台真实 WPS 金样与六功能验收证据。" >&2
+  exit 2
+}
+for formatter_file in \
+  "$RUNTIME/formatter-host/word-vtable-map.json" \
+  "$RUNTIME/formatter-host/LICENSE-WPS-SDK.txt" \
+  "$RUNTIME/formatter-host/LICENSE-MONO-RUNTIME.txt"; do
+  [[ -f "$formatter_file" ]] || {
+    echo "成品缺少 WPS 原生适配资源：$formatter_file" >&2
+    exit 2
+  }
+done
+
+# LibreOffice 通过随包私有加载器启动自身的 glibc 2.34 闭包。该加载器名称
+# 虽匹配 *.so*，本质却是必须由包装脚本直接 exec 的 ELF 入口。只允许与
+# 目标架构严格对应的这一项带执行位，其余共享库继续默认拒绝。
+OFFICE_LOADER_NAME=ld-linux-x86-64.so.2
+EXPECTED_OFFICE_PATTERN='x86-64|x86_64'
+if [[ "$EXPECTED_ARCH" == arm64 ]]; then
+  OFFICE_LOADER_NAME=ld-linux-aarch64.so.1
+  EXPECTED_OFFICE_PATTERN='aarch64|ARM64'
+fi
+PRIVATE_OFFICE_LOADER="$RUNTIME/office-runtime/private-runtime/$OFFICE_LOADER_NAME"
+[[ -f "$PRIVATE_OFFICE_LOADER" && -x "$PRIVATE_OFFICE_LOADER" ]] || {
+  echo "成品缺少目标架构可执行的 LibreOffice 私有加载器：$OFFICE_LOADER_NAME。" >&2
+  exit 2
+}
+file "$PRIVATE_OFFICE_LOADER" | grep -Eq "$EXPECTED_OFFICE_PATTERN" || {
+  echo "成品 LibreOffice 私有加载器架构与 $EXPECTED_ARCH 不一致。" >&2
+  exit 2
+}
+if find "$RUNTIME" -type f -name '*.so*' -perm /111 \
+  ! -path "$PRIVATE_OFFICE_LOADER" -print -quit | grep -q .; then
   echo "成品仍有共享库携带执行位，会触发国产系统安全中心反复拦截。" >&2
   exit 2
 fi
@@ -86,8 +139,8 @@ fi
 MACHINE="$(uname -m)"
 if [[ ( "$EXPECTED_ARCH" == "amd64" && "$MACHINE" != "x86_64" ) ||
       ( "$EXPECTED_ARCH" == "arm64" && "$MACHINE" != "aarch64" ) ]]; then
-  echo "原生包静态权限门禁通过；当前机器 $MACHINE 不执行 $EXPECTED_ARCH 运行验收。"
-  exit 0
+  echo "[RUNTIME_NOT_EXECUTED] 静态检查通过，但当前机器 $MACHINE 不匹配 $EXPECTED_ARCH；不能记为运行验收通过。" >&2
+  exit 77
 fi
 
 "$RUNTIME/partyops" --package-self-test
@@ -159,8 +212,8 @@ grep -Eq '"mode"[[:space:]]*:[[:space:]]*"personal"' "$TEST_ROOT/health.json" ||
 SERVER_EXECUTABLE="$(readlink -f "/proc/$SERVER_PID/exe" 2>/dev/null || true)"
 if [[ "$SERVER_EXECUTABLE" == */qemu-aarch64-static ]]; then
   bash -n "$RUNTIME/start.sh" "$RUNTIME/desktop-launcher.sh"
-  echo "ARM64 QEMU 成品动态门禁通过；桌面 PID 归属闭环需在真实 ARM 内核执行。"
-  exit 0
+  echo "[RUNTIME_PARTIAL] 用户态 QEMU 仅完成部分动态检查；缺少目标系统内桌面闭环，不能记为完整运行通过。" >&2
+  exit 77
 fi
 
 cat >"$CONFIG_ROOT/mode.json" <<'EOF'
@@ -235,7 +288,7 @@ grep -q '\[START_COMMAND_FAILED\]' "$CONFIG_ROOT/startup-diagnostic.txt" || {
   exit 8
 }
 
-# 用同一最终 DEB/RPM 中的冻结主程序执行真实 0023→0024 覆盖升级。
+# 用同一最终 DEB/RPM 中的冻结主程序执行真实 0023→0026 覆盖升级。
 # 构建机 Python 仅负责按仓库 Alembic 历史生成真实旧库和读回结果，迁移
 # 本身完全由待发布二进制完成。
 SOURCE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
@@ -282,7 +335,7 @@ for _attempt in $(seq 1 180); do
 done
 if [[ "$UPGRADE_READY" != 1 ]]; then
   tail -n 160 "$TEST_ROOT/upgrade-server.log" >&2 || true
-  echo "[NATIVE_0023_UPGRADE_FAILED] 最终成品未完成 0023→0024 健康启动。" >&2
+  echo "[NATIVE_0023_UPGRADE_FAILED] 最终成品未完成 0023→0026 健康启动。" >&2
   exit 9
 fi
 revision="$("$UPGRADE_VENV/bin/python" -c \
@@ -291,7 +344,7 @@ revision="$("$UPGRADE_VENV/bin/python" -c \
 display_name="$("$UPGRADE_VENV/bin/python" -c \
   'import sqlite3,sys; db=sqlite3.connect(sys.argv[1]); print(db.execute("select display_name from users where id=?", ("rc4-native-upgrade-admin",)).fetchone()[0])' \
   "$UPGRADE_DATA/partyops.db")"
-[[ "$revision" == 0024 && "$display_name" == 原生覆盖升级管理员 ]] || {
+[[ "$revision" == 0026 && "$display_name" == 原生覆盖升级管理员 ]] || {
   echo "覆盖升级后的迁移版本或管理员记录不一致。" >&2
   exit 9
 }

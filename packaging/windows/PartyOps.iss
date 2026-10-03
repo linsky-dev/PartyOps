@@ -1,10 +1,10 @@
 #define MyAppName "党建智办 PartyOps"
-#define MyAppVersion "1.4.5-rc.4"
+#define MyAppVersion "1.4.5-rc.6"
 #define MyAppPublisher "PartyOps Local"
 #define BuildRoot GetEnv("PARTYOPS_WINDOWS_BUILD_ROOT")
 #define OutputRoot GetEnv("PARTYOPS_WINDOWS_OUTPUT_ROOT")
 #ifndef PartyOpsOutputBase
-  #define PartyOpsOutputBase "PartyOps_1.4.5-rc.4_windows_amd64"
+  #define PartyOpsOutputBase "PartyOps_1.4.5-rc.6_windows_amd64"
 #endif
 
 [Setup]
@@ -54,7 +54,7 @@ WizardSmallImageFile={#BuildRoot}\partyops-1024.png
 Name: "chinesesimp"; MessagesFile: "{#SourcePath}\languages\ChineseSimplified.isl"
 
 [Messages]
-BeveledLabel=PartyOps 1.4.5-rc.4 · 未签名候选版
+BeveledLabel=PartyOps 1.4.5-rc.6 · 未签名候选版
 #ifdef PartyOpsLegacy
 WinVersionTooLowError=此 Windows 7 专用安装包要求 Windows 7 SP1 或更高版本。请先安装 SP1 后重试。
 #else
@@ -85,12 +85,13 @@ Name: "{commonappdata}\PartyOps"; Permissions: admins-full system-full
 Name: "{commonappdata}\PartyOps-System"; Permissions: admins-full system-full
 
 [Files]
-Source: "{#BuildRoot}\*"; Excludes: "PartyOpsUpdater.exe,PartyOpsUpdaterService.exe"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
+Source: "{#BuildRoot}\*"; Excludes: "PartyOpsUpdater.exe,PartyOpsUpdaterService.exe,prerequisites\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
 ; 主机应用内升级期间这两个进程仍承载事务。Windows 不能覆盖正在运行的
 ; EXE，因此仅它们使用系统重启替换；主程序、前端和其余组件立即生效。
 Source: "{#BuildRoot}\PartyOpsUpdater.exe"; DestDir: "{app}"; Flags: ignoreversion restartreplace
 Source: "{#BuildRoot}\PartyOpsUpdaterService.exe"; DestDir: "{app}"; Flags: ignoreversion restartreplace
 Source: "{#SourcePath}\validate-install-path.ps1"; Flags: dontcopy
+Source: "{#BuildRoot}\prerequisites\ndp48-x86-x64-allos-enu.exe"; Flags: dontcopy
 
 [Icons]
 Name: "{group}\党建智办"; Filename: "{app}\PartyOpsLauncher.exe"; IconFilename: "{app}\partyops.ico"
@@ -98,8 +99,8 @@ Name: "{group}\管理本机共享文件夹"; Filename: "{app}\PartyOpsWizard.exe
 Name: "{commondesktop}\党建智办"; Filename: "{app}\PartyOpsLauncher.exe"; IconFilename: "{app}\partyops.ico"
 
 [Run]
-Filename: "{app}\PartyOpsLauncher.exe"; Description: "启动党建智办配置向导"; Flags: nowait postinstall skipifsilent runasoriginaluser
-Filename: "{app}\PartyOpsLauncher.exe"; Parameters: "--background"; Flags: nowait runasoriginaluser; Check: WizardSilent
+Filename: "{app}\PartyOpsLauncher.exe"; Description: "启动党建智办配置向导"; Flags: nowait postinstall skipifsilent runasoriginaluser; Check: CanLaunchAfterInstall
+Filename: "{app}\PartyOpsLauncher.exe"; Parameters: "--background"; Flags: nowait runasoriginaluser; Check: WizardSilentAndCanLaunch
 
 [UninstallRun]
 Filename: "{app}\PartyOpsService.exe"; Parameters: "--wait=30 stop"; Flags: runhidden waituntilterminated skipifdoesntexist; RunOnceId: "StopHostService"
@@ -165,10 +166,95 @@ var
   DataMarkerHadPrevious: Boolean;
   DataMarkerTransactionActive: Boolean;
   DeleteAllDataOnUninstall: Boolean;
+  DotNet48RestartRequired: Boolean;
 
 const
   PartyOpsAppId = '{1C8EFC63-CAFC-46EF-A5E3-D3D119B5BB3A}';
   ClassesPrefix = 'Software\Classes\';
+  DotNet48ReleaseMinimum = 528040;
+  DotNet48InstallerName = 'ndp48-x86-x64-allos-enu.exe';
+  DotNet48InstallerSha256 = '0A3A390C47E639D0F7FC65B21195FEE6B7F65B066F80F70C60FAB191D14B7E40';
+
+function HasDotNet48: Boolean;
+var
+  ReleaseValue: Cardinal;
+begin
+  Result :=
+    RegQueryDWordValue(
+      HKLM32,
+      'SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full',
+      'Release',
+      ReleaseValue
+    ) and
+    (ReleaseValue >= DotNet48ReleaseMinimum);
+end;
+
+function EnsureDotNet48(var NeedsRestart: Boolean): String;
+var
+  InstallerPath, InstallerHash, ExtractError: String;
+  ResultCode: Integer;
+begin
+  Result := '';
+  if HasDotNet48 then
+    exit;
+  WizardForm.StatusLabel.Caption := '正在安装公文排版所需的微软 .NET Framework 4.8…';
+  try
+    ExtractTemporaryFile(DotNet48InstallerName);
+  except
+    { 保留底层错误，区分远程 Shell 配额、磁盘/文件异常；不把所有失败都归因权限。 }
+    ExtractError := GetExceptionMessage;
+    Log('[DOTNET48_EXTRACT_FAILED] ' + ExtractError);
+    Result := '[DOTNET48_EXTRACT_FAILED] 无法释放随包携带的 .NET Framework 4.8 离线运行时。请查看安装日志中的详细原因。';
+    exit;
+  end;
+  InstallerPath := ExpandConstant('{tmp}\') + DotNet48InstallerName;
+  InstallerHash := GetSHA256OfFile(InstallerPath);
+  if (InstallerHash = '') or
+     (CompareText(InstallerHash, DotNet48InstallerSha256) <> 0) then
+  begin
+    Result := '[DOTNET48_HASH_MISMATCH] .NET Framework 4.8 离线运行时校验失败，安装已停止。';
+    exit;
+  end;
+  ResultCode := -1;
+  if not Exec(
+    InstallerPath,
+    '/q /norestart',
+    '',
+    SW_HIDE,
+    ewWaitUntilTerminated,
+    ResultCode
+  ) then
+  begin
+    Result := '[DOTNET48_INSTALL_LAUNCH_FAILED] 无法启动 .NET Framework 4.8 安装程序。';
+    exit;
+  end;
+  if (ResultCode <> 0) and (ResultCode <> 1641) and (ResultCode <> 3010) then
+  begin
+    Result := '[DOTNET48_INSTALL_FAILED] .NET Framework 4.8 安装失败，退出码：' +
+      IntToStr(ResultCode) + '。PartyOps 尚未开始安装。';
+    exit;
+  end;
+  if not HasDotNet48 then
+  begin
+    Result := '[DOTNET48_VERIFY_FAILED] .NET Framework 4.8 安装后回读失败，PartyOps 尚未开始安装。';
+    exit;
+  end;
+  if (ResultCode = 1641) or (ResultCode = 3010) then
+  begin
+    NeedsRestart := True;
+    DotNet48RestartRequired := True;
+  end;
+end;
+
+function CanLaunchAfterInstall: Boolean;
+begin
+  Result := not DotNet48RestartRequired;
+end;
+
+function WizardSilentAndCanLaunch: Boolean;
+begin
+  Result := WizardSilent and CanLaunchAfterInstall;
+end;
 
 #ifdef PartyOpsLegacy
 function GetModuleHandle(ModuleName: String): THandle;
@@ -613,7 +699,7 @@ begin
   InAppServiceUpdate := CompareText(
     ExpandConstant('{param:INAPPUPDATE|0}'), '1'
   ) = 0;
-  WizardForm.Caption := '党建智办 PartyOps 1.4.5-rc.4 安装向导';
+  WizardForm.Caption := '党建智办 PartyOps 1.4.5-rc.6 安装向导';
   DataDirPage := CreateInputDirPage(
     wpSelectDir,
     '选择 PartyOps 业务数据目录',
@@ -683,24 +769,14 @@ end;
 
 function ExtractServiceExecutablePath(CommandLine, ServiceExecutable: String): String;
 var
-  I, ExecutableEnd: Integer;
+  I, NameLength, ExecutableEnd: Integer;
 begin
   Result := '';
   CommandLine := Trim(CommandLine);
   if CommandLine = '' then
     exit;
-  { 历史服务可能留下未加引号且安装目录含空格的 ImagePath。只在完整出现
-    精确服务文件名时截取到该后缀，不能再按第一个空格误读为 C:\Program。 }
-  I := Pos(Lowercase(ServiceExecutable), Lowercase(CommandLine));
-  if I > 0 then
-  begin
-    ExecutableEnd := I + Length(ServiceExecutable) - 1;
-    Result := Copy(CommandLine, 1, ExecutableEnd);
-    if (Length(Result) > 0) and (Result[1] = '"') then
-      Delete(Result, 1, 1);
-    Result := NormalizeOwnedExecutablePath(Result);
-    exit;
-  end;
+  { 先按 Unicode 字符读取引号路径。Inno 的 Pos 字节位置不能用于
+    Copy 的字符位置，否则中文目录会把结尾引号或参数截入文件名。 }
   if CommandLine[1] = '"' then
   begin
     I := 2;
@@ -708,16 +784,115 @@ begin
       I := I + 1;
     if I <= Length(CommandLine) then
       Result := Copy(CommandLine, 2, I - 2);
+    Result := NormalizeOwnedExecutablePath(Result);
+    exit;
   end
   else
   begin
-    I := Pos(' ', CommandLine);
-    if I = 0 then
-      Result := CommandLine
-    else
-      Result := Copy(CommandLine, 1, I - 1);
+    { 历史未加引号的含空格路径，仍只接受完整服务文件名边界。
+      全程用 Copy/Length 的字符索引，避免依赖当前 Windows 代码页。 }
+    NameLength := Length(ServiceExecutable);
+    if NameLength = 0 then
+      exit;
+    for I := 1 to Length(CommandLine) - NameLength + 1 do
+    begin
+      if CompareText(Copy(CommandLine, I, NameLength), ServiceExecutable) = 0 then
+      begin
+        ExecutableEnd := I + NameLength - 1;
+        if ((I = 1) or (CommandLine[I - 1] = '\') or (CommandLine[I - 1] = '/')) and
+           ((ExecutableEnd = Length(CommandLine)) or
+            (CommandLine[ExecutableEnd + 1] = ' ') or
+            (CommandLine[ExecutableEnd + 1] = #9)) then
+        begin
+          Result := NormalizeOwnedExecutablePath(Copy(CommandLine, 1, ExecutableEnd));
+          exit;
+        end;
+      end;
+    end;
   end;
-  Result := NormalizeOwnedExecutablePath(Result);
+end;
+
+function IsKnownLegacyPartyOpsServiceBinary(
+  ServiceName, ExecutablePath: String
+): Boolean;
+var
+  Digest: String;
+begin
+  Result := False;
+  if (ExecutablePath = '') or (not FileExists(ExecutablePath)) then
+    exit;
+  Digest := Lowercase(GetSHA256OfFile(ExecutablePath));
+  if ServiceName = 'PartyOpsHost' then
+    Result :=
+      { 1.4.5-rc.1：Windows amd64、Win7 amd64、Win7 x86。 }
+      (Digest = 'd4d89dd603d2b8b1f77da075914dd0c3d0882ddf645af9ac5c16d8ca8c9274e6') or
+      (Digest = '2c5be84335179b698c25d7a5f3aa8dc23f3ed00d7900d36d3b24fdee61979907') or
+      (Digest = 'a3a6009470bb01b680e6ef3c45c7b5a9fc2847159b9f1d0fdf343eb829051f15') or
+      { 1.4.5-rc.2：Windows amd64、Win7 amd64、Win7 x86。 }
+      (Digest = '43babf7f765aff96a14fa4a56fb2ba63b329e358d4db8157d7c6f6c81e6a952d') or
+      (Digest = '56c8d58af2d06c81ea8998b28130cec33494e64a322a29affcf6133407ae91ec') or
+      (Digest = '89042cbeae03b03c30adcedeed0463f05730eb20149721fb4c3d5b2682de616b') or
+      { 已撤回的 1.4.5-rc.3：仅用于安全接管并升级，不重新发布。 }
+      (Digest = 'b2a5b6426469860974be1815f52dcaf1533574989e979e6319931f2ecdfe4b53') or
+      (Digest = '26099268f3116172c64f66446db0f27cbf804b0e91992c785ebd0b1d1da26772') or
+      (Digest = 'cc979351ff0d265c35808373e0f37634b256c58005f3273e2ce305fd4582ff52')
+  else if ServiceName = 'PartyOpsUpdateService' then
+    Result :=
+      (Digest = '125cfb078a03b45c4d662e7aca799dc22852239b8e05a0f5d60e484aaaad8ceb') or
+      (Digest = '426d1a793a1643963322ca7d7ade4e399bbe766aebf13279c62b774056676302') or
+      (Digest = '62959691f3e2f70b041e5a914dbfed7063b312dfa81f8b9172946a5c195a95ac') or
+      (Digest = 'c4ccea171c97eef8b9044a03c869107d1ed61a073c6f034f08bb183c3883ff55') or
+      (Digest = '893c0a1a66209f5f6801244837ed0e144d877a7e8efea5b19dc345950f9e16cd') or
+      (Digest = '678170ae7e4c15069f3bc8f764b751bd4bf1754db5c9af75e813bfc74214b654') or
+      (Digest = 'e0e6194b18feb80b473d17b8c5bb1aa7475ac54832f93d932fb682a1eb80dd3e') or
+      (Digest = '41fa10506af9a350da241e2c3aad2dc7ca681524ae2a44ffd1ea8ee69f3f7b5e') or
+      (Digest = 'e62e0a452556f6920bd672851d9b678c26ebc0a11a8dd02eb5fc6b70aececdcd');
+end;
+
+function IsDormantLegacyPartyOpsService(
+  ServiceName, ServiceExecutable, ExecutablePath: String
+): Boolean;
+var
+  ServiceKey, DisplayName, Description, ObjectName: String;
+  ExpectedDisplayName, ExpectedDescription: String;
+  ServiceType, StartType, ErrorControl: Cardinal;
+begin
+  Result := False;
+  { 二进制仍在时必须走哈希、AppId、当前路径或卸载记录证明；这一分支只
+    修复卸载器已经删除文件、但 SCM 删除失败后留下的不可运行注册项。 }
+  if (ExecutablePath = '') or FileExists(ExecutablePath) or
+     ServiceIsRunning(ServiceName) or
+     (CompareText(ExtractFileName(ExecutablePath), ServiceExecutable) <> 0) then
+    exit;
+
+  if ServiceName = 'PartyOpsHost' then
+  begin
+    ExpectedDisplayName := '党建智办 PartyOps 主机服务';
+    ExpectedDescription := '在 Windows 10/11 上托管 PartyOps 局域网协同主机。';
+  end
+  else if ServiceName = 'PartyOpsUpdateService' then
+  begin
+    ExpectedDisplayName := '党建智办 PartyOps 更新服务';
+    ExpectedDescription := '校验签名后执行 PartyOps 更新、健康检查和失败回滚。';
+  end
+  else
+    exit;
+
+  ServiceKey := 'SYSTEM\CurrentControlSet\Services\' + ServiceName;
+  if (not RegQueryStringValue(HKLM, ServiceKey, 'DisplayName', DisplayName)) or
+     (not RegQueryStringValue(HKLM, ServiceKey, 'Description', Description)) or
+     (not RegQueryStringValue(HKLM, ServiceKey, 'ObjectName', ObjectName)) or
+     (not RegQueryDWordValue(HKLM, ServiceKey, 'Type', ServiceType)) or
+     (not RegQueryDWordValue(HKLM, ServiceKey, 'Start', StartType)) or
+     (not RegQueryDWordValue(HKLM, ServiceKey, 'ErrorControl', ErrorControl)) then
+    exit;
+  Result :=
+    (CompareText(DisplayName, ExpectedDisplayName) = 0) and
+    (CompareText(Description, ExpectedDescription) = 0) and
+    (CompareText(ObjectName, 'LocalSystem') = 0) and
+    (ServiceType = 16) and
+    ((StartType = 2) or (StartType = 3) or (StartType = 4)) and
+    (ErrorControl = 1);
 end;
 
 function QueryOwnedServiceExecutable(
@@ -752,6 +927,26 @@ begin
   if (CompareText(OwnerAppId, PartyOpsAppId) = 0) and
      (CompareText(ExtractFileName(ExecutablePath), ServiceExecutable) = 0) then
   begin
+    Result := True;
+    exit;
+  end;
+
+  { rc.1/rc.2 卸载失败可能先移除 Inno 卸载项和 AppId，再留下 SCM 项。
+    二进制仍存在时只接受冻结发布制品的精确 SHA-256，不按文件名猜测。 }
+  if IsKnownLegacyPartyOpsServiceBinary(ServiceName, ExecutablePath) then
+  begin
+    Log('已通过正式旧版二进制 SHA-256 证明遗留 PartyOps 服务归属。');
+    Result := True;
+    exit;
+  end;
+
+  { 若旧卸载器已删除二进制，只允许接管“已停止 + 文件不存在 + 精确服务名、
+    显示名、说明、LocalSystem、类型、启动类型、错误策略”同时匹配的残留项。 }
+  if IsDormantLegacyPartyOpsService(
+    ServiceName, ServiceExecutable, ExecutablePath
+  ) then
+  begin
+    Log('已通过不可运行遗留 SCM 元数据证明 PartyOps 服务归属。');
     Result := True;
     exit;
   end;
@@ -1127,6 +1322,9 @@ var
   RegistryError: String;
 #endif
 begin
+  Result := EnsureDotNet48(NeedsRestart);
+  if Result <> '' then
+    exit;
 #ifdef PartyOpsLegacy
   if not ValidateWindows7Prerequisites(RegistryError) then
   begin
@@ -1339,7 +1537,7 @@ begin
     RUNTIME_PERMISSION_DENIED。 }
   if (not ExecAsOriginalUser(
     ExpandConstant('{app}\PartyOps.exe'),
-    '--startup-user-permission-self-test',
+    '--startup-desktop-user-self-test',
     ExpandConstant('{app}'),
     SW_HIDE,
     ewWaitUntilTerminated,
@@ -1348,9 +1546,30 @@ begin
   begin
     ServiceSetupFailed := True;
     RaiseException(
-      '[PACKAGE_USER_RUNTIME_PERMISSION_SELFTEST_FAILED] 原桌面账号无法读取、执行 ' +
-      'PartyOps 安装资源或写入用户临时目录。安装已回滚；请检查终端安全策略、' +
-      '杀毒软件和所选程序目录。退出码：' + IntToStr(ResultCode)
+      '[PACKAGE_DESKTOP_RUNTIME_STARTUP_SELFTEST_FAILED] 原桌面账号未能完整启动 ' +
+      'PartyOps 个人进程、SQLite/FTS5、数据库迁移、健康端点或首页。安装已回滚；' +
+      '请检查终端安全策略、杀毒软件和所选程序目录。退出码：' + IntToStr(ResultCode)
+    );
+  end;
+  ResultCode := 5;
+  WizardForm.StatusLabel.Caption := '正在验证原个人数据目录读写权限…';
+  { 完整启动探针使用隔离临时数据，不能覆盖升级前 personal.env 指向的真实
+    数据目录。以原桌面账号执行真实配置的无副作用探针，避免安装完成后首次
+    启动才出现 RUNTIME_PERMISSION_DENIED。 }
+  if (not ExecAsOriginalUser(
+    ExpandConstant('{app}\PartyOps.exe'),
+    '--startup-configured-personal-permission-self-test',
+    ExpandConstant('{app}'),
+    SW_HIDE,
+    ewWaitUntilTerminated,
+    ResultCode
+  )) or (ResultCode <> 0) then
+  begin
+    ServiceSetupFailed := True;
+    RaiseException(
+      '[PACKAGE_PERSONAL_DATA_PERMISSION_SELFTEST_FAILED] 当前桌面账号无法读取个人配置、' +
+      '写入原个人数据目录或启动完整运行时。安装已回滚，业务数据未改动；请检查数据目录 ' +
+      'ACL、安全软件与磁盘状态。退出码：' + IntToStr(ResultCode)
     );
   end;
 end;
@@ -1506,7 +1725,19 @@ begin
 end;
 
 procedure CommitPostInstallTransactions;
+var
+  InstallRootLines: TArrayOfString;
 begin
+  { 给旧版配置向导一个受控的当前安装根路径；升级后从旧快捷方式进入时，
+    PartyOps 仍能找到新版本 PartyOpsLauncher.exe。该标记只含本机路径，
+    不包含用户数据、凭据或网络地址。 }
+  SetArrayLength(InstallRootLines, 1);
+  InstallRootLines[0] := ExpandConstant('{app}');
+  SaveStringsToUTF8File(
+    ExpandConstant('{commonappdata}\PartyOps\install-root.txt'),
+    InstallRootLines,
+    False
+  );
   DeleteFile(InstallerCachePreviousPath);
   DeleteFile(InstallerCacheIncomingPath);
   DeleteFile(InstallerCacheHashPreviousPath);

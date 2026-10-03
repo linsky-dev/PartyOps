@@ -10,8 +10,9 @@ from __future__ import annotations
 import ctypes
 import json
 import os
+import sys
 import threading
-from datetime import date, datetime
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +22,7 @@ from .enums import ModelPackStatus
 from .intent_preview import preview_intent
 from .model_packs import active_model_pack, model_pack_root, verify_installed_pack
 from .models import AIModelPack
+from .time_utils import beijing_now
 
 INTENT_TOOLS: list[dict[str, Any]] = [
     {
@@ -154,7 +156,7 @@ class NeedleIntentRuntime:
 
     @staticmethod
     def _validate_suffix(path: Path) -> None:
-        expected = ".dll" if os.name == "nt" else ".dylib" if os.sys.platform == "darwin" else ".so"
+        expected = ".dll" if os.name == "nt" else ".dylib" if sys.platform == "darwin" else ".so"
         if path.suffix.lower() != expected:
             raise RuntimeError(f"Needle 运行时必须是当前平台的 {expected} 文件")
 
@@ -277,7 +279,7 @@ def preview_intent_with_needle(
 ) -> dict[str, Any]:
     """优先使用已激活的 Needle；任何不确定性都安全回退到规则结果。"""
 
-    current = today or datetime.now().astimezone().date()
+    current = today or beijing_now().date()
     base = preview_intent(text, today=current)
     if {"PROMPT_INJECTION", "NEGATED"} & set(base["flags"]):
         return base

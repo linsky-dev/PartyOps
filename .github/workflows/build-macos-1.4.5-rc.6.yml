@@ -1,0 +1,460 @@
+name: 手动构建 macOS 1.4.5-rc.6 候选
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: BUILD-UNSIGNED-145-RC6 构建候选，或 PROBE-WPS-145-RC6 仅验证 WPS 原生桥
+        required: true
+        type: string
+  workflow_call:
+    inputs:
+      confirmation:
+        description: 由默认分支兼容入口传入的 rc.6 构建确认短语
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: partyops-macos-145-rc6-manual
+  cancel-in-progress: false
+
+jobs:
+  native-wps-probe:
+    if: inputs.confirmation == 'PROBE-WPS-145-RC6'
+    name: ${{ matrix.architecture }} WPS 原生桥探针
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - architecture: arm64
+            runner: macos-15
+            wps_sha256: f493b07f48e4911d5836d51afd8b4254e2b12aa16d2d0816b1474c3fa0785c31
+          - architecture: x86_64
+            runner: macos-15-intel
+            wps_sha256: 79d121a5269ce2b2b0422fbf0d61c1e21b382c1b46b41be24ce3e4b8021b8d46
+    steps:
+      - name: 检出触发工作流的源码冻结提交
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: 静态编译 WPS 欢迎页 UI 脚本
+        shell: bash
+        run: |
+          /usr/bin/osacompile -o "$RUNNER_TEMP/wps-welcome.scpt" \
+            qa/vm-lab/release-preparation/macos-intel/handle-wps-welcome.applescript
+
+      - name: 编译已验证控件的真实鼠标事件辅助程序
+        shell: bash
+        run: |
+          /usr/bin/xcrun swiftc -O \
+            qa/vm-lab/release-preparation/macos-intel/click-wps-consent-checkbox.swift \
+            -framework AppKit -framework ApplicationServices \
+            -o "$RUNNER_TEMP/wps-consent-click"
+
+      - name: 恢复固定哈希的官方 WPS 输入
+        id: wps-cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: ${{ runner.temp }}/partyops-wps-inputs
+          key: partyops-wps-12.1.29166-${{ matrix.architecture }}-${{ matrix.wps_sha256 }}
+
+      - name: 验证官方 WPS 安装输入与真实 GUI JSAPI 链路
+        shell: bash
+        env:
+          PARTYOPS_WPS_CACHE_HIT: ${{ steps.wps-cache.outputs.cache-hit }}
+        run: bash qa/vm-lab/release-preparation/macos-intel/run-native-wps-probe.sh
+
+      - name: 复核待缓存官方输入
+        if: always() && steps.wps-cache.outputs.cache-hit != 'true'
+        id: wps-cache-verify
+        shell: bash
+        run: |
+          dmg="$RUNNER_TEMP/partyops-wps-inputs/WPS_Office_12.1.29166_${{ matrix.architecture }}.dmg"
+          if [[ -f "$dmg" ]] && [[ "$(shasum -a 256 "$dmg" | awk '{print $1}')" == '${{ matrix.wps_sha256 }}' ]]; then
+            printf 'valid=true\n' >>"$GITHUB_OUTPUT"
+          else
+            printf 'valid=false\n' >>"$GITHUB_OUTPUT"
+          fi
+
+      - name: 保存已校验官方 WPS 输入
+        if: always() && steps.wps-cache.outputs.cache-hit != 'true' && steps.wps-cache-verify.outputs.valid == 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: ${{ runner.temp }}/partyops-wps-inputs
+          key: partyops-wps-12.1.29166-${{ matrix.architecture }}-${{ matrix.wps_sha256 }}
+
+      - name: 收集限定诊断文件
+        if: always()
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          artifact_dir="$RUNNER_TEMP/partyops-wps-probe-artifact"
+          mkdir -p "$artifact_dir"
+          while IFS= read -r work_dir; do
+            while IFS= read -r file; do
+              case "$(basename "$file")" in
+                status.json|probe-evidence.json|failure.txt|python-version.txt|wps-version.txt|wps-executable-architectures.txt|preexisting-wps-processes.txt|wps-processes.txt|codesign-details.txt|download-source.txt|welcome-before.txt|welcome-consent-mouse.txt|welcome-consent-state.txt|welcome-action.txt|welcome-axpress-after.txt|welcome-bounds-action.txt|welcome-after.txt|relay-handler.txt|relay-start.txt|*.log|*.headers|*.body|*.png|*.docx)
+                  cp "$file" "$artifact_dir/$(basename "$work_dir")-$(basename "$file")"
+                  ;;
+              esac
+            done < <(find "$work_dir" -maxdepth 1 -type f -print)
+          done < <(find "$RUNNER_TEMP" -maxdepth 1 -type d -name 'partyops-wps-native-probe.*' -print)
+          printf 'head_sha=%s\narchitecture=%s\n' "$GITHUB_SHA" '${{ matrix.architecture }}' >"$artifact_dir/job-identity.txt"
+
+      - name: 上传限定探针诊断
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: partyops-wps-probe-${{ matrix.architecture }}-${{ github.sha }}
+          path: ${{ runner.temp }}/partyops-wps-probe-artifact
+          if-no-files-found: error
+          retention-days: 7
+
+  prepare-formatter-managed:
+    if: inputs.confirmation == 'BUILD-UNSIGNED-145-RC6'
+    name: 冻结原排版源码 AnyCPU 载荷
+    runs-on: windows-2022
+    timeout-minutes: 30
+    env:
+      PYTHONUTF8: '1'
+    steps:
+      - name: 检出触发工作流的源码冻结提交
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: 配置 Python 3.11
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.11'
+          architecture: x64
+
+      - name: 从锁定源码构建架构中立规则载荷
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $stage = Join-Path $PWD '.release-gates\formatter-managed-anycpu'
+          .\scripts\build-document-formatter-host.ps1 `
+            -Platform AnyCPU `
+            -PythonPath (Get-Command python).Source `
+            -StageDirectory $stage
+          if (-not (Test-Path -LiteralPath (Join-Path $stage 'PartyOps.DocumentFormatter.Host.exe'))) {
+            throw '[MACOS_FORMATTER_MANAGED_STAGE_MISSING] AnyCPU 宿主未生成。'
+          }
+
+      - name: 传递原排版源码 AnyCPU 载荷
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: formatter-managed-anycpu-${{ github.sha }}
+          path: ${{ github.workspace }}/.release-gates/formatter-managed-anycpu
+          if-no-files-found: error
+          retention-days: 1
+
+  build:
+    if: inputs.confirmation == 'BUILD-UNSIGNED-145-RC6'
+    needs: prepare-formatter-managed
+    name: ${{ matrix.architecture }} 原生构建
+    timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - architecture: arm64
+            runner: macos-15
+          - architecture: x86_64
+            runner: macos-15-intel
+    runs-on: ${{ matrix.runner }}
+    env:
+      PARTYOPS_BUILD_JOBS: '3'
+      PYTHONUTF8: '1'
+      # 主程序、Python 扩展、LibreOffice 与原生探针统一以 macOS 11 为下限。
+      MACOSX_DEPLOYMENT_TARGET: '11.0'
+    steps:
+      - name: 检出触发工作流的源码冻结提交
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: 配置 Python 3.11
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.11'
+          architecture: ${{ matrix.architecture == 'x86_64' && 'x64' || 'arm64' }}
+          cache: pip
+
+      - name: 配置 Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+
+      - name: 下载原排版源码 AnyCPU 载荷
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: formatter-managed-anycpu-${{ github.sha }}
+          path: ${{ runner.temp }}/formatter-managed-anycpu
+
+      - name: 验证原生架构与准备工具
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -s)" = Darwin
+          test "$(uname -m)" = '${{ matrix.architecture }}'
+          python3.11 -m pip install --disable-pip-version-check 'uv==0.8.20'
+          corepack enable
+          corepack prepare 'pnpm@11.9.0' --activate
+          command -v cmake >/dev/null 2>&1 || brew install cmake
+          command -v ninja >/dev/null 2>&1 || brew install ninja
+          command -v mkbundle >/dev/null 2>&1 || brew install mono
+          chmod 0755 \
+            packaging/macos/build-native-runtimes.sh \
+            packaging/macos/build-pkg.sh \
+            packaging/macos/validate-bundle.sh \
+            scripts/build-document-formatter-host-unix.sh \
+            scripts/prepare-libreoffice-macos.sh
+          df -h /
+
+      - name: 恢复已验证的原生运行时缓存
+        id: native-cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: ${{ runner.temp }}/partyops-runtimes
+          key: partyops-macos-runtime-rc6-${{ matrix.architecture }}-${{ hashFiles('packaging/macos/build-native-runtimes.sh', 'scripts/prepare-libreoffice-macos.sh') }}
+
+      - name: 构建锁定的 OCR、本地 LLM 与公文转换运行时
+        if: steps.native-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          packaging/macos/build-native-runtimes.sh \
+            --architecture '${{ matrix.architecture }}' \
+            --output-root "$RUNNER_TEMP/partyops-runtimes"
+          scripts/prepare-libreoffice-macos.sh \
+            --architecture '${{ matrix.architecture }}' \
+            --output-root "$RUNNER_TEMP/partyops-runtimes"
+
+      - name: 校验原生运行时缓存或新构建结果
+        shell: bash
+        run: |
+          set -euo pipefail
+          ocr="$RUNNER_TEMP/partyops-runtimes/ocr-${{ matrix.architecture }}/bin/tesseract"
+          llama="$RUNNER_TEMP/partyops-runtimes/llama-${{ matrix.architecture }}/llama-server"
+          office="$RUNNER_TEMP/partyops-runtimes/office-${{ matrix.architecture }}"
+          test -x "$ocr"
+          test -x "$llama"
+          test -x "$office/program/soffice"
+          test -f "$office/SOURCE.json"
+          test -n "$(find "$office/licenses" -type f -print -quit)"
+          test -s "$RUNNER_TEMP/partyops-runtimes/ocr-${{ matrix.architecture }}/tessdata/chi_sim.traineddata"
+          test "$(lipo -archs "$ocr")" = '${{ matrix.architecture }}'
+          test "$(lipo -archs "$llama")" = '${{ matrix.architecture }}'
+          test "$(lipo -archs "$office/program/soffice")" = '${{ matrix.architecture }}'
+          ! otool -L "$ocr" | awk 'NR > 1 {print $1}' | grep -Ev '^(/usr/lib/|/System/Library/)'
+          ! otool -L "$llama" | awk 'NR > 1 {print $1}' | grep -Ev '^(/usr/lib/|/System/Library/)'
+          python3.11 scripts/verify-full-function-gate.py verify --root "$PWD" --scope package
+
+      - name: 在当前 Mac 架构封装原排版源码宿主
+        shell: bash
+        run: |
+          set -euo pipefail
+          formatter="$RUNNER_TEMP/partyops-formatter/formatter-${{ matrix.architecture }}"
+          scripts/build-document-formatter-host-unix.sh \
+            --managed-runtime "$RUNNER_TEMP/formatter-managed-anycpu" \
+            --output "$formatter" \
+            --platform macos \
+            --architecture '${{ matrix.architecture }}'
+          test "$(lipo -archs "$formatter/partyops-document-formatter-host")" = '${{ matrix.architecture }}'
+          python3.11 scripts/validate-source-formatter-runtime.py \
+            --runtime "$formatter" --platform macos \
+            --architecture '${{ matrix.architecture }}'
+
+      - name: 冻结应用并生成未公证候选 PKG
+        shell: bash
+        env:
+          PARTYOPS_MACOS_OCR_RUNTIME: ${{ runner.temp }}/partyops-runtimes/ocr-${{ matrix.architecture }}
+          PARTYOPS_MACOS_LLAMA_RUNTIME: ${{ runner.temp }}/partyops-runtimes/llama-${{ matrix.architecture }}
+          PARTYOPS_MACOS_OFFICE_RUNTIME: ${{ runner.temp }}/partyops-runtimes/office-${{ matrix.architecture }}
+          PARTYOPS_MACOS_FORMATTER_RUNTIME: ${{ runner.temp }}/partyops-formatter/formatter-${{ matrix.architecture }}
+        run: |
+          set -euo pipefail
+          packaging/macos/build-pkg.sh \
+            --architecture '${{ matrix.architecture }}' \
+            --unsigned-candidate
+
+      - name: 建立真实 0023/0025 覆盖升级基线
+        shell: bash
+        run: |
+          set -euo pipefail
+          upgrade_env="$RUNNER_TEMP/partyops-upgrade-gate"
+          python3.11 -m venv "$upgrade_env"
+          UV_PROJECT_ENVIRONMENT="$upgrade_env" uv sync \
+            --project backend --frozen --no-dev
+          for from_revision in 0023 0025; do
+            upgrade_data="$RUNNER_TEMP/partyops-upgrade-data-$from_revision"
+            "$upgrade_env/bin/python" scripts/create-0023-upgrade-fixture.py \
+              --repo-root "$PWD" --data-root "$upgrade_data" \
+              --target-revision "$from_revision"
+            revision="$($upgrade_env/bin/python -c \
+              'import sqlite3,sys; db=sqlite3.connect(sys.argv[1]); print(db.execute("select version_num from alembic_version").fetchone()[0])' \
+              "$upgrade_data/partyops.db")"
+            test "$revision" = "$from_revision"
+          done
+
+      - name: 安装后原生自检
+        shell: bash
+        run: |
+          set -euo pipefail
+          package="artifacts/release-1.4.5-rc.6-final/PartyOps_1.4.5-rc.6_macos_${{ matrix.architecture }}-UNSIGNED-UNNOTARIZED-CANDIDATE.pkg"
+          test -f "$package"
+          test -f "$package.sha256"
+          test -f "$package.attestation.json"
+          (
+            cd "$(dirname "$package")"
+            shasum -a 256 -c "$(basename "$package").sha256"
+          )
+          install_package() {
+            if ! sudo /usr/sbin/installer -pkg "$package" -target /; then
+              printf '%s\n' '[MACOS_INSTALL_FAILED] 安装失败，输出系统安装日志末尾。' >&2
+              sudo /usr/bin/tail -n 240 /var/log/install.log >&2 || true
+              return 1
+            fi
+          }
+          install_package
+          app='/Applications/PartyOps.app'
+          verify_installed_app() {
+            if [[ ! -d "$app" ]]; then
+              printf '%s\n' '[MACOS_INSTALLED_APP_MISSING] PKG 成功返回后目标 App 不存在。' >&2
+              pkgutil --files cn.partyops.desktop >&2 || true
+              sudo find /Applications -maxdepth 3 -name '*PartyOps*.app' -print >&2 || true
+              return 2
+            fi
+            test -f "$app/Contents/Info.plist"
+            test -x "$app/Contents/MacOS/partyops-desktop"
+            plutil -lint "$app/Contents/Info.plist"
+            test "$(plutil -extract CFBundleIdentifier raw "$app/Contents/Info.plist")" = 'cn.partyops.desktop'
+            test "$(plutil -extract CFBundleExecutable raw "$app/Contents/Info.plist")" = 'partyops-desktop'
+            codesign --verify --deep --strict --verbose=2 "$app"
+            packaging/macos/validate-bundle.sh "$app" '${{ matrix.architecture }}'
+          }
+          verify_installed_app
+          install_package
+          verify_installed_app
+          "$app/Contents/MacOS/partyops-desktop" --self-test
+          env -i HOME="$HOME" USER="$USER" LOGNAME="$LOGNAME" \
+            PATH='/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin' \
+            "$app/Contents/MacOS/partyops-desktop" --launch-services-self-test
+          env -i HOME="$HOME" USER="$USER" LOGNAME="$LOGNAME" \
+            PATH='/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin' \
+            _PYI_PARENT_PROCESS_LEVEL=9 PYTHONHOME='/tmp/forged-python-home' \
+            DYLD_LIBRARY_PATH='/tmp/forged-dyld-path' \
+            "$app/Contents/MacOS/partyops-desktop" --launch-services-self-test
+          "$app/Contents/MacOS/partyops-launch-agent" --mode personal --self-test
+          "$app/Contents/MacOS/partyops" --package-self-test
+
+          # 对同一最终冻结主程序分别执行真实 0023→0026 与 0025→0026
+          # 覆盖升级，而不是只验证空库。两条路径各自校验数据、附件、迁移前
+          # 备份、北京时间审计表和 rc.6 智能编排表。
+          upgrade_env="$RUNNER_TEMP/partyops-upgrade-gate"
+          # 以下两个稳定错误码同时写在工作流中，便于失败证据直接定位旧版本。
+          error_0023='[MACOS_0023_UPGRADE_FAILED]'
+          error_0025='[MACOS_0025_UPGRADE_FAILED]'
+          for from_revision in 0023 0025; do
+            upgrade_data="$RUNNER_TEMP/partyops-upgrade-data-$from_revision"
+            upgrade_log="$RUNNER_TEMP/partyops-upgrade-runtime-$from_revision.log"
+            upgrade_port="$($upgrade_env/bin/python -c \
+              'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1]); s.close()')"
+            PARTYOPS_MODE=host PARTYOPS_ENVIRONMENT=test \
+              PARTYOPS_HOST=127.0.0.1 PARTYOPS_PORT="$upgrade_port" \
+              PARTYOPS_AGENT_PORT="$((upgrade_port + 1))" \
+              PARTYOPS_DATA_DIR="$upgrade_data" PARTYOPS_STRICT_SQLITE=true \
+              PARTYOPS_TLS_ENABLED=false PARTYOPS_SEED_DEMO=false \
+              "$app/Contents/MacOS/partyops" >"$upgrade_log" 2>&1 &
+            upgrade_pid=$!
+            upgrade_ok=0
+            for _ in {1..180}; do
+              if ! kill -0 "$upgrade_pid" 2>/dev/null; then
+                break
+              fi
+              if curl -fsS --connect-timeout 1 --max-time 3 \
+                "http://127.0.0.1:$upgrade_port/api/v1/health" \
+                >"$RUNNER_TEMP/partyops-upgrade-health-$from_revision.json" 2>/dev/null; then
+                upgrade_ok=1
+                break
+              fi
+              /bin/sleep 1
+            done
+            if [[ "$upgrade_ok" != '1' ]]; then
+              /usr/bin/tail -n 160 "$upgrade_log" >&2 || true
+              kill "$upgrade_pid" >/dev/null 2>&1 || true
+              wait "$upgrade_pid" >/dev/null 2>&1 || true
+              error_code="$error_0023"
+              [[ "$from_revision" == 0025 ]] && error_code="$error_0025"
+              printf '%s 最终冻结主程序未完成 %s→0026 健康启动。\n' \
+                "$error_code" "$from_revision" >&2
+              exit 2
+            fi
+            revision="$($upgrade_env/bin/python -c \
+              'import sqlite3,sys; db=sqlite3.connect(sys.argv[1]); print(db.execute("select version_num from alembic_version").fetchone()[0])' \
+              "$upgrade_data/partyops.db")"
+            display_name="$($upgrade_env/bin/python -c \
+              'import sqlite3,sys; db=sqlite3.connect(sys.argv[1]); print(db.execute("select display_name from users where id=?", ("rc4-native-upgrade-admin",)).fetchone()[0])' \
+              "$upgrade_data/partyops.db")"
+            table_gate="$($upgrade_env/bin/python -c \
+              'import sqlite3,sys; db=sqlite3.connect(sys.argv[1]); tables={row[0] for row in db.execute("select name from sqlite_master where type=\"table\"")}; print("ok" if {"timezone_migration_audits","ai_orchestration_sessions","ai_orchestration_events"} <= tables else "missing")' \
+              "$upgrade_data/partyops.db")"
+            kill "$upgrade_pid" >/dev/null 2>&1 || true
+            wait "$upgrade_pid" >/dev/null 2>&1 || true
+            test "$revision" = '0026'
+            test "$display_name" = '原生覆盖升级管理员'
+            test "$table_gate" = 'ok'
+            test "$(cat "$upgrade_data/attachments/preserved.txt")" = 'rc4 原生覆盖升级必须保留附件'
+            # macOS 系统 Bash 仍为 3.2，不提供 Bash 4 的 mapfile。使用本轮
+            # 固定的 Python 3.11 对受控备份目录做确定性计数，并返回唯一文件。
+            upgrade_backup="$("$upgrade_env/bin/python" -c \
+              'import pathlib,sys; paths=sorted(pathlib.Path(sys.argv[1]).glob("PartyOps-pre-upgrade-*.partyops-backup")); assert len(paths) == 1, f"expected one pre-upgrade backup, got {len(paths)}"; print(paths[0])' \
+              "$upgrade_data/backups")"
+            "$upgrade_env/bin/python" -c \
+              'import pathlib,sys; sys.path.insert(0,str(pathlib.Path(sys.argv[1])/"backend")); from app.backups import verify_backup; manifest=verify_backup(pathlib.Path(sys.argv[2])); raise SystemExit(0 if manifest.get("schema_version")==sys.argv[3] else 2)' \
+              "$PWD" "$upgrade_backup" "$from_revision"
+          done
+          probe="$HOME/Library/Logs/PartyOps/launch-probe.log"
+          launcher_log="$HOME/Library/Logs/PartyOps/launcher.log"
+          launcher_stderr="$HOME/Library/Logs/PartyOps/launch-stderr.log"
+          /bin/rm -f "$probe" "$launcher_log" "$launcher_stderr"
+          /usr/bin/open -na "$app" --args --launch-services-self-test
+          launchservices_ok=0
+          for _ in {1..60}; do
+            if /usr/bin/grep -q 'status=launchservices-entered architecture=.* target=partyops-desktop-bin' "$probe" 2>/dev/null &&
+              /usr/bin/grep -q 'status=desktop-child-started child_pid=' "$probe" 2>/dev/null &&
+              /usr/bin/grep -q 'status=desktop-child-exited child_pid=.* exit_code=0' "$probe" 2>/dev/null &&
+              /usr/bin/grep -q 'LaunchServices 已进入 PartyOps 1.4.5-rc.6 Python 桌面启动器' "$launcher_log" 2>/dev/null; then
+              launchservices_ok=1
+              break
+            fi
+            /bin/sleep 1
+          done
+          if [[ "$launchservices_ok" != '1' ]]; then
+            printf '%s\n' '[MACOS_LAUNCHSERVICES_SELFTEST_FAILED] Finder 启动链没有完整进入原生入口和 Python 桌面启动器。' >&2
+            /usr/bin/tail -n 80 "$probe" "$launcher_log" "$launcher_stderr" >&2 2>/dev/null || true
+            exit 2
+          fi
+          sudo /usr/bin/find "$app" -depth -delete
+
+      - name: 上传待人工审核制品
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: partyops-macos-${{ matrix.architecture }}-145-rc6
+          path: |
+            artifacts/release-1.4.5-rc.6-final/PartyOps_1.4.5-rc.6_macos_${{ matrix.architecture }}-UNSIGNED-UNNOTARIZED-CANDIDATE.pkg
+            artifacts/release-1.4.5-rc.6-final/PartyOps_1.4.5-rc.6_macos_${{ matrix.architecture }}-UNSIGNED-UNNOTARIZED-CANDIDATE.pkg.sha256
+            artifacts/release-1.4.5-rc.6-final/PartyOps_1.4.5-rc.6_macos_${{ matrix.architecture }}-UNSIGNED-UNNOTARIZED-CANDIDATE.pkg.attestation.json
+          if-no-files-found: error
+          retention-days: 7

@@ -1,0 +1,520 @@
+{
+  "schema_version": 1,
+  "as_of": "2026-10-02",
+  "publication_state": "published",
+  "description": "当前公开RC6八包限域验证环境；国内/GitHub/官网已完成发布回读。Mac保留RC4旧包；完整生命周期不宣称通过。",
+  "packages": [
+    {
+      "package_id": "windows_amd64",
+      "file_key": "windows",
+      "version": "1.4.5-rc.6",
+      "package_sha256": "a7c044b0b830ce416fdf02c84daa2e7aa4929c0833d9b530bc47486d861a81be",
+      "publication_state": "published",
+      "environments": [
+        {
+          "target": "win10-x64",
+          "os": "Windows 10 22H2（10.0.19045）",
+          "architecture": "x86_64",
+          "vm_platform": "QEMU",
+          "virtualization": "hardware-virtualized",
+          "wps_version": null,
+          "wps_note": "原限域验收未记录WPS版本，不推断为未安装",
+          "evidence": {
+            "reference": "lab:vms/win10-x64/guest-system.json",
+            "sha256": "f197691fba5204f14eca61867d1a628ca5a5a39f52c0687a87b5c84a941ba66f"
+          },
+          "guest_uuid_for_binding": "F47CF265-72A2-4D51-9CF1-B1F5AE960CB2"
+        }
+      ],
+      "scope_summary": "安装、普通用户启动、数据保留、健康与中文OCR",
+      "not_covered_summary": "完整生命周期、全部映射系统和正式旧包升级未覆盖",
+      "limitations": [
+        "full_lifecycle_verified=false。",
+        "未声明原十三项完整生命周期、公文逐页金样及正式旧发行包升级全部完成。",
+        "历史模型记录包含一次真实推理后低内存暂停，不表示所有内存条件下持续可用。",
+        "复用原始已验证冻结程序，只重新打包安装器；收据明确不声称重新冻结当前后端。"
+      ],
+      "untested": [
+        "未声明原十三项完整生命周期全部通过。"
+      ],
+      "full_lifecycle_verified": false,
+      "sources": [
+        {
+          "reference": "lab:reports/win10-x64/user-acceptance-20260913.json",
+          "sha256": "adabea911800e2605b7c17e6ab0e762688becf1301187d59bade627ed6d359c4"
+        }
+      ],
+      "download": {
+        "filename": "PartyOps_1.4.5-rc.6_windows_amd64.exe",
+        "size_bytes": 443690896,
+        "sha256": "a7c044b0b830ce416fdf02c84daa2e7aa4929c0833d9b530bc47486d861a81be",
+        "domestic_url": "https://partyops-rc6-win7-x86.app.workbuddy.host/downloads/PartyOps_1.4.5-rc.6_windows_amd64.exe",
+        "github_url": "https://github.com/linsky-dev/PartyOps/releases/download/v1.4.5-rc.6/PartyOps_1.4.5-rc.6_windows_amd64.exe",
+        "confirmed_at": "2026-10-02T17:28:35.669997+00:00",
+        "time_meaning": "actual observation of upload and full public readback confirmation",
+        "source_commit": null,
+        "source_fingerprint": "8e0ba223390977948a798761231b62a4e98290bdd747f047be3542181484e300"
+      }
+    },
+    {
+      "package_id": "windows7_amd64",
+      "file_key": "windows7Amd64",
+      "version": "1.4.5-rc.6",
+      "package_sha256": "996159794407f2171de170fbbf95c3b1f3fe234c026116f35113c2d8d3591d7f",
+      "publication_state": "published",
+      "environments": [
+        {
+          "target": "win7-x64",
+          "os": "Windows 7 SP1（6.1.7601）",
+          "architecture": "x86_64",
+          "vm_platform": "QEMU",
+          "virtualization": "full-system-emulated",
+          "wps_version": null,
+          "wps_note": "原限域验收未记录WPS版本，不推断为未安装",
+          "evidence": {
+            "reference": "lab:vms/win7-x64-original2/guest-system.json",
+            "sha256": "e71b1a143aae6c23bcd17d2c85b404e73a7387840237930f5878d9fbdb79195c"
+          },
+          "guest_uuid_for_binding": "406EF8EE-E342-405F-933F-7DDCE0A55F1B"
+        }
+      ],
+      "scope_summary": "安装、普通用户启动、中文OCR、WPS转换与补字体后排版、冷启动",
+      "not_covered_summary": "未追加完整生命周期；保留字体名称检查的非阻断问题",
+      "limitations": [
+        "full_lifecycle_verified=false；按用户确认不追加完整生命周期复测。",
+        "保留非阻断问题：页码检查将 SimSun 与宋体误判为不同字体，实际文档含正确字体及 PAGE 域。",
+        "Build receipt 保留 requires_installed_manifest_verification 标签；package SHA 与 acceptance 中实际安装目标 SHA 一致，但不改写原标签。"
+      ],
+      "untested": [
+        "未声明原十三项完整生命周期全部通过。"
+      ],
+      "full_lifecycle_verified": false,
+      "sources": [
+        {
+          "reference": "lab:reports/win7-x64/user-acceptance-20260913.json",
+          "sha256": "afcc38e9b76b3b6ed63b090db63a85bba58a34674b0ce703456e9542a008b498"
+        }
+      ],
+      "download": {
+        "filename": "PartyOps_1.4.5-rc.6_windows7_amd64.exe",
+        "size_bytes": 489713934,
+        "sha256": "996159794407f2171de170fbbf95c3b1f3fe234c026116f35113c2d8d3591d7f",
+        "domestic_url": "https://partyops-rc6-win7-x86.app.workbuddy.host/downloads/PartyOps_1.4.5-rc.6_windows7_amd64.exe",
+        "github_url": "https://github.com/linsky-dev/PartyOps/releases/download/v1.4.5-rc.6/PartyOps_1.4.5-rc.6_windows7_amd64.exe",
+        "confirmed_at": "2026-10-02T17:26:13.718241+00:00",
+        "time_meaning": "actual observation of upload and full public readback confirmation",
+        "source_commit": null,
+        "source_fingerprint": "81ffe7d0cc3241cb96adebeec06e780ff6ec8f81f2ac31450495502baad2718c"
+      }
+    },
+    {
+      "package_id": "linux_amd64",
+      "file_key": "linuxDebAmd64",
+      "version": "1.4.5-rc.6",
+      "package_sha256": "4557129b9f081c1b525d6dd6c6d444f7e0d35d63021b4b1c20c8daeffd4c30ae",
+      "publication_state": "published",
+      "environments": [
+        {
+          "target": "uos-deb-x64",
+          "os": "UOS 桌面专业版 20（1070）",
+          "architecture": "x86_64",
+          "vm_platform": "QEMU",
+          "virtualization": "hardware-virtualized",
+          "wps_version": null,
+          "wps_note": "原限域验收未记录WPS版本，不推断为未安装",
+          "evidence": {
+            "reference": "lab:vms/uos-deb-x64/guest-system.json",
+            "sha256": "568f960578e147486611920d21a5c69a290d7b51ab3050288639a47fa8ef8fa2"
+          },
+          "guest_uuid_for_binding": "ea81b4b5-ee46-4033-8406-0ac9eb003451"
+        }
+      ],
+      "scope_summary": "安装、普通用户桌面启动、健康与原业务数据保留",
+      "not_covered_summary": "完整生命周期与全部国产发行版未覆盖",
+      "limitations": [
+        "原生意图识别加速正例未通过，保留局部能力限制。",
+        "不声明旧版覆盖升级或全部原始生命周期矩阵通过。",
+        "部分此前已通过证据绑定早期包；本条只列报告明示的当前包 fresh checks 与保留边界。",
+        "Build receipt 原始 provenance 标签为 requires_installed_manifest_verification；验收报告 package SHA 匹配，不将该标签提升为 verified。",
+        "不声明旧版覆盖升级或全部原始生命周期矩阵已通过。"
+      ],
+      "untested": [
+        "未声明原十三项完整生命周期全部通过。"
+      ],
+      "full_lifecycle_verified": false,
+      "sources": [
+        {
+          "reference": "lab:reports/uos-deb-x64/user-acceptance-20260913.json",
+          "sha256": "5a129c125db6f2626c44891b041790a815c1718e1e2dd0e70042607b7d47f99a"
+        }
+      ],
+      "download": {
+        "filename": "PartyOps_1.4.5-rc.6_linux_amd64.deb",
+        "size_bytes": 366480042,
+        "sha256": "4557129b9f081c1b525d6dd6c6d444f7e0d35d63021b4b1c20c8daeffd4c30ae",
+        "domestic_url": "https://partyops-rc6-win7-x86.app.workbuddy.host/downloads/PartyOps_1.4.5-rc.6_linux_amd64.deb",
+        "github_url": "https://github.com/linsky-dev/PartyOps/releases/download/v1.4.5-rc.6/PartyOps_1.4.5-rc.6_linux_amd64.deb",
+        "confirmed_at": "2026-10-02T17:23:51.093150+00:00",
+        "time_meaning": "actual observation of upload and full public readback confirmation",
+        "source_commit": null,
+        "source_fingerprint": "d0a0ce735e8cee94e4a2d16150d1efc88b91ef864116386ef4b9a2d770cad224"
+      }
+    },
+    {
+      "package_id": "linux_arm64",
+      "file_key": "linuxDebArm64",
+      "version": "1.4.5-rc.6",
+      "package_sha256": "b9c9dfda203a74ac05b4a0f3019acb94294fc723cecf51b6840eb4e6f5a2a71e",
+      "publication_state": "published",
+      "environments": [
+        {
+          "target": "uos-deb-arm64",
+          "os": "UOS 桌面专业版 20（1070）",
+          "architecture": "aarch64",
+          "vm_platform": "QEMU",
+          "virtualization": "full-system-emulated",
+          "wps_version": null,
+          "wps_note": "原限域验收未记录WPS版本，不推断为未安装",
+          "evidence": {
+            "reference": "lab:vms/uos-deb-arm64/guest-system.json",
+            "sha256": "5ca539f65ff73e319755a90ab61cc4a80d27bcb377f1b261428e450cd85311d7"
+          },
+          "guest_uuid_for_binding": "5207de7d-ba44-41db-9e97-be1c4e463184"
+        }
+      ],
+      "scope_summary": "普通业务、OCR、同Guest独立会话协作",
+      "not_covered_summary": "完整生命周期、跨机器协作、WPS版本及旧包升级未覆盖",
+      "limitations": [
+        "安装版自检中的 LibreOffice --version 探测超过 120 秒，保留失败证据。",
+        "独立构建 Guest 的 ARM64 formatter 六类十用例及逐页 golden 不冒充本 Guest 完整公文实测。",
+        "未声明完整模型、升级、重启和卸载生命周期通过。",
+        "Native ARM64 build and transfer reports passed; raw build receipt keeps requires_installed_manifest_verification tag.",
+        "安装版自检中的LibreOffice --version探测超过120秒，保留失败证据；不声明该项或安装版全部公文功能通过。",
+        "ARM64公文组件在独立构建Guest内已通过6类10用例及逐页金样，此组件证据不冒充本Guest完整公文实测。",
+        "本次未声明完整模型、升级、重启与卸载生命周期通过。"
+      ],
+      "untested": [
+        "未声明原十三项完整生命周期全部通过。"
+      ],
+      "full_lifecycle_verified": false,
+      "sources": [
+        {
+          "reference": "lab:reports/uos-deb-arm64/user-acceptance-20260919.json",
+          "sha256": "6a244bafbec37cc1c16bfdf4a58e4df941bbea44a4ec92c279ef10079e78e3c3"
+        }
+      ],
+      "download": {
+        "filename": "PartyOps_1.4.5-rc.6_linux_arm64.deb",
+        "size_bytes": 352120914,
+        "sha256": "b9c9dfda203a74ac05b4a0f3019acb94294fc723cecf51b6840eb4e6f5a2a71e",
+        "domestic_url": "https://partyops-rc6-win7-x86.app.workbuddy.host/downloads/PartyOps_1.4.5-rc.6_linux_arm64.deb",
+        "github_url": "https://github.com/linsky-dev/PartyOps/releases/download/v1.4.5-rc.6/PartyOps_1.4.5-rc.6_linux_arm64.deb",
+        "confirmed_at": "2026-10-02T17:23:51.093150+00:00",
+        "time_meaning": "actual observation of upload and full public readback confirmation",
+        "source_commit": null,
+        "source_fingerprint": "e4dc8a429dfd0d52bd250ea8bc446d1e7822078343feb599287c95610f62a9b4"
+      }
+    },
+    {
+      "package_id": "rpm_x86_64",
+      "file_key": "linuxRpmAmd64",
+      "version": "1.4.5-rc.6",
+      "package_sha256": "e7c34a6090689f40dfae3aa3403b7b6ad0b5d4c3748e07005bb73ed1b32632ac",
+      "publication_state": "published",
+      "environments": [
+        {
+          "target": "openeuler-iso-x64",
+          "os": "openEuler 24.03 LTS-SP2",
+          "architecture": "x86_64",
+          "vm_platform": "QEMU",
+          "virtualization": "hardware-virtualized",
+          "wps_version": null,
+          "wps_note": "原限域验收未记录WPS版本，不推断为未安装",
+          "evidence": {
+            "reference": "lab:vms/openeuler-iso-x64/guest-system.json",
+            "sha256": "7e402fe3db3394d5fceb49c13e8279511cbdbfbdbb39269cc279cf32af82022f"
+          },
+          "guest_uuid_for_binding": "5a77b3f8-829a-4916-a0e6-380764ac883a"
+        }
+      ],
+      "scope_summary": "安装、普通用户桌面启动、健康与原业务数据保留",
+      "not_covered_summary": "完整生命周期与全部RPM发行版未覆盖",
+      "limitations": [
+        "原生意图识别加速正例未通过，保留局部能力限制。",
+        "真实旧版覆盖升级及完整卸载生命周期不在本次使用验收结论中。",
+        "Build receipt 要求 installed-manifest verification；acceptance 的 package SHA 匹配但不重写 provenance。",
+        "Build receipt 原始 provenance 标签为 requires_installed_manifest_verification；验收报告 package SHA 匹配，不将该标签提升为 verified。",
+        "原生意图识别加速正例未通过，普通业务已验证；保留该局部能力限制。",
+        "真实旧版覆盖升级及完整卸载生命周期不在本次用户调整后的使用验收结论中。"
+      ],
+      "untested": [
+        "未声明原十三项完整生命周期全部通过。"
+      ],
+      "full_lifecycle_verified": false,
+      "sources": [
+        {
+          "reference": "lab:reports/openeuler-iso-x64/user-acceptance-20260913.json",
+          "sha256": "008d735e0eec3a7fc8a95e7005bf315349c8da5df355c34df4c1b7d4ed62934d"
+        }
+      ],
+      "download": {
+        "filename": "PartyOps-1.4.5-0.rc.6.1.x86_64.rpm",
+        "size_bytes": 790114068,
+        "sha256": "e7c34a6090689f40dfae3aa3403b7b6ad0b5d4c3748e07005bb73ed1b32632ac",
+        "domestic_url": "https://partyops-rc6-win7-x86.app.workbuddy.host/downloads/PartyOps-1.4.5-0.rc.6.1.x86_64.rpm",
+        "github_url": "https://github.com/linsky-dev/PartyOps/releases/download/v1.4.5-rc.6/PartyOps-1.4.5-0.rc.6.1.x86_64.rpm",
+        "confirmed_at": "2026-10-02T17:21:24.151651+00:00",
+        "time_meaning": "actual observation of upload and full public readback confirmation",
+        "source_commit": null,
+        "source_fingerprint": "d0a0ce735e8cee94e4a2d16150d1efc88b91ef864116386ef4b9a2d770cad224"
+      }
+    },
+    {
+      "package_id": "rpm_aarch64",
+      "file_key": "linuxRpmArm64",
+      "version": "1.4.5-rc.6",
+      "package_sha256": "f507da109c1110e2c553ac9cb44a7f05205156132fb241ba057028571344e4f4",
+      "publication_state": "published",
+      "environments": [
+        {
+          "target": "openeuler-iso-arm64",
+          "os": "openEuler 24.03 LTS-SP2",
+          "architecture": "aarch64",
+          "vm_platform": "QEMU",
+          "virtualization": "full-system-emulated",
+          "wps_version": null,
+          "wps_note": "原限域验收未记录WPS版本，不推断为未安装",
+          "evidence": {
+            "reference": "lab:vms/openeuler-iso-arm64/guest-system.json",
+            "sha256": "3a98cf9cfed4c632d4dc8cddc0f89d26b3ce06294819899778e754eb175a9bc0"
+          },
+          "guest_uuid_for_binding": "f6e31859-11c7-4e9b-b890-5d632421834f"
+        }
+      ],
+      "scope_summary": "普通业务、OCR、同Guest独立会话协作",
+      "not_covered_summary": "完整生命周期、跨机器协作、WPS版本及旧包升级未覆盖",
+      "limitations": [
+        "不声明全部模型、公文、升级、重启和卸载生命周期通过。",
+        "Native ARM64 RPM build and transfer reports passed; raw build receipt keeps requires_installed_manifest_verification tag.",
+        "本次不声明全部模型、公文、升级、重启和卸载生命周期通过。"
+      ],
+      "untested": [
+        "未声明原十三项完整生命周期全部通过。"
+      ],
+      "full_lifecycle_verified": false,
+      "sources": [
+        {
+          "reference": "lab:reports/openeuler-iso-arm64/user-acceptance-20260919.json",
+          "sha256": "2e6f3a2d0c469f049a2ea78cbc4878540eee348a7763bcb403576609335a5751"
+        }
+      ],
+      "download": {
+        "filename": "PartyOps-1.4.5-0.rc.6.1.aarch64.rpm",
+        "size_bytes": 763753980,
+        "sha256": "f507da109c1110e2c553ac9cb44a7f05205156132fb241ba057028571344e4f4",
+        "domestic_url": "https://partyops-rc6-win7-x86.app.workbuddy.host/downloads/PartyOps-1.4.5-0.rc.6.1.aarch64.rpm",
+        "github_url": "https://github.com/linsky-dev/PartyOps/releases/download/v1.4.5-rc.6/PartyOps-1.4.5-0.rc.6.1.aarch64.rpm",
+        "confirmed_at": "2026-10-02T17:21:24.151651+00:00",
+        "time_meaning": "actual observation of upload and full public readback confirmation",
+        "source_commit": null,
+        "source_fingerprint": "e4dc8a429dfd0d52bd250ea8bc446d1e7822078343feb599287c95610f62a9b4"
+      }
+    },
+    {
+      "package_id": "linux_loong64",
+      "file_key": "linuxDebLoong64",
+      "version": "1.4.5-rc.6",
+      "package_sha256": "bec5993a12a9a66800fa039045f45329ecc486934cd1d1106c10d5e2ecf78017",
+      "publication_state": "published",
+      "environments": [
+        {
+          "target": "deepin-deb-loong64",
+          "os": "Deepin 25.2.0",
+          "architecture": "loongarch64",
+          "vm_platform": "QEMU",
+          "virtualization": "full-system-emulated",
+          "wps_version": null,
+          "wps_note": "原限域验收未记录WPS版本，不推断为未安装",
+          "evidence": {
+            "reference": "lab:vms/deepin-deb-loong64/guest-system.json",
+            "sha256": "92b57fe5367bd37994d3b9e654295cb5dc8173f0de63d3aa642e98e88bcbafe9"
+          },
+          "guest_uuid_for_binding": "74abd444-fffa-4ab5-8ef3-551f7a233d1b"
+        }
+      ],
+      "scope_summary": "原版Deepin安装、业务/OCR、真实Firefox UI、WPS九项与三页金样、独立重启后检查",
+      "not_covered_summary": "完整生命周期原blocked；旧版升级无基线；其他龙芯发行版未覆盖",
+      "limitations": [
+        "原始完整生命周期控制器保持 blocked：升级基线为 null，错误含 OLDER_PACKAGE_REMOVED_BY_RETENTION_POLICY；重启后的原始续跑又因 BUSINESS_CONTEXT_CHANGED_RESTART_FROM_CLEAN_BASELINE 阻断。之后独立实际 after-reboot 阶段已通过，但不改写原始 journal，也不能补成完整 FULL_LIFECYCLE_EVIDENCE。"
+      ],
+      "untested": [
+        "旧版同架构包到本版的升级及旧数据迁移；当前无可用候选包。",
+        "OCR/models/intent及formatter报告中的 runtime_environment_passed 字段仍为 false；本汇总只认各报告明确列出的 scope-specific checks。",
+        "复杂 AI 模型推理、原生意图推理及系统级模型活动未验证；Core 仅测能力拒绝与规则预览。",
+        "跨机协同未验证；collaboration-business 报告明确 separate_machine_enrollment_verified=false。",
+        "未在非 Deepin 25.2.0、非 full-system-emulated 环境验证，也未作性能、压力或长期运行测试。",
+        "安装 WPS 使用系统可用组件；QA 字体为额外测试输入，不能据此声称随包字体覆盖或所有用户字体环境均可用。"
+      ],
+      "full_lifecycle_verified": false,
+      "sources": [
+        {
+          "reference": "repo:qa/vm-lab/release-preparation/loong64/first-release-audit-20260927.json",
+          "sha256": "4d111d7e3b1a2975f0daf45ffbff878db6f3105352714bb36aaa192c59e32521"
+        }
+      ],
+      "download": {
+        "filename": "PartyOps_1.4.5-rc.6_linux_loong64.deb",
+        "size_bytes": 302195420,
+        "sha256": "bec5993a12a9a66800fa039045f45329ecc486934cd1d1106c10d5e2ecf78017",
+        "domestic_url": "https://partyops-rc6-win7-x86.app.workbuddy.host/downloads/PartyOps_1.4.5-rc.6_linux_loong64.deb",
+        "github_url": "https://github.com/linsky-dev/PartyOps/releases/download/v1.4.5-rc.6/PartyOps_1.4.5-rc.6_linux_loong64.deb",
+        "confirmed_at": "2026-10-02T17:25:06.256114+00:00",
+        "time_meaning": "actual observation of upload and full public readback confirmation",
+        "source_commit": "ff24ed9bfc965c571fa59537c4796b6e2ffedf48",
+        "source_fingerprint": "a008027d4457f4848cbe655ec3e6950e3376b0d8563633803a8263af5d918c82"
+      }
+    },
+    {
+      "package_id": "windows7_x86",
+      "file_key": "windows7X86",
+      "version": "1.4.5-rc.6",
+      "package_sha256": "b3b77f2a5a319906c641ca693df31b93c3fbcb56e28eaae7a52bdfa94913bf88",
+      "publication_state": "published",
+      "environments": [
+        {
+          "target": "win7-x86",
+          "os": "Windows 7 SP1（6.1.7601）",
+          "architecture": "i686",
+          "vm_platform": "QEMU",
+          "virtualization": "full-system-emulated",
+          "wps_version": "12.1.0.28505",
+          "wps_note": "已安装WPS版本；来源为实际runtime/Win10验收",
+          "evidence": {
+            "reference": "lab:vms/win7-x86/guest-system.json",
+            "sha256": "885aa0968feef24d3f6b4d85577235e7631eaf9116c20a07d93573177530ae68"
+          },
+          "guest_uuid_for_binding": "B1C168F1-98B1-4E42-94CF-129D16DBBB28"
+        },
+        {
+          "target": "win10-x86",
+          "os": "Windows 10 22H2（10.0.19045）",
+          "architecture": "i686",
+          "vm_platform": "QEMU",
+          "virtualization": "hardware-virtualized",
+          "wps_version": "12.1.0.28505",
+          "wps_note": "已安装WPS版本；来源为实际runtime/Win10验收",
+          "evidence": {
+            "reference": "lab:vms/win10-x86/guest-system.json",
+            "sha256": "090ea9404c10f180d68b612891a1964da0a11710a91891d103bf65d7d59528fe"
+          },
+          "guest_uuid_for_binding": "03461F3B-F67C-4871-93A3-1711D8DC5329"
+        }
+      ],
+      "scope_summary": "Win7：用户批准本机字体读取与排版；Win10：普通业务、OCR、重启、同包恢复、浏览器UI与WPS排版",
+      "not_covered_summary": "Win7严格三PDF金样与剩余生命周期未完成；Win10模型409、跨机器协作、旧升级及ARM未覆盖",
+      "limitations": [
+        "范围仅证明本轮Win10 x86安装包的有限普通功能与生命周期；不表示windows7_x86包整体release-ready。",
+        "legacy-core本地AI/models阶段失败HTTP409 LOCAL_AI_PACKAGE_UNSUPPORTED，保留失败证据，不声明AI推理通过。",
+        "协同验证使用同一Guest独立职员会话，separate_machine_enrollment_verified=false，不声明跨机器协作通过。",
+        "uninstall-keep后同包重新安装与after-reinstall数据恢复，不是旧版本升级测试；旧包升级未验证。",
+        "Win7 x86目标当前未完成验收。",
+        "各报告runtime_environment_passed=false；任何报告status=passed都不提升为完整矩阵或整体发布通过。",
+        "第一轮reinstall调用生成的install-50fe standalone诊断报告为partial；after-reinstall恢复入口报告通过并明确引用该receipt，未修改原报告。",
+        "three-PDF-strict-pixel-comparison",
+        "Firefox-new-boot-UI",
+        "remaining-uninstall-reinstall-lifecycle",
+        "full_lifecycle_verified=false。",
+        "win10-arm64 未测试。",
+        "构建来源 requires_installed_manifest_verification；不声称重新冻结当前源码。"
+      ],
+      "untested": [
+        "Win7 严格三PDF逐像素金样未完成，用户明确停止额外金样并批准读取本机字体与排版可用范围。",
+        "Win7 剩余卸载重装与新boot Firefox UI不作通过声明。",
+        "Win10 legacy models/跨机器协作/旧包升级不作通过声明。",
+        "win10-arm64 未测试。"
+      ],
+      "full_lifecycle_verified": false,
+      "sources": [
+        {
+          "reference": "repo:qa/vm-lab/release-preparation/x86-first-release-scope-20261002.json",
+          "sha256": "9e02ca6c1c7147130674fc3ef824e048a66a8622ca6b4067a036b0024dcb2ded"
+        },
+        {
+          "reference": "repo:qa/vm-lab/release-preparation/win7-x86/user-approved-format-acceptance-20261002.json",
+          "sha256": "4a18879915e8d0e988e6d8c6aa481a58443abe708b9ebc32fabd49c94dc842a6"
+        },
+        {
+          "reference": "repo:qa/vm-lab/release-preparation/win10-x86/completed-core-acceptance-20260930.json",
+          "sha256": "aa10ae4212f41fd85f842afd7edc415c1099f36bd19d2992a54afee700dd2910"
+        }
+      ],
+      "download": {
+        "filename": "PartyOps_1.4.5-rc.6_windows7_x86.exe",
+        "size_bytes": 457500557,
+        "sha256": "b3b77f2a5a319906c641ca693df31b93c3fbcb56e28eaae7a52bdfa94913bf88",
+        "domestic_url": "https://partyops-rc6-win7-x86.app.workbuddy.host/downloads/PartyOps_1.4.5-rc.6_windows7_x86.exe",
+        "github_url": "https://github.com/linsky-dev/PartyOps/releases/download/v1.4.5-rc.6/PartyOps_1.4.5-rc.6_windows7_x86.exe",
+        "confirmed_at": "2026-10-02T17:26:13.719244+00:00",
+        "time_meaning": "actual observation of upload and full public readback confirmation",
+        "source_commit": null,
+        "source_fingerprint": "25601a0ef5e01aad4c0f20dc0004ff53b9e28004cbabb9c18abb035dc9add1ab"
+      }
+    },
+    {
+      "package_id": "macos_x86_64",
+      "file_key": "macosX86_64",
+      "version": "1.4.5-rc.4",
+      "publication_state": "existing-old-package",
+      "environments": [],
+      "scope_summary": "当前链接为RC4旧包；本批未完成该架构macOS验收",
+      "not_covered_summary": "Intel Mac本批暂停：接口未监听，权限排查未找到受支持修复",
+      "limitations": [
+        "未以本批RC6证据证明RC4旧包的macOS环境或WPS版本。"
+      ],
+      "untested": [
+        "本批macOS安装、启动、普通用户业务与WPS验证未完成。"
+      ],
+      "full_lifecycle_verified": false,
+      "sources": []
+    },
+    {
+      "package_id": "macos_arm64",
+      "file_key": "macosArm64",
+      "version": "1.4.5-rc.4",
+      "publication_state": "existing-old-package",
+      "environments": [],
+      "scope_summary": "当前链接为RC4旧包；本批未完成该架构macOS验收",
+      "not_covered_summary": "M系列等待用户提供远程机器，本批尚未完成新验收",
+      "limitations": [
+        "未以本批RC6证据证明RC4旧包的macOS环境或WPS版本。"
+      ],
+      "untested": [
+        "本批macOS安装、启动、普通用户业务与WPS验证未完成。"
+      ],
+      "full_lifecycle_verified": false,
+      "sources": []
+    }
+  ],
+  "publication_evidence": {
+    "manifest_sha256": "da1b7da65ae525c13726cedfb271a449bbec8e236e5a5342aa06d58336a61ac2",
+    "domestic_readback_confirmed_at": "2026-10-02T17:28:36.311270+00:00",
+    "github_published": true,
+    "sources": [
+      {
+        "reference": "repo:qa/vm-lab/release-preparation/domestic-batch-release-verification-20261003.json",
+        "sha256": "b82016016019c75009f67ef6c56b1c691fb802630271a69a458e56d6b85c5a47"
+      },
+      {
+        "reference": "workspace:artifacts/cloudstudio-scoped-batch-rc6-20261003/verification-observations.json",
+        "sha256": "2cebabad790e7c23da1db61f244498da82a3f4528bf82fe283ba990596aa766a"
+      },
+      {
+        "reference": "repo:qa/vm-lab/release-preparation/github-release-asset-verification-20261003.json",
+        "sha256": "32c3df0269dcba90dc3ea5d91443f144177d8a84a90ac51293d3910b926d8fd0"
+      }
+    ],
+    "github_published_at": "2026-10-02T17:38:00Z",
+    "github_release_url": "https://github.com/linsky-dev/PartyOps/releases/tag/v1.4.5-rc.6"
+  },
+  "website_publication_state": "prepared-not-deployed"
+}

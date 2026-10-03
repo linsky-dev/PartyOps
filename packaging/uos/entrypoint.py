@@ -31,6 +31,56 @@ if ocr_binary.exists():
     os.environ["TESSDATA_PREFIX"] = str(ocr_root / "tessdata")
 
 if __name__ == "__main__":
+    # 英文 Win7 的控制台/安装器管道使用 cp1252；JSON 转义保留中文错误，
+    # 避免诊断打印再次抛异常并覆盖原故障退出码。
+    if sys.argv[1:] == ["--startup-configured-personal-permission-self-test"]:
+        from app.setup_wizard import preflight_configured_personal_runtime_access
+
+        try:
+            print(
+                json.dumps(
+                    preflight_configured_personal_runtime_access(),
+                    ensure_ascii=True,
+                    sort_keys=True,
+                )
+            )
+        except Exception as exc:
+            print(
+                json.dumps(
+                    {
+                        "passed": False,
+                        "code": "PACKAGE_PERSONAL_DATA_PERMISSION_SELFTEST_FAILED",
+                        "error": str(exc)[-2000:],
+                    },
+                    ensure_ascii=True,
+                )
+            )
+            raise SystemExit(5) from exc
+        raise SystemExit(0)
+    if sys.argv[1:] == ["--startup-desktop-user-self-test"]:
+        from app.startup_selftest import run_desktop_user_selftest
+
+        try:
+            print(
+                json.dumps(
+                    run_desktop_user_selftest(runtime),
+                    ensure_ascii=True,
+                    sort_keys=True,
+                )
+            )
+        except Exception as exc:
+            print(
+                json.dumps(
+                    {
+                        "passed": False,
+                        "code": "PACKAGE_DESKTOP_RUNTIME_STARTUP_SELFTEST_FAILED",
+                        "error": str(exc)[-6000:],
+                    },
+                    ensure_ascii=True,
+                )
+            )
+            raise SystemExit(4) from exc
+        raise SystemExit(0)
     if sys.argv[1:] == ["--startup-user-permission-self-test"]:
         from app.startup_selftest import run_user_permission_selftest
 
@@ -38,7 +88,7 @@ if __name__ == "__main__":
             print(
                 json.dumps(
                     run_user_permission_selftest(runtime),
-                    ensure_ascii=False,
+                    ensure_ascii=True,
                     sort_keys=True,
                 )
             )
@@ -50,7 +100,7 @@ if __name__ == "__main__":
                         "code": "PACKAGE_USER_RUNTIME_PERMISSION_SELFTEST_FAILED",
                         "error": str(exc)[-2000:],
                     },
-                    ensure_ascii=False,
+                    ensure_ascii=True,
                 )
             )
             raise SystemExit(3) from exc

@@ -19,6 +19,9 @@ os.environ["PARTYOPS_ENVIRONMENT"] = "test"
 os.environ["PARTYOPS_SEED_DEMO"] = "false"
 os.environ["PARTYOPS_STRICT_SQLITE"] = "false"
 os.environ["PARTYOPS_BACKUP_HOUR"] = "25"
+# 常规单元测试覆盖可移植 OOXML 兼容层；原源码 + WPS 的真实端到端金标准
+# 由 scripts/verify-document-formatter-parity.py 独立执行，避免每个用例重复启动 WPS。
+os.environ["PARTYOPS_FORMATTER_TEST_LOCAL_ENGINE"] = "1"
 
 from app.main import app  # noqa: E402
 

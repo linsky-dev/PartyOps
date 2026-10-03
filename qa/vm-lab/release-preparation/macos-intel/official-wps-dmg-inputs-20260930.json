@@ -1,0 +1,69 @@
+{
+  "recorded_date": "2026-09-30",
+  "purpose": "记录 Homebrew 官方 cask 指向的 WPS Mac 固定版本 DMG 输入；未下载 DMG。",
+  "homebrew_source": {
+    "repository": "https://github.com/Homebrew/homebrew-cask",
+    "path": "Casks/w/wpsoffice-cn.rb",
+    "commit": "3b3cecd359fdead69a5216dae51c0f88c8a36e53",
+    "permalink": "https://github.com/Homebrew/homebrew-cask/blob/3b3cecd359fdead69a5216dae51c0f88c8a36e53/Casks/w/wpsoffice-cn.rb",
+    "formula_api": "https://formulae.brew.sh/api/cask/wpsoffice-cn.json",
+    "formula_api_generated_date": "2026-09-30",
+    "cask_version": "12.1.29166",
+    "cask_homepage": "https://mac.wps.cn/",
+    "installer_method": "brew install --cask wpsoffice-cn"
+  },
+  "inputs": [
+    {
+      "architecture": "x86_64",
+      "cask_arch_suffix": "x64",
+      "url": "https://package.mac.wpscdn.cn/mac_wps_pkg/12.1.29166/WPS_Office_12.1.29166(29166)_x64.dmg",
+      "cask_sha256_expected": "79d121a5269ce2b2b0422fbf0d61c1e21b382c1b46b41be24ce3e4b8021b8d46",
+      "head_check": {
+        "access_date": "2026-09-30",
+        "method": "curl.exe -sSIL --max-time 25 <url>",
+        "status": 200,
+        "content_type": "application/octet-stream",
+        "content_length": 743059766,
+        "etag": "14bd5831a528472a8185bddfd4b2e281",
+        "last_modified": "2026-09-20T10:48:19Z"
+      }
+    },
+    {
+      "architecture": "arm64",
+      "cask_arch_suffix": "arm64",
+      "url": "https://package.mac.wpscdn.cn/mac_wps_pkg/12.1.29166/WPS_Office_12.1.29166(29166)_arm64.dmg",
+      "cask_sha256_expected": "f493b07f48e4911d5836d51afd8b4254e2b12aa16d2d0816b1474c3fa0785c31",
+      "head_check": {
+        "access_date": "2026-09-30",
+        "method": "curl.exe -sSIL --max-time 25 <url>",
+        "status": 200,
+        "content_type": "application/octet-stream",
+        "content_length": 720180863,
+        "etag": "9665f9d9aea457118eb44c9e6a38d3af",
+        "last_modified": "2026-09-20T10:48:18Z"
+      }
+    }
+  ],
+  "sha256_note": "SHA-256 值来自指定 Homebrew cask 提交；本次只做 HEAD，没有下载 DMG，未对制品字节重算摘要。",
+  "wps_58890_source_correction": {
+    "authoritative_page": {
+      "url": "https://forum.wps.cn/topic/90696",
+      "title": "WPS加载项开发完成，插件安装不上，http://127.0.0.1:58890这个服务始终不存在，",
+      "reply_author": "WPS技术支持-希晨 @金山办公",
+      "reply_date": "2026-09-09 08:20:16",
+      "short_quote": "58890端口服务已上线，直接升级至28492及后续版本即可使用。"
+    },
+    "previously_misattributed_page": {
+      "url": "https://forum.wps.cn/topic/47510",
+      "title": "MAC系统安装加载项",
+      "original_post_date": "2024-12-26 01:57:15",
+      "relevance": "社区用户介绍手动配置加载项并报告当时 58890 通信未建立；不是 2026-09-09 的官方 28492+ 支持答复。"
+    },
+    "access_date": "2026-09-30"
+  },
+  "limitations": [
+    "Homebrew cask 证明固定 URL、架构映射和期望 SHA，不等同于本项目已下载或安装验证。",
+    "HEAD 200 和 Content-Length 只证明 CDN 当前响应元数据；需下载后按 cask SHA-256 验证完整字节。",
+    "12.1.29166 高于官方支持答复所述 28492 版本线，但两架构上的 relay 和文档调用仍需分别实测。"
+  ]
+}

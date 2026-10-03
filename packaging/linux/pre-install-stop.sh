@@ -1,7 +1,7 @@
 #!/bin/sh
 set -e
 
-# 升级覆盖冻结运行时前，只处理能够由 /proc 可执行文件与进程状态共同
+# 升级覆盖或卸载冻结运行时前，只处理能够由 /proc 可执行文件与进程状态共同
 # 证明属于 PartyOps 的进程。PID 已复用或身份不明时宁可中止安装也不误杀。
 is_partyops_process() {
   pid="$1"
@@ -27,7 +27,10 @@ record_stopped_pid() {
 
 install -d -m 0755 /run/partyops
 : >/run/partyops/stopped-pids
-if systemctl is-active --quiet partyops.service 2>/dev/null; then
+if [ "${PARTYOPS_PACKAGE_REMOVE:-0}" = "1" ]; then
+  # 卸载不允许留下升级后重启标记；业务目录始终由用户决定是否清理。
+  rm -f /run/partyops/restart-after-upgrade
+elif systemctl is-active --quiet partyops.service 2>/dev/null; then
   : >/run/partyops/restart-after-upgrade
 fi
 
@@ -40,7 +43,7 @@ done
 # 受限更新器本身运行在 partyops-updater.service 中。系统内升级若在此处
 # 停掉父服务，systemd 默认会连同正在执行的 dpkg/dnf 一起终止，留下半安装
 # 状态。人工包管理器升级没有事务标记，仍同时停止两个服务。
-if [ "${PARTYOPS_IN_APP_UPDATE:-0}" = "1" ]; then
+if [ "${PARTYOPS_IN_APP_UPDATE:-0}" = "1" ] && [ "${PARTYOPS_PACKAGE_REMOVE:-0}" != "1" ]; then
   systemctl stop partyops.service >/dev/null 2>&1 || true
 else
   systemctl stop partyops.service partyops-updater.service >/dev/null 2>&1 || true

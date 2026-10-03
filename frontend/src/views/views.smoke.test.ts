@@ -333,6 +333,11 @@ function responseFor(path: string): unknown {
   if (path.startsWith("/templates")) return [template];
   if (path.startsWith("/recurrences")) return [recurrence];
   if (path === "/ai/drafts") return [draft];
+  if (path === "/ai/capabilities") return {
+    release: "1.4.5-rc.6",
+    planner: { model_id: "rules", role: "规则编排引擎", state: "fallback" },
+    components: [], tools: [], external_models: { enabled_by_default: false },
+  };
   if (path.startsWith("/ai/recommendations")) return [recommendation];
   if (path.startsWith("/workspace/search")) return [workspaceFile];
   if (path === "/archives/years") return { years: [{ year: 2026, count: 1, categories: [] }] };
@@ -558,6 +563,71 @@ describe("核心页面真实挂载", () => {
     state.archiveReason = "重复会议";
     await fail(apiMocks.deleteBody, "archiveMeeting");
     await fail(apiMocks.post, "restoreMeeting");
+    wrapper.unmount();
+  });
+
+  it("党委会文件导入覆盖真实容器候选、人工修订、北京时间和失败恢复", async () => {
+    const meeting = {
+      id: "meeting-imported", meeting_type: "party_committee", meeting_type_label: "党委会",
+      organization: "测试镇党委", title: "2026年第8次党委会", scheduled_at: "2026-08-28T10:00:00Z",
+      status: "planned", task_id: "task-imported", version: 1, archived_at: null, archive_reason: "",
+      progress: { done: 0, total: 6, percent: 0 }, steps: [], topics: [], archived_topics: [],
+    };
+    const inspected = {
+      id: "draft-1", source_kind: "ole", status: "draft", version: 1,
+      warnings: ["请核对会议时间"],
+      meeting: {
+        meeting_type: "party_committee", title: "20260821党委会议程",
+        scheduled_at: "2026-08-28T18:00:00+08:00", venue: "第一会议室",
+        host_name: "张三", attendee_text: "张三、李四", requires_confirmation: true,
+      },
+      topics: [
+        { title: "研究基层党建重点任务", confidence: 0.96, source: "正文第6行的明确序号", confirmed: false },
+        { title: "审议专项资金使用方案", confidence: 0.96, source: "正文第7行的明确序号", confirmed: false },
+      ],
+    };
+    const confirmed = { ...inspected, version: 2, meeting: { ...inspected.meeting, requires_confirmation: false } };
+    apiMocks.post.mockImplementation(async (path) => {
+      if (path.endsWith("/imports/inspect")) return inspected;
+      if (path.endsWith("/imports/draft-1/commit")) return { meeting };
+      return responseFor(path);
+    });
+    apiMocks.patch.mockImplementation(async (path) => path.endsWith("/imports/draft-1") ? confirmed : responseFor(path));
+    const wrapper = await mountView(BusinessMeetingsView, "/business-meetings", true);
+    const state = setupState(wrapper);
+
+    await runAction(state, "openMeetingImport");
+    await runAction(state, "inspectMeetingFile");
+    expect(apiMocks.post).not.toHaveBeenCalledWith("/business-meetings/imports/inspect", expect.any(FormData));
+    await runAction(state, "chooseMeetingFile", { target: { files: [new File(["ole"], "会议.docx")] } });
+    await runAction(state, "inspectMeetingFile");
+    expect(state.importDraft).toEqual(inspected);
+    expect((state.importForm as Record<string, string>).scheduled_at).toBe("2026-08-28 18:00:00");
+    expect((state.importForm as Record<string, string>).topics_text).toContain("研究基层党建重点任务");
+
+    await runAction(state, "commitMeetingImport");
+    expect(apiMocks.patch).not.toHaveBeenCalledWith("/business-meetings/imports/draft-1", expect.anything(), expect.anything());
+    Object.assign(state.importForm as object, { organization: "测试镇党委", owner_id: "user-1" });
+    await runAction(state, "commitMeetingImport");
+    expect(apiMocks.patch).toHaveBeenCalledWith(
+      "/business-meetings/imports/draft-1",
+      expect.objectContaining({ scheduled_at: "2026-08-28 18:00:00", topics: ["研究基层党建重点任务", "审议专项资金使用方案"] }),
+      { "If-Match": "1" },
+    );
+    expect(apiMocks.post).toHaveBeenCalledWith(
+      "/business-meetings/imports/draft-1/commit",
+      undefined,
+      { "If-Match": "2" },
+    );
+
+    await runAction(state, "openMeetingImport");
+    await runAction(state, "chooseMeetingFile", { target: { files: [new File(["bad"], "损坏.docx")] } });
+    apiMocks.post.mockRejectedValueOnce(new Error("真实容器无法识别"));
+    await runAction(state, "inspectMeetingFile");
+    state.importDraft = inspected;
+    Object.assign(state.importForm as object, { organization: "测试镇党委", title: "异常会议" });
+    apiMocks.patch.mockRejectedValueOnce("非标准导入错误");
+    await runAction(state, "commitMeetingImport");
     wrapper.unmount();
   });
 
@@ -1183,6 +1253,75 @@ describe("核心页面真实挂载", () => {
     wrapper.unmount();
   });
 
+  it("智能编排器覆盖生成、逐项确认、业务办理交接与错误恢复", async () => {
+    const writeStep = {
+      id: "step-write", step_order: 1, tool_name: "settings.network_change",
+      arguments: { advertise_host: "192.168.1.20", port: "18765" }, reason: "修改协同公布地址",
+      evidence: [], confidence: 0.9, risk_level: "high", requires_confirmation: true,
+      status: "pending", result_summary: {}, error_code: "", version: 1, scope_sha256: "a".repeat(64),
+    };
+    const created = {
+      id: "orchestration-1", goal_summary: "修改协同地址", input_sha256: "b".repeat(64),
+      state: "awaiting_confirmation", model_id: "rules", external_consented: false,
+      risk_level: "high", context_scope: {}, plan: {}, unresolved: [], expires_at: now,
+      version: 1, completed_at: null, created_at: now, updated_at: now, steps: [writeStep],
+    };
+    const approved = { ...created, version: 2, steps: [{ ...writeStep, status: "approved", version: 2 }] };
+    const handedOff = {
+      ...approved, version: 3, state: "awaiting_business_action",
+      steps: [{
+        ...approved.steps[0], status: "awaiting_business_action",
+        result_summary: {
+          status: "action_required", preview_only: true,
+          handoff: { route: "/fleet/grants", label: "打开网络与协同" },
+        },
+      }],
+    };
+    apiMocks.post.mockImplementation(async (path) => {
+      if (path === "/ai/orchestrations") return created;
+      if (path.includes("/steps/")) return approved;
+      if (path.endsWith("/execute")) return handedOff;
+      return responseFor(path);
+    });
+    const wrapper = await mountView(AssistantView, "/assistant", true);
+    const state = setupState(wrapper);
+
+    await runAction(state, "createOrchestration");
+    state.orchestrationGoal = "修改协同公布地址为 192.168.1.20";
+    await runAction(state, "createOrchestration");
+    expect((state.orchestration as { id: string }).id).toBe("orchestration-1");
+    expect(await (state.toolLabel as (step: object) => string)(writeStep)).toBe("修改协同公布地址");
+    expect(await (state.toolLabel as (step: object) => string)({ ...writeStep, tool_name: "unknown" })).toBe("受控业务步骤");
+    expect(await (state.handoffFor as (step: object) => unknown)(writeStep)).toBeNull();
+    expect(await (state.handoffFor as (step: object) => unknown)({ ...writeStep, result_summary: { handoff: { route: 1 } } })).toBeNull();
+
+    const confirmSpy = vi.spyOn(Modal, "confirm").mockReturnValue({ close: vi.fn() } as never);
+    await runAction(state, "approveStep", writeStep);
+    const approval = confirmSpy.mock.calls.at(-1)?.[0] as { onOk?: () => Promise<void> };
+    await approval.onOk?.();
+    expect((state.orchestration as { version: number }).version).toBe(2);
+    await runAction(state, "executeOrchestration");
+    expect((state.orchestration as { state: string }).state).toBe("awaiting_business_action");
+    expect((state.handoffFor as (step: object) => { route: string })(handedOff.steps[0]).route).toBe("/fleet/grants");
+
+    const completed = { ...created, state: "completed", version: 4, steps: [{ ...writeStep, requires_confirmation: false, status: "completed" }] };
+    state.orchestration = { ...created, state: "awaiting_confirmation", version: 3 };
+    apiMocks.post.mockResolvedValueOnce(completed);
+    await runAction(state, "executeOrchestration");
+    expect((state.orchestration as { state: string }).state).toBe("completed");
+
+    state.orchestration = null;
+    await runAction(state, "approveStep", writeStep);
+    await runAction(state, "executeOrchestration");
+    state.orchestration = created;
+    apiMocks.post.mockRejectedValueOnce("编排生成失败");
+    await runAction(state, "createOrchestration");
+    apiMocks.post.mockRejectedValueOnce("编排执行失败");
+    await runAction(state, "executeOrchestration");
+    confirmSpy.mockRestore();
+    wrapper.unmount();
+  });
+
   it("党员发展档案统一展示真实事实、法规边界、参考计划与可恢复归档", async () => {
     apiMocks.post.mockImplementation(async (path) => path.endsWith("/progress-events") ? { id: "event-1" } : responseFor(path));
     const wrapper = await mountView(PartyDevelopmentCasesView, "/party-development?tab=cases", true);
@@ -1352,7 +1491,8 @@ describe("核心页面真实挂载", () => {
     expect(wrapper.text()).toContain("实际事实");
     expect(wrapper.text()).toContain("参考计划");
     expect(wrapper.text()).toContain("法规边界");
-    expect(wrapper.text()).toContain("unknown");
+    expect(wrapper.text()).toContain("待确认节点");
+    expect(wrapper.text()).not.toContain("unknown");
     expect(wrapper.text()).toContain("纠正");
     expect(wrapper.text()).toContain("作废");
 
@@ -3252,6 +3392,16 @@ describe("核心页面真实挂载", () => {
     apiMocks.get.mockRejectedValueOnce("文件检索失败");
     await runAction(state, "searchFiles");
     (state.form as { instruction: string }).instruction = "整理摘要";
+    const externalConfirm = vi.spyOn(Modal, "confirm").mockReturnValue({ close: vi.fn() } as never);
+    apiMocks.post.mockRejectedValueOnce(new ApiError(409, {
+      code: "AI_EXTERNAL_CONFIRM_REQUIRED", detail: "需要逐次确认", sources: ["资料一"],
+    }));
+    await runAction(state, "sendQuery", false);
+    expect(externalConfirm).toHaveBeenCalledWith(expect.objectContaining({ title: "确认最小资料范围" }));
+    const externalOptions = externalConfirm.mock.calls.at(-1)?.[0] as { onOk?: () => Promise<void> };
+    apiMocks.post.mockResolvedValueOnce(draft);
+    await externalOptions.onOk?.();
+    externalConfirm.mockRestore();
     apiMocks.post.mockRejectedValueOnce("AI 请求失败");
     await runAction(state, "sendQuery", false);
     wrapper.unmount();
@@ -4296,6 +4446,60 @@ describe("核心页面真实挂载", () => {
 
     localStorage.removeItem("partyops.pending-update");
     localStorage.removeItem("partyops.pending-online-update");
+    wrapper.unmount();
+  });
+
+  it("按本机包档限制本地模型启用与推荐，同时兼容旧 runtime status", async () => {
+    const wrapper = await mountView(SettingsView, "/settings", true);
+    const state = setupState(wrapper);
+    const canUse = state.modelCapabilitySupported as (capability: string) => boolean;
+    const recommendations = [
+      { id: "embed", kind: "embedding" },
+      { id: "llm", kind: "llm" },
+      { id: "intent", kind: "intent_router" },
+    ];
+    state.modelRecommendations = recommendations;
+
+    state.localAIRuntime = {
+      ready: true, state: "ready", message: "完整本地模型能力", runtime_profile: "full",
+      supported_capabilities: ["semantic_rerank", "local_llm"],
+      llm_running: false, embedding_loaded: false, embedding_available: false, llm_available: false,
+      worker_scope: "host", max_threads: 4, memory_limit_mb: 2048,
+    };
+    await flushPromises();
+    expect(canUse("embedding")).toBe(true);
+    expect(canUse("llm")).toBe(true);
+    expect((state.visibleModelRecommendations as typeof recommendations).map((item) => item.kind))
+      .toEqual(["embedding", "llm", "intent_router"]);
+
+    for (const supported_capabilities of [
+      [],
+      ["host", "collaboration", "database", "files", "archives", "backup", "ocr"],
+    ]) {
+      state.localAIRuntime = {
+        ready: false, state: "degraded", message: "本版本暂不提供本地 AI", runtime_profile: "core",
+        supported_capabilities,
+        llm_running: false, embedding_loaded: false, embedding_available: false, llm_available: false,
+        worker_scope: "host", max_threads: 4, memory_limit_mb: 2048,
+      };
+      await flushPromises();
+      expect(canUse("embedding")).toBe(false);
+      expect(canUse("llm")).toBe(false);
+      expect(canUse("intent_router")).toBe(true);
+      expect((state.visibleModelRecommendations as typeof recommendations).map((item) => item.kind))
+        .toEqual(["intent_router"]);
+      expect(state.localAIProfileUnavailable).toBe(true);
+    }
+
+    state.localAIRuntime = {
+      ready: true, state: "ready", message: "旧服务端状态",
+      llm_running: false, embedding_loaded: false, embedding_available: false, llm_available: false,
+      worker_scope: "host", max_threads: 4, memory_limit_mb: 2048,
+    };
+    await flushPromises();
+    expect(canUse("embedding")).toBe(true);
+    expect(canUse("llm")).toBe(true);
+    expect(state.localAIProfileUnavailable).toBe(false);
     wrapper.unmount();
   });
 });
