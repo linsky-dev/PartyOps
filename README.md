@@ -39,12 +39,20 @@ PartyOps 不是一套把表单搬到浏览器里的系统。它解决的是基�
 
 系统以一台单位主机保存权威数据库和受管附件，Windows 或 UOS 协同电脑通过受控 Agent 接入。团队成员可以发布自己电脑上的真实文件夹，在权限范围内互相浏览、阅读、下载和转发；事项、材料、档案、评论、通知与审计记录始终沿同一条责任链关联。
 
-### 1.4.5-rc.6：八包候选与实际环境公开
+### 1.4.5-rc.6：相比 RC.4 的更新
 
-- Windows、Linux 和龙芯共 8 包已公开，逐包列出真实虚拟机环境、验证范围和限制。
-- Win7 x86 沿用本机字体读取与排版通过的 b3，Windows 10 x86 使用同包。
-- Intel Mac 自动排版接口仍不可用，本批暂停；M 系列等待远程实机。
-- 国内下载、GitHub 附件和官网均已核对；完整生命周期和未实测系统不宣称通过。
+- 新增本机智能编排与步骤确认，支持模型规划、权限校验和规则回退。
+- 修复 Windows 启动诊断误读历史日志的问题，准确区分本次启动的权限、依赖和运行错误。
+- 修复个人模式配置读取和数据目录处理，保留已保存的个人数据目录。
+- 修复同一电脑不同账号的公文排版实例互相干扰，分别绑定排版端口和访问票据。
+- 缩短公文排版临时路径，保留原始中文文件名，并提示超长路径问题。
+- 完善 Windows 系统及当前用户字体读取，支持识别仅为当前用户安装的字体，并在排版时重新检查。
+- 修复国产 Linux 用户配置解析及桌面启动，配置异常时提供明确诊断和修复向导，保留原业务数据。
+- 新增龙芯 LoongArch64 DEB 安装包，并完善 Windows 7 与 Windows 10 的 32 位安装包适配。
+
+### 1.4.5-rc.5
+
+内部测试版本，未公开发布。
 
 ### 1.4.5-rc.4：让原位升级先保数据、再迁移
 
@@ -188,7 +196,7 @@ PartyOps 不是一套把表单搬到浏览器里的系统。它解决的是基�
 | `1.4.5-rc.2` | 新增本机公文规范排版，修复协同地址、文件打开、发展党员预测、麒麟安装、跨平台启动与卸载保护 | 历史回滚基线 |
 | `1.4.5-rc.3` | 新增内嵌公文排版、可撤销通用台账导入、真实进度时间轴和 Needle 2，补齐生命周期、提醒、ACL 与非 C 盘路径 | 已撤回；旧库原位升级会在迁移前启动失败，仅保留审计 Release |
 | `1.4.5-rc.4` | 修复 `0023 → 0024` 升级前备份缺列崩溃，新增模式无关备份、原子回滚、中断恢复和准确启动诊断 | 历史预发布与回滚点；Mac 保留此版旧包 |
-| `1.4.5-rc.5` | 内部测试版本，未公开发布。 | 内部测试 |
+| `1.4.5-rc.5` | 内部测试版本，未公开发布。 | — |
 | `1.4.5-rc.6` | Win7 x86 b3 本机字体与排版、Windows/Linux/龙芯八包限域验证、逐包实际虚拟机环境公开 | 当前公开 Pre-release；Intel Mac 暂停，M 系列等待实机 |
 
 完整变更、修复与安全说明见 [CHANGELOG.md](CHANGELOG.md)。PartyOps 不会为了看起来“已发布”而隐藏未完成门禁，版本证据、制品哈希和已知限制都会随 Release 一起公开。
@@ -221,23 +229,18 @@ flowchart LR
 - [PartyOps_1.4.5-rc.6_windows7_x86.exe](https://partyops-rc6-win7-x86.app.workbuddy.host/downloads/PartyOps_1.4.5-rc.6_windows7_x86.exe)
 - [PartyOps_1.4.5-rc.6_windows_amd64.exe](https://partyops-rc6-win7-x86.app.workbuddy.host/downloads/PartyOps_1.4.5-rc.6_windows_amd64.exe)
 
-### 每包实际验证环境
+### 安装包验证环境
 
-| 包与版本 | 实际验收环境 | 范围 | 未覆盖 |
-| --- | --- | --- | --- |
-| windows_amd64 · 1.4.5-rc.6 | Windows 10 22H2（10.0.19045） / x86_64 / QEMU / WPS 版本未记录 | 安装、普通用户启动、数据保留、健康与中文OCR | 完整生命周期、全部映射系统和正式旧包升级未覆盖 |
-| windows7_amd64 · 1.4.5-rc.6 | Windows 7 SP1（6.1.7601） / x86_64 / QEMU / WPS 版本未记录 | 安装、普通用户启动、中文OCR、WPS转换与补字体后排版、冷启动 | 未追加完整生命周期；保留字体名称检查的非阻断问题 |
-| linux_amd64 · 1.4.5-rc.6 | UOS 桌面专业版 20（1070） / x86_64 / QEMU / WPS 版本未记录 | 安装、普通用户桌面启动、健康与原业务数据保留 | 完整生命周期与全部国产发行版未覆盖 |
-| linux_arm64 · 1.4.5-rc.6 | UOS 桌面专业版 20（1070） / aarch64 / QEMU / WPS 版本未记录 | 普通业务、OCR、同Guest独立会话协作 | 完整生命周期、跨机器协作、WPS版本及旧包升级未覆盖 |
-| rpm_x86_64 · 1.4.5-rc.6 | openEuler 24.03 LTS-SP2 / x86_64 / QEMU / WPS 版本未记录 | 安装、普通用户桌面启动、健康与原业务数据保留 | 完整生命周期与全部RPM发行版未覆盖 |
-| rpm_aarch64 · 1.4.5-rc.6 | openEuler 24.03 LTS-SP2 / aarch64 / QEMU / WPS 版本未记录 | 普通业务、OCR、同Guest独立会话协作 | 完整生命周期、跨机器协作、WPS版本及旧包升级未覆盖 |
-| linux_loong64 · 1.4.5-rc.6 | Deepin 25.2.0 / loongarch64 / QEMU / WPS 版本未记录 | 原版Deepin安装、业务/OCR、真实Firefox UI、WPS九项与三页金样、独立重启后检查 | 完整生命周期原blocked；旧版升级无基线；其他龙芯发行版未覆盖 |
-| windows7_x86 · 1.4.5-rc.6 | Windows 7 SP1（6.1.7601） / i686 / QEMU / WPS 12.1.0.28505；Windows 10 22H2（10.0.19045） / i686 / QEMU / WPS 12.1.0.28505 | Win7：用户批准本机字体读取与排版；Win10：普通业务、OCR、重启、同包恢复、浏览器UI与WPS排版 | Win7严格三PDF金样与剩余生命周期未完成；Win10模型409、跨机器协作、旧升级及ARM未覆盖 |
-| macos_x86_64 · 1.4.5-rc.4 | 本批未验收（当前RC4旧包） | 当前链接为RC4旧包；本批未完成该架构macOS验收 | Intel Mac本批暂停：接口未监听，权限排查未找到受支持修复 |
-| macos_arm64 · 1.4.5-rc.4 | 本批未验收（当前RC4旧包） | 当前链接为RC4旧包；本批未完成该架构macOS验收 | M系列等待用户提供远程机器，本批尚未完成新验收 |
-
-
-WPS 版本未记录的项目保持未知，不借用其他目标的版本。所有环境来自原实际虚拟机记录；映射兼容的其他系统不等于实测系统。Win7 严格金样、Win10 模型 409 和其他未覆盖范围仍保留，未把原 failed/partial/blocked 记录提升为完整通过。
+| 安装包 | 实际验证环境 |
+| --- | --- |
+| PartyOps_1.4.5-rc.6_windows_amd64.exe | Windows 10 22H2（10.0.19045） / x86_64 / QEMU / WPS 版本未记录 |
+| PartyOps_1.4.5-rc.6_windows7_amd64.exe | Windows 7 SP1（6.1.7601） / x86_64 / QEMU / WPS 版本未记录 |
+| PartyOps_1.4.5-rc.6_linux_amd64.deb | UOS 桌面专业版 20（1070） / x86_64 / QEMU / WPS 版本未记录 |
+| PartyOps_1.4.5-rc.6_linux_arm64.deb | UOS 桌面专业版 20（1070） / aarch64 / QEMU / WPS 版本未记录 |
+| PartyOps-1.4.5-0.rc.6.1.x86_64.rpm | openEuler 24.03 LTS-SP2 / x86_64 / QEMU / WPS 版本未记录 |
+| PartyOps-1.4.5-0.rc.6.1.aarch64.rpm | openEuler 24.03 LTS-SP2 / aarch64 / QEMU / WPS 版本未记录 |
+| PartyOps_1.4.5-rc.6_linux_loong64.deb | Deepin 25.2.0 / loongarch64 / QEMU / WPS 版本未记录 |
+| PartyOps_1.4.5-rc.6_windows7_x86.exe | Windows 7 SP1（6.1.7601） / i686 / QEMU / WPS 12.1.0.28505；Windows 10 22H2（10.0.19045） / i686 / QEMU / WPS 12.1.0.28505 |
 
 Windows 10 x86 使用同一 `windows7_x86` b3 包，Win7/Win10 的范围分别列明。请按 CPU 架构选择安装包，其他映射系统不等于实际测试环境；RISC-V 本批没有包。
 
