@@ -10,6 +10,7 @@
 - 完善 Windows 系统及当前用户字体读取，支持识别仅为当前用户安装的字体，并在排版时重新检查。
 - 修复国产 Linux 用户配置解析及桌面启动，配置异常时提供明确诊断和修复向导，保留原业务数据。
 - 新增龙芯 LoongArch64 DEB 安装包，并完善 Windows 7 与 Windows 10 的 32 位安装包适配。
+- 新增 Intel x86_64 macOS RC6 安装包；有限验收范围内的排版与批量格式功能可用，分页结果需人工核对。
 
 ## 安装包验证环境
 
@@ -23,3 +24,6 @@
 | PartyOps-1.4.5-0.rc.6.1.aarch64.rpm | openEuler 24.03 LTS-SP2 / aarch64 / QEMU / WPS 版本未记录 |
 | PartyOps_1.4.5-rc.6_linux_loong64.deb | Deepin 25.2.0 / loongarch64 / QEMU / WPS 版本未记录 |
 | PartyOps_1.4.5-rc.6_windows7_x86.exe | Windows 7 SP1（6.1.7601） / i686 / QEMU / WPS 12.1.0.28505；Windows 10 22H2（10.0.19045） / i686 / QEMU / WPS 12.1.0.28505 |
+| PartyOps_1.4.5-rc.6_macos_x86_64-UNSIGNED-UNNOTARIZED-CANDIDATE.pkg | macOS 15.7.9 / x86_64 / VMware / WPS 12.1.29166 |
+
+Intel Mac 为有限验收：分页统计前端 2 页、WPS 3 页，需人工核对正文、字体和页码；14 处引号的 Times New Roman 字体检查通过。未使用 Developer ID、未公证，AI 未配置模型；完整生命周期、RC4 升级、首次设置及跨机迁移未验证。Apple Silicon 仍保留 RC4。国内全文件回读确认时间为 2026-10-08 18:42:10（北京时间，UTC+8）。

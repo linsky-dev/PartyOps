@@ -13,7 +13,7 @@ using DocumentRepository.Services.Hosting.Standalone;
 namespace PartyOps.DocumentFormatter.Host;
 
 /// <summary>
-/// PartyOps 内嵌页面与原排版源码之间的无窗口宿主。
+/// PartyOps 内嵌页面与原排版源码之间的任务宿主；Mac可能显示WPS窗口。
 /// 本程序不实现任何排版规则，只把任务交给 StandaloneBatchProcessor，避免规则分叉。
 /// </summary>
 internal static class Program
@@ -30,6 +30,7 @@ internal static class Program
     private static int Main(string[] args)
     {
         string responsePath = null;
+        MacSessionCoordinator mac = null;
         try
         {
             if (args.Length == 2
@@ -48,6 +49,16 @@ internal static class Program
 
             HostRequest payload = Json.Deserialize<HostRequest>(File.ReadAllText(requestPath, Encoding.UTF8));
             Validate(payload);
+            if (MacSessionCoordinator.IsMac)
+            {
+                if (payload.source_paths.Length != 1 || !new[]{"format","replace","redheader","rename","convert","pdf-to-word"}.Contains(payload.feature_id))
+                    throw new InvalidDataException("MAC_PRODUCT_FEATURE_NOT_ACCEPTED");
+                string suffix=string.IsNullOrWhiteSpace(payload.output_suffix)?FeatureOutputSuffix(payload.feature_id):payload.output_suffix;
+                if(suffix.IndexOfAny(new[]{'/', '\\'})>=0)throw new InvalidDataException("MAC_PRODUCT_SUFFIX_INVALID");
+                string work=Path.Combine(Path.GetFullPath(payload.output_directory),Path.GetFileNameWithoutExtension(payload.source_paths[0])+suffix+".docx");
+                mac=new MacSessionCoordinator(payload.mac_task,Path.GetFullPath(payload.source_paths[0]),work,cancelPath,payload.feature_id);
+            }
+            else if(payload.mac_task!=null)throw new InvalidDataException("MAC_PRODUCT_BINDING_ON_NON_MAC");
 
             using CancellationTokenSource cancellation = new CancellationTokenSource();
             using Timer cancelMonitor = new Timer(
@@ -62,21 +73,41 @@ internal static class Program
                 0,
                 100);
             using IDisposable messageFilter = InitializeHostRuntime();
+            if(mac!=null)mac.Start(cancellation.Token);
             StandaloneBatchResult result;
             using (SourceOptionScope optionScope = SourceOptionScope.Apply(payload.feature_id, payload.options))
             {
                 StandaloneBatchRequest request = ToBatchRequest(payload, cancellation.Token);
-                result = ExecuteWithWpsPreferredFallback(
+                if(mac!=null)request.HostPreference=OfficeHostPreference.Wps;
+                result = mac != null ? new StandaloneBatchProcessor().Execute(request, progress => AppendProgress(progressPath, progress)) : ExecuteWithWpsPreferredFallback(
                     request,
                     string.Equals(payload.host_preference, "wps-preferred", StringComparison.OrdinalIgnoreCase),
                     progress => AppendProgress(progressPath, progress));
             }
-            WriteResponse(responsePath, BuildResponse(result));
+            Dictionary<string,object> response=BuildResponse(result);
+            if(mac!=null)
+            {
+                mac.Finish();mac.Dispose();
+                response["mac_task"]=mac.State;
+                response["limitations"]=MacSessionCoordinator.Warning;
+                foreach(var job in (Dictionary<string,object>[])response["jobs"]){
+                    job["message"]=(string)job["message"]+"\n"+MacSessionCoordinator.Warning;
+                    // Mac明确使用WPS；保留真实原API标识，不能把Word兼容Name当产品身份或猜版本。
+                    string nativeDisplay=Convert.ToString(job["host_display_name"]);
+                    if(!string.IsNullOrWhiteSpace(nativeDisplay))job["host_display_name"]="WPS（原生接口标识："+nativeDisplay+"）";
+                }
+            }
+            WriteResponse(responsePath, response);
             return result.FailureCount == 0 && result.CancelledCount == 0 ? 0 : ExitProcessingFailed;
         }
         catch (Exception error)
         {
-            TryWriteFatalResponse(responsePath, error);
+            if(mac!=null)
+            {
+                try{mac.Finish();}catch(Exception cleanup){mac.State["cleanup_error"]=cleanup.Message;}
+                try{mac.Dispose();}catch(Exception registration){mac.State["registration_error"]=registration.Message;}
+            }
+            TryWriteFatalResponse(responsePath, error, mac?.State);
             return ExitInvalidRequest;
         }
     }
@@ -109,6 +140,9 @@ internal static class Program
             ["engine"] = "source-standalone-batch-processor",
             ["source_project"] = "PartyOps.DocumentFormatter.AddIn",
             ["features"] = new[] { "format", "replace", "redheader", "rename", "convert", "pdf-to-word" },
+            ["features_native_acceptance_complete"] = !MacSessionCoordinator.IsMac,
+            ["backend"] = MacSessionCoordinator.IsMac ? MacWpsObjectBridge.Backend : "existing-native-host",
+            ["limitations"] = MacSessionCoordinator.IsMac ? MacSessionCoordinator.Warning : string.Empty,
             ["rules_assembly"] = nativeBundle
                 ? "PartyOps.DocumentFormatter.AddIn.dll (native bundle)"
                 : Path.GetFileName(rulesAssembly)
@@ -119,6 +153,7 @@ internal static class Program
     {
         HostThreadRuntime.Initialize("PartyOps.EmbeddedFormatterHost");
         ConfigurationMigrationService.Ensure440Migration();
+        if(MacSessionCoordinator.IsMac)return NoopDisposable.Instance;
         if (PortableWpsComBridge.IsPortablePlatform)
         {
             PortableWpsComBridge.RegisterIfRequired();
@@ -333,7 +368,7 @@ internal static class Program
         File.Move(temporary, path);
     }
 
-    private static void TryWriteFatalResponse(string path, Exception error)
+    private static void TryWriteFatalResponse(string path, Exception error, Dictionary<string,object> macState=null)
     {
         if (string.IsNullOrWhiteSpace(path))
         {
@@ -347,6 +382,7 @@ internal static class Program
                 ["fatal"] = true,
                 ["error_type"] = error.GetType().Name,
                 ["message"] = error.Message
+                ,["mac_task"] = macState
             });
         }
         catch
@@ -367,5 +403,6 @@ internal static class Program
         public bool export_pdf { get; set; }
         public bool export_txt { get; set; }
         public Dictionary<string, object> options { get; set; } = new Dictionary<string, object>();
+        public MacTaskRequest mac_task { get; set; }
     }
 }

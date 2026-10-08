@@ -329,7 +329,7 @@ async function runSelfTest() {
     const result = await parseLocalResponse<{ feature_count: number; capability_count: number; external_office_required: boolean; source_host_ready?: boolean }>(response);
     const complete = result.feature_count === 6 && result.capability_count === 25 && result.source_host_ready !== false;
     selfTestText.value = complete
-      ? result.external_office_required ? "源码引擎已就绪 · 后台兼容 WPS/Word" : "6 项功能 / 25 项能力已就绪"
+      ? result.external_office_required ? "源码引擎已就绪 · WPS/Word 兼容" : "6 项功能 / 25 项能力已就绪"
       : "能力清单不完整，请修复安装";
   } catch (error) { selfTestText.value = "内置引擎自检失败"; showFailure(error) }
 }
@@ -349,7 +349,7 @@ onBeforeUnmount(() => { window.clearTimeout(pollTimer); window.clearInterval(clo
       <div>
         <p class="page-kicker">朱批案台 · 当前电脑批量处理</p>
         <h1 class="page-title">公文规范排版</h1>
-        <p class="page-description">新排版工具已完整内嵌。文件不出当前电脑，后台复用本机 WPS/Word 的原排版源码，不打开独立工具窗口。</p>
+        <p class="page-description">公文排版在 PartyOps 页面中使用，文件由当前电脑处理，并复用本机 WPS/Word 的原排版源码。</p>
       </div>
       <div class="format-header-actions">
         <button type="button" class="engine-self-test" @click="runSelfTest"><IconSafe /><span>{{ selfTestText }}</span></button>
@@ -358,12 +358,15 @@ onBeforeUnmount(() => { window.clearTimeout(pollTimer); window.clearInterval(clo
           :tips="[
             '六类功能、25 项能力全部在 PartyOps 页面内执行，源文件默认不覆盖。',
             '文件只发送给当前电脑 127.0.0.1 的内置引擎，15 分钟无操作后自动清理临时副本。',
-            '自动模式优先使用本机 WPS，宿主不可用时回退 Word；处理始终留在 PartyOps 页面。',
+            '自动模式优先使用本机 WPS；Windows 上 WPS 不可用时回退 Word，任务与结果在 PartyOps 页面管理。',
+            'Intel Mac 候选环境处理期间保持 WPS 打开且可见，勿隐藏、最小化或退出，并及时响应 macOS 权限提示；完成后人工核对文字、字体（包括引号的 Times New Roman）、格式与分页。',
             '套红、复杂表格、扫描 PDF 和特殊版式仍应按最终打印页逐页核对。',
           ]"
         />
       </div>
     </header>
+
+    <p class="mac-candidate-notice" role="note"><strong>Intel Mac 候选环境使用提示：</strong>处理期间保持 WPS 打开且可见，勿隐藏、最小化或退出；及时响应 macOS 权限提示；完成后人工核对输出文字、字体（包括引号的 Times New Roman）、格式与分页。</p>
 
     <section class="format-workbench" aria-label="内嵌公文排版工作台">
       <nav class="feature-rail" aria-label="排版功能">
@@ -412,7 +415,7 @@ onBeforeUnmount(() => { window.clearTimeout(pollTimer); window.clearInterval(clo
 
         <aside class="format-settings-panel">
           <div class="panel-heading"><div><strong>功能参数</strong><span>{{ currentCapabilities.length }} 项能力</span></div></div>
-          <div class="setting-group"><label>文档引擎</label><a-select v-model="options.compatibility_mode" :disabled="busy"><a-option value="auto">WPS 优先（推荐）</a-option><a-option value="word">仅 Word</a-option><a-option value="wps">仅 WPS</a-option></a-select><small>在后台调用本机 WPS；Windows 自动模式仅在 WPS 不可用时回退 Word，全程不显示独立排版窗口。</small></div>
+          <div class="setting-group"><label>文档引擎</label><a-select v-model="options.compatibility_mode" :disabled="busy"><a-option value="auto">WPS 优先（推荐）</a-option><a-option value="word">仅 Word</a-option><a-option value="wps">仅 WPS</a-option></a-select><small>调用本机 WPS；Windows 自动模式仅在 WPS 不可用时回退 Word。</small></div>
 
           <template v-if="selectedFeature === 'format'">
             <div class="setting-group"><label>排版模板</label><a-input v-model="options.template" :disabled="busy" /></div>
@@ -450,7 +453,7 @@ onBeforeUnmount(() => { window.clearTimeout(pollTimer); window.clearInterval(clo
 </template>
 
 <style scoped>
-.official-format-page{max-width:none}.format-header{align-items:flex-start}.format-header-actions{display:flex;align-items:center;gap:10px}.engine-self-test{display:inline-flex;min-height:34px;align-items:center;gap:7px;padding:0 11px;border:1px solid var(--color-border-2);border-radius:2px;background:rgba(255,250,241,.84);color:var(--color-text-2);cursor:pointer}.format-workbench{overflow:hidden;border:1px solid var(--color-border-2);border-radius:2px;background:rgba(255,252,246,.92);box-shadow:0 12px 32px rgba(72,48,34,.06)}
+.official-format-page{max-width:none}.format-header{align-items:flex-start}.format-header-actions{display:flex;align-items:center;gap:10px}.engine-self-test{display:inline-flex;min-height:34px;align-items:center;gap:7px;padding:0 11px;border:1px solid var(--color-border-2);border-radius:2px;background:rgba(255,250,241,.84);color:var(--color-text-2);cursor:pointer}.mac-candidate-notice{margin:0 0 14px;padding:12px 16px;border:1px solid #c77a35;border-left:4px solid #a6402e;border-radius:2px;background:rgba(255,244,222,.94);color:var(--color-text-1);line-height:1.65}.mac-candidate-notice strong{color:#8e3528}.format-workbench{overflow:hidden;border:1px solid var(--color-border-2);border-radius:2px;background:rgba(255,252,246,.92);box-shadow:0 12px 32px rgba(72,48,34,.06)}
 .feature-rail{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));min-height:66px;border-bottom:1px solid var(--color-border-2)}.feature-rail button{position:relative;display:flex;align-items:center;justify-content:center;gap:9px;border:0;border-right:1px solid var(--color-border-2);background:transparent;color:var(--color-text-2);cursor:pointer;font-size:14px}.feature-rail button:last-child{border-right:0}.feature-rail button:after{position:absolute;right:14px;bottom:-1px;left:14px;height:2px;background:#b42318;content:"";opacity:0}.feature-rail button.active{color:#a51f16;font-weight:650}.feature-rail button.active:after{opacity:1}.feature-rail small{min-width:19px;padding:1px 5px;border:1px solid currentColor;border-radius:999px;font-size:10px;opacity:.66}
 .format-columns{display:grid;min-height:610px;grid-template-columns:minmax(238px,.76fr) minmax(420px,1.55fr) minmax(276px,.84fr)}.format-queue-panel,.format-settings-panel{min-width:0;padding:18px;background:rgba(253,248,239,.54)}.format-queue-panel{border-right:1px solid var(--color-border-2)}.format-settings-panel{border-left:1px solid var(--color-border-2)}.format-main-panel{min-width:0;padding:22px 28px}.panel-heading{display:flex;min-height:32px;align-items:flex-start;justify-content:space-between;margin-bottom:14px}.panel-heading>div{display:flex;align-items:baseline;gap:8px}.panel-heading strong{font-family:var(--font-serif,"Songti SC",serif);font-size:16px}.panel-heading span{color:var(--color-text-3);font-size:11px}.panel-heading button,.output-location button,.replace-rule button,.setting-add{border:0;background:transparent;color:#a51f16;cursor:pointer;font-size:12px}
 .format-dropzone{display:grid;width:100%;min-height:118px;place-items:center;align-content:center;gap:6px;border:1px dashed #c8b5a4;border-radius:2px;background:rgba(255,252,246,.7);color:var(--color-text-2);cursor:pointer}.format-dropzone.dragging{border-color:#b42318;background:rgba(180,35,24,.04)}.format-dropzone svg{color:#b42318;font-size:22px}.format-dropzone span{color:var(--color-text-3);font-size:10px}.format-file-list{display:grid;gap:8px;max-height:342px;margin-top:12px;overflow-y:auto}.format-file-row{display:grid;grid-template-columns:25px minmax(0,1fr) 20px;gap:8px;align-items:start;padding:10px;border:1px solid var(--color-border-2);border-radius:2px;background:rgba(255,255,255,.42)}.format-file-row[data-state=failed]{border-color:rgba(180,35,24,.38)}.format-file-row[data-state=completed]{border-color:rgba(36,125,76,.32)}.format-file-icon{margin-top:2px;color:#315eb2;font-size:19px}.format-file-row>div{min-width:0}.format-file-row strong,.format-file-row span{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.format-file-row strong{font-size:12px}.format-file-row span{margin:3px 0 5px;color:var(--color-text-3);font-size:10px}.format-file-row>button{border:0;background:transparent;color:var(--color-text-3);cursor:pointer}.output-location{display:grid;margin-top:16px;padding-top:14px;grid-template-columns:1fr auto;gap:4px 8px;border-top:1px solid var(--color-border-2)}.output-location span{grid-column:1/-1;color:var(--color-text-3);font-size:10px}.output-location strong{overflow:hidden;font-size:12px;text-overflow:ellipsis;white-space:nowrap}

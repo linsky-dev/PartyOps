@@ -16,6 +16,7 @@ import re
 import secrets
 import shutil
 import socket
+import sys
 import tempfile
 import threading
 import time
@@ -51,6 +52,25 @@ UTC = timezone.utc
 
 LOCAL_FORMAT_PORT = 18768
 TICKET_TTL_SECONDS = 120
+
+
+def _allocate_session_workspace() -> Path:
+    """Mac源与工作副本共用用户Downloads独立目录；其他平台保持系统临时目录。"""
+    if sys.platform != "darwin":
+        return Path(tempfile.mkdtemp(prefix="pf-"))
+    try:
+        # Downloads可为用户目录别名；解析真实目录，不使用QA路径或失败的/var回退。
+        downloads = (Path.home() / "Downloads").resolve(strict=True)
+        if not downloads.is_dir():
+            raise NotADirectoryError("Downloads不是目录")
+        return Path(tempfile.mkdtemp(prefix="pf-", dir=downloads))
+    except (OSError, RuntimeError) as exc:
+        raise OfficialFormatError(
+            "MAC_FORMAT_WORKSPACE_UNAVAILABLE",
+            "Mac 文档工作目录不可用",
+            "无法在当前用户的“下载”目录创建私有文档工作副本。"
+            "请确认该目录存在、磁盘空间充足，并允许 PartyOps 访问后重新创建任务；原文件未改变。",
+        ) from exc
 
 
 def _store_compact_upload(workspace: Path, extension: str, payload: bytes) -> Path:
@@ -184,6 +204,9 @@ class LocalFormatSession:
     documents: dict[str, LocalDocument] = field(default_factory=dict)
     jobs: dict[str, "LocalFormatJob"] = field(default_factory=dict)
     plain_token: str = field(default="", repr=False)
+    mac_task_lock: threading.RLock = field(default_factory=threading.RLock, repr=False)
+    mac_pending_jobs: int = 0
+    mac_removed: bool = False
 
 
 @dataclass
@@ -765,7 +788,7 @@ class OfficialFormatLocalService:
         return self
 
     def create_session(self, origin: str) -> LocalFormatSession:
-        workspace = Path(tempfile.mkdtemp(prefix="pf-"))
+        workspace = _allocate_session_workspace()
         if os.name != "nt":
             workspace.chmod(0o700)
         token = secrets.token_urlsafe(32)
@@ -824,11 +847,34 @@ class OfficialFormatLocalService:
             ],
         )
         with self.lock:
-            session.jobs[job.id] = job
-        self.executor.submit(self._run_job, session, job)
+            if sys.platform == "darwin":
+                with session.mac_task_lock:
+                    if session.mac_removed or any(document_id not in session.documents for document_id in document_ids):
+                        raise OfficialFormatError("FORMAT_DOCUMENT_GONE", "待处理会话已清理", "请重新添加文件并创建任务。")
+                    session.mac_pending_jobs += 1
+                    session.jobs[job.id] = job
+                    try:
+                        self.executor.submit(self._run_job, session, job)
+                    except Exception:
+                        session.mac_pending_jobs -= 1
+                        session.jobs.pop(job.id, None)
+                        raise
+            else:
+                session.jobs[job.id] = job
+        if sys.platform != "darwin":
+            self.executor.submit(self._run_job, session, job)
         return job
 
     def _run_job(self, session: LocalFormatSession, job: LocalFormatJob) -> None:
+        if sys.platform != "darwin":
+            return self._run_job_core(session, job)
+        try:
+            self._run_job_core(session, job)
+        finally:
+            with session.mac_task_lock:
+                session.mac_pending_jobs -= 1
+
+    def _run_job_core(self, session: LocalFormatSession, job: LocalFormatJob) -> None:
         job.state = "running"
         job.message = "正在处理本机文档"
         job.updated_at = time.time()
@@ -926,6 +972,16 @@ class OfficialFormatLocalService:
 
     @staticmethod
     def remove_document(session: LocalFormatSession, document_id: str) -> None:
+        if sys.platform == "darwin":
+            with session.mac_task_lock:
+                if session.mac_pending_jobs or any(session.workspace.rglob(".mac-cleanup-unconfirmed.json")):
+                    return
+                OfficialFormatLocalService._remove_document_unlocked(session, document_id)
+            return
+        OfficialFormatLocalService._remove_document_unlocked(session, document_id)
+
+    @staticmethod
+    def _remove_document_unlocked(session: LocalFormatSession, document_id: str) -> None:
         item = session.documents.pop(document_id, None)
         if item is None:
             return
@@ -936,6 +992,15 @@ class OfficialFormatLocalService:
     def remove_session(self, session_id: str) -> None:
         with self.lock:
             session = self.sessions.pop(session_id, None)
+            if session is not None and sys.platform == "darwin":
+                with session.mac_task_lock:
+                    session.mac_removed = True
+                    for job in session.jobs.values():
+                        job.cancel_event.set()
+                    if session.mac_pending_jobs or any(session.workspace.rglob(".mac-cleanup-unconfirmed.json")):
+                        for job in session.jobs.values():
+                            job.message = "Mac 任务未终结或文档清理未确认，工作副本已保留，请在 WPS 中人工核对。"
+                        return
         if session is None:
             return
         for job in session.jobs.values():

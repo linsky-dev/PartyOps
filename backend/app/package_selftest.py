@@ -19,9 +19,16 @@ ASSET_PATTERN = re.compile(r"(?:src|href)=[\"']/?([^\"'#?]+)")
 SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 FORMATTER_SOURCE_FIXTURE_SHA256 = "6b360f0372ae657a9e207ea4e0ec05437cea8fecc34113429a6d5670a8fff287"
 FORMATTER_GOLDEN_FIXTURE_SHA256 = "bef6831245bc5a064bcf4135a51252f4dfd0a926f79228c7a2487a9c02639133"
-FORMATTER_SOURCE_SNAPSHOT_SHA256 = "15c21b886f6a958fb61a3b106266b446a2b959b0085510015eeb790efaa770d3"
+FORMATTER_SOURCE_SNAPSHOT_SHA256 = "7ae0eb67a0cb6a2d4a332cde74adf8977d93ae73541f864f01df214d39fefdf2"
 FORMATTER_SOURCE_SNAPSHOT_FILES = 898
 FORMATTER_WPS_SDK_HEADER_SHA256 = "4d0529c076f8f36ce49301982e0c2bb46cdcc4087c3e9945a9b57d649fe26791"
+MAC_OBJECT_ADAPTER = "wps-macos-object-source-adapter"
+MAC_OBJECT_SOURCE_SHA256 = "ac8466edf2513ea8e3fe9e61d3b86fb8d7a72ceb6cce366f2d19b59d9c9be171"
+MAC_OBJECT_RULES_SHA256 = "2cae1d25146334e66f57a98663dcd6574335f720be6b6aacc53e0dbad165d57b"
+MAC_PLUGIN_FILES = frozenset({"bootstrap-carrier.docx", "main.js", "ribbon.xml", "task-lease.js", "product-index.html", "product-main.js", "product-ribbon.xml"})
+MAC_LIMITATIONS = ["manual-output-review-required", "wps-window-may-appear", "native-document-cycle-unproven", "rollback-unverified", "strict-golden-parity-not-accepted"]
+MAC_FEATURES = ["format", "replace", "redheader", "rename", "convert", "pdf-to-word"]
+MAC_CASES = ["format", "replace", "redheader", "rename", "convert-docx", "convert-pdf", "convert-txt", "convert-png-pages", "convert-jpg-long", "pdf-to-word"]
 
 
 def _runtime_contents(runtime: Path) -> Path:
@@ -147,6 +154,91 @@ def _source_formatter_architecture() -> str:
     return "arm64" if machine in {"arm64", "aarch64"} else "amd64"
 
 
+def _validate_mac_object_record(host: Path, record: dict[str, object]) -> dict[str, object]:
+    """离线来源/资源自检，不把原声明能力当作目标包功能验收。"""
+    expected = {"schema": 3, "platform": "macos", "architecture": _source_formatter_architecture(),
+                "adapter": MAC_OBJECT_ADAPTER, "source_project": "PartyOps.DocumentFormatter.AddIn",
+                "source_snapshot_sha256": MAC_OBJECT_SOURCE_SHA256, "source_snapshot_files": 898,
+                "rules_sha256": MAC_OBJECT_RULES_SHA256, "features": MAC_FEATURES,
+                "host_sha256": _sha256(host), "timezone": "Asia/Shanghai", "self_contained": True,
+                "minimum_macos": "11.0", "acceptance_profile": "mac-object-limited-candidate", "limitations": MAC_LIMITATIONS}
+    if record.get("self_contained") is not True or any(record.get(key) != value for key, value in expected.items()) or any(key in record for key in ("capabilities", "word_vtable_map_sha256", "wps_sdk_header_sha256", "wps_sdk_matched_methods", "wps_sdk_mismatched_methods")):
+        raise RuntimeError("Mac 对象后端来源清单无效，不能冒用 SDK/25 能力记录")
+    pending = record.get("feature_validation")
+    if not isinstance(pending, dict) or set(pending) != set(MAC_FEATURES) or any(state != "pending-target-package-validation" for state in pending.values()):
+        raise RuntimeError("Mac 构建来源不能伪造六功能验收结论")
+    resources = record.get("plugin_resources_sha256")
+    directory = host.parent / "wps-formatter-plugin"
+    if not isinstance(resources, dict) or set(resources) != MAC_PLUGIN_FILES or directory.is_symlink() or not directory.is_dir() or {p.name for p in directory.iterdir()} != MAC_PLUGIN_FILES:
+        raise RuntimeError("Mac 固定加载项七资源不完整")
+    for name, digest in resources.items():
+        item = directory / name
+        if item.is_symlink() or not item.is_file() or item.stat().st_size <= 0 or _sha256(item) != digest:
+            raise RuntimeError("Mac 固定加载项资源摘要不匹配")
+    license_path = host.parent / "LICENSE-MONO-RUNTIME.txt"
+    if not license_path.is_file() or license_path.stat().st_size <= 0 or "Mono JIT compiler version" not in str(record.get("native_bundle_runtime", "")):
+        raise RuntimeError("Mac 内嵌 Mono 来源与许可不完整")
+    for key in ("managed_host_sha256", "resource_catalog_source_sha256"):
+        if not isinstance(record.get(key), str) or not SHA256_PATTERN.fullmatch(record[key]):
+            raise RuntimeError("Mac 托管载荷构建绑定无效")
+    try:
+        if datetime.fromisoformat(str(record.get("built_at", ""))).utcoffset() != timedelta(hours=8):
+            raise ValueError("timezone")
+    except ValueError as exc:
+        raise RuntimeError("Mac 对象后端构建时间无效") from exc
+    return record
+
+
+def _validate_mac_object_evidence(payload: dict[str, object], host: Path) -> dict[str, object]:
+    record = json.loads((host.parent / "source-host.json").read_text(encoding="utf-8"))
+    _validate_mac_object_record(host, record)
+    expected = {"schema": 2, "status": "limited-candidate", "acceptance_profile": "mac-object-limited-candidate",
+                "platform": "macos", "architecture": _source_formatter_architecture(), "adapter": MAC_OBJECT_ADAPTER,
+                "provider": "wps", "host_sha256": _sha256(host), "features": MAC_FEATURES, "feature_cases": 10,
+                "source_snapshot_sha256": MAC_OBJECT_SOURCE_SHA256, "rules_sha256": MAC_OBJECT_RULES_SHA256,
+                "plugin_resources_sha256": record["plugin_resources_sha256"], "limitations": MAC_LIMITATIONS,
+                "package_validation_passed": False, "publication_ready": False,
+                "silent": False, "rollback_capability_verified": False, "document_cycle_identity_proven": False,
+                "timezone": "Asia/Shanghai"}
+    if any(payload.get(key) != value for key, value in expected.items()) or any(key in payload for key in ("capabilities", "golden_sha256", "rendered_pages")):
+        raise RuntimeError("Mac 候选证据无效，不能冒用金样或最终包通过结论")
+    if any(payload.get(key) is not False for key in ("package_validation_passed", "publication_ready", "silent", "rollback_capability_verified", "document_cycle_identity_proven")):
+        raise RuntimeError("Mac 候选限制标记必须为布尔假")
+    cases = payload.get("cases")
+    if not isinstance(cases, list) or len(cases) != 10 or any(not isinstance(c, dict) for c in cases) or [c.get("case") for c in cases] != MAC_CASES:
+        raise RuntimeError("Mac 必须保留六功能十场景逐项状态")
+    for case in cases:
+        state = case.get("status")
+        if state not in {"passed", "passed-with-limitations", "failed", "not-run"} or state == "passed-with-limitations" and case["case"] != "format":
+            raise RuntimeError("Mac 其它功能不可因排版限制豁免")
+        if state in {"passed", "passed-with-limitations"}:
+            outputs = case.get("outputs")
+            if case.get("execution_kind") not in {"managed-source-host", "native-selfcontained-host"} or any(case.get(key) is not True for key in ("source_unchanged", "cleanup_confirmed", "lease_released", "registration_owned", "capability_revoked")) or not isinstance(case.get("receipt_sha256"), str) or not SHA256_PATTERN.fullmatch(case["receipt_sha256"]) or not isinstance(outputs, list) or not outputs or any(not isinstance(item, dict) or type(item.get("bytes")) is not int or item["bytes"] <= 0 or not isinstance(item.get("sha256"), str) or not SHA256_PATTERN.fullmatch(item["sha256"]) for item in outputs):
+                raise RuntimeError("Mac 通过场景缺少真实回执/输出或清理确认")
+            if state == "passed-with-limitations" and case.get("manual_review_required") is not True:
+                raise RuntimeError("Mac 有限排版必须提示人工核对")
+    tested_hash = payload.get("tested_host_sha256")
+    if tested_hash is not None and (not isinstance(tested_hash, str) or not SHA256_PATTERN.fullmatch(tested_hash) or tested_hash not in {record["host_sha256"], record.get("pre_sign_host_sha256"), record["managed_host_sha256"]}):
+        raise RuntimeError("Mac 实测Host与最终签名Host来源未绑定")
+    if any(c.get("status") in {"passed", "passed-with-limitations"} for c in cases) and tested_hash is None:
+        raise RuntimeError("Mac 通过场景缺少实测Host")
+    final_verified = tested_hash == record["host_sha256"] and all(c.get("status") in {"passed", "passed-with-limitations"} and c.get("execution_kind") == "native-selfcontained-host" for c in cases)
+    if payload.get("final_host_verified") is not final_verified:
+        raise RuntimeError("Mac 最终Host验收结论与逐项证据不一致")
+    states = {}
+    for feature in MAC_FEATURES:
+        selected = [c["status"] for c in cases if c["case"].startswith("convert-")] if feature == "convert" else [c["status"] for c in cases if c["case"] == feature]
+        states[feature] = "failed" if "failed" in selected else "not-run" if "not-run" in selected else "passed-with-limitations" if "passed-with-limitations" in selected else "passed"
+    if payload.get("feature_validation") != states:
+        raise RuntimeError("Mac 六功能汇总与场景状态不一致")
+    try:
+        if datetime.fromisoformat(str(payload.get("verified_at", ""))).utcoffset() != timedelta(hours=8):
+            raise ValueError("timezone")
+    except ValueError as exc:
+        raise RuntimeError("Mac 实测时间无效") from exc
+    return payload
+
+
 def _validate_source_formatter_record(
     host_binary: Path,
     rules_binary: Path | None,
@@ -164,6 +256,8 @@ def _validate_source_formatter_record(
     except (OSError, ValueError) as exc:
         raise RuntimeError("原排版源码宿主来源清单无效") from exc
     expected_features = ["format", "replace", "redheader", "rename", "convert", "pdf-to-word"]
+    if sys.platform == "darwin" and record.get("adapter") == MAC_OBJECT_ADAPTER:
+        return _validate_mac_object_record(host_binary, record)
     if (
         record.get("schema") != 2
         or record.get("timezone") != "Asia/Shanghai"
@@ -222,6 +316,8 @@ def _validate_source_formatter_evidence(
         payload = json.loads(evidence_path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
         raise RuntimeError("原排版源码宿主缺少真实 WPS 验收证据") from exc
+    if sys.platform == "darwin" and adapter == MAC_OBJECT_ADAPTER:
+        return _validate_mac_object_evidence(payload, host_binary)
     hashes = (
         payload.get("host_sha256"),
         payload.get("source_sha256"),
@@ -278,13 +374,20 @@ def _validate_source_formatter_evidence(
 def _run_source_formatter_selftest(runtime: Path, host_binary: Path) -> dict[str, object]:
     """要求宿主实际加载排版规则并报告能力，而不打开用户文档或 WPS 窗口。"""
 
+    formatter_environment = _native_child_environment(runtime)
+    if sys.platform == "darwin":
+        # 只绑定formatter自检；其他随包原生程序及父环境保持原样。
+        formatter_environment["MONO_CONFIG"] = "/dev/null"
+        formatter_environment.pop("MONO_ENV_OPTIONS", None)
+        formatter_environment.pop("MONO_BUNDLED_OPTIONS", None)
+
     with tempfile.TemporaryDirectory(prefix="partyops-formatter-selftest-") as work:
         output = Path(work) / "result.json"
         result = subprocess.run(
             [str(host_binary), "--self-test", str(output)],
             check=False,
             capture_output=True,
-            env=_native_child_environment(runtime),
+            env=formatter_environment,
             timeout=30,
         )
         if result.returncode != 0 or not output.is_file():
@@ -475,7 +578,7 @@ def run_selftest(runtime: Path) -> dict[str, object]:
     source_record_payload = _validate_source_formatter_record(
         host_binary, rules_binary, source_record
     )
-    if os.name != "nt" and any(
+    if os.name != "nt" and source_record_payload["adapter"] != MAC_OBJECT_ADAPTER and any(
         not path.is_file() or path.stat().st_size <= 0
         for path in _source_formatter_native_adapter_files(runtime)
     ):
@@ -503,7 +606,7 @@ def run_selftest(runtime: Path) -> dict[str, object]:
         ],
         "document_formatter": {
             "features": len(FEATURE_DEFINITIONS),
-            "capabilities": len(PRODUCT_CAPABILITIES),
+            **({"declared_catalog_entries": len(PRODUCT_CAPABILITIES), "native_feature_validation": source_evidence["feature_validation"], "final_host_verified": source_evidence["final_host_verified"], "package_function_validation": "pending", "limitations": source_evidence["limitations"]} if source_record_payload["adapter"] == MAC_OBJECT_ADAPTER else {"capabilities": len(PRODUCT_CAPABILITIES)}),
             "office_runtime": "passed",
             "source_host": "passed",
             "source_adapter": source_record_payload["adapter"],

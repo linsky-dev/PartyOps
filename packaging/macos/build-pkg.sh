@@ -6,8 +6,16 @@ VERSION='1.4.5-rc.6'
 PACKAGE_VERSION='1.4.5.6'
 MODE='release'
 TARGET_ARCH=''
+OUTPUT_OVERRIDE=''
+FORMATTER_FEATURE_EVIDENCE=''
+SOURCE_INPUTS_MANIFEST=''
+SOURCE_INPUTS_EXPECTED_SHA=''
 while (($#)); do
   case "$1" in
+    --output-directory) OUTPUT_OVERRIDE="${2:-}"; shift 2 ;;
+    --formatter-features-evidence) FORMATTER_FEATURE_EVIDENCE="${2:-}"; shift 2 ;;
+    --source-inputs-manifest) SOURCE_INPUTS_MANIFEST="${2:-}"; shift 2 ;;
+    --source-inputs-sha256) SOURCE_INPUTS_EXPECTED_SHA="${2:-}"; shift 2 ;;
     --architecture)
       TARGET_ARCH="${2:-}"
       shift 2
@@ -53,7 +61,6 @@ export MACOSX_DEPLOYMENT_TARGET='11.0'
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 OUTPUT_DIR="$ROOT/artifacts/release-$VERSION-final"
-python3.11 "$ROOT/scripts/verify-full-function-gate.py" verify --root "$ROOT" --scope package
 OCR_RUNTIME="${PARTYOPS_MACOS_OCR_RUNTIME:-}"
 LLAMA_RUNTIME="${PARTYOPS_MACOS_LLAMA_RUNTIME:-}"
 OFFICE_RUNTIME="${PARTYOPS_MACOS_OFFICE_RUNTIME:-}"
@@ -65,6 +72,68 @@ for command in python3.11 uv node corepack sips iconutil pkgbuild pkgutil spctl 
     exit 2
   fi
 done
+SOURCE_COMMIT=''
+SOURCE_DIRTY_DIFF_SHA=''
+verify_source_provenance() {
+  if [[ "$MODE" == 'unsigned-candidate' ]]; then
+    # 解压候选绑定冻结源码和原dirty差异，不创建.git或借用外层仓库HEAD。
+    local binding
+    binding="$(python3.11 - "$ROOT" "$SOURCE_INPUTS_MANIFEST" "$SOURCE_INPUTS_EXPECTED_SHA" <<'PY'
+import hashlib, json, re, sys
+from pathlib import Path, PurePosixPath
+root = Path(sys.argv[1]).resolve()
+manifest = Path(sys.argv[2]) if sys.argv[2] else None
+expected = sys.argv[3]
+def fail():
+    raise SystemExit("MACOS_CANDIDATE_SOURCE_PROVENANCE_INVALID")
+def sha(data):
+    return hashlib.sha256(data).hexdigest()
+if manifest is None or not re.fullmatch(r"[0-9a-f]{64}", expected):
+    fail()
+try:
+    raw = manifest.read_bytes()
+    if sha(raw) != expected:
+        fail()
+    data = json.loads(raw)
+    rows = data.get("files")
+    if (data.get("schema") != 1 or data.get("kind") != "complete-application-source-inputs-candidate-pending"
+            or not re.fullmatch(r"[0-9a-f]{40}", data.get("head", ""))
+            or data.get("file_count") not in (1777, 1779, 1780, 1781) or not isinstance(rows, list) or len(rows) != data["file_count"]):
+        fail()
+    names = set()
+    for row in rows:
+        name = row["path"]
+        relative = PurePosixPath(name)
+        if (not isinstance(name, str) or relative.is_absolute() or ".." in relative.parts
+                or "\\" in name or ":" in name or name in names or relative.as_posix() != name):
+            fail()
+        names.add(name)
+        path = root / name
+        if not path.resolve().is_relative_to(root) or path.is_symlink() or not path.is_file():
+            fail()
+        content = path.read_bytes()
+        if len(content) != row["bytes"] or sha(content) != row["sha256"]:
+            fail()
+    dirty = data.get("dirty_diff_sha256", "")
+    if not re.fullmatch(r"[0-9a-f]{64}", dirty) or sha((manifest.parent / "tracked-before.diff").read_bytes()) != dirty:
+        fail()
+except (OSError, ValueError, TypeError, KeyError):
+    fail()
+print(data["head"], dirty)
+PY
+)" || return $?
+    read -r SOURCE_COMMIT SOURCE_DIRTY_DIFF_SHA <<<"$binding"
+  elif [[ "$MODE" == 'release' ]]; then
+    local repository_root
+    repository_root="$(git -C "$ROOT" rev-parse --show-toplevel)" || return $?
+    [[ "$(cd "$repository_root" && pwd -P)" == "$(cd "$ROOT" && pwd -P)" ]] || {
+      printf '%s\n' '[MACOS_RELEASE_SOURCE_ROOT_MISMATCH] 正式源码必须是当前精确仓库根。' >&2; return 2;
+    }
+    SOURCE_COMMIT="$(git -C "$ROOT" rev-parse HEAD)" || return $?
+    [[ "$SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ ]] || return 2
+  fi
+}
+verify_source_provenance
 if [[ ! -d "$OCR_RUNTIME" ]] || [[ ! -f "$OCR_RUNTIME/bin/tesseract" ]] ||
   [[ ! -f "$OCR_RUNTIME/tessdata/chi_sim.traineddata" ]]; then
   printf '%s\n' '[MACOS_OCR_RUNTIME_MISSING] 请提供当前架构、可审计的 OCR 运行时目录。' >&2
@@ -85,8 +154,25 @@ fi
 if [[ ! -d "$FORMATTER_RUNTIME" ]] ||
   [[ ! -x "$FORMATTER_RUNTIME/partyops-document-formatter-host" ]] ||
   [[ ! -f "$FORMATTER_RUNTIME/source-host.json" ]]; then
-  printf '%s\n' '[MACOS_FORMATTER_RUNTIME_MISSING] 请提供当前架构、已通过真实 WPS 金样测试的原源码排版宿主。' >&2
+  printf '%s\n' '[MACOS_FORMATTER_RUNTIME_MISSING] 请提供当前架构、有真实来源清单的原源码排版宿主。' >&2
   exit 2
+fi
+FORMATTER_ADAPTER="$(python3.11 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8")).get("adapter", ""))' "$FORMATTER_RUNTIME/source-host.json")"
+if [[ "$FORMATTER_ADAPTER" == 'wps-macos-object-source-adapter' ]]; then
+  # 对象候选不覆盖旧冻结包；每次新目录并保留完整失败/签名/自检现场。
+  [[ -n "$OUTPUT_OVERRIDE" ]] || { printf '%s\n' '[MACOS_CANDIDATE_OUTPUT_REQUIRED] 对象后端必须指定全新 --output-directory。' >&2; exit 2; }
+  OUTPUT_DIR="$(python3.11 -c 'import os,sys; print(os.path.abspath(sys.argv[1]))' "$OUTPUT_OVERRIDE")"
+  case "$OUTPUT_DIR" in "$ROOT"/*) ;; *) printf '%s\n' '[MACOS_CANDIDATE_OUTPUT_INVALID] 候选目录必须位于当前工作树。' >&2; exit 2 ;; esac
+  if [[ -e "$OUTPUT_DIR" ]]; then printf '%s\n' '[MACOS_CANDIDATE_OUTPUT_EXISTS] 保留旧构建现场，请使用新目录。' >&2; exit 2; fi
+  if [[ "$MODE" == 'release' ]]; then
+    python3.11 "$ROOT/scripts/verify-full-function-gate.py" verify --root "$ROOT" --scope package
+    [[ -s "$FORMATTER_FEATURE_EVIDENCE" ]] || { printf '%s\n' '[MACOS_FINAL_HOST_EVIDENCE_REQUIRED] 正式构建需要最终原生Host实测证据，候选未验不能发布。' >&2; exit 2; }
+  else
+    printf '%s\n' '[MACOS_TEST_CANDIDATE_ONLY] 此次仅构建待验候选；不生成全功能/发布通过结论。'
+  fi
+else
+  [[ -z "$OUTPUT_OVERRIDE" && -z "$FORMATTER_FEATURE_EVIDENCE" ]] || { printf '%s\n' '[MACOS_LEGACY_OPTIONS_DENIED] 旧适配路径不接受对象后端候选选项。' >&2; exit 2; }
+  python3.11 "$ROOT/scripts/verify-full-function-gate.py" verify --root "$ROOT" --scope package
 fi
 formatter_description="$(file -b "$FORMATTER_RUNTIME/partyops-document-formatter-host")"
 if [[ "$formatter_description" != *Mach-O* ]] ||
@@ -97,6 +183,11 @@ if [[ "$formatter_description" != *Mach-O* ]] ||
 fi
 python3.11 "$ROOT/scripts/validate-source-formatter-runtime.py" \
   --runtime "$FORMATTER_RUNTIME" --platform macos --architecture "$TARGET_ARCH"
+for notice in tesseract-LICENSE leptonica-LICENSE libjpeg-turbo-LICENSE.md libtiff-LICENSE.md libpng-LICENSE zlib-README-license; do
+  [[ -s "$OCR_RUNTIME/licenses/$notice" ]] || { printf '[MACOS_OCR_LICENSE_MISSING] 缺少许可：%s\n' "$notice" >&2; exit 2; }
+done
+[[ -s "$LLAMA_RUNTIME/licenses/llama.cpp-LICENSE" ]] || { printf '%s\n' '[MACOS_LLM_LICENSE_MISSING] 缺少llama.cpp许可。' >&2; exit 2; }
+[[ -n "$(find "$OFFICE_RUNTIME/licenses" -type f -size +0c -print -quit)" ]] || { printf '%s\n' '[MACOS_OFFICE_LICENSE_MISSING] LibreOffice许可目录为空。' >&2; exit 2; }
 OFFICE_RUNTIME="$(cd "$OFFICE_RUNTIME" && pwd -P)"
 while IFS= read -r -d '' link; do
   resolved="$(python3.11 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$link")"
@@ -127,19 +218,40 @@ mkdir -p "$OUTPUT_DIR"
 # 不同 Team ID，Finder 会在映射运行时前直接拒绝加载。
 sign_bundle_code() {
   local identity="$1"; shift
-  local timestamp_args=("$@")
+  # Bash 3的nounset不支持空数组展开；shift后的原位置参数直接保留timestamp语义。
   while IFS= read -r -d '' candidate; do
     [[ "$(file -b "$candidate" 2>/dev/null || true)" == *Mach-O* ]] || continue
-    if [[ "$candidate" == "$APP/Contents/Resources/office-runtime/"* ]]; then
+    if [[ "$candidate" == "$APP/Contents/Resources/formatter-host/partyops-document-formatter-host" ]]; then
+      # custom新链接入口没有上游签名metadata；仅formatter明确授旧Mono JIT权限。
+      local formatter_entitlements="$SCRIPT_DIR/formatter-host-entitlements.plist"
+      if [[ "$identity" == '-' ]]; then formatter_entitlements="$SCRIPT_DIR/formatter-host-adhoc-entitlements.plist"; fi
+      codesign --force "$@" --options runtime \
+        --entitlements "$formatter_entitlements" --sign "$identity" "$candidate"
+    elif [[ "$candidate" == "$APP/Contents/Resources/office-runtime/"* ]]; then
       # LibreOffice 上游入口和框架使用自身经过验证的 Hardened Runtime 标志
       # 与权限组合。若统一强加 PartyOps 的 runtime 标志，soffice 会在加载
       # Frameworks 时被 AMFI 以 SIGKILL 终止。重签身份仍统一，但完整保留
       # 上游 entitlements 与代码签名 flags。
       codesign --force --preserve-metadata=entitlements,flags \
-        "${timestamp_args[@]}" --sign "$identity" "$candidate"
+        "$@" --sign "$identity" "$candidate"
     else
-      codesign --force --preserve-metadata=entitlements \
-        "${timestamp_args[@]}" --options runtime --sign "$identity" "$candidate"
+      local pyinstaller_entitlements=''
+      if [[ "$MODE" == 'unsigned-candidate' && "$identity" == '-' ]]; then
+        # ad-hoc无TeamID，仅六个冻结Python入口允许加载本候选的Python动态库。
+        case "$candidate" in
+          "$APP/Contents/MacOS/partyops-desktop-bin"|"$APP/Contents/MacOS/partyops"|\
+          "$APP/Contents/MacOS/partyops-client"|"$APP/Contents/MacOS/partyops-wizard"|\
+          "$APP/Contents/MacOS/partyops-launch-agent"|"$APP/Contents/MacOS/partyops-updater")
+            pyinstaller_entitlements="$SCRIPT_DIR/pyinstaller-candidate-entitlements.plist" ;;
+        esac
+      fi
+      if [[ -n "$pyinstaller_entitlements" ]]; then
+        codesign --force "$@" --options runtime \
+          --entitlements "$pyinstaller_entitlements" --sign "$identity" "$candidate"
+      else
+        codesign --force --preserve-metadata=entitlements \
+          "$@" --options runtime --sign "$identity" "$candidate"
+      fi
     fi
   # 调用方在签名阶段先生成候选清单，避免把根可执行文件和嵌套入口
   # 混在同一次签名中；清单本身也作为制品审计证据留在构建临时目录。
@@ -151,9 +263,9 @@ sign_bundle_code() {
     [[ "$bundle" == "$APP" ]] && continue
     if [[ "$bundle" == "$APP/Contents/Resources/office-runtime/"* ]]; then
       codesign --force --preserve-metadata=entitlements,flags \
-        "${timestamp_args[@]}" --sign "$identity" "$bundle"
+        "$@" --sign "$identity" "$bundle"
     else
-      codesign --force "${timestamp_args[@]}" --options runtime --sign "$identity" "$bundle"
+      codesign --force "$@" --options runtime --sign "$identity" "$bundle"
     fi
   done <"$BUNDLE_DIRECTORY_LIST"
 }
@@ -169,6 +281,32 @@ import sys
 
 host, manifest = map(Path, sys.argv[1:])
 record = json.loads(manifest.read_text(encoding="utf-8"))
+if record.get("adapter") == "wps-macos-object-source-adapter":
+    # 原来源Host与重签Host分别留存，不改历史测试回执。
+    record.setdefault("pre_sign_host_sha256", record["host_sha256"])
+    if record.get("native_bundle_mode") == "custom-static":
+        names = {"libmono-native-compat.dylib", "libMonoPosixHelper.dylib"}
+        previous = record.get("native_sidecars_sha256", {})
+        if set(previous) != names:
+            raise SystemExit("MAC_FORMATTER_SIDECAR_BINDING_INVALID")
+        source_path = manifest.parent / "mono-native-source.json"
+        native_source = json.loads(source_path.read_text(encoding="utf-8"))
+        libraries = native_source.get("libraries", [])
+        if len(libraries) != 2 or {item.get("registered_name") for item in libraries} != names:
+            raise SystemExit("MAC_FORMATTER_SIDECAR_BINDING_INVALID")
+        current = {}
+        for item in libraries:
+            name = item["registered_name"]
+            library = manifest.parent / name
+            if library.is_symlink() or not library.is_file():
+                raise SystemExit("MAC_FORMATTER_SIDECAR_BINDING_INVALID")
+            current[name] = hashlib.sha256(library.read_bytes()).hexdigest()
+            # SDK source原SHA不变；随包重签字节另字段，不覆盖来源证明。
+            item["packaged_sha256"] = current[name]
+        source_path.write_text(json.dumps(native_source, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        record.setdefault("pre_sign_sidecars_sha256", previous)
+        record["native_sidecars_sha256"] = current
+        record["mono_native_source_sha256"] = hashlib.sha256(source_path.read_bytes()).hexdigest()
 record["host_sha256"] = hashlib.sha256(host.read_bytes()).hexdigest()
 manifest.write_text(
     json.dumps(record, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
@@ -183,6 +321,21 @@ record_formatter_evidence() {
   local formatter_root="$APP/Contents/Resources/formatter-host"
   local evidence_root="$BUILD_ROOT/formatter-evidence"
   /bin/mkdir -p "$evidence_root"
+  if [[ "$FORMATTER_ADAPTER" == 'wps-macos-object-source-adapter' ]]; then
+    local args=()
+    [[ -z "$FORMATTER_FEATURE_EVIDENCE" ]] || args+=(--features-evidence "$FORMATTER_FEATURE_EVIDENCE")
+    [[ "$MODE" == 'release' ]] || args+=(--allow-unverified-candidate)
+    # 只验证输入的实际逐项回执；候选缺项如实not-run，不跑不兼容旧SDK/金样流程。
+    if [[ -e "$formatter_root/runtime-evidence.json" ]]; then
+      /bin/mv "$formatter_root/runtime-evidence.json" "$evidence_root/input-runtime-evidence.json"
+    fi
+    "$VENV/bin/python" "$ROOT/scripts/verify-formatter-runtime-evidence.py" \
+      --root "$ROOT" --runtime "$formatter_root" --platform macos --architecture "$TARGET_ARCH" \
+      "${args[@]}" --output "$formatter_root/runtime-evidence.json"
+    /usr/bin/ditto "$formatter_root/source-host.json" "$evidence_root/final-source-host.json"
+    /usr/bin/ditto "$formatter_root/runtime-evidence.json" "$evidence_root/final-runtime-evidence.json"
+    return
+  fi
   "$VENV/bin/python" "$ROOT/scripts/verify-document-formatter-parity.py" \
     --root "$ROOT" \
     --host "$formatter_root/partyops-document-formatter-host" \
@@ -245,8 +398,16 @@ if [[ -e "$OUTPUT" ]]; then
   exit 2
 fi
 
-BUILD_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/partyops-macos-${TARGET_ARCH}.XXXXXX")"
+if [[ "$FORMATTER_ADAPTER" == 'wps-macos-object-source-adapter' ]]; then
+  BUILD_ROOT="$(mktemp -d "$OUTPUT_DIR/.build-macos-${TARGET_ARCH}.XXXXXX")"
+else
+  BUILD_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/partyops-macos-${TARGET_ARCH}.XXXXXX")"
+fi
 cleanup() {
+  if [[ "$FORMATTER_ADAPTER" == 'wps-macos-object-source-adapter' ]]; then
+    printf '[MACOS_BUILD_WORKSPACE_RETAINED] %s\n' "$BUILD_ROOT" >&2
+    return
+  fi
   if [[ "$BUILD_ROOT" == "${TMPDIR:-/tmp}"/partyops-macos-"$TARGET_ARCH".* ]] &&
     [[ -d "$BUILD_ROOT" ]]; then
     chmod -R u+w "$BUILD_ROOT" 2>/dev/null || true
@@ -413,8 +574,12 @@ if not any("ENABLE_FTS5" in option for option in options):
     raise SystemExit("[MACOS_SQLITE_FTS5_MISSING] 冻结 SQLite 未启用 FTS5。")
 PY
 
-corepack pnpm --dir "$ROOT/frontend" install --frozen-lockfile
-corepack pnpm --dir "$ROOT/frontend" run build
+# Corepack先按cwd读取packageManager；pnpm的--dir不能决定Corepack版本。
+(
+  cd "$ROOT/frontend"
+  corepack pnpm install --frozen-lockfile
+  corepack pnpm run build
+)
 if [[ ! -f "$ROOT/frontend/dist/client/index.html" ]]; then
   printf '%s\n' '[MACOS_FRONTEND_BUILD_FAILED] 前端生产资源未生成。' >&2
   exit 2
@@ -515,12 +680,20 @@ done
 /usr/bin/ditto "$OFFICE_RUNTIME" "$APP/Contents/Resources/office-runtime"
 /bin/mkdir -p "$APP/Contents/Resources/formatter-host"
 /usr/bin/ditto "$FORMATTER_RUNTIME" "$APP/Contents/Resources/formatter-host"
-/usr/bin/chmod 0755 "$APP/Contents/Resources/formatter-host/partyops-document-formatter-host"
-/usr/bin/chmod 0644 \
+/bin/chmod 0755 "$APP/Contents/Resources/formatter-host/partyops-document-formatter-host"
+if [[ "$FORMATTER_ADAPTER" == 'wps-macos-object-source-adapter' ]]; then
+  /bin/chmod 0644 "$APP/Contents/Resources/formatter-host/source-host.json" \
+    "$APP/Contents/Resources/formatter-host/LICENSE-MONO-RUNTIME.txt"
+  for resource in bootstrap-carrier.docx main.js ribbon.xml task-lease.js product-index.html product-main.js product-ribbon.xml; do
+    /bin/chmod 0644 "$APP/Contents/Resources/formatter-host/wps-formatter-plugin/$resource"
+  done
+else
+/bin/chmod 0644 \
   "$APP/Contents/Resources/formatter-host/source-host.json" \
   "$APP/Contents/Resources/formatter-host/word-vtable-map.json" \
   "$APP/Contents/Resources/formatter-host/LICENSE-WPS-SDK.txt" \
   "$APP/Contents/Resources/formatter-host/LICENSE-MONO-RUNTIME.txt"
+fi
 # 生产更新器只信任随 PKG 安装且由 root 保护的应用资源。公钥不是可执行
 # 代码，必须放入 Apple 约定的 Resources；放在 MacOS 会被 codesign 当成
 # 未签名嵌套代码。PyInstaller 对 datas 的重排位置也不是运行时契约，因此
@@ -675,19 +848,16 @@ elif [[ "$MODE" == 'unsigned-candidate' ]]; then
   pkgbuild --root "$PAYLOAD_ROOT" \
     --scripts "$PKG_SCRIPTS" --install-location / --ownership recommended \
     --identifier cn.partyops.desktop --version "$PACKAGE_VERSION" "$OUTPUT"
-  # GITHUB_SHA 是触发工作流的提交；手动发布工作流会再检出固定的实际构建
-  # 提交，两者不能混写。source_commit 必须取工作树真实 HEAD，另行记录
-  # workflow_commit，保证同版本补充制品的来源可以独立复核。
-  SOURCE_COMMIT="$(git -C "$ROOT" rev-parse HEAD)"
+  # 候选HEAD已在构建前从受校验冻结清单取得，不能借用外层Git仓库。
   WORKFLOW_COMMIT="${GITHUB_SHA:-$SOURCE_COMMIT}"
   GENERATED_AT="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
   python3.11 - "$OUTPUT.attestation.json" "$TARGET_ARCH" "$SOURCE_COMMIT" \
-    "$WORKFLOW_COMMIT" "$GENERATED_AT" <<'PY'
+    "$WORKFLOW_COMMIT" "$GENERATED_AT" "$SOURCE_INPUTS_EXPECTED_SHA" "$SOURCE_DIRTY_DIFF_SHA" <<'PY'
 import json
 from pathlib import Path
 import sys
 
-path, architecture, source_commit, workflow_commit, generated_at = sys.argv[1:]
+path, architecture, source_commit, workflow_commit, generated_at, manifest_sha, dirty_sha = sys.argv[1:]
 Path(path).write_text(
     json.dumps(
         {
@@ -697,6 +867,9 @@ Path(path).write_text(
             "architecture": architecture,
             "source_commit": source_commit,
             "workflow_commit": workflow_commit,
+            "source_input_manifest_sha256": manifest_sha,
+            "source_dirty_diff_sha256": dirty_sha,
+            "source_state": "frozen-dirty-candidate",
             "generated_at_utc": generated_at,
             "code_signature": "ad-hoc",
             "developer_id_signed": False,
@@ -725,4 +898,21 @@ fi
 
 OUTPUT_HASH="$(shasum -a 256 "$OUTPUT" | awk '{print $1}')"
 printf '%s  %s\n' "$OUTPUT_HASH" "$(basename "$OUTPUT")" >"$OUTPUT.sha256"
+if [[ "$FORMATTER_ADAPTER" == 'wps-macos-object-source-adapter' ]]; then
+  python3.11 - "$OUTPUT" "$MODE" "$APP/Contents/Resources/formatter-host/runtime-evidence.json" "$BUILD_ROOT" <<'PY'
+import hashlib, json, sys
+from pathlib import Path
+package, mode, evidence, workspace = sys.argv[1:]
+data = json.loads(Path(evidence).read_text(encoding="utf-8"))
+receipt = {"schema": 1, "package_sha256": hashlib.sha256(Path(package).read_bytes()).hexdigest(),
+    "build_mode": mode, "adapter": "wps-macos-object-source-adapter",
+    "signature": "developer-id-notarized" if mode == "release" else "ad-hoc" if mode == "unsigned-candidate" else "unsigned",
+    "notarized": mode == "release", "workspace_retained": workspace,
+    "final_host_sha256": data["host_sha256"], "tested_host_sha256": data["tested_host_sha256"],
+    "final_host_verified": data["final_host_verified"], "feature_validation": data["feature_validation"],
+    "limitations": data["limitations"], "package_validation_passed": False, "publication_ready": False}
+with Path(package + ".mac-object-candidate.json").open("x", encoding="utf-8") as stream:
+    stream.write(json.dumps(receipt, ensure_ascii=False, indent=2) + "\n")
+PY
+fi
 printf 'PartyOps macOS %s PKG 已生成：%s\n' "$TARGET_ARCH" "$OUTPUT"

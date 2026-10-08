@@ -103,7 +103,10 @@ def test_host_uses_compact_output_and_preserves_deep_chinese_source(tmp_path, mo
         assert Path(payload["output_directory"]) == workspace.resolve() / "o"
         output = Path(payload["output_directory"]) / "输出 公文.docx"
         shutil.copyfile(source, output)
-        response.write_text(json.dumps({"jobs": [{"success": True, "output_paths": [str(output)], "host_display_name": "fixture only"}]}), encoding="utf-8")
+        # Mac持续登记按现行owned/revoked回执确认清理，不能用旧restored字段。
+        state = {"mac_task": {"task_id": payload["mac_task"]["task_id"], "cleanup_confirmed": True,
+                              "lease_released": True, "registration_owned": True, "capability_revoked": True}} if platform == "darwin" else {}
+        response.write_text(json.dumps({**state, "jobs": [{"success": True, "output_paths": [str(output)], "host_display_name": "fixture only"}]}), encoding="utf-8")
         return SimpleNamespace(poll=lambda: 0, returncode=0)
 
     monkeypatch.setattr(host.subprocess, "Popen", copied)

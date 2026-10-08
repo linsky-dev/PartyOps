@@ -171,27 +171,51 @@ static void append_stderr_tail(void) {
     );
 }
 
-static void show_fatal_alert(void) {
+static void show_fatal_alert(bool self_test) {
+    /* 构建自检必须原样返回失败，不出现阻塞modal或让提示进程覆盖退出码。 */
+    if (self_test) {
+        return;
+    }
     const char *script =
         "display alert \"党建智办启动失败\" message "
         "\"macOS 原生入口无法启动桌面组件。请把 ~/Library/Logs/PartyOps/launch-probe.log 和 launch-stderr.log 发给技术支持。\" "
         "as critical buttons {\"知道了\"} default button \"知道了\"";
-    execl("/usr/bin/osascript", "osascript", "-e", script, (char *)NULL);
+    const pid_t alert = fork();
+    if (alert < 0) {
+        append_probe("status=alert-fork-failed errno=%d", errno);
+        return;
+    }
+    if (alert == 0) {
+        execl("/usr/bin/osascript", "osascript", "-e", script, (char *)NULL);
+        _exit(127);
+    }
+    int alert_status = 0;
+    pid_t waited;
+    do {
+        waited = waitpid(alert, &alert_status, 0);
+    } while (waited < 0 && errno == EINTR);
+    /* 提示框成功、失败或被关闭均不得改变调用者已经确认的原始失败码。 */
 }
 
 int main(int argc, char *argv[]) {
+    bool self_test = false;
+    for (int index = 1; index < argc; ++index) {
+        if (strcmp(argv[index], "--self-test") == 0) {
+            self_test = true;
+        }
+    }
     uint32_t executable_size = PATH_MAX;
     char executable[PATH_MAX];
     if (_NSGetExecutablePath(executable, &executable_size) != 0) {
         append_probe("status=wrapper-path-too-long");
-        show_fatal_alert();
+        show_fatal_alert(self_test);
         return 126;
     }
 
     char resolved[PATH_MAX];
     if (realpath(executable, resolved) == NULL) {
         append_probe("status=wrapper-realpath-failed errno=%d", errno);
-        show_fatal_alert();
+        show_fatal_alert(self_test);
         return 126;
     }
     char directory_input[PATH_MAX];
@@ -201,7 +225,7 @@ int main(int argc, char *argv[]) {
     if (snprintf(target, sizeof(target), "%s/partyops-desktop-bin", directory) >=
         (int)sizeof(target)) {
         append_probe("status=target-path-too-long");
-        show_fatal_alert();
+        show_fatal_alert(self_test);
         return 126;
     }
 
@@ -209,7 +233,7 @@ int main(int argc, char *argv[]) {
     if (lstat(target, &target_metadata) != 0 || !S_ISREG(target_metadata.st_mode) ||
         access(target, X_OK) != 0) {
         append_probe("status=desktop-resource-invalid target=partyops-desktop-bin errno=%d", errno);
-        show_fatal_alert();
+        show_fatal_alert(self_test);
         return 126;
     }
 
@@ -235,7 +259,7 @@ int main(int argc, char *argv[]) {
     char **child_argv = calloc((size_t)argc + 1U, sizeof(char *));
     if (child_argv == NULL) {
         append_probe("status=argument-allocation-failed errno=%d", errno);
-        show_fatal_alert();
+        show_fatal_alert(self_test);
         return 126;
     }
     child_argv[0] = target;
@@ -248,7 +272,7 @@ int main(int argc, char *argv[]) {
     if (child < 0) {
         append_probe("status=desktop-fork-failed errno=%d", errno);
         free(child_argv);
-        show_fatal_alert();
+        show_fatal_alert(self_test);
         return 126;
     }
     if (child == 0) {
@@ -293,7 +317,7 @@ int main(int argc, char *argv[]) {
     free(child_argv);
     if (waited < 0) {
         append_probe("status=desktop-wait-failed child_pid=%ld errno=%d", (long)child, errno);
-        show_fatal_alert();
+        show_fatal_alert(self_test);
         return 126;
     }
     if (WIFEXITED(child_status)) {
@@ -301,7 +325,7 @@ int main(int argc, char *argv[]) {
         append_probe("status=desktop-child-exited child_pid=%ld exit_code=%d", (long)child, exit_code);
         if (exit_code != 0) {
             append_stderr_tail();
-            show_fatal_alert();
+            show_fatal_alert(self_test);
         }
         return exit_code;
     }
@@ -309,10 +333,10 @@ int main(int argc, char *argv[]) {
         const int signal_number = WTERMSIG(child_status);
         append_probe("status=desktop-child-signaled child_pid=%ld signal=%d", (long)child, signal_number);
         append_stderr_tail();
-        show_fatal_alert();
+        show_fatal_alert(self_test);
         return 128 + signal_number;
     }
     append_probe("status=desktop-child-unknown child_pid=%ld raw_status=%d", (long)child, child_status);
-    show_fatal_alert();
+    show_fatal_alert(self_test);
     return 126;
 }

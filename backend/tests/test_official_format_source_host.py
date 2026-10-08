@@ -158,6 +158,7 @@ def test_source_host_protocol_accepts_only_private_real_outputs(
                     "success_count": 1,
                     "failure_count": 0,
                     "cancelled_count": 0,
+                    **({"mac_task": {"task_id": payload["mac_task"]["task_id"], "cleanup_confirmed": True, "lease_released": True, "registration_owned": True, "capability_revoked": True}} if runtime_platform == "darwin" else {}),
                     "jobs": [
                         {
                             "success": True,
@@ -190,11 +191,12 @@ def test_source_host_protocol_accepts_only_private_real_outputs(
     request_payload = json.loads(
         (workspace / ".source-host" / "request.json").read_text(encoding="utf-8")
     )
-    assert request_payload["host_preference"] == "wps-preferred"
+    assert request_payload["host_preference"] == ("wps" if runtime_platform == "darwin" else "wps-preferred")
     assert request_payload["options"] == {"compatibility_mode": "auto"}
-    assert child_environment["PARTYOPS_WPS_VTABLE_MAP"] == str(
-        host.parent / "word-vtable-map.json"
-    )
+    if runtime_platform == "darwin":
+        assert "PARTYOPS_WPS_VTABLE_MAP" not in child_environment
+    else:
+        assert child_environment["PARTYOPS_WPS_VTABLE_MAP"] == str(host.parent / "word-vtable-map.json")
     assert child_environment.get("LD_LIBRARY_PATH") == expected_library_path
     assert official_format_host.os.environ["LD_LIBRARY_PATH"] == "/frozen/_internal:/wps/lib"
 

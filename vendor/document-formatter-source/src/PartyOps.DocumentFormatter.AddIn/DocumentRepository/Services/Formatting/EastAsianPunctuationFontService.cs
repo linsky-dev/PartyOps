@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Runtime.CompilerServices;
 using DocumentRepository.Services.Cleanup;
 using DocumentRepository.Services.Hosting;
@@ -76,6 +77,7 @@ public static class EastAsianPunctuationFontService
 			throw new ArgumentNullException("container");
 		}
 		string text = container.Text ?? string.Empty;
+		bool macQuoteFont = UseMacQuoteFont();
 		int val = Math.Max(0, container.End - container.Start);
 		int num = Math.Min(text.Length, val);
 		if (num != 0)
@@ -94,6 +96,12 @@ public static class EastAsianPunctuationFontService
 				value2 = container.Duplicate;
 				for (int i = 0; i < num; i++)
 				{
+					// 用户明确要求Mac引号使用Times New Roman；仅改字体，不复制FormattedText或补写正文。
+					if (macQuoteFont && IsQuote(text[i]))
+					{
+						if (ApplyMacQuoteFont(container, value, text, i)) num2++; else num3++;
+						continue;
+					}
 					if (!EastAsianPunctuationPolicy.RequiresFormatting(text, i))
 					{
 						continue;
@@ -216,6 +224,65 @@ public static class EastAsianPunctuationFontService
 			return num2;
 		}
 		return 0;
+	}
+
+	private static bool UseMacQuoteFont()
+	{
+		// Mono在macOS可能报告Unix；系统版本文件与平台一起识别，ENV单独不能改变Win/Linux。
+		PlatformID platform = Environment.OSVersion.Platform;
+		bool mac = platform == PlatformID.MacOSX || (platform == PlatformID.Unix && File.Exists("/System/Library/CoreServices/SystemVersion.plist"));
+		return mac && string.Equals(Environment.GetEnvironmentVariable("PARTYOPS_MAC_QUOTE_FONT"), "Times New Roman", StringComparison.Ordinal);
+	}
+
+	private static bool IsQuote(char value) => value == '‘' || value == '’' || value == '“' || value == '”';
+
+	[MethodImpl(MethodImplOptions.NoInlining)]
+	private static bool ApplyMacQuoteFont(Microsoft.Office.Interop.Word.Range container, Microsoft.Office.Interop.Word.Range target, string baseline, int index)
+	{
+		if (index < 0 || index >= baseline.Length || !IsQuote(baseline[index])) throw new InvalidOperationException("Mac引号目标无效。");
+		int start = container.Start + index;
+		int end = start + 1;
+		target.SetRange(start, end);
+		void CheckText()
+		{
+			if (target.Start != start || target.End != end || !string.Equals(target.Text, baseline[index].ToString(), StringComparison.Ordinal) || !string.Equals(container.Text, baseline, StringComparison.Ordinal))
+				throw new InvalidOperationException("Mac引号字体设置时正文或坐标漂移；未补写文字。");
+		}
+		CheckText();
+		Font font = null;
+		try
+		{
+			font = target.Font;
+			if (font == null || NormalizeFontName(font.Name).Length == 0 || NormalizeFontName(font.NameAscii).Length == 0 || NormalizeFontName(font.NameFarEast).Length == 0)
+				throw new InvalidOperationException("Mac引号字体未知，停止字体设置。");
+			float size = font.Size;
+			int bold = font.Bold, italic = font.Italic;
+			WdColor color = font.Color;
+			if (float.IsNaN(size) || float.IsInfinity(size) || size <= 0 || size >= 9999999 || (bold != 0 && bold != -1) || (italic != 0 && italic != -1))
+				throw new InvalidOperationException("Mac引号字号或字重未知，停止字体设置。");
+			const string name = "Times New Roman";
+			bool changed = false;
+			void CheckState()
+			{
+				CheckText();
+				if (font.Size != size || font.Bold != bold || font.Italic != italic || font.Color != color)
+					throw new InvalidOperationException("Mac引号字体设置改变了字号、字重或颜色。");
+			}
+			CheckState();
+			if (!DocumentFontSlotService.SameFontName(font.Name, name)) { font.Name = name; changed = true; }
+			CheckState();
+			if (!DocumentFontSlotService.SameFontName(font.NameFarEast, name)) { font.NameFarEast = name; changed = true; }
+			CheckState();
+			if (!DocumentFontSlotService.SameFontName(font.NameAscii, name)) { font.NameAscii = name; changed = true; }
+			CheckState();
+			if (!DocumentFontSlotService.SameFontName(font.Name, name) || !DocumentFontSlotService.SameFontName(font.NameAscii, name) || !DocumentFontSlotService.SameFontName(font.NameFarEast, name))
+				throw new InvalidOperationException("Mac引号Times New Roman字体读回复核失败。");
+			return changed;
+		}
+		finally
+		{
+			if (font != null) ComObjectRelease.Release(ref font, "EastAsianPunctuationFontService.macQuoteFont");
+		}
 	}
 
 	[MethodImpl(MethodImplOptions.NoInlining)]

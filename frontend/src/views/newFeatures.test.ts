@@ -119,6 +119,12 @@ describe("1.4.3 新增页面", () => {
     const vm = state(wrapper);
     expect(vm.selfTestText).toBe("6 项功能 / 25 项能力已就绪");
     expect(wrapper.text()).toContain("朱批案台");
+    expect(wrapper.text()).toContain("Intel Mac 候选环境使用提示");
+    expect(wrapper.text()).toContain("保持 WPS 打开且可见，勿隐藏、最小化或退出");
+    expect(wrapper.text()).toContain("Times New Roman");
+    expect(wrapper.text()).not.toContain("后台兼容 WPS/Word");
+    expect(wrapper.text()).not.toContain("全程不显示独立排版窗口");
+    expect(wrapper.text()).not.toContain("不打开独立工具窗口");
 
     vm.addFiles([new File(["docx"], "基层通知.docx", { type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" })]);
     await vm.startJob();

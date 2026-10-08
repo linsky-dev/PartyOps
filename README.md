@@ -18,7 +18,7 @@
 </div>
 
 > [!IMPORTANT]
-> 最新公开候选为 **1.4.5-rc.6**，发布于 **2026-10-03 01:38（北京时间）**，提供 8 个 Windows/Linux/龙芯安装包。逐包实际虚拟机环境、验证范围和限制见[发布说明](docs/release-notes-v1.4.5-rc.6.md)。Intel Mac 本批暂停，M 系列等待远程实机，Mac 下载仍为 RC.4 旧包。
+> 最新公开候选为 **1.4.5-rc.6**，发布于 **2026-10-03 01:38（北京时间）**。现有 8 个 Windows/Linux/龙芯安装包与 Intel x86_64 Mac 第九包已列入 RC6；Mac 于 2026-10-08 完成国内全文件回读与 GitHub 附件 API 核验。Apple Silicon 继续使用 RC.4 历史包。实际环境、范围和限制见[发布说明](docs/release-notes-v1.4.5-rc.6.md)。
 
 ## 当前公开发布
 
@@ -26,12 +26,12 @@
 | --- | --- |
 | 公开版本 | [v1.4.5-rc.6](https://github.com/linsky-dev/PartyOps/releases/tag/v1.4.5-rc.6)，GitHub Pre-release |
 | 官方网站 | [https://partyops.cn/](https://partyops.cn/) |
-| 制品校验 | 同一 Release 的 8 个安装包、8 个 SHA-256 文件和签名 release-manifest.json，共 17 个附件 |
+| 制品校验 | GitHub Pre-release 共 20 个附件：9 个安装包、9 个 SHA-256 文件、签名 release-manifest.json 和 baseline-manifest.json；9 个主安装包的 API 大小与 SHA-256 均与签名清单匹配 |
 | 验证边界 | 各包仅按公开的实际验收范围准入，未宣称完整生命周期或全部映射系统通过 |
-| 源码位置 | [rc.6 开发分支](https://github.com/linsky-dev/PartyOps/tree/release/1.4.5-rc.6)；main 已同步 rc.6 已公开开发提交，未纳入本地未提交改动；逐包来源以签名清单为准 |
-| 回滚与延期 | RC.4 历史发布保留；两种 Mac 均无本批 RC.6 新包 |
+| 源码位置 | [当前公开源码](https://github.com/linsky-dev/PartyOps/tree/main)；Intel Mac 适配与本次发布说明已选择性纳入 main；每个安装包的冻结源码基线、输入状态及清单摘要按签名清单逐包核对，不以 main 提交替代制品来源 |
+| 回滚与延期 | RC.4 历史发布保留；Intel Mac RC.6 有限验收包已完成公开附件核验，Apple Silicon 继续使用 RC.4 历史包 |
 
-国内八包已逐包完整公网回读，GitHub 附件摘要与冻结清单一致，官网已完成生产内容回读。历史版本变化在 `CHANGELOG.md` 中追溯。
+RC6 九个安装包均已逐包完成国内全文件回读；GitHub API 显示 20 个附件，九个主安装包大小和摘要与签名清单一致。Intel Mac 国内回读确认时间为 2026-10-08 18:42:10（北京时间，UTC+8）。历史版本变化在 `CHANGELOG.md` 中追溯。
 
 ## 30 秒了解 PartyOps
 
@@ -49,6 +49,7 @@ PartyOps 不是一套把表单搬到浏览器里的系统。它解决的是基�
 - 完善 Windows 系统及当前用户字体读取，支持识别仅为当前用户安装的字体，并在排版时重新检查。
 - 修复国产 Linux 用户配置解析及桌面启动，配置异常时提供明确诊断和修复向导，保留原业务数据。
 - 新增龙芯 LoongArch64 DEB 安装包，并完善 Windows 7 与 Windows 10 的 32 位安装包适配。
+- 增补 Intel x86_64 macOS RC.6 候选；支持范围内的公文排版与批量格式处理，分页显示需人工核对。
 
 ### 1.4.5-rc.5
 
@@ -195,9 +196,9 @@ PartyOps 不是一套把表单搬到浏览器里的系统。它解决的是基�
 | `1.4.5-rc.1` | 新增三会一课、中心组学习、发展党员三轨时间轴、多文件可恢复资料、本机硬件检测、12 档模型推荐和身份重新配置 | 历史版本；已由 rc.2 取代 |
 | `1.4.5-rc.2` | 新增本机公文规范排版，修复协同地址、文件打开、发展党员预测、麒麟安装、跨平台启动与卸载保护 | 历史回滚基线 |
 | `1.4.5-rc.3` | 新增内嵌公文排版、可撤销通用台账导入、真实进度时间轴和 Needle 2，补齐生命周期、提醒、ACL 与非 C 盘路径 | 已撤回；旧库原位升级会在迁移前启动失败，仅保留审计 Release |
-| `1.4.5-rc.4` | 修复 `0023 → 0024` 升级前备份缺列崩溃，新增模式无关备份、原子回滚、中断恢复和准确启动诊断 | 历史预发布与回滚点；Mac 保留此版旧包 |
+| `1.4.5-rc.4` | 修复 `0023 → 0024` 升级前备份缺列崩溃，新增模式无关备份、原子回滚、中断恢复和准确启动诊断 | 历史预发布与回滚点；Apple Silicon 仍保留此版旧包 |
 | `1.4.5-rc.5` | 内部测试版本，未公开发布。 | — |
-| `1.4.5-rc.6` | Win7 x86 b3 本机字体与排版、Windows/Linux/龙芯八包限域验证、逐包实际虚拟机环境公开 | 当前公开 Pre-release；Intel Mac 暂停，M 系列等待实机 |
+| `1.4.5-rc.6` | Win7 x86 b3 本机字体与排版、Windows/Linux/龙芯九包限域验证，含 Intel Mac 有限验收 | 当前公开 Pre-release；Intel Mac 于 2026-10-08 增补并完成公开附件核验，Apple Silicon 仍为 RC.4 |
 
 完整变更、修复与安全说明见 [CHANGELOG.md](CHANGELOG.md)。PartyOps 不会为了看起来“已发布”而隐藏未完成门禁，版本证据、制品哈希和已知限制都会随 Release 一起公开。
 
@@ -244,7 +245,14 @@ flowchart LR
 
 Windows 10 x86 使用同一 `windows7_x86` b3 包，Win7/Win10 的范围分别列明。请按 CPU 架构选择安装包，其他映射系统不等于实际测试环境；RISC-V 本批没有包。
 
-Mac 历史下载：[Intel RC.4](https://github.com/linsky-dev/PartyOps/releases/download/v1.4.5-rc.4/PartyOps_1.4.5-rc.4_macos_x86_64.pkg) · [Apple Silicon RC.4](https://github.com/linsky-dev/PartyOps/releases/download/v1.4.5-rc.4/PartyOps_1.4.5-rc.4_macos_arm64.pkg)。本批未完成 Mac 自动排版验收，不将旧包标为 RC.6。
+#### macOS 下载记录
+
+| 芯片 | 安装包 | 大小 | SHA-256 | 状态 |
+| --- | --- | ---: | --- | --- |
+| Intel x86_64 | [国内下载](https://partyops-rc6-win7-x86.app.workbuddy.host/downloads/PartyOps_1.4.5-rc.6_macos_x86_64-UNSIGNED-UNNOTARIZED-CANDIDATE.pkg) · [GitHub](https://github.com/linsky-dev/PartyOps/releases/download/v1.4.5-rc.6/PartyOps_1.4.5-rc.6_macos_x86_64-UNSIGNED-UNNOTARIZED-CANDIDATE.pkg) | 564,985,557 字节 | `8885eea0cfa3c23f58d14109c9a46be2bf762c923cb1be58b9c549628e05c955` | 国内完整回读及 GitHub API 大小、SHA 核验通过；限域验收 |
+| Apple Silicon arm64 | [PartyOps_1.4.5-rc.4_macos_arm64.pkg](https://github.com/linsky-dev/PartyOps/releases/download/v1.4.5-rc.4/PartyOps_1.4.5-rc.4_macos_arm64.pkg) | 历史包 | 以 RC.4 发布记录为准 | 本批仍为 RC.4 |
+
+Intel 来源基线提交：`a8aaf44984c1d9ce85981bd4756e71372c6b8cb8`；完整输入状态为 `frozen-dirty-candidate`，`source_input_manifest_sha256` 为 `2dcd1d9db0496daf67106d51d60ccbe8502466561186d79cf511080346c63295`。国内全文件回读确认时间为 2026-10-08 18:42:10（北京时间，UTC+8）；GitHub 附件 API 核验时间为 18:45:27（北京时间，UTC+8）。
 
 升级前请在系统内备份。下载后按同一 Release 的 SHA-256 校验；遇到问题保留日志并恢复原包和备份。完整说明见[RC.6 发布记录](docs/release-notes-v1.4.5-rc.6.md)。
 
@@ -275,7 +283,7 @@ macOS：
 
 ```bash
 uname -m
-shasum -a 256 PartyOps_1.4.5-rc.4_macos_arm64.pkg
+shasum -a 256 PartyOps_1.4.5-rc.6_macos_x86_64-UNSIGNED-UNNOTARIZED-CANDIDATE.pkg
 ```
 
 ### Windows 10/11 x64
@@ -327,8 +335,8 @@ sudo dnf install ./PartyOps-1.4.5-0.rc.6.1.x86_64.rpm
 
 ### macOS 11+ Apple Silicon / Intel
 
-1. 点击苹果菜单 → “关于本机”：Apple M 系列下载 `macos_arm64.pkg`，Intel 处理器下载 `macos_x86_64.pkg`；终端 `uname -m` 也会分别显示 `arm64` 或 `x86_64`。
-2. 用 `shasum -a 256 <文件名>` 核对官网或 Release 显示的 SHA-256。当前候选包没有 Developer ID 和公证：在 Finder 按住 Control 点击下载的 PKG →“打开”；若仍被阻止，先尝试打开一次，再到“系统设置 → 隐私与安全性”点击对应的“仍要打开”，完成管理员授权并安装到 `/Applications`。
+1. 点击苹果菜单 → “关于本机”：Apple M 系列沿用 RC.4 `macos_arm64.pkg` 历史包；Intel 处理器使用 RC.6 `macos_x86_64-UNSIGNED-UNNOTARIZED-CANDIDATE.pkg` 有限验收包；终端 `uname -m` 也会分别显示 `arm64` 或 `x86_64`。
+2. 用 `shasum -a 256 <文件名>` 核对官网或 Release 显示的 SHA-256。Intel RC6 包未使用 Developer ID、未公证，且分页统计前端为 2 页、WPS 为 3 页，需人工核对正文、字体和页码；在 Finder 按住 Control 点击下载的 PKG →“打开”；若仍被阻止，先尝试打开一次，再到“系统设置 → 隐私与安全性”点击对应的“仍要打开”，完成管理员授权并安装到 `/Applications`。
 3. 安装完成后，在 Finder 的“应用程序”中按住 Control 点击“党建智办”并选择“打开”；如系统再次拦截，按同样方式在“隐私与安全性”确认。不要执行全局关闭 Gatekeeper 的命令。
 4. 选择个人、主机或协同模式并等待页面就绪。未打开时依次查看 `~/Library/Logs/PartyOps/launch-probe.log`、`launcher.log` 与 `launch-stderr.log`；前置探针会在冻结向导启动前创建日志，并保留子进程 PID、架构、退出码和标准错误。反馈 Mac 型号、芯片、macOS 版本及脱敏后的日志末尾，不要上传真实业务数据。
 
@@ -351,7 +359,7 @@ sudo dnf install ./PartyOps-1.4.5-0.rc.6.1.x86_64.rpm
 - 失败回滚：安装、迁移或健康检查任一步失败都会尝试恢复上一版本程序和升级前数据；回滚未完成时服务保持停止并显示中文诊断编号，禁止带病继续运行。
 - 不要通过复制正在运行的 SQLite 文件做备份，也不要混用不同版本的主机和协同 Agent。
 
-当前候选范围见[RC.6 发布说明](docs/release-notes-v1.4.5-rc.6.md)；历史 RC.4 步骤见[1.4.5-rc.4 安装、升级与回滚](docs/upgrade-1.4.5-rc.4.md)；rc.3 的撤回原因见[撤回说明](docs/withdrawal-v1.4.5-rc.3.md)，上一条安全回滚基线见[1.4.5-rc.2 升级与回滚](docs/upgrade-1.4.5-rc.2.md)。通用说明另见[备份恢复手册](docs/backup-restore.md)和[长期运行手册](docs/operations-runbook.md)。
+Intel Mac 候选上传与回读完成后，以[RC.6 发布说明](docs/release-notes-v1.4.5-rc.6.md)中的环境和边界为准；历史 RC.4 步骤见[1.4.5-rc.4 安装、升级与回滚](docs/upgrade-1.4.5-rc.4.md)；rc.3 的撤回原因见[撤回说明](docs/withdrawal-v1.4.5-rc.3.md)，上一条安全回滚基线见[1.4.5-rc.2 升级与回滚](docs/upgrade-1.4.5-rc.2.md)。通用说明另见[备份恢复手册](docs/backup-restore.md)和[长期运行手册](docs/operations-runbook.md)。
 
 ### 卸载
 

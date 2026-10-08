@@ -10,9 +10,11 @@ from __future__ import annotations
 import json
 import os
 import platform
+import secrets
 import subprocess
 import sys
 import time
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
@@ -22,6 +24,26 @@ from .official_format import OfficialFormatError, _system_command_environment
 ProgressCallback = Callable[[int, str], None]
 CancelCallback = Callable[[], bool]
 HOST_TIMEOUT_SECONDS = 30 * 60
+MAC_CLEANUP_MARKER = ".mac-cleanup-unconfirmed.json"
+
+
+def _confirm_mac_cleanup(control: Path, task_id: str, response: dict[str, Any]) -> bool:
+    """仅当次正式任务回执确认后移动标记；未知/错绑定回执保留工作副本。"""
+    state = response.get("mac_task")
+    if not isinstance(state, dict) or state.get("task_id") != task_id or any(state.get(key) is not True for key in ("cleanup_confirmed", "lease_released", "registration_owned", "capability_revoked")):
+        return False
+    marker = control / MAC_CLEANUP_MARKER
+    try:
+        binding = json.loads(marker.read_text(encoding="utf-8"))
+        if binding != {"schema": 1, "task_id": task_id}:
+            return False
+        confirmed = control / (".mac-cleanup-confirmed-" + task_id + ".json")
+        if confirmed.exists():
+            return False
+        marker.rename(confirmed)
+        return True
+    except (OSError, ValueError):
+        return False
 _LINUX_WPS_ROOTS = tuple(Path(value) for value in (
     "/opt/kingsoft/wps-office/office6", "/usr/lib/office6", "/usr/local/lib/office6",
 ))
@@ -30,6 +52,11 @@ _LINUX_WPS_ROOTS = tuple(Path(value) for value in (
 def _source_host_environment() -> dict[str, str]:
     """隔离冻结运行库，并发现已安装 WPS 的私有 Qt 库，不修改父进程。"""
     environment = _system_command_environment()
+    if sys.platform == "darwin":
+        # 仅本次自包含formatter子进程，避免继承Mono配置覆盖已嵌入的真实dllmap。
+        environment["MONO_CONFIG"] = "/dev/null"
+        environment.pop("MONO_ENV_OPTIONS", None)
+        environment.pop("MONO_BUNDLED_OPTIONS", None)
     if sys.platform != "linux":
         return environment
     explicit = environment.get("PARTYOPS_WPS_RPC_LIBRARY", "").strip()
@@ -224,6 +251,22 @@ def run_source_host(
     _check_windows_source_paths(source, control, output_directory, str(payload["output_suffix"]))
     control.mkdir(parents=True, exist_ok=True)
     output_directory.mkdir(parents=True, exist_ok=True)
+    if sys.platform == "darwin":
+        # 绑定既有六入口；逐项原生验收另记，不接受任意工具或 QA 模式。
+        if feature_id not in {"format", "replace", "redheader", "rename", "convert", "pdf-to-word"}:
+            raise OfficialFormatError("MAC_FORMAT_FEATURE_NOT_ACCEPTED", "Mac 功能入口无效", "Intel Mac 仅接受既有六个格式工具。")
+        mac_state = control / "mac-state"
+        mac_state.mkdir(exist_ok=False)
+        payload["mac_task"] = {
+            "schema": 1,
+            "nonce": secrets.token_urlsafe(32),
+            "state_directory": str(mac_state.resolve()),
+            "resources": str((host.parent / "wps-formatter-plugin").resolve()),
+            "task_id": uuid.uuid4().hex,
+        }
+        payload["host_preference"] = "wps"
+        with (control / MAC_CLEANUP_MARKER).open("x", encoding="utf-8") as stream:
+            json.dump({"schema": 1, "task_id": payload["mac_task"]["task_id"]}, stream)
     # Windows 7/x86 随包运行时仍为 Python 3.8；Path.write_text 在该版本
     # 不支持 newline 参数，使用 Path.open 保证请求文件始终采用 LF。
     with request_path.open("w", encoding="utf-8", newline="\n") as stream:
@@ -246,9 +289,12 @@ def run_source_host(
     # mkbundle 的 AppDomain.BaseDirectory 在部分 Mono 版本中会跟随 cwd。
     # 处理任务必须在私有控制目录运行，因此显式把 WPS 槽位表锁到随包宿主
     # 相邻位置，避免安装后因当前目录不同而出现“本机测试通过、用户失败”。
-    child_environment["PARTYOPS_WPS_VTABLE_MAP"] = str(
-        host.parent / "word-vtable-map.json"
-    )
+    if sys.platform == "darwin":
+        child_environment.pop("PARTYOPS_WPS_VTABLE_MAP", None)
+        child_environment["XDG_DATA_HOME"] = payload["mac_task"]["state_directory"]
+        child_environment["PARTYOPS_MAC_QUOTE_FONT"] = "Times New Roman"
+    else:
+        child_environment["PARTYOPS_WPS_VTABLE_MAP"] = str(host.parent / "word-vtable-map.json")
     process = subprocess.Popen(
         command,
         cwd=str(control),
@@ -261,18 +307,26 @@ def run_source_host(
     started = time.monotonic()
     consumed = 0
     cancel_written = False
+    timeout_cancelled_at = None
     while process.poll() is None:
         consumed = _read_progress(progress_path, consumed, progress)
         if cancelled() and not cancel_written:
             cancel_path.touch(exist_ok=True)
             cancel_written = True
         if time.monotonic() - started > HOST_TIMEOUT_SECONDS:
+            if sys.platform == "darwin" and timeout_cancelled_at is None:
+                cancel_path.touch(exist_ok=True)
+                cancel_written = True
+                timeout_cancelled_at = time.monotonic()
+            if sys.platform == "darwin" and time.monotonic() - timeout_cancelled_at < 120:
+                time.sleep(0.1)
+                continue
             process.kill()
             process.wait(timeout=10)
             raise OfficialFormatError(
                 "SOURCE_FORMATTER_TIMEOUT",
                 "原排版引擎处理超时",
-                "文档引擎在 30 分钟内未完成；已停止本次任务，源文件未改变。",
+                "文档引擎处理超时；已停止本次宿主。Mac 任务的文档清理状态未知，请在 WPS 中核对己方工作副本。" if sys.platform == "darwin" else "文档引擎在 30 分钟内未完成；已停止本次任务，源文件未改变。",
             )
         time.sleep(0.1)
     _read_progress(progress_path, consumed, progress)
@@ -291,12 +345,16 @@ def run_source_host(
             "原排版引擎结果无效",
             "文档宿主返回了无法校验的结果；源文件未改变。",
         ) from exc
+    mac_clean = sys.platform != "darwin" or _confirm_mac_cleanup(control, payload["mac_task"]["task_id"], response)
     if response.get("fatal"):
         raise OfficialFormatError(
             "SOURCE_FORMATTER_FATAL",
             "原排版引擎无法启动",
-            str(response.get("message", "文档宿主发生未知错误。"))[:1000],
+            str(response.get("message", "文档宿主发生未知错误。"))[:1000] + (" Mac 清理未确认，工作副本已保留，请在 WPS 中人工核对。" if not mac_clean else ""),
         )
+    if sys.platform == "darwin":
+        if not mac_clean:
+            raise OfficialFormatError("MAC_FORMAT_CLEANUP_UNCONFIRMED", "Mac 任务清理未确认", "请保留本次工作副本并在 WPS 中核对；宿主未确认文档与加载项条目已释放。")
     jobs = response.get("jobs")
     if not isinstance(jobs, list) or len(jobs) != 1 or not jobs[0].get("success"):
         job = jobs[0] if isinstance(jobs, list) and jobs else {}

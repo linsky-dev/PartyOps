@@ -14,7 +14,8 @@ import json
 from pathlib import Path
 
 EXPECTED_FILE_COUNT = 898
-EXPECTED_AGGREGATE_SHA256 = "15c21b886f6a958fb61a3b106266b446a2b959b0085510015eeb790efaa770d3"
+EXPECTED_AGGREGATE_SHA256 = "7ae0eb67a0cb6a2d4a332cde74adf8977d93ae73541f864f01df214d39fefdf2"
+MAC_QUOTE_AGGREGATE_SHA256 = "ac8466edf2513ea8e3fe9e61d3b86fb8d7a72ceb6cce366f2d19b59d9c9be171"
 INCLUDED_ROOTS = frozenset({"src", "assets", "lib", "tests", "tools"})
 ROOT_SUFFIXES = frozenset({".sln", ".props", ".targets", ".config"})
 EXCLUDED_PARTS = frozenset({"bin", "obj", ".vs", "输出", "packages"})
@@ -31,6 +32,9 @@ TEXT_SUFFIXES = frozenset(
         ".md",
         ".txt",
         ".ps1",
+        ".proj",
+        ".py",
+        ".resx",
     }
 )
 
@@ -67,13 +71,17 @@ def fingerprint(source: Path) -> tuple[int, str]:
     return len(records), hashlib.sha256(joined).hexdigest()
 
 
-def verify(source: Path) -> dict[str, object]:
+def verify(source: Path, profile: str = "upstream") -> dict[str, object]:
+    # 仅显式 Mac 构建使用用户授权的四引号字体修订；旧平台默认仍锁上游。
+    if profile not in {"upstream", "mac-quotes-tnr"}:
+        raise RuntimeError("[FORMATTER_SOURCE_PROFILE_INVALID] 未知源码范围。")
+    expected = MAC_QUOTE_AGGREGATE_SHA256 if profile == "mac-quotes-tnr" else EXPECTED_AGGREGATE_SHA256
     file_count, aggregate = fingerprint(source)
-    if file_count != EXPECTED_FILE_COUNT or aggregate != EXPECTED_AGGREGATE_SHA256:
+    if file_count != EXPECTED_FILE_COUNT or aggregate != expected:
         raise RuntimeError(
             "[FORMATTER_SOURCE_DIVERGED] 内嵌排版源码已偏离用户指定上游；"
             f"文件数={file_count}/{EXPECTED_FILE_COUNT}，"
-            f"聚合摘要={aggregate}/{EXPECTED_AGGREGATE_SHA256}。"
+            f"聚合摘要={aggregate}/{expected}。"
         )
     return {
         "schema": 1,
@@ -88,9 +96,10 @@ def verify(source: Path) -> dict[str, object]:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--source", type=Path, required=True)
+    parser.add_argument("--profile", choices=("upstream", "mac-quotes-tnr"), default="upstream")
     args = parser.parse_args()
     try:
-        result = verify(args.source)
+        result = verify(args.source, args.profile)
     except (OSError, UnicodeError, RuntimeError) as exc:
         print(str(exc))
         return 2

@@ -15,10 +15,15 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 FEATURES = ["format", "replace", "redheader", "rename", "convert", "pdf-to-word"]
-SOURCE_SNAPSHOT_SHA256 = "15c21b886f6a958fb61a3b106266b446a2b959b0085510015eeb790efaa770d3"
+SOURCE_SNAPSHOT_SHA256 = "7ae0eb67a0cb6a2d4a332cde74adf8977d93ae73541f864f01df214d39fefdf2"
 SOURCE_SNAPSHOT_FILES = 898
 WORD_VTABLE_MAP_SHA256 = "871fa605d294620b273f19eff20c587e742af6d46903a16216c69913675b5f41"
 WPS_SDK_HEADER_SHA256 = "4d0529c076f8f36ce49301982e0c2bb46cdcc4087c3e9945a9b57d649fe26791"
+MAC_OBJECT_ADAPTER = "wps-macos-object-source-adapter"
+MAC_SOURCE_SHA256 = "ac8466edf2513ea8e3fe9e61d3b86fb8d7a72ceb6cce366f2d19b59d9c9be171"
+MAC_RULES_SHA256 = "2cae1d25146334e66f57a98663dcd6574335f720be6b6aacc53e0dbad165d57b"
+MAC_PLUGIN_FILES = frozenset({"bootstrap-carrier.docx", "main.js", "ribbon.xml", "task-lease.js", "product-index.html", "product-main.js", "product-ribbon.xml"})
+MAC_LIMITATIONS = ["manual-output-review-required", "wps-window-may-appear", "native-document-cycle-unproven", "rollback-unverified", "strict-golden-parity-not-accepted"]
 BUNDLED_MSCORLIB_RECORD = re.compile(
     r"^Mono: Assembly Loader loaded assembly from bundle: '([^'\r\n]+)'\.$"
 )
@@ -57,6 +62,44 @@ def has_bundled_mscorlib(trace: str) -> bool:
     return False
 
 
+def validate_mac_record(runtime: Path, record: dict[str, Any], architecture: str) -> None:
+    """Mac 对象通道独立来源契约；这些字段不表示六功能已实测通过。"""
+    expected = {
+        "schema": 3, "platform": "macos", "architecture": architecture,
+        "adapter": MAC_OBJECT_ADAPTER, "source_project": "PartyOps.DocumentFormatter.AddIn",
+        "source_snapshot_sha256": MAC_SOURCE_SHA256, "source_snapshot_files": 898,
+        "rules_sha256": MAC_RULES_SHA256, "features": FEATURES,
+        "host_sha256": sha256(runtime / "partyops-document-formatter-host"),
+        "timezone": "Asia/Shanghai", "self_contained": True, "minimum_macos": "11.0",
+        "acceptance_profile": "mac-object-limited-candidate", "limitations": MAC_LIMITATIONS,
+    }
+    if any(record.get(key) != value for key, value in expected.items()):
+        raise RuntimeError("[MAC_FORMATTER_SOURCE_RECORD_MISMATCH] Mac 对象后端来源字段不匹配。")
+    if record.get("self_contained") is not True:
+        raise RuntimeError("[MAC_FORMATTER_SOURCE_RECORD_MISMATCH] self_contained 必须是布尔真。")
+    notice = runtime / "LICENSE-MONO-RUNTIME.txt"
+    if not notice.is_file() or notice.stat().st_size <= 0:
+        raise RuntimeError("[MAC_FORMATTER_MONO_LICENSE_MISSING] 缺少内嵌Mono许可。")
+    if any(key in record for key in ("capabilities", "word_vtable_map_sha256", "wps_sdk_header_sha256", "wps_sdk_matched_methods", "wps_sdk_mismatched_methods")):
+        raise RuntimeError("[MAC_FORMATTER_LEGACY_CLAIM_REJECTED] 对象后端不能冒用 SDK/25 能力记录。")
+    statuses = record.get("feature_validation")
+    if not isinstance(statuses, dict) or set(statuses) != set(FEATURES) or any(value != "pending-target-package-validation" for value in statuses.values()):
+        raise RuntimeError("[MAC_FORMATTER_FEATURE_STATUS_INVALID] 来源构建不能生成功能通过结论。")
+    resources = record.get("plugin_resources_sha256")
+    directory = runtime / "wps-formatter-plugin"
+    if not isinstance(resources, dict) or set(resources) != MAC_PLUGIN_FILES or not directory.is_dir() or directory.is_symlink():
+        raise RuntimeError("[MAC_FORMATTER_PLUGIN_INVALID] 固定加载项资源清单不完整。")
+    if {item.name for item in directory.iterdir()} != MAC_PLUGIN_FILES:
+        raise RuntimeError("[MAC_FORMATTER_PLUGIN_INVALID] 加载项目录包含未登记文件。")
+    for name, digest in resources.items():
+        path = directory / name
+        if path.is_symlink() or not path.is_file() or path.stat().st_size == 0 or sha256(path) != digest:
+            raise RuntimeError("[MAC_FORMATTER_PLUGIN_HASH_MISMATCH] 固定资源摘要不匹配。")
+    for key in ("managed_host_sha256", "resource_catalog_source_sha256"):
+        if not isinstance(record.get(key), str) or not re.fullmatch(r"[0-9a-f]{64}", record[key]):
+            raise RuntimeError("[MAC_FORMATTER_BUILD_BINDING_INVALID] 缺少托管构建绑定。")
+
+
 def validate(runtime: Path, platform_name: str, architecture: str) -> dict[str, Any]:
     runtime = runtime.resolve()
     host = runtime / "partyops-document-formatter-host"
@@ -70,13 +113,12 @@ def validate(runtime: Path, platform_name: str, architecture: str) -> dict[str, 
         or not host.is_file()
         or host.stat().st_size <= 0
         or not record_path.is_file()
-        or not vtable_map.is_file()
-        or not wps_license.is_file()
         or not mono_license.is_file()
     ):
         raise RuntimeError("[FORMATTER_RUNTIME_INCOMPLETE] 本机 WPS 原源码宿主不完整。")
 
     record = read_json(record_path, "FORMATTER_SOURCE_RECORD")
+    mac_object = platform_name == "macos" and record.get("adapter") == MAC_OBJECT_ADAPTER
     expected = {
         "schema": 2,
         "platform": platform_name,
@@ -97,12 +139,16 @@ def validate(runtime: Path, platform_name: str, architecture: str) -> dict[str, 
     mismatches = [
         key for key, expected_value in expected.items() if record.get(key) != expected_value
     ]
-    if mismatches:
+    if mac_object:
+        validate_mac_record(runtime, record, architecture)
+    elif not vtable_map.is_file() or not wps_license.is_file():
+        raise RuntimeError("[FORMATTER_RUNTIME_INCOMPLETE] WPS 原生适配资源不完整。")
+    elif mismatches:
         raise RuntimeError(
             "[FORMATTER_SOURCE_RECORD_MISMATCH] 来源清单字段不匹配："
             + ", ".join(mismatches)
         )
-    if sha256(vtable_map) != WORD_VTABLE_MAP_SHA256:
+    if not mac_object and sha256(vtable_map) != WORD_VTABLE_MAP_SHA256:
         raise RuntimeError("[FORMATTER_VTABLE_MAP_MISMATCH] WPS 槽位表已变化。")
     try:
         built_at = datetime.fromisoformat(str(record.get("built_at", "")))
@@ -119,6 +165,11 @@ def validate(runtime: Path, platform_name: str, architecture: str) -> dict[str, 
         # 开启程序集加载追踪，拒绝“依赖构建机 Mono 才通过”的假阳性。
         environment = {key: value for key, value in os.environ.items() if not key.startswith("MONO_")}
         environment.update(MONO_LOG_LEVEL="debug", MONO_LOG_MASK="asm")
+        if mac_object and record.get("native_bundle_mode") == "custom-static":
+            # custom不内嵌simple的环境绑定；仅本Mac宿主子进程隔离系统/用户config。
+            environment["MONO_CONFIG"] = "/dev/null"
+            environment.pop("MONO_ENV_OPTIONS", None)
+            environment.pop("MONO_BUNDLED_OPTIONS", None)
         try:
             result = subprocess.run(
                 [str(host), "--self-test", str(output)],
@@ -161,7 +212,7 @@ def validate(runtime: Path, platform_name: str, architecture: str) -> dict[str, 
         "adapter": record["adapter"],
         "host_sha256": expected["host_sha256"],
         "features": len(FEATURES),
-        "capabilities": 25,
+        **({"feature_validation": record["feature_validation"], "limitations": record["limitations"], "target_package_verified": False} if mac_object else {"capabilities": 25}),
     }
 
 

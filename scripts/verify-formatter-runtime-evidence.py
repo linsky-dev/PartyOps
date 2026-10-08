@@ -6,6 +6,8 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import importlib.util
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -22,8 +24,86 @@ EXPECTED_CASES = [
     "convert-jpg-long",
     "pdf-to-word",
 ]
-SOURCE_SNAPSHOT_SHA256 = "15c21b886f6a958fb61a3b106266b446a2b959b0085510015eeb790efaa770d3"
+SOURCE_SNAPSHOT_SHA256 = "7ae0eb67a0cb6a2d4a332cde74adf8977d93ae73541f864f01df214d39fefdf2"
 SOURCE_SNAPSHOT_FILES = 898
+
+
+def verify_mac_object_evidence(runtime: Path, architecture: str, features_path: Path | None,
+                               output: Path, allow_candidate: bool) -> dict[str, Any]:
+    """只记录实际逐场景状态；候选结构验证不等于最终Host或安装包通过。"""
+    spec = importlib.util.spec_from_file_location("mac_runtime_contract", Path(__file__).with_name("validate-source-formatter-runtime.py"))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    record = read_json(runtime / "source-host.json", "FORMATTER_SOURCE_RECORD")
+    module.validate_mac_record(runtime, record, architecture)
+    host_hash = sha256(runtime / "partyops-document-formatter-host")
+    cases = [{"case": name, "status": "not-run"} for name in EXPECTED_CASES]
+    tested_hash = None
+    verified_at = record["built_at"]
+    evidence_hash = None
+    if features_path is not None:
+        evidence = read_json(features_path, "MAC_FORMATTER_FEATURE_EVIDENCE")
+        expected = {"schema": 3, "platform": "macos", "architecture": architecture,
+                    "adapter": module.MAC_OBJECT_ADAPTER, "provider": "wps",
+                    "source_snapshot_sha256": module.MAC_SOURCE_SHA256,
+                    "rules_sha256": module.MAC_RULES_SHA256,
+                    "plugin_resources_sha256": record["plugin_resources_sha256"],
+                    "timezone": "Asia/Shanghai"}
+        if any(evidence.get(key) != value for key, value in expected.items()):
+            raise RuntimeError("[MAC_FORMATTER_FEATURE_BINDING_INVALID] 场景证据未绑定对象后端与实际资源。")
+        tested_hash = evidence.get("host_sha256")
+        if not isinstance(tested_hash, str) or not module.re.fullmatch(r"[0-9a-f]{64}", tested_hash):
+            raise RuntimeError("[MAC_FORMATTER_FEATURE_BINDING_INVALID] 实测宿主摘要无效。")
+        # 重签只允许明确保留来源差异，不能修改历史测试的Host SHA。
+        if tested_hash not in {host_hash, record.get("pre_sign_host_sha256"), record.get("managed_host_sha256")}:
+            raise RuntimeError("[MAC_FORMATTER_FEATURE_HOST_MISMATCH] 未登记的实测宿主。")
+        cases = evidence.get("cases")
+        if not isinstance(cases, list) or len(cases) != len(EXPECTED_CASES) or any(not isinstance(c, dict) for c in cases) or [c.get("case") for c in cases] != EXPECTED_CASES:
+            raise RuntimeError("[MAC_FORMATTER_CASES_INVALID] 必须明确登记六功能的十个原场景。")
+        verified_at = evidence.get("verified_at", "")
+        evidence_hash = sha256(features_path)
+    try:
+        if datetime.fromisoformat(verified_at).utcoffset() != timedelta(hours=8):
+            raise ValueError("timezone")
+    except (ValueError, TypeError) as exc:
+        raise RuntimeError("[MAC_FORMATTER_EVIDENCE_TIME_INVALID] 缺少真实+08:00时间。") from exc
+    for case in cases:
+        state = case.get("status")
+        if state not in {"passed", "passed-with-limitations", "failed", "not-run"} or state == "passed-with-limitations" and case["case"] != "format":
+            raise RuntimeError("[MAC_FORMATTER_CASE_STATUS_INVALID] 未验功能不能因排版限制而豁免。")
+        if state in {"passed", "passed-with-limitations"}:
+            outputs = case.get("outputs")
+            if (case.get("execution_kind") not in {"managed-source-host", "native-selfcontained-host"}
+                or any(case.get(key) is not True for key in ("source_unchanged", "cleanup_confirmed", "lease_released", "registration_owned", "capability_revoked"))
+                or not isinstance(case.get("receipt_sha256"), str) or not module.re.fullmatch(r"[0-9a-f]{64}", case["receipt_sha256"])
+                or not isinstance(outputs, list) or not outputs
+                or any(not isinstance(item, dict) or not isinstance(item.get("sha256"), str) or not module.re.fullmatch(r"[0-9a-f]{64}", item["sha256"]) or type(item.get("bytes")) is not int or item["bytes"] <= 0 for item in outputs)):
+                raise RuntimeError("[MAC_FORMATTER_CASE_RECEIPT_INVALID] 通过场景缺少实际输出及清理回执。")
+            if state == "passed-with-limitations" and case.get("manual_review_required") is not True:
+                raise RuntimeError("[MAC_FORMATTER_LIMITATION_INVALID] 必须记录人工复核。")
+    final_verified = tested_hash == host_hash and all(case.get("status") in {"passed", "passed-with-limitations"} and case.get("execution_kind") == "native-selfcontained-host" for case in cases)
+    if not allow_candidate and not final_verified:
+        raise RuntimeError("[MAC_FORMATTER_FINAL_HOST_NOT_VERIFIED] 最终原生宿主六功能尚未完整实测。")
+    feature_states = {}
+    for feature in FEATURES:
+        selected = [case for case in cases if case["case"].startswith("convert-")] if feature == "convert" else [case for case in cases if case["case"] == feature]
+        states = [case["status"] for case in selected]
+        feature_states[feature] = "failed" if "failed" in states else "not-run" if "not-run" in states else "passed-with-limitations" if "passed-with-limitations" in states else "passed"
+    payload = {"schema": 2, "status": "limited-candidate", "acceptance_profile": "mac-object-limited-candidate",
+               "timezone": "Asia/Shanghai", "verified_at": verified_at, "platform": "macos", "architecture": architecture,
+               "provider": "wps", "adapter": module.MAC_OBJECT_ADAPTER, "host_sha256": host_hash,
+               "tested_host_sha256": tested_hash, "final_host_verified": final_verified,
+               "package_validation_passed": False, "publication_ready": False,
+               "source_snapshot_sha256": module.MAC_SOURCE_SHA256, "rules_sha256": module.MAC_RULES_SHA256,
+               "features": FEATURES, "feature_cases": len(cases), "cases": cases, "feature_validation": feature_states,
+               "limitations": record["limitations"], "plugin_resources_sha256": record["plugin_resources_sha256"],
+               "feature_evidence_sha256": evidence_hash,
+               "silent": False, "rollback_capability_verified": False, "document_cycle_identity_proven": False}
+    # 只写新文件，保留上一签名/实测版本的完整证据。
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with output.open("x", encoding="utf-8", newline="\n") as stream:
+        stream.write(json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
+    return payload
 
 
 def sha256(path: Path) -> str:
@@ -76,10 +156,11 @@ def verify(
     runtime: Path,
     platform_name: str,
     architecture: str,
-    parity_path: Path,
-    features_path: Path,
+    parity_path: Path | None,
+    features_path: Path | None,
     bridge_path: Path | None,
     output: Path,
+    allow_candidate: bool = False,
 ) -> dict[str, Any]:
     host = runtime / (
         "PartyOps.DocumentFormatter.Host.exe"
@@ -87,6 +168,10 @@ def verify(
         else "partyops-document-formatter-host"
     )
     source_record = read_json(runtime / "source-host.json", "FORMATTER_SOURCE_RECORD")
+    if platform_name == "macos" and source_record.get("adapter") == "wps-macos-object-source-adapter":
+        return verify_mac_object_evidence(runtime, architecture, features_path, output, allow_candidate)
+    if parity_path is None or features_path is None or allow_candidate:
+        raise RuntimeError("[FORMATTER_EVIDENCE_INPUT_MISSING] 旧平台仍要求金样与完整六功能证据。")
     parity = read_json(parity_path, "FORMATTER_PARITY_EVIDENCE")
     features = read_json(features_path, "FORMATTER_FEATURE_EVIDENCE")
     source = root / "backend/tests/fixtures/document-formatter-source/input-manual-break.docx"
@@ -239,8 +324,9 @@ def main() -> int:
     parser.add_argument("--runtime", type=Path, required=True)
     parser.add_argument("--platform", choices=("windows", "linux", "macos"), required=True)
     parser.add_argument("--architecture", required=True)
-    parser.add_argument("--parity-evidence", type=Path, required=True)
-    parser.add_argument("--features-evidence", type=Path, required=True)
+    parser.add_argument("--parity-evidence", type=Path)
+    parser.add_argument("--features-evidence", type=Path)
+    parser.add_argument("--allow-unverified-candidate", action="store_true")
     parser.add_argument("--bridge-evidence", type=Path)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
@@ -250,12 +336,13 @@ def main() -> int:
             runtime=args.runtime.resolve(),
             platform_name=args.platform,
             architecture=args.architecture,
-            parity_path=args.parity_evidence.resolve(),
-            features_path=args.features_evidence.resolve(),
+            parity_path=args.parity_evidence.resolve() if args.parity_evidence else None,
+            features_path=args.features_evidence.resolve() if args.features_evidence else None,
             bridge_path=(args.bridge_evidence.resolve() if args.bridge_evidence else None),
             output=args.output.resolve(),
+            allow_candidate=args.allow_unverified_candidate,
         )
-    except (RuntimeError, TypeError) as exc:
+    except (OSError, RuntimeError, TypeError) as exc:
         print(str(exc))
         return 2
     print(json.dumps(payload, ensure_ascii=False, sort_keys=True))

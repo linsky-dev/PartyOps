@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<customUI xmlns="http://schemas.microsoft.com/office/2006/01/customui" onLoad="OnAddInLoad">
+  <ribbon startFromScratch="false"><tabs>
+    <tab id="PartyOpsMacObjectGateV1" label="PartyOps Mac 对象门槛">
+      <group id="PartyOpsMacObjectGateDiagnostics" label="加载链诊断">
+        <button id="MacGateInspect" label="1 检查加载" onAction="MacGateInspect"/>
+        <button id="MacGateConnect" label="2 连接门槛" onAction="MacGateConnect"/>
+      </group>
+    </tab>
+  </tabs></ribbon>
+</customUI>

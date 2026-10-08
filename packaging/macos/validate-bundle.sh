@@ -7,6 +7,8 @@ if [[ "$(uname -s)" != "Darwin" ]]; then
   printf '%s\n' '[MACOS_NATIVE_VALIDATION_REQUIRED] 必须在真实 macOS 上验证应用包。' >&2
   exit 2
 fi
+FORMATTER_ROOT="$APP_PATH/Contents/Resources/formatter-host"
+FORMATTER_ADAPTER="$(/usr/bin/plutil -extract adapter raw "$FORMATTER_ROOT/source-host.json" 2>/dev/null || true)"
 if [[ ! -d "$APP_PATH/Contents/MacOS" ]] ||
   [[ ! "$EXPECTED_ARCH" =~ ^(arm64|x86_64)$ ]]; then
   printf '%s\n' '[MACOS_BUNDLE_INVALID] 应用包路径或目标架构无效。' >&2
@@ -16,9 +18,17 @@ fi
 # 先把扫描目标固化到普通文件。Darwin find 通过进程替换向提前退出的
 # while 写入时会用“stdout: Undefined error: 0”掩盖真正失败点；固定清单
 # 既避免 EPIPE，也让架构、依赖、签名三项检查针对完全相同的文件集合。
-SCAN_LIST="$(/usr/bin/mktemp "${TMPDIR:-/tmp}/partyops-bundle-files.XXXXXX")"
+if [[ "$FORMATTER_ADAPTER" == 'wps-macos-object-source-adapter' ]]; then
+  SCAN_LIST="$(/usr/bin/mktemp "$(dirname "$APP_PATH")/.partyops-bundle-files.XXXXXX")"
+else
+  SCAN_LIST="$(/usr/bin/mktemp "${TMPDIR:-/tmp}/partyops-bundle-files.XXXXXX")"
+fi
 WIZARD_REPORT="${SCAN_LIST}.wizard.json"
 cleanup() {
+  if [[ "$FORMATTER_ADAPTER" == 'wps-macos-object-source-adapter' ]]; then
+    printf '[MACOS_VALIDATION_EVIDENCE_RETAINED] %s\n' "$SCAN_LIST" >&2
+    return
+  fi
   /bin/rm -f "$SCAN_LIST" "$WIZARD_REPORT"
 }
 trap cleanup EXIT
@@ -79,11 +89,20 @@ fi
 FORMATTER_ROOT="$APP_PATH/Contents/Resources/formatter-host"
 if [[ ! -x "$FORMATTER_ROOT/partyops-document-formatter-host" ]] ||
   [[ ! -f "$FORMATTER_ROOT/source-host.json" ]] ||
-  [[ ! -f "$FORMATTER_ROOT/word-vtable-map.json" ]] ||
-  [[ ! -f "$FORMATTER_ROOT/LICENSE-WPS-SDK.txt" ]] ||
   [[ ! -f "$FORMATTER_ROOT/LICENSE-MONO-RUNTIME.txt" ]] ||
   [[ ! -f "$FORMATTER_ROOT/runtime-evidence.json" ]]; then
   printf '%s\n' '[MACOS_FORMATTER_RUNTIME_INCOMPLETE] 本机 WPS 原源码排版宿主不完整。' >&2
+  exit 2
+fi
+if [[ "$FORMATTER_ADAPTER" == 'wps-macos-object-source-adapter' ]]; then
+  for resource in bootstrap-carrier.docx main.js ribbon.xml task-lease.js product-index.html product-main.js product-ribbon.xml; do
+    [[ -s "$FORMATTER_ROOT/wps-formatter-plugin/$resource" ]] || { printf '[MACOS_FORMATTER_PLUGIN_INCOMPLETE] 缺少固定资源：%s\n' "$resource" >&2; exit 2; }
+  done
+  for notice in tesseract-LICENSE leptonica-LICENSE libjpeg-turbo-LICENSE.md libtiff-LICENSE.md libpng-LICENSE zlib-README-license; do
+    [[ -s "$APP_PATH/Contents/Resources/ocr/licenses/$notice" ]] || { printf '[MACOS_OCR_LICENSE_MISSING] 缺少许可：%s\n' "$notice" >&2; exit 2; }
+  done
+elif [[ ! -s "$FORMATTER_ROOT/word-vtable-map.json" || ! -s "$FORMATTER_ROOT/LICENSE-WPS-SDK.txt" ]]; then
+  printf '%s\n' '[MACOS_FORMATTER_RUNTIME_INCOMPLETE] 旧原生适配资源不完整。' >&2
   exit 2
 fi
 
