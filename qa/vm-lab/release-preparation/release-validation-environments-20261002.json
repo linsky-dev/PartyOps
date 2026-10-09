@@ -681,5 +681,15 @@
       "original_release_published_at": "2026-10-02T17:38:00Z"
     }
   },
-  "website_publication_state": "prepared-not-deployed"
+  "website_publication_state": "deployed-and-publicly-verified",
+  "website_publication": {
+    "deployment_id": "dpzpm8p2qe62",
+    "url": "https://partyops.cn/",
+    "verified_at": "2026-10-09T06:21:37.877083+00:00",
+    "artifact_manifest_sha256": "7adca8bfda4ab8ec29f2358a394f666ab8261e1f3475b44215077f6031cb2553",
+    "previous_deployment_id": "dprhy9r1ocbm",
+    "current_root_manifest_sha256": "32fb5e85874c6ab400d0a1c1c05b9864c3a2e232202b3cf74a452cc8ca12b71c",
+    "old_nine_version_manifest_preserved": true,
+    "existing_functions_unchanged": true
+  }
 }
