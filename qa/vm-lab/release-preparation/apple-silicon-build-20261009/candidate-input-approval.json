@@ -37,9 +37,19 @@
       "path": "packaging/macos/build-native-runtimes.sh",
       "bytes": 15293,
       "sha256": "90539a6e7211380047de1bdc4cf04178c03f28490cd80c3923d066e1def0ce5b"
+    },
+    {
+      "path": "backend/app/official_format_host.py",
+      "bytes": 17286,
+      "sha256": "ab402f7f06e46e25062c6a8b12cdaf3bc22dfd8fdd04d0bbb6aa55e8de344265"
+    },
+    {
+      "path": "backend/app/package_selftest.py",
+      "bytes": 32314,
+      "sha256": "64192d6226fb4f018b8a4063bbf30c849cd50de3e96c0b1ec1fe7ded2d8163a9"
     }
   ],
-  "application_patch_sha256": "b965f3353bf38ccd6d310640fedca299696a81c0496e3a2e3ca972eb6b053461",
+  "application_patch_sha256": "6c23912c750b3dfcfb69a80ec90e6d48f70b96d90653394a2e18cfe00ca56548",
   "native_probe": {
     "run_id": 37881434283,
     "execution_receipt": "native-run-37881434283/partyops-arm-runtime-probe.oSll0i/probe-execution.json",
