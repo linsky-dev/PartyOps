@@ -68,6 +68,7 @@ jobs:
             ${{ runner.temp }}/partyops-arm-runtime-probe.*/probe.stderr
             ${{ runner.temp }}/partyops-arm-runtime-probe.*/probe-trace.txt
             ${{ runner.temp }}/partyops-arm-runtime-probe.*/host-*.txt
+            ${{ runner.temp }}/partyops-arm-runtime-probe.*/posix-export-symbols.txt
             ${{ runner.temp }}/partyops-arm-runtime-probe.*/mono-native-source.json
           if-no-files-found: warn
           retention-days: 7

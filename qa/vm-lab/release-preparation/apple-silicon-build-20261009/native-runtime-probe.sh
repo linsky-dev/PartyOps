@@ -10,7 +10,7 @@ ROOT="$(cd "$SCRIPT_DIR/../../../.." && pwd)"
 PYTHON_BIN="${PYTHON_BIN:-$(command -v python3)}"
 STAGE="$(mktemp -d "$RUNNER_TEMP/partyops-arm-runtime-probe.XXXXXX")"
 printf '[ARM_RUNTIME_PROBE_WORKSPACE] %s\n' "$STAGE"
-for tool in mono mcs mkbundle pkg-config otool lipo cc; do command -v "$tool" >/dev/null || exit 2; done
+for tool in mono mcs mkbundle pkg-config otool lipo cc nm; do command -v "$tool" >/dev/null || exit 2; done
 [[ "$(pkg-config --modversion mono-2)" == '6.14.1' ]] || exit 2
 [[ "$(mono --version | head -1)" == *'version 6.14.1 '* ]] || exit 2
 CONFIG="${PARTYOPS_MONO_CONFIG_ROOT:?}/config"
@@ -28,6 +28,12 @@ from pathlib import Path
 if hashlib.sha256(Path(sys.argv[1]).read_bytes()).hexdigest() != '1691588705499cfe9b925a217a7cd5e44fa3b9785743cb3b235ad9f108642570':
     raise SystemExit('静态链接实际输入摘要不符')
 PY
+# 先检查本次实际复制helper的官方导出，避免把探针入口错误当成运行时失败。
+nm -gU "$STAGE/libMonoPosixHelper.dylib" > "$STAGE/posix-export-symbols.txt"
+grep -Eq '(^|[[:space:]])_Mono_Posix_Stdlib_EXIT_SUCCESS$' "$STAGE/posix-export-symbols.txt" || {
+  printf '%s\n' '[ARM_PROBE_SYMBOL_MISSING] 本次helper未导出官方EXIT_SUCCESS入口。' >&2
+  exit 2
+}
 cat > "$STAGE/Hello.cs" <<'CS'
 using System;
 using System.Globalization;
@@ -37,8 +43,9 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.RegularExpressions;
 class Hello {
-    [DllImport("MonoPosixHelper", EntryPoint="Mono_Posix_Syscall_getpid")]
-    static extern int GetPid();
+    // 官方support/stdlib.c无副作用函数；实际nm导出已在编译前核验。
+    [DllImport("MonoPosixHelper", EntryPoint="Mono_Posix_Stdlib_EXIT_SUCCESS")]
+    static extern int ExitSuccess();
     [DllImport("/usr/lib/libSystem.B.dylib", EntryPoint="_dyld_image_count")]
     static extern uint ImageCount();
     [DllImport("/usr/lib/libSystem.B.dylib", EntryPoint="_dyld_get_image_name")]
@@ -54,7 +61,7 @@ class Hello {
         File.Delete(path);
         try { throw new InvalidOperationException(text); }
         catch (InvalidOperationException error) { if (error.Message != text) return 14; }
-        if (GetPid() <= 0) return 15;
+        if (ExitSuccess() != 0) return 15;
         // 读取dyld实际加载image，而非只相信dllmap中的别名或SDK安装状态。
         int posixImages = 0;
         for (uint index = 0; index < ImageCount(); index++) {
