@@ -1,21 +1,50 @@
-name: 转接 macOS 1.4.5-rc.6 原生构建
-
-# GitHub 只允许手动触发默认分支已经登记的 workflow 文件。rc.4 的历史
-# 文件名已在默认分支登记，因此保留一个只负责转接的兼容入口；实际构建、
-# 双架构矩阵和全部门禁均来自触发 ref 中的 rc.6 可复用工作流。
+# 仅本地审批稿；批准后才可放入 .github/workflows 并手动运行。
+# 固定源码commit由主控核验含候选权限；运行时缺文件或SHA不符即停止。
+name: RC4 ARM isolated native signature probe
 on:
   workflow_dispatch:
     inputs:
       confirmation:
-        description: 输入 BUILD-UNSIGNED-145-RC6，确认只生成未公证测试候选
+        description: '输入 RC4_ARM_ISOLATED_PROBE；只验证旧RC4隔离副本'
         required: true
         type: string
-
 permissions:
   contents: read
-
 jobs:
-  macos-rc6:
-    uses: ./.github/workflows/build-macos-1.4.5-rc.6.yml
-    with:
-      confirmation: ${{ inputs.confirmation }}
+  native-arm-probe:
+    if: inputs.confirmation == 'RC4_ARM_ISOLATED_PROBE'
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - name: Checkout fixed source and entitlements
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: b9b469fa5f146198c92db32ccce30996f672f12e
+          path: fixed-source
+          persist-credentials: false
+      # 审批后的诊断脚本来自本次dispatch提交；产品源码仍固定到上方commit。
+      - name: Checkout reviewed probe only
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          path: reviewed-probe
+          persist-credentials: false
+          sparse-checkout: qa/vm-lab/release-preparation/apple-silicon-startup-20261009/native-startup-probe.sh
+          sparse-checkout-cone-mode: false
+      - name: Run isolated old RC4 comparison
+        shell: bash
+        env:
+          PARTYOPS_PROBE_CONFIRM: ${{ inputs.confirmation }}
+          PROBE_SOURCE_ROOT: ${{ github.workspace }}/fixed-source
+        run: bash reviewed-probe/qa/vm-lab/release-preparation/apple-silicon-startup-20261009/native-startup-probe.sh
+      - name: Upload only redacted receipt and startup logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: old-rc4-arm-native-probe
+          path: |
+            ${{ runner.temp }}/partyops-rc4-arm-reports/native-receipt.json
+            ${{ runner.temp }}/partyops-rc4-arm-reports/baseline.log
+            ${{ runner.temp }}/partyops-rc4-arm-reports/after.log
+          if-no-files-found: warn
+          retention-days: 7
