@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<customUI xmlns="http://schemas.microsoft.com/office/2006/01/customui" onLoad="OnAddInLoad">
+  <ribbon startFromScratch="false"><tabs><tab id="PartyOpsMacFormatter" label="PartyOps 排版"/></tabs></ribbon>
+</customUI>

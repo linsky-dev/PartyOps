@@ -1,0 +1,149 @@
+{
+  "schema": 1,
+  "kind": "same-source-anycpu-build-input",
+  "original_compile_receipt_sha256": "1f368624565fe21ee2fe9ec83ed1effdbab921a4ddb7fc5a8ec934f191fcfbca",
+  "source": [
+    {
+      "path": "packaging/windows/formatter-host/Program.cs",
+      "sha256": "4bf3ce21aa7153687e91ef8ae7c40f540e5fbb53956d1b7fdc1fe8cebf37f9b0",
+      "bytes": 17439
+    },
+    {
+      "path": "packaging/windows/formatter-host/PortableWpsComBridge.cs",
+      "sha256": "a9a1bd75e731e172315ce64873ee5c7ad250de2ed162a19ca1c85f71c8a92495",
+      "bytes": 64237
+    },
+    {
+      "path": "packaging/windows/formatter-host/SourceOptionScope.cs",
+      "sha256": "fa9fc5d6365e80be635afa7eba004e2302e6c37e164175fd7a2b9a61e4519a35",
+      "bytes": 23522
+    },
+    {
+      "path": "packaging/windows/formatter-host/MacWpsObjectBridge.cs",
+      "sha256": "98bc4b31488813c653776373e404dc71bad283429ff1f280a9ccc513b3e0b5d1",
+      "bytes": 53287
+    },
+    {
+      "path": "packaging/windows/formatter-host/MacTaskLeaseRuntime.cs",
+      "sha256": "b500053eda9929aa67db01e5d67456b9b13eeab6019ab8669be824883f5a785c",
+      "bytes": 8855
+    },
+    {
+      "path": "packaging/windows/formatter-host/MacSessionCoordinator.cs",
+      "sha256": "bf5e6516884dc2363407f4d73c1286f04a81c39de8b25727786b56e6c0260701",
+      "bytes": 17604
+    }
+  ],
+  "managed_files": [
+    {
+      "path": "Microsoft.Bcl.HashCode.dll",
+      "bytes": 23424,
+      "sha256": "76b1260ce747a317e9b514433b89a81b038411fcabddc6f9c7dbabb0742d8b81"
+    },
+    {
+      "path": "PartyOps.DocumentFormatter.AddIn.dll",
+      "bytes": 1743360,
+      "sha256": "2cae1d25146334e66f57a98663dcd6574335f720be6b6aacc53e0dbad165d57b"
+    },
+    {
+      "path": "PartyOps.DocumentFormatter.Host.exe",
+      "bytes": 135680,
+      "sha256": "808cb281a010ff03b51ddc47f43e589914777bbae2b9d9da6e917ffc243318f8"
+    },
+    {
+      "path": "System.Buffers.dll",
+      "bytes": 20856,
+      "sha256": "accccfbe45d9f08ffeed9916e37b33e98c65be012cfff6e7fa7b67210ce1fefb"
+    },
+    {
+      "path": "System.Memory.dll",
+      "bytes": 142240,
+      "sha256": "bf3fb84664f4097f1a8a9bc71a51dcf8cf1a905d4080a4d290da1730866e856f"
+    },
+    {
+      "path": "System.Numerics.Vectors.dll",
+      "bytes": 115856,
+      "sha256": "1d3ef8698281e7cf7371d1554afef5872b39f96c26da772210a33da041ba1183"
+    },
+    {
+      "path": "System.Runtime.CompilerServices.Unsafe.dll",
+      "bytes": 16768,
+      "sha256": "66409f670315afe8610f17a4d3a1ee52d72b6a46c544cec97544e8385f90ad74"
+    },
+    {
+      "path": "UglyToad.PdfPig.Core.dll",
+      "bytes": 46080,
+      "sha256": "8ebe1d608f4e981677ec5836eda897d1910b9b2a3a1bf280b2f573f77f26e977"
+    },
+    {
+      "path": "UglyToad.PdfPig.dll",
+      "bytes": 4182016,
+      "sha256": "b03f0d4694d31ab3b9ba079cb7c9dd4af178cb326120080da88db1623e5c236c"
+    },
+    {
+      "path": "UglyToad.PdfPig.DocumentLayoutAnalysis.dll",
+      "bytes": 246272,
+      "sha256": "614d99392b54a4d54daffebcbf023d067adfa192f4b510d354d74ea77ef096fa"
+    },
+    {
+      "path": "UglyToad.PdfPig.Fonts.dll",
+      "bytes": 1078784,
+      "sha256": "6edba3b21699070a5f3b1117c7a66be842f010bb1f97ddc8313f5674b5476687"
+    },
+    {
+      "path": "UglyToad.PdfPig.Package.dll",
+      "bytes": 4608,
+      "sha256": "7f4dfbf5f626728e7d1a9375adc6573687c4a2f7fcb205bfb9aa1fa544518aaf"
+    },
+    {
+      "path": "UglyToad.PdfPig.Tokenization.dll",
+      "bytes": 23552,
+      "sha256": "6beb817263a4b5ae42f4f33f55c987bb7e510c1203f762bb54eb59d86b6bd578"
+    },
+    {
+      "path": "UglyToad.PdfPig.Tokens.dll",
+      "bytes": 43520,
+      "sha256": "c7e0e9bcc0f0d00b96f1a649aa0c5472790b6d56d53d8590e9c7680f9167ff2d"
+    },
+    {
+      "path": "wps-formatter-plugin/bootstrap-carrier.docx",
+      "bytes": 1006,
+      "sha256": "a08269f19d71b83d56280a340f4e918400b87a079298b974dbea0d846c01f857"
+    },
+    {
+      "path": "wps-formatter-plugin/main.js",
+      "bytes": 17576,
+      "sha256": "1ac7976be28afc49501e12856f238ba412fcb563e9a9a2b10216cc8a992ef960"
+    },
+    {
+      "path": "wps-formatter-plugin/product-index.html",
+      "bytes": 153,
+      "sha256": "d4585f54c1867f5b3e00d9ef605c076900af4b135f65614235eaa59bd99bb374"
+    },
+    {
+      "path": "wps-formatter-plugin/product-main.js",
+      "bytes": 5593,
+      "sha256": "544b88cfe0dbb759284c81e6bf07b2e9efd354b0633a436cc9643985b7713107"
+    },
+    {
+      "path": "wps-formatter-plugin/product-ribbon.xml",
+      "bytes": 258,
+      "sha256": "299e7b684ac3d8eaae1fe07697276f321780b1a18e8ad6c319644e8c03ace1b8"
+    },
+    {
+      "path": "wps-formatter-plugin/ribbon.xml",
+      "bytes": 554,
+      "sha256": "a1efcc586611b4303856cc17fb013f113b41288adf904b50670d508b15a30fe4"
+    },
+    {
+      "path": "wps-formatter-plugin/task-lease.js",
+      "bytes": 73381,
+      "sha256": "b8c1f86d4f724c4ea49d18fa7972c004a55238f41c60dd22a286a02d72287cdf"
+    }
+  ],
+  "rules_sha256": "2cae1d25146334e66f57a98663dcd6574335f720be6b6aacc53e0dbad165d57b",
+  "managed_host_sha256": "808cb281a010ff03b51ddc47f43e589914777bbae2b9d9da6e917ffc243318f8",
+  "compiler_exit_code": 0,
+  "arm_native_verified": false,
+  "product_gate_satisfied": false
+}

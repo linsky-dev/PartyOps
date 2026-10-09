@@ -15,6 +15,13 @@ if [[ ! -d "$APP_PATH/Contents/MacOS" ]] ||
   exit 2
 fi
 
+# 只由待验目标架构选择契约，外部 MACOSX_DEPLOYMENT_TARGET 不得放宽门禁。
+case "$EXPECTED_ARCH" in
+  arm64) EXPECTED_MINIMUM_SYSTEM='15.0'; EXPECTED_MINIMUM_MAJOR=15 ;;
+  x86_64) EXPECTED_MINIMUM_SYSTEM='11.0'; EXPECTED_MINIMUM_MAJOR=11 ;;
+  *) printf '%s\n' '[MACOS_DEPLOYMENT_ARCH_INVALID] 无法绑定最低系统版本。' >&2; exit 2 ;;
+esac
+
 # 先把扫描目标固化到普通文件。Darwin find 通过进程替换向提前退出的
 # while 写入时会用“stdout: Undefined error: 0”掩盖真正失败点；固定清单
 # 既避免 EPIPE，也让架构、依赖、签名三项检查针对完全相同的文件集合。
@@ -58,6 +65,13 @@ bundle_identifier="$(/usr/bin/plutil -extract CFBundleIdentifier raw \
   "$APP_PATH/Contents/Info.plist" 2>/dev/null || true)"
 bundle_executable="$(/usr/bin/plutil -extract CFBundleExecutable raw \
   "$APP_PATH/Contents/Info.plist" 2>/dev/null || true)"
+bundle_minimum_system="$(/usr/bin/plutil -extract LSMinimumSystemVersion raw \
+  "$APP_PATH/Contents/Info.plist" 2>/dev/null || true)"
+if [[ "$bundle_minimum_system" != "$EXPECTED_MINIMUM_SYSTEM" ]]; then
+  printf '[MACOS_BUNDLE_MINIMUM_SYSTEM_MISMATCH] %s 应声明 macOS %s，实际为 %s。\n' \
+    "$EXPECTED_ARCH" "$EXPECTED_MINIMUM_SYSTEM" "${bundle_minimum_system:-缺失}" >&2
+  exit 2
+fi
 if [[ "$bundle_identifier" != 'cn.partyops.desktop' ]]; then
   printf '[MACOS_BUNDLE_IDENTIFIER_INVALID] Bundle ID 无效：%s\n' "$bundle_identifier" >&2
   exit 2
@@ -135,8 +149,8 @@ while IFS= read -r -d '' candidate; do
     break
   fi
   deployment_target="$(/usr/bin/otool -l "$candidate" 2>/dev/null | /usr/bin/awk '
-    $1 == "cmd" && $2 == "LC_BUILD_VERSION" { section = "build"; next }
-    $1 == "cmd" && $2 == "LC_VERSION_MIN_MACOSX" { section = "legacy"; next }
+    $1 == "cmd" { section = ""; if ($2 == "LC_BUILD_VERSION") section = "build";
+      if ($2 == "LC_VERSION_MIN_MACOSX") section = "legacy"; next }
     section == "build" && $1 == "minos" { print $2; exit }
     section == "legacy" && $1 == "version" { print $2; exit }
   ')"
@@ -148,12 +162,12 @@ while IFS= read -r -d '' candidate; do
   deployment_tail="${deployment_target#*.}"
   deployment_minor="${deployment_tail%%.*}"
   if ! [[ "$deployment_major" =~ ^[0-9]+$ && "$deployment_minor" =~ ^[0-9]+$ ]] ||
-    ((deployment_major > 11)) ||
-    ((deployment_major == 11 && deployment_minor > 0)); then
+    ((deployment_major > EXPECTED_MINIMUM_MAJOR)) ||
+    ((deployment_major == EXPECTED_MINIMUM_MAJOR && deployment_minor > 0)); then
     # 在未显式设置 UTF-8 locale 的 Darwin bash 中，紧邻变量名的全角
     # 括号会被旧版词法器误并入参数名，触发 set -u。使用花括号和 ASCII
     # 分隔符，确保安装器校验在 Finder、终端与 GitHub runner 中一致。
-    bad_deployment_target="${candidate}: min macOS ${deployment_target} (发布基线为 11.0)"
+    bad_deployment_target="${candidate}: min macOS ${deployment_target} (架构基线为 ${EXPECTED_MINIMUM_SYSTEM})"
     break
   fi
   # 逐个检查嵌套 Mach-O 的签名身份，避免 Python.framework、扩展和主入口
@@ -179,7 +193,8 @@ if [[ -n "$bad_dependency" ]]; then
   exit 2
 fi
 if [[ -n "$bad_deployment_target" ]]; then
-  printf '[MACOS_DEPLOYMENT_TARGET_TOO_NEW] 应用包包含无法在 macOS 11 启动的组件：%s\n' "$bad_deployment_target" >&2
+  printf '[MACOS_DEPLOYMENT_TARGET_TOO_NEW] 应用包包含无法在 macOS %s 启动的组件：%s\n' \
+    "$EXPECTED_MINIMUM_SYSTEM" "$bad_deployment_target" >&2
   exit 2
 fi
 

@@ -171,6 +171,7 @@ for framework in "$MONO_FRAMEWORK_ROOT"/*.dll "$MONO_FRAMEWORK_ROOT"/Facades/*.d
 done
 if [[ "$PLATFORM" == 'macos' ]]; then
   export MACOSX_DEPLOYMENT_TARGET='11.0'
+  [[ "$ARCHITECTURE" != 'arm64' ]] || export MACOSX_DEPLOYMENT_TARGET='15.0'
 fi
 MONO_LIBRARY_ROOT="${PARTYOPS_MONO_LIBRARY_ROOT:-$(pkg-config --variable=libdir mono)}"
 native_libraries=()
@@ -179,10 +180,30 @@ MONO_BUNDLE_CONFIG="$MONO_CONFIG_ROOT/config"
 if [[ "$PLATFORM" == 'macos' ]]; then
   # SDK6.12官方dllmap使用compat。仅派生本次bundle配置，系统config不改。
   for native_command in otool lipo cc pkg-config; do command -v "$native_command" >/dev/null || exit 2; done
-  [[ "$(pkg-config --modversion mono-2)" == '6.12.0' ]] || { printf '%s\n' '[MAC_MONO_STATIC_SDK_MISMATCH] custom必须使用已核同版本SDK。' >&2; exit 2; }
+  MONO_EXPECTED_VERSION='6.12.0'
+  [[ "$ARCHITECTURE" != 'arm64' ]] || MONO_EXPECTED_VERSION='6.14.1'
+  [[ "$(pkg-config --modversion mono-2)" == "$MONO_EXPECTED_VERSION" ]] || { printf '%s\n' '[MAC_MONO_STATIC_SDK_MISMATCH] custom必须使用已核同版本SDK。' >&2; exit 2; }
   MONO_STATIC_LIBDIR="$(pkg-config --variable=libdir mono-2)"
-  [[ "$(cd "$MONO_STATIC_LIBDIR" && pwd -P)" == "$(cd "$MONO_LIBRARY_ROOT" && pwd -P)" ]] || { printf '%s\n' '[MAC_MONO_STATIC_SDK_MISMATCH] pkg-config与辅助库必须来自同SDK。' >&2; exit 2; }
   MONO_STATIC_INCLUDE="$(pkg-config --variable=includedir mono-2)"
+  if [[ "$ARCHITECTURE" == 'arm64' ]]; then
+    [[ "$(mono --version | head -1)" == *'version 6.14.1 '* ]] || { printf '%s\n' '[MAC_MONO_STATIC_SDK_MISMATCH] ARM构建工具运行时版本不是6.14.1。' >&2; exit 2; }
+    # 构建工具允许Homebrew合法重定位；产品输入来自锁定原bottle同源目录。
+    # 静态链接实际经pkg-config读取的.a也必须与锁定原件完全一致。
+    "$PYTHON_BIN" - "$MONO_STATIC_LIBDIR/libmono-2.0.a" <<'ARM_STATIC_PY'
+import hashlib, sys
+from pathlib import Path
+if hashlib.sha256(Path(sys.argv[1]).read_bytes()).hexdigest() != '1691588705499cfe9b925a217a7cd5e44fa3b9785743cb3b235ad9f108642570':
+    raise SystemExit('[MAC_MONO_STATIC_RUNTIME_MISMATCH] pkg-config静态运行时非锁定ARM原件。')
+ARM_STATIC_PY
+    MONO_LINK_INCLUDE="$MONO_STATIC_INCLUDE"
+    MONO_STATIC_INCLUDE="${PARTYOPS_MONO_INCLUDE_ROOT:?ARM须提供原bottle include/mono-2.0目录}"
+    "$PYTHON_BIN" "$ROOT/scripts/macos-mono-input-profile.py" \
+      --config "$MONO_CONFIG_ROOT/config" --library-root "$MONO_LIBRARY_ROOT" --stage "$STAGE" \
+      --framework-root "$MONO_FRAMEWORK_ROOT" --include-root "$MONO_STATIC_INCLUDE" \
+      --link-include-root "$MONO_LINK_INCLUDE" \
+      --bottle-archive "${PARTYOPS_MONO_BOTTLE_ARCHIVE:?ARM须提供锁定官方bottle归档}"
+  else
+  [[ "$(cd "$MONO_STATIC_LIBDIR" && pwd -P)" == "$(cd "$MONO_LIBRARY_ROOT" && pwd -P)" ]] || { printf '%s\n' '[MAC_MONO_STATIC_SDK_MISMATCH] pkg-config与辅助库必须来自同SDK。' >&2; exit 2; }
   [[ -s "$MONO_STATIC_INCLUDE/mono/jit/jit.h" && -s "$MONO_STATIC_INCLUDE/mono/metadata/assembly.h" ]] || { printf '%s\n' '[MAC_MONO_STATIC_HEADERS_MISSING] 缺少官方开发头文件。' >&2; exit 2; }
   "$PYTHON_BIN" - "$MONO_CONFIG_ROOT/config" "$MONO_LIBRARY_ROOT" "$STAGE" "$ARCHITECTURE" <<'MAC_MONO_PY'
 import hashlib, json, os, re, shutil, subprocess, sys
@@ -268,6 +289,7 @@ if __name__ == "__main__":
     prepare_native_inputs(Path(sys.argv[1]), Path(sys.argv[2]), Path(sys.argv[3]), sys.argv[4],
                           lambda args: subprocess.run(args, check=True, capture_output=True, text=True).stdout)
 MAC_MONO_PY
+  fi
   MONO_BUNDLE_CONFIG="$STAGE/mono-config.bundle.xml"
 else
 for name in libmono-native.so libMonoPosixHelper.so; do
@@ -394,7 +416,7 @@ else
     exit 2
   }
   minos="$(otool -l "$HOST" | awk '$1=="cmd"&&$2=="LC_BUILD_VERSION"{seen="build";next} $1=="cmd"&&$2=="LC_VERSION_MIN_MACOSX"{seen="legacy";next} seen=="build"&&$1=="minos"{print $2;exit} seen=="legacy"&&$1=="version"{print $2;exit}')"
-  "$PYTHON_BIN" - "$minos" <<'PY'
+  "$PYTHON_BIN" - "$minos" "$MACOSX_DEPLOYMENT_TARGET" "$ARCHITECTURE" <<'PY'
 import sys
 
 try:
@@ -403,8 +425,10 @@ try:
         raise ValueError("missing version")
 except ValueError:
     raise SystemExit("[FORMATTER_NATIVE_DEPLOYMENT_TARGET_MISSING] Mach-O 缺少 minos。")
-if value > (11, 0):
+if value > tuple(int(item) for item in sys.argv[2].split('.')[:2]):
     raise SystemExit(f"[FORMATTER_NATIVE_DEPLOYMENT_TARGET_TOO_NEW] minos={sys.argv[1]}")
+if sys.argv[3] == 'arm64' and value != (15, 0):
+    raise SystemExit(f"[FORMATTER_NATIVE_DEPLOYMENT_TARGET_MISMATCH] ARM宿主须明确部署15.0，minos={sys.argv[1]}")
 PY
 fi
 
@@ -454,13 +478,15 @@ if platform == "macos":
         source_snapshot_sha256="ac8466edf2513ea8e3fe9e61d3b86fb8d7a72ceb6cce366f2d19b59d9c9be171",
         rules_sha256=rules_sha, managed_host_sha256=digest(Path(managed) / "PartyOps.DocumentFormatter.Host.exe"),
         resource_catalog_source_sha256=digest(Path(root) / "packaging/windows/formatter-host/MacSessionCoordinator.cs"),
-        self_contained=True, minimum_macos="11.0", acceptance_profile="mac-object-limited-candidate",
+        self_contained=True, minimum_macos="15.0" if architecture == "arm64" else "11.0", acceptance_profile="mac-object-limited-candidate",
         native_bundle_mode="custom-static", native_sidecars=["libmono-native-compat.dylib", "libMonoPosixHelper.dylib"],
         native_sidecars_sha256={name: digest(Path(path).parent / name) for name in ("libmono-native-compat.dylib", "libMonoPosixHelper.dylib")},
         mono_native_source_sha256=digest(Path(path).parent / "mono-native-source.json"),
         feature_validation={feature: "pending-target-package-validation" for feature in payload["features"]},
         limitations=["manual-output-review-required", "wps-window-may-appear", "native-document-cycle-unproven", "rollback-unverified", "strict-golden-parity-not-accepted"],
         plugin_resources_sha256={item.name: digest(item) for item in (Path(path).parent / "wps-formatter-plugin").iterdir()})
+    if architecture == "arm64":
+        payload["runtime_input_profile"] = "winehq-mono-6.14.1-homebrew-arm64-sequoia"
     for key in ("capabilities", "word_vtable_map_sha256", "wps_sdk_header_sha256", "wps_sdk_matched_methods", "wps_sdk_mismatched_methods"):
         del payload[key]
 Path(path).write_text(

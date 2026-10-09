@@ -1,0 +1,17 @@
+{
+  "profile": "winehq-mono-6.14.1-homebrew-arm64-sequoia",
+  "minimum_macos": [
+    "15.0"
+  ],
+  "host_sha256": "6fc78081881ecebd71ab411ac6946ebb072fe9eda4090c8ed305d1d92f1926cf",
+  "dependencies": [
+    "/usr/lib/libc++.1.dylib",
+    "/usr/lib/libz.1.dylib",
+    "/System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation",
+    "/usr/lib/libobjc.A.dylib",
+    "/usr/lib/libiconv.2.dylib",
+    "/System/Library/Frameworks/Foundation.framework/Versions/C/Foundation",
+    "/usr/lib/libSystem.B.dylib"
+  ],
+  "product_gate_satisfied": false
+}

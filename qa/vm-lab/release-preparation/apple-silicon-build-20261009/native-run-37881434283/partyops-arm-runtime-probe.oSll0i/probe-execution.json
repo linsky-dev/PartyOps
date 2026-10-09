@@ -1,0 +1,16 @@
+{
+  "passed": true,
+  "timeout_seconds": 30,
+  "product_gate_satisfied": false,
+  "returncode": 0,
+  "bundled_assemblies": [
+    "Hello.exe",
+    "System.Core.dll",
+    "System.dll",
+    "mscorlib.dll"
+  ],
+  "posix_loaded_image": "/Users/runner/work/_temp/partyops-arm-runtime-probe.oSll0i/libMonoPosixHelper.dylib",
+  "posix_dll_trace": [
+    "@executable_path/libMonoPosixHelper.dylib"
+  ]
+}

@@ -1,0 +1,46 @@
+{
+  "schema": 1,
+  "kind": "arm15-unsigned-candidate-input-approval",
+  "base_commit": "b9b469fa5f146198c92db32ccce30996f672f12e",
+  "approved_application_files": [
+    {
+      "path": "packaging/macos/build-pkg.sh",
+      "bytes": 47125,
+      "sha256": "1f63b8f0f495cbd36ad39ab35e18cb6ecc8593131cbe83d9444804448678eb04"
+    },
+    {
+      "path": "packaging/macos/partyops.spec",
+      "bytes": 7184,
+      "sha256": "f14a79a823c54f293701a461310285a8b5195ae3a6c184c0f17f16fa4413e0bb"
+    },
+    {
+      "path": "packaging/macos/validate-bundle.sh",
+      "bytes": 11442,
+      "sha256": "96599af1d1d9af7952826d6c015ff6d4b503a1ea943ffc6583c0a6535747d112"
+    },
+    {
+      "path": "scripts/build-document-formatter-host-unix.sh",
+      "bytes": 27833,
+      "sha256": "e1a1855b5610cf89267e130f4eb0458526f8332b6fdbc398a18690515db3cbd9"
+    },
+    {
+      "path": "scripts/validate-source-formatter-runtime.py",
+      "bytes": 17635,
+      "sha256": "6bceeb47af95644c5ebcbd5c030b5732ee9a66838f4580022eed51d672221ebb"
+    },
+    {
+      "path": "scripts/macos-mono-input-profile.py",
+      "bytes": 12386,
+      "sha256": "c9973e6bc1c2e8578623c070eed8e78bf6e08a702ff347d393ddc4461f615c00"
+    }
+  ],
+  "application_patch_sha256": "6bf48740e8ccd1bceec9559b69a2df2b5720afa7e62871f101a9142e4aaeb35f",
+  "native_probe": {
+    "run_id": 37881434283,
+    "execution_receipt": "native-run-37881434283/partyops-arm-runtime-probe.oSll0i/probe-execution.json",
+    "execution_sha256": "b177bf0e4806bee9b67b74206e49e4b19c952de8d5878ea7843302c619bf6b07",
+    "structure_receipt": "native-run-37881434283/partyops-arm-runtime-probe.oSll0i/probe-structure.json",
+    "structure_sha256": "ce8f02654a48cf7fcd6b398e03b7aa2f749d27298fd3e0c2af5c24f655fdb89d"
+  },
+  "publication_authorized": false
+}

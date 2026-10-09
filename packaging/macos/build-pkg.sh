@@ -10,12 +10,16 @@ OUTPUT_OVERRIDE=''
 FORMATTER_FEATURE_EVIDENCE=''
 SOURCE_INPUTS_MANIFEST=''
 SOURCE_INPUTS_EXPECTED_SHA=''
+SOURCE_INPUTS_FILE_COUNT=''
 while (($#)); do
   case "$1" in
     --output-directory) OUTPUT_OVERRIDE="${2:-}"; shift 2 ;;
     --formatter-features-evidence) FORMATTER_FEATURE_EVIDENCE="${2:-}"; shift 2 ;;
     --source-inputs-manifest) SOURCE_INPUTS_MANIFEST="${2:-}"; shift 2 ;;
     --source-inputs-sha256) SOURCE_INPUTS_EXPECTED_SHA="${2:-}"; shift 2 ;;
+    --source-inputs-file-count)
+      [[ "${2:-}" =~ ^[1-9][0-9]*$ ]] || { printf '%s\n' '[MACOS_CANDIDATE_SOURCE_FILE_COUNT_INVALID] 冻结文件数必须为正整数字符串。' >&2; exit 2; }
+      SOURCE_INPUTS_FILE_COUNT="$2"; shift 2 ;;
     --architecture)
       TARGET_ARCH="${2:-}"
       shift 2
@@ -56,7 +60,12 @@ fi
 # 所有从源码构建的 Python 扩展和 PyInstaller bootloader 均必须继承相同
 # 的系统基线；只给最后一层 C 启动器传 -mmacosx-version-min 不足以保证
 # 用户电脑能装且能启动。
-export MACOSX_DEPLOYMENT_TARGET='11.0'
+# 本轮批准的新 ARM 候选基线为 15.0；Intel 仍为 11.0，现有发布门禁保持。
+case "$TARGET_ARCH" in
+  arm64) export MACOSX_DEPLOYMENT_TARGET='15.0' ;;
+  x86_64) export MACOSX_DEPLOYMENT_TARGET='11.0' ;;
+  *) printf '%s\n' '[MACOS_DEPLOYMENT_ARCH_INVALID] 无法绑定最低系统版本。' >&2; exit 2 ;;
+esac
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
@@ -78,18 +87,23 @@ verify_source_provenance() {
   if [[ "$MODE" == 'unsigned-candidate' ]]; then
     # 解压候选绑定冻结源码和原dirty差异，不创建.git或借用外层仓库HEAD。
     local binding
-    binding="$(python3.11 - "$ROOT" "$SOURCE_INPUTS_MANIFEST" "$SOURCE_INPUTS_EXPECTED_SHA" <<'PY'
+    binding="$(python3.11 - "$ROOT" "$SOURCE_INPUTS_MANIFEST" "$SOURCE_INPUTS_EXPECTED_SHA" "$SOURCE_INPUTS_FILE_COUNT" <<'PY'
 import hashlib, json, re, sys
 from pathlib import Path, PurePosixPath
 root = Path(sys.argv[1]).resolve()
 manifest = Path(sys.argv[2]) if sys.argv[2] else None
 expected = sys.argv[3]
+explicit_count = sys.argv[4]
 def fail():
     raise SystemExit("MACOS_CANDIDATE_SOURCE_PROVENANCE_INVALID")
 def sha(data):
     return hashlib.sha256(data).hexdigest()
 if manifest is None or not re.fullmatch(r"[0-9a-f]{64}", expected):
     fail()
+if explicit_count and not re.fullmatch(r"[1-9][0-9]*", explicit_count):
+    fail()
+# 数量来自调用方显式冻结；不从待验 manifest 自动补值，未传仍使用旧白名单。
+allowed_counts = (int(explicit_count),) if explicit_count else (1777, 1779, 1780, 1781)
 try:
     raw = manifest.read_bytes()
     if sha(raw) != expected:
@@ -98,7 +112,8 @@ try:
     rows = data.get("files")
     if (data.get("schema") != 1 or data.get("kind") != "complete-application-source-inputs-candidate-pending"
             or not re.fullmatch(r"[0-9a-f]{40}", data.get("head", ""))
-            or data.get("file_count") not in (1777, 1779, 1780, 1781) or not isinstance(rows, list) or len(rows) != data["file_count"]):
+            or type(data.get("file_count")) is not int or data.get("file_count") not in allowed_counts
+            or not isinstance(rows, list) or len(rows) != data["file_count"]):
         fail()
     names = set()
     for row in rows:
@@ -303,6 +318,20 @@ if record.get("adapter") == "wps-macos-object-source-adapter":
             current[name] = hashlib.sha256(library.read_bytes()).hexdigest()
             # SDK source原SHA不变；随包重签字节另字段，不覆盖来源证明。
             item["packaged_sha256"] = current[name]
+            if record.get("runtime_input_profile") == "winehq-mono-6.14.1-homebrew-arm64-sequoia":
+                # ARM 原始 bottle 摘要与签名后字节分开绑定；只记录实际签名。
+                import re
+                import subprocess
+                subprocess.run(["codesign", "--verify", "--strict", str(library)], check=True, capture_output=True)
+                signature = subprocess.run(["codesign", "-d", "--verbose=4", str(library)],
+                    check=True, capture_output=True, text=True)
+                details = signature.stdout + "\n" + signature.stderr
+                cdhash = re.findall(r"^CDHash=([0-9a-fA-F]{40})$", details, re.M)
+                identifier = re.findall(r"^Identifier=(.+)$", details, re.M)
+                if len(cdhash) != 1 or len(identifier) != 1:
+                    raise SystemExit("MAC_FORMATTER_SIDECAR_SIGNATURE_INVALID")
+                item["codesign"] = {"method": "codesign", "pre_sign_sha256": item["source_sha256"],
+                    "packaged_sha256": current[name], "cdhash": cdhash[0].lower(), "identifier": identifier[0]}
         source_path.write_text(json.dumps(native_source, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         record.setdefault("pre_sign_sidecars_sha256", previous)
         record["native_sidecars_sha256"] = current
@@ -451,7 +480,7 @@ if [[ "$TARGET_ARCH" == 'x86_64' ]]; then
   (
     cd "$OPENSSL_SOURCE_DIR/unpacked/openssl-$OPENSSL_VERSION"
     ./Configure darwin64-x86_64-cc no-shared no-tests \
-      -mmacosx-version-min=11.0 \
+      -mmacosx-version-min="$MACOSX_DEPLOYMENT_TARGET" \
       --prefix="$OPENSSL_PREFIX" --openssldir="$OPENSSL_PREFIX/ssl"
     make -j"${PARTYOPS_BUILD_JOBS:-2}"
     make install_sw
@@ -653,7 +682,7 @@ fi
 # bootloader 或签名加载失败时继续出现“无窗口、无日志、无证据”。
 PYTHON_DESKTOP="$APP/Contents/MacOS/partyops-desktop-bin"
 /bin/mv "$APP/Contents/MacOS/partyops-desktop" "$PYTHON_DESKTOP"
-xcrun clang -arch "$TARGET_ARCH" -mmacosx-version-min=11.0 -std=c11 \
+xcrun clang -arch "$TARGET_ARCH" -mmacosx-version-min="$MACOSX_DEPLOYMENT_TARGET" -std=c11 \
   -O2 -Wall -Wextra -Werror "$SCRIPT_DIR/launcher-wrapper.c" \
   -o "$APP/Contents/MacOS/partyops-desktop"
 for desktop_entry in "$APP/Contents/MacOS/partyops-desktop" "$PYTHON_DESKTOP"; do

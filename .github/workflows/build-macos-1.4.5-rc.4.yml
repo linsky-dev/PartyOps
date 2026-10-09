@@ -1,74 +1,89 @@
-# 仅专属诊断分支沿已注册工作流路径运行；不发布安装包。
-name: ARM RC6 custom-static runtime probe
+# ARM15 未签名候选审阅稿；主控核验输入/探针后才沿注册 RC4 路径上传、手动派发。
+name: ARM15 RC6 frozen-source unsigned candidate
 on:
   workflow_dispatch:
     inputs:
       confirmation:
-        description: '输入 ARM_RUNTIME_STATIC_PROBE；验证原生静态宿主'
+        description: '输入 ARM_RC6_CANDIDATE_ONLY；不发布、不作 GUI/WPS 验收'
+        required: true
+        type: string
+      approval_sha256:
+        description: '主控核验 candidate-input-approval.json 后固定的 SHA256'
         required: true
         type: string
 permissions:
   contents: read
+concurrency:
+  group: partyops-arm15-rc6-isolated-candidate
+  cancel-in-progress: false
 jobs:
-  arm-runtime:
-    if: inputs.confirmation == 'ARM_RUNTIME_STATIC_PROBE'
+  arm15-candidate:
+    if: inputs.confirmation == 'ARM_RC6_CANDIDATE_ONLY'
     runs-on: macos-15
-    timeout-minutes: 30
+    timeout-minutes: 240
     steps:
-      - name: Checkout fixed diagnostic inputs
+      - name: Checkout approved QA candidate bytes
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        env:
+          GIT_CONFIG_COUNT: '1'
+          GIT_CONFIG_KEY_0: core.autocrlf
+          GIT_CONFIG_VALUE_0: 'false'
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
-          sparse-checkout: |
-            scripts/macos-mono-input-profile.py
-            scripts/validate-source-formatter-runtime.py
-            qa/vm-lab/release-preparation/apple-silicon-build-20261009/native-sdk-probe.sh
-            qa/vm-lab/release-preparation/apple-silicon-build-20261009/native-runtime-probe.sh
-          sparse-checkout-cone-mode: false
-      - name: Fetch and inspect hash-bound SDK inputs
+          path: candidate-checkout
+          fetch-depth: 16
+      - name: Ensure exact base tree without full history
+        shell: bash
+        run: |
+          set -euo pipefail
+          git -C candidate-checkout config core.autocrlf false
+          git -C candidate-checkout cat-file -e b9b469fa5f146198c92db32ccce30996f672f12e^{commit} || \
+            git -C candidate-checkout fetch --no-tags --depth=1 origin b9b469fa5f146198c92db32ccce30996f672f12e
+      - name: Configure ARM Python 3.11
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.11'
+          architecture: arm64
+      - name: Configure Node 22
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - name: Fetch and inspect official locked SDK
         shell: bash
         env:
           PARTYOPS_PROBE_CONFIRM: ARM_SDK_RC6_PREFLIGHT
-        run: bash qa/vm-lab/release-preparation/apple-silicon-build-20261009/native-sdk-probe.sh
-      - name: Prepare official relocated build tools and run static host
+        run: bash candidate-checkout/qa/vm-lab/release-preparation/apple-silicon-build-20261009/native-sdk-probe.sh
+      - name: Freeze approved source and build isolated ARM candidate
+        id: candidate
         shell: bash
         env:
-          PARTYOPS_PROBE_CONFIRM: ${{ inputs.confirmation }}
-          HOMEBREW_NO_AUTO_UPDATE: '1'
-          HOMEBREW_NO_ANALYTICS: '1'
-          HOMEBREW_NO_INSTALL_CLEANUP: '1'
-          HOMEBREW_CACHE: ${{ runner.temp }}/partyops-arm-sdk-isolated/cache
-          HOME: ${{ runner.temp }}/partyops-arm-sdk-isolated/home
-          TMPDIR: ${{ runner.temp }}/partyops-arm-sdk-isolated/tmp
-        run: |
-          set -euo pipefail
-          # 仅在可丢弃 ARM runner 安装官方构建工具；用户机器不依赖 Mono。
-          brew install --force-bottle mono
-          prefix="$(brew --prefix mono)"
-          export PATH="$prefix/bin:$PATH"
-          export PKG_CONFIG_PATH="$prefix/lib/pkgconfig"
-          [[ "$(pkg-config --modversion mono-2)" == '6.14.1' ]]
-          raw="$RUNNER_TEMP/partyops-arm-sdk-isolated/bottle/mono/6.14.1"
-          export PARTYOPS_MONO_CONFIG_ROOT="$raw/etc/mono"
-          export PARTYOPS_MONO_FRAMEWORK_ROOT="$raw/lib/mono/4.5"
-          export PARTYOPS_MONO_LIBRARY_ROOT="$raw/lib"
-          export PARTYOPS_MONO_INCLUDE_ROOT="$raw/include/mono-2.0"
-          export PARTYOPS_MONO_BOTTLE_ARCHIVE="$(brew --cache --bottle-tag=arm64_sequoia mono)"
-          bash qa/vm-lab/release-preparation/apple-silicon-build-20261009/native-runtime-probe.sh
-      - name: Retain bounded diagnostic evidence
+          PARTYOPS_CANDIDATE_CONFIRM: ${{ inputs.confirmation }}
+          PARTYOPS_CANDIDATE_APPROVAL_SHA256: ${{ inputs.approval_sha256 }}
+          PARTYOPS_CANDIDATE_CHECKOUT: ${{ github.workspace }}/candidate-checkout
+        run: bash candidate-checkout/qa/vm-lab/release-preparation/apple-silicon-build-20261009/candidate-run.sh
+      - name: Upload only verified unsigned candidate
+        if: success() && steps.candidate.outputs.candidate_verified == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: arm15-rc6-unsigned-candidate-${{ github.run_id }}
+          path: |
+            ${{ steps.candidate.outputs.candidate_output }}/*.pkg
+            ${{ steps.candidate.outputs.candidate_output }}/*.pkg.sha256
+            ${{ steps.candidate.outputs.candidate_output }}/*.pkg.attestation.json
+            ${{ steps.candidate.outputs.candidate_output }}/*.pkg.mac-object-candidate.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Retain source hashes and performed-test receipts only
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: arm-runtime-static-probe
+          name: arm15-rc6-candidate-evidence-${{ github.run_id }}
           path: |
-            ${{ runner.temp }}/partyops-arm-sdk-reports/*.json
-            ${{ runner.temp }}/partyops-arm-runtime-probe.*/probe*.json
-            ${{ runner.temp }}/partyops-arm-runtime-probe.*/probe.stdout
-            ${{ runner.temp }}/partyops-arm-runtime-probe.*/probe.stderr
-            ${{ runner.temp }}/partyops-arm-runtime-probe.*/probe-trace.txt
-            ${{ runner.temp }}/partyops-arm-runtime-probe.*/host-*.txt
-            ${{ runner.temp }}/partyops-arm-runtime-probe.*/posix-export-symbols.txt
-            ${{ runner.temp }}/partyops-arm-runtime-probe.*/mono-native-source.json
+            ${{ runner.temp }}/partyops-arm-candidate-*/input-acceptance.json
+            ${{ runner.temp }}/partyops-arm-candidate-*/source-inputs.json
+            ${{ runner.temp }}/partyops-arm-candidate-*/freeze-receipt.json
+            ${{ runner.temp }}/partyops-arm-candidate-*/reports/*.json
+            ${{ runner.temp }}/partyops-arm-sdk-reports/sdk-receipt.json
           if-no-files-found: warn
           retention-days: 7
