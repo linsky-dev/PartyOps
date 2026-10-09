@@ -1,40 +1,73 @@
-# 本地审阅稿；由主控沿已注册 rc4 工作流路径在专属分支上传。
-name: ARM SDK RC6 isolated preflight
+# 仅专属诊断分支沿已注册工作流路径运行；不发布安装包。
+name: ARM RC6 custom-static runtime probe
 on:
   workflow_dispatch:
     inputs:
       confirmation:
-        description: '输入 ARM_SDK_RC6_PREFLIGHT；仅官方 ARM SDK 取证'
+        description: '输入 ARM_RUNTIME_STATIC_PROBE；验证原生静态宿主'
         required: true
         type: string
 permissions:
   contents: read
 jobs:
-  arm-sdk-preflight:
-    if: inputs.confirmation == 'ARM_SDK_RC6_PREFLIGHT'
+  arm-runtime:
+    if: inputs.confirmation == 'ARM_RUNTIME_STATIC_PROBE'
     runs-on: macos-15
     timeout-minutes: 30
     steps:
-      - name: Checkout reviewed probe only
+      - name: Checkout fixed diagnostic inputs
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
-          sparse-checkout: qa/vm-lab/release-preparation/apple-silicon-build-20261009/native-sdk-probe.sh
+          sparse-checkout: |
+            scripts/macos-mono-input-profile.py
+            scripts/validate-source-formatter-runtime.py
+            qa/vm-lab/release-preparation/apple-silicon-build-20261009/native-sdk-probe.sh
+            qa/vm-lab/release-preparation/apple-silicon-build-20261009/native-runtime-probe.sh
           sparse-checkout-cone-mode: false
-      - name: Inspect official bottle without installing or executing SDK
+      - name: Fetch and inspect hash-bound SDK inputs
+        shell: bash
+        env:
+          PARTYOPS_PROBE_CONFIRM: ARM_SDK_RC6_PREFLIGHT
+        run: bash qa/vm-lab/release-preparation/apple-silicon-build-20261009/native-sdk-probe.sh
+      - name: Prepare official relocated build tools and run static host
         shell: bash
         env:
           PARTYOPS_PROBE_CONFIRM: ${{ inputs.confirmation }}
-        run: bash qa/vm-lab/release-preparation/apple-silicon-build-20261009/native-sdk-probe.sh
-      - name: Upload redacted evidence only
+          HOMEBREW_NO_AUTO_UPDATE: '1'
+          HOMEBREW_NO_ANALYTICS: '1'
+          HOMEBREW_NO_INSTALL_CLEANUP: '1'
+          HOMEBREW_CACHE: ${{ runner.temp }}/partyops-arm-sdk-isolated/cache
+          HOME: ${{ runner.temp }}/partyops-arm-sdk-isolated/home
+          TMPDIR: ${{ runner.temp }}/partyops-arm-sdk-isolated/tmp
+        run: |
+          set -euo pipefail
+          # 仅在可丢弃 ARM runner 安装官方构建工具；用户机器不依赖 Mono。
+          brew install --force-bottle mono
+          prefix="$(brew --prefix mono)"
+          export PATH="$prefix/bin:$PATH"
+          export PKG_CONFIG_PATH="$prefix/lib/pkgconfig"
+          [[ "$(pkg-config --modversion mono-2)" == '6.14.1' ]]
+          raw="$RUNNER_TEMP/partyops-arm-sdk-isolated/bottle/mono/6.14.1"
+          export PARTYOPS_MONO_CONFIG_ROOT="$raw/etc/mono"
+          export PARTYOPS_MONO_FRAMEWORK_ROOT="$raw/lib/mono/4.5"
+          export PARTYOPS_MONO_LIBRARY_ROOT="$raw/lib"
+          export PARTYOPS_MONO_INCLUDE_ROOT="$raw/include/mono-2.0"
+          export PARTYOPS_MONO_BOTTLE_ARCHIVE="$(brew --cache --bottle-tag=arm64_sequoia mono)"
+          bash qa/vm-lab/release-preparation/apple-silicon-build-20261009/native-runtime-probe.sh
+      - name: Retain bounded diagnostic evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: arm-sdk-rc6-preflight
+          name: arm-runtime-static-probe
           path: |
-            ${{ runner.temp }}/partyops-arm-sdk-reports/sdk-receipt.json
-            ${{ runner.temp }}/partyops-arm-sdk-reports/binary-manifest.json
-            ${{ runner.temp }}/partyops-arm-sdk-reports/sdk-input-catalog.json
+            ${{ runner.temp }}/partyops-arm-sdk-reports/*.json
+            ${{ runner.temp }}/partyops-arm-runtime-probe.*/probe*.json
+            ${{ runner.temp }}/partyops-arm-runtime-probe.*/probe.stdout
+            ${{ runner.temp }}/partyops-arm-runtime-probe.*/probe.stderr
+            ${{ runner.temp }}/partyops-arm-runtime-probe.*/probe-trace.txt
+            ${{ runner.temp }}/partyops-arm-runtime-probe.*/host-*.txt
+            ${{ runner.temp }}/partyops-arm-runtime-probe.*/mono-native-source.json
           if-no-files-found: warn
           retention-days: 7

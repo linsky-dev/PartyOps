@@ -70,11 +70,47 @@ def validate_mac_record(runtime: Path, record: dict[str, Any], architecture: str
         "source_snapshot_sha256": MAC_SOURCE_SHA256, "source_snapshot_files": 898,
         "rules_sha256": MAC_RULES_SHA256, "features": FEATURES,
         "host_sha256": sha256(runtime / "partyops-document-formatter-host"),
-        "timezone": "Asia/Shanghai", "self_contained": True, "minimum_macos": "11.0",
+        "timezone": "Asia/Shanghai", "self_contained": True, "minimum_macos": "15.0" if architecture == "arm64" else "11.0",
         "acceptance_profile": "mac-object-limited-candidate", "limitations": MAC_LIMITATIONS,
     }
     if any(record.get(key) != value for key, value in expected.items()):
         raise RuntimeError("[MAC_FORMATTER_SOURCE_RECORD_MISMATCH] Mac 对象后端来源字段不匹配。")
+    if architecture == "arm64":
+        import importlib.util
+        specification = importlib.util.spec_from_file_location("mac_mono_profile", Path(__file__).with_name("macos-mono-input-profile.py"))
+        profile = importlib.util.module_from_spec(specification)
+        specification.loader.exec_module(profile)
+        native = read_json(runtime / "mono-native-source.json", "MAC_MONO_SOURCE")
+        if (record.get("runtime_input_profile") != profile.PROFILE
+                or native.get("runtime_input_profile") != profile.PROFILE
+                or native.get("bottle_sha256") != profile.BOTTLE_SHA
+                or native.get("sdk_version") != "6.14.1" or native.get("minimum_macos") != "15.0"
+                or native.get("static_runtime", {}).get("source_sha256") != profile.STATIC_SHA
+                or native.get("static_runtime", {}).get("architectures") != ["arm64"]
+                or record.get("mono_native_source_sha256") != sha256(runtime / "mono-native-source.json")):
+            raise RuntimeError("[MAC_MONO_ARM_PROFILE_MISMATCH] ARM必须绑定锁定官方输入profile。")
+        if (record.get("native_bundle_mode") != "custom-static" or native.get("bundling_mode") != "custom-static"
+                or native.get("bundle_dllmap_target") != "@executable_path/libmono-native-compat.dylib"
+                or native.get("bundle_posix_target") != "@executable_path/libMonoPosixHelper.dylib"
+                or native.get("bundle_config_sha256") != sha256(runtime / "mono-config.bundle.xml")
+                or native.get("original_config_sha256") != native.get("sdk_input_sha256", {}).get("etc/mono/config")
+                or native.get("original_config_sha256") != profile.CONFIG_SHA
+                or native.get("sdk_input_sha256", {}).get("etc/mono/4.5/machine.config") != profile.MACHINE_CONFIG_SHA
+                or native.get("original_dllmaps") != [{"dll": name, "target": target, "os": os_filter} for name, (target, os_filter) in profile.DLLMAPS.items()]
+                or native.get("child_environment") != {"MONO_CONFIG": "/dev/null", "removed": ["MONO_ENV_OPTIONS", "MONO_BUNDLED_OPTIONS"]}):
+            raise RuntimeError("[MAC_MONO_ARM_CONFIG_INVALID] ARM配置或静态封装模式不匹配。")
+        libraries = native.get("libraries")
+        if not isinstance(libraries, list) or len(libraries) != len(profile.LIBRARIES):
+            raise RuntimeError("[MAC_MONO_ARM_SIDECARS_INVALID] ARM辅助库清单不完整。")
+        for name, (source, digest) in profile.LIBRARIES.items():
+            matches = [item for item in libraries if item.get("registered_name") == name]
+            path = runtime / name
+            if (len(matches) != 1 or path.is_symlink() or not path.is_file() or sha256(path) != digest
+                    or matches[0].get("source_name") != source
+                    or matches[0].get("source_sha256") != digest or matches[0].get("packaged_sha256") != digest
+                    or matches[0].get("architectures") != ["arm64"]
+                    or record.get("native_sidecars_sha256", {}).get(name) != digest):
+                raise RuntimeError("[MAC_MONO_ARM_SIDECARS_INVALID] ARM辅助库摘要或原始名不匹配。")
     if record.get("self_contained") is not True:
         raise RuntimeError("[MAC_FORMATTER_SOURCE_RECORD_MISMATCH] self_contained 必须是布尔真。")
     notice = runtime / "LICENSE-MONO-RUNTIME.txt"
