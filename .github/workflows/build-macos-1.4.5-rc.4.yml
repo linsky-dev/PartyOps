@@ -1,21 +1,39 @@
-name: 转接 macOS 1.4.5-rc.6 原生构建
-
-# GitHub 只允许手动触发默认分支已经登记的 workflow 文件。rc.4 的历史
-# 文件名已在默认分支登记，因此保留一个只负责转接的兼容入口；实际构建、
-# 双架构矩阵和全部门禁均来自触发 ref 中的 rc.6 可复用工作流。
+# 本地审阅稿；由主控沿已注册 rc4 工作流路径在专属分支上传。
+name: ARM SDK RC6 isolated preflight
 on:
   workflow_dispatch:
     inputs:
       confirmation:
-        description: 输入 BUILD-UNSIGNED-145-RC6，确认只生成未公证测试候选
+        description: '输入 ARM_SDK_RC6_PREFLIGHT；仅官方 ARM SDK 取证'
         required: true
         type: string
-
 permissions:
   contents: read
-
 jobs:
-  macos-rc6:
-    uses: ./.github/workflows/build-macos-1.4.5-rc.6.yml
-    with:
-      confirmation: ${{ inputs.confirmation }}
+  arm-sdk-preflight:
+    if: inputs.confirmation == 'ARM_SDK_RC6_PREFLIGHT'
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - name: Checkout reviewed probe only
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          sparse-checkout: qa/vm-lab/release-preparation/apple-silicon-build-20261009/native-sdk-probe.sh
+          sparse-checkout-cone-mode: false
+      - name: Inspect official bottle without installing or executing SDK
+        shell: bash
+        env:
+          PARTYOPS_PROBE_CONFIRM: ${{ inputs.confirmation }}
+        run: bash qa/vm-lab/release-preparation/apple-silicon-build-20261009/native-sdk-probe.sh
+      - name: Upload redacted evidence only
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: arm-sdk-rc6-preflight
+          path: |
+            ${{ runner.temp }}/partyops-arm-sdk-reports/sdk-receipt.json
+            ${{ runner.temp }}/partyops-arm-sdk-reports/binary-manifest.json
+          if-no-files-found: warn
+          retention-days: 7
