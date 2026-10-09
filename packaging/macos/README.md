@@ -4,8 +4,8 @@ macOS 制品不使用 Docker，也不在 Windows/Linux 上交叉冻结。Apple S
 
 ## 目标制品
 
-- `PartyOps_1.4.5-rc.6_macos_arm64-UNSIGNED-UNNOTARIZED-CANDIDATE.pkg`：macOS 11+ Apple Silicon 未签名候选。
-- `PartyOps_1.4.5-rc.6_macos_x86_64-UNSIGNED-UNNOTARIZED-CANDIDATE.pkg`：macOS 11+ Intel 未签名候选。
+- `PartyOps_1.4.5-rc.6_macos_arm64-UNSIGNED-UNNOTARIZED-CANDIDATE.pkg`：macOS 15.0+ Apple Silicon 未签名候选。
+- `PartyOps_1.4.5-rc.6_macos_x86_64-UNSIGNED-UNNOTARIZED-CANDIDATE.pkg`：macOS 11.0+ Intel 未签名候选。
 
 ## 构建前提
 
@@ -14,7 +14,7 @@ macOS 制品不使用 Docker，也不在 Windows/Linux 上交叉冻结。Apple S
 3. 当前架构的可审计 OCR 运行时，必须包含 `bin/tesseract` 和 `tessdata/chi_sim.traineddata`。
 4. 当前架构的 llama.cpp 运行时，必须包含 `llama-server`。
 5. 当前架构且经过许可审计的 LibreOffice headless 运行时，必须保留完整 `LibreOffice.app` 签名边界，并包含兼容入口 `program/soffice`、`SOURCE.json` 和 `licenses/`。macOS 官方 Bundle 不使用 Linux 的 `program/soffice.bin` 布局；该闭包只用于本机 DOC/WPS 转换，构建脚本会拒绝符号链接越界和错误架构。
-6. 当前架构的原排版源码宿主。先在 Windows 构建锁定的 `AnyCPU` 规则载荷，再在目标 Mac 上运行 `scripts/build-document-formatter-host-unix.sh`，用该架构的 Mono 6.8 `mkbundle` 生成单一、瘦架构 Mach-O。该运行时必须包含 `source-host.json`、`word-vtable-map.json`、WPS SDK 许可、Mono 运行时许可和目标机生成的 `runtime-evidence.json`。
+6. 当前架构的原排版源码宿主。先在 Windows 构建锁定的 `AnyCPU` 规则载荷，再在目标 Mac 上运行 `scripts/build-document-formatter-host-unix.sh` 生成单一、瘦架构 Mach-O。Intel 使用 Mono 6.12.0，最低 macOS 11.0；Apple Silicon 使用 Mono 6.14.1，profile 为 `winehq-mono-6.14.1-homebrew-arm64-sequoia`，最低 macOS 15.0。ARM 构建由脚本调用 `scripts/macos-mono-input-profile.py` 校验锁定的 WineHQ Mono 6.14.1 arm64 Sequoia bottle；需提供 `PARTYOPS_MONO_INCLUDE_ROOT` 和 `PARTYOPS_MONO_BOTTLE_ARCHIVE`。该运行时必须包含 `source-host.json`、`word-vtable-map.json`、WPS SDK 许可、Mono 运行时许可和目标机生成的 `runtime-evidence.json`。
 7. 目标 Mac 必须安装可被 PartyOps 原生适配器自动化调用的 WPS，并在本机构建过程中完成真实 WPS 金样、六类功能和 25 项能力验收。仅安装 WPS、仅能人工打开文档或仅通过宿主 `--self-test` 均不构成排版验收。
 8. 正式构建需要 Developer ID Application、Developer ID Installer 证书以及 `notarytool` 钥匙串配置。
 
@@ -45,6 +45,8 @@ macOS 必须分别在原生 Apple Silicon 与 Intel Darwin 环境手动构建。
 没有 Apple Developer 证书时可使用 `--unsigned-candidate`：应用内所有 Mach-O 使用 ad-hoc 签名，旁边生成机器可读 attestation，明确记录 `developer_id_signed=false`、`notarized=false` 和 `real_device_validation=false`。这种包只能作为 1.4.5-rc.6 未签名候选，必须在下载页显著提示“未签名、未公证、未用户真机验证”，不能称为已签名或已通过用户实机验收。
 
 两个原生任务都必须在最终冻结主程序上执行真实 `0023→0026` 与 `0025→0026` 覆盖升级，校验管理员、附件、备份包、编排审计表和健康接口。Intel 构建还要从官方固定哈希源码生成 macOS 11 基线的 OpenSSL 3.5 LTS 静态闭包，并拒绝 `cryptography` 动态依赖构建机的 `libssl/libcrypto`。构建成功后在本机比对 SHA-256 与 attestation，再按固化流程人工上传。
+
+本次 Apple Silicon arm64 候选在 macOS 15.7.9 / GitHub arm64 原生主机完成安装后资源签名校验和四项 CLI 自检；GUI、WPS 金样与六类功能、覆盖升级及完整生命周期尚未验证。应用使用 ad-hoc 签名，安装器未签名、未公证，因此该候选不满足上述完整验收要求。经用户授权发布有限测试候选不代表完整正式包验收通过，Developer ID、公证、WPS 金样、功能和生命周期门禁均不降低。
 
 LibreOffice 官方 DMG 的完整 `LibreOffice.app` 会在复制前执行严格签名验证，并作为嵌套 App 原样保留。运行时在 PartyOps 逐层统一签名前不得提前启动；真实 `--headless --version` 门禁固定放在最终 App 统一签名完成后，并覆盖包级自检、全新安装和覆盖升级三条路径。失败时构建日志会附带嵌套 App 的签名、依赖与 macOS 统一日志摘录。
 

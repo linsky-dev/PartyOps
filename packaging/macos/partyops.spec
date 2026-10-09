@@ -11,6 +11,13 @@ backend = root / "backend"
 frontend = root / "frontend" / "dist" / "client"
 icon_path = Path(os.environ["PARTYOPS_MACOS_ICON"]).resolve()
 target_arch = os.environ["PARTYOPS_MACOS_TARGET_ARCH"]
+# 固定架构契约，不接受调用环境任意提高基线；本轮仅授权 ARM 候选验证。
+deployment_targets = {"arm64": "15.0", "x86_64": "11.0"}
+if target_arch not in deployment_targets:
+    raise SystemExit("[MACOS_DEPLOYMENT_ARCH_INVALID] 未知目标架构。")
+minimum_system_version = deployment_targets[target_arch]
+if os.environ.get("MACOSX_DEPLOYMENT_TARGET") != minimum_system_version:
+    raise SystemExit("[MACOS_DEPLOYMENT_TARGET_MISMATCH] 编译目标与固定架构基线不一致。")
 
 common_hidden = [
     "pysqlite3",
@@ -251,14 +258,14 @@ app = BUNDLE(
         "CFBundleExecutable": "partyops-desktop",
         "CFBundleDisplayName": "党建智办 PartyOps",
         "CFBundleShortVersionString": "1.4.5-rc.6",
-        "CFBundleVersion": "1.4.5.3",
+        "CFBundleVersion": "1.4.5.6",
         "CFBundleURLTypes": [
             {
                 "CFBundleURLName": "cn.partyops.desktop.client",
                 "CFBundleURLSchemes": ["partyops-client"],
             }
         ],
-        "LSMinimumSystemVersion": "11.0",
+        "LSMinimumSystemVersion": minimum_system_version,
         "NSHighResolutionCapable": True,
         "NSHumanReadableCopyright": "Copyright © 2026 PartyOps Contributors",
     },

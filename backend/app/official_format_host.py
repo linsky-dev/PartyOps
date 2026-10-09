@@ -254,7 +254,7 @@ def run_source_host(
     if sys.platform == "darwin":
         # 绑定既有六入口；逐项原生验收另记，不接受任意工具或 QA 模式。
         if feature_id not in {"format", "replace", "redheader", "rename", "convert", "pdf-to-word"}:
-            raise OfficialFormatError("MAC_FORMAT_FEATURE_NOT_ACCEPTED", "Mac 功能入口无效", "Intel Mac 仅接受既有六个格式工具。")
+            raise OfficialFormatError("MAC_FORMAT_FEATURE_NOT_ACCEPTED", "Mac 功能入口无效", "Mac 仅接受既有六个格式工具。")
         mac_state = control / "mac-state"
         mac_state.mkdir(exist_ok=False)
         payload["mac_task"] = {

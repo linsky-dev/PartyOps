@@ -62,6 +62,51 @@ def has_bundled_mscorlib(trace: str) -> bool:
     return False
 
 
+def validate_arm_sidecars(runtime: Path, record: dict[str, Any], native: dict[str, Any], profile: Any) -> None:
+    """原SDK来源摘要不可变；签名后摘要另绑定实际字节和codesign证据。"""
+    libraries = native.get("libraries")
+    if not isinstance(libraries, list) or len(libraries) != len(profile.LIBRARIES):
+        raise RuntimeError("[MAC_MONO_ARM_SIDECARS_INVALID] ARM辅助库清单不完整。")
+    originals = {name: digest for name, (_, digest) in profile.LIBRARIES.items()}
+    pre_sign = record.get("pre_sign_sidecars_sha256")
+    if pre_sign is not None and pre_sign != originals:
+        raise RuntimeError("[MAC_MONO_ARM_PRESIGN_INVALID] 签名前摘要须绑定锁定原bottle。")
+    if not isinstance(record.get("native_sidecars_sha256"), dict) or set(record["native_sidecars_sha256"]) != set(originals):
+        raise RuntimeError("[MAC_MONO_ARM_SIDECARS_INVALID] 缺少完整随包辅助库摘要。")
+    for name, (source, digest) in profile.LIBRARIES.items():
+        matches = [item for item in libraries if isinstance(item, dict) and item.get("registered_name") == name]
+        path = runtime / name
+        if (len(matches) != 1 or path.is_symlink() or not path.is_file()
+                or matches[0].get("source_name") != source or matches[0].get("source_sha256") != digest
+                or matches[0].get("architectures") != ["arm64"]):
+            raise RuntimeError("[MAC_MONO_ARM_SIDECARS_INVALID] ARM来源摘要或原始名不匹配。")
+        actual = sha256(path)
+        item = matches[0]
+        if item.get("packaged_sha256") != actual or record["native_sidecars_sha256"][name] != actual:
+            raise RuntimeError("[MAC_MONO_ARM_SIDECARS_INVALID] ARM随包字节与两份元数据摘要不一致。")
+        signing = item.get("codesign")
+        if actual == digest and signing is None:
+            continue
+        if (pre_sign != originals or not isinstance(signing, dict) or signing.get("method") != "codesign"
+                or signing.get("pre_sign_sha256") != digest or signing.get("packaged_sha256") != actual
+                or not isinstance(signing.get("cdhash"), str) or not re.fullmatch(r"[0-9a-fA-F]{40}", signing["cdhash"])
+                or not isinstance(signing.get("identifier"), str) or not signing["identifier"]):
+            raise RuntimeError("[MAC_MONO_ARM_SIGNING_BINDING_INVALID] 变化字节缺少明确codesign与原bottle绑定。")
+        try:
+            verification = subprocess.run(["/usr/bin/codesign", "--verify", "--strict", "--verbose=2", str(path)],
+                                          capture_output=True, text=True, timeout=10, check=False)
+            display = subprocess.run(["/usr/bin/codesign", "-d", "--verbose=4", str(path)],
+                                     capture_output=True, text=True, timeout=10, check=False)
+        except (OSError, subprocess.TimeoutExpired) as error:
+            raise RuntimeError("[MAC_MONO_ARM_SIGNATURE_VERIFY_FAILED] 无法核验实际辅助库签名。") from error
+        evidence = display.stdout + "\n" + display.stderr
+        cdhash = [value.lower() for value in re.findall(r"^CDHash=([0-9a-fA-F]{40})$", evidence, re.M)]
+        identifier = re.findall(r"^Identifier=(.+)$", evidence, re.M)
+        if (verification.returncode != 0 or display.returncode != 0
+                or cdhash != [signing["cdhash"].lower()] or identifier != [signing["identifier"]]):
+            raise RuntimeError("[MAC_MONO_ARM_SIGNATURE_VERIFY_FAILED] codesign实际CDHash/Identifier或签名不匹配。")
+
+
 def validate_mac_record(runtime: Path, record: dict[str, Any], architecture: str) -> None:
     """Mac 对象通道独立来源契约；这些字段不表示六功能已实测通过。"""
     expected = {
@@ -70,11 +115,36 @@ def validate_mac_record(runtime: Path, record: dict[str, Any], architecture: str
         "source_snapshot_sha256": MAC_SOURCE_SHA256, "source_snapshot_files": 898,
         "rules_sha256": MAC_RULES_SHA256, "features": FEATURES,
         "host_sha256": sha256(runtime / "partyops-document-formatter-host"),
-        "timezone": "Asia/Shanghai", "self_contained": True, "minimum_macos": "11.0",
+        "timezone": "Asia/Shanghai", "self_contained": True, "minimum_macos": "15.0" if architecture == "arm64" else "11.0",
         "acceptance_profile": "mac-object-limited-candidate", "limitations": MAC_LIMITATIONS,
     }
     if any(record.get(key) != value for key, value in expected.items()):
         raise RuntimeError("[MAC_FORMATTER_SOURCE_RECORD_MISMATCH] Mac 对象后端来源字段不匹配。")
+    if architecture == "arm64":
+        import importlib.util
+        specification = importlib.util.spec_from_file_location("mac_mono_profile", Path(__file__).with_name("macos-mono-input-profile.py"))
+        profile = importlib.util.module_from_spec(specification)
+        specification.loader.exec_module(profile)
+        native = read_json(runtime / "mono-native-source.json", "MAC_MONO_SOURCE")
+        if (record.get("runtime_input_profile") != profile.PROFILE
+                or native.get("runtime_input_profile") != profile.PROFILE
+                or native.get("bottle_sha256") != profile.BOTTLE_SHA
+                or native.get("sdk_version") != "6.14.1" or native.get("minimum_macos") != "15.0"
+                or native.get("static_runtime", {}).get("source_sha256") != profile.STATIC_SHA
+                or native.get("static_runtime", {}).get("architectures") != ["arm64"]
+                or record.get("mono_native_source_sha256") != sha256(runtime / "mono-native-source.json")):
+            raise RuntimeError("[MAC_MONO_ARM_PROFILE_MISMATCH] ARM必须绑定锁定官方输入profile。")
+        if (record.get("native_bundle_mode") != "custom-static" or native.get("bundling_mode") != "custom-static"
+                or native.get("bundle_dllmap_target") != "@executable_path/libmono-native-compat.dylib"
+                or native.get("bundle_posix_target") != "@executable_path/libMonoPosixHelper.dylib"
+                or native.get("bundle_config_sha256") != sha256(runtime / "mono-config.bundle.xml")
+                or native.get("original_config_sha256") != native.get("sdk_input_sha256", {}).get("etc/mono/config")
+                or native.get("original_config_sha256") != profile.CONFIG_SHA
+                or native.get("sdk_input_sha256", {}).get("etc/mono/4.5/machine.config") != profile.MACHINE_CONFIG_SHA
+                or native.get("original_dllmaps") != [{"dll": name, "target": target, "os": os_filter} for name, (target, os_filter) in profile.DLLMAPS.items()]
+                or native.get("child_environment") != {"MONO_CONFIG": "/dev/null", "removed": ["MONO_ENV_OPTIONS", "MONO_BUNDLED_OPTIONS"]}):
+            raise RuntimeError("[MAC_MONO_ARM_CONFIG_INVALID] ARM配置或静态封装模式不匹配。")
+        validate_arm_sidecars(runtime, record, native, profile)
     if record.get("self_contained") is not True:
         raise RuntimeError("[MAC_FORMATTER_SOURCE_RECORD_MISMATCH] self_contained 必须是布尔真。")
     notice = runtime / "LICENSE-MONO-RUNTIME.txt"

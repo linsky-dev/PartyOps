@@ -156,12 +156,17 @@ def _source_formatter_architecture() -> str:
 
 def _validate_mac_object_record(host: Path, record: dict[str, object]) -> dict[str, object]:
     """离线来源/资源自检，不把原声明能力当作目标包功能验收。"""
-    expected = {"schema": 3, "platform": "macos", "architecture": _source_formatter_architecture(),
+    architecture = _source_formatter_architecture()
+    # 与本机 Mac 包契约一致；ARM 候选为15，Intel仍为11，未知架构不猜测。
+    minimum_by_architecture = {"arm64": "15.0", "x86_64": "11.0"}
+    if architecture not in minimum_by_architecture:
+        raise RuntimeError("Mac 对象后端目标架构无效")
+    expected = {"schema": 3, "platform": "macos", "architecture": architecture,
                 "adapter": MAC_OBJECT_ADAPTER, "source_project": "PartyOps.DocumentFormatter.AddIn",
                 "source_snapshot_sha256": MAC_OBJECT_SOURCE_SHA256, "source_snapshot_files": 898,
                 "rules_sha256": MAC_OBJECT_RULES_SHA256, "features": MAC_FEATURES,
                 "host_sha256": _sha256(host), "timezone": "Asia/Shanghai", "self_contained": True,
-                "minimum_macos": "11.0", "acceptance_profile": "mac-object-limited-candidate", "limitations": MAC_LIMITATIONS}
+                "minimum_macos": minimum_by_architecture[architecture], "acceptance_profile": "mac-object-limited-candidate", "limitations": MAC_LIMITATIONS}
     if record.get("self_contained") is not True or any(record.get(key) != value for key, value in expected.items()) or any(key in record for key in ("capabilities", "word_vtable_map_sha256", "wps_sdk_header_sha256", "wps_sdk_matched_methods", "wps_sdk_mismatched_methods")):
         raise RuntimeError("Mac 对象后端来源清单无效，不能冒用 SDK/25 能力记录")
     pending = record.get("feature_validation")

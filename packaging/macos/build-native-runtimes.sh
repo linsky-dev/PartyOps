@@ -269,6 +269,9 @@ cp "$OCR_BUILD/libjpeg-turbo-${LIBJPEG_TURBO_VERSION}/LICENSE.md" \
   "$OCR_RUNTIME/licenses/libjpeg-turbo-LICENSE.md"
 cp "$OCR_BUILD/tiff-${LIBTIFF_VERSION}/LICENSE.md" \
   "$OCR_RUNTIME/licenses/libtiff-LICENSE.md"
+# 静态编入 OCR 的 libpng/zlib 也必须携带同批锁定源码的原始许可。
+cp "$OCR_BUILD/libpng-${LIBPNG_VERSION}/LICENSE" "$OCR_RUNTIME/licenses/libpng-LICENSE"
+cp "$OCR_BUILD/zlib-${ZLIB_VERSION}/README" "$OCR_RUNTIME/licenses/zlib-README-license"
 strip -x "$OCR_RUNTIME/bin/tesseract"
 chmod 0755 "$OCR_RUNTIME/bin/tesseract"
 assert_thin_architecture "$OCR_RUNTIME/bin/tesseract"

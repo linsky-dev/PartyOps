@@ -18,7 +18,7 @@
 </div>
 
 > [!IMPORTANT]
-> 最新公开候选为 **1.4.5-rc.6**，发布于 **2026-10-03 01:38（北京时间）**。现有 8 个 Windows/Linux/龙芯安装包与 Intel x86_64 Mac 第九包已列入 RC6；Mac 于 2026-10-08 完成国内全文件回读与 GitHub 附件 API 核验。Apple Silicon 继续使用 RC.4 历史包。实际环境、范围和限制见[发布说明](docs/release-notes-v1.4.5-rc.6.md)。
+> 最新公开候选为 **1.4.5-rc.6**，原候选发布于 **2026-10-03 01:38（北京时间）**。RC6 现列十个可下载安装包，包含 Apple Silicon arm64 候选；该包已完成国内全文件回读及 GitHub 附件大小、SHA-256 核验。Apple Silicon 仍为有限验证候选，实测范围与限制见[发布说明](docs/release-notes-v1.4.5-rc.6.md)。
 
 ## 当前公开发布
 
@@ -26,12 +26,12 @@
 | --- | --- |
 | 公开版本 | [v1.4.5-rc.6](https://github.com/linsky-dev/PartyOps/releases/tag/v1.4.5-rc.6)，GitHub Pre-release |
 | 官方网站 | [https://partyops.cn/](https://partyops.cn/) |
-| 制品校验 | GitHub Pre-release 共 20 个附件：9 个安装包、9 个 SHA-256 文件、签名 release-manifest.json 和 baseline-manifest.json；9 个主安装包的 API 大小与 SHA-256 均与签名清单匹配 |
+| 制品校验 | 共 23 个附件：十个安装包、十个 SHA-256 文件和三个 manifest；原 20 个附件的 ID、大小与摘要未变，新增 ARM PKG 的 GitHub API 大小与 SHA-256 匹配，新增签名 manifest 匿名回读字节精确匹配 |
 | 验证边界 | 各包仅按公开的实际验收范围准入，未宣称完整生命周期或全部映射系统通过 |
-| 源码位置 | [当前公开源码](https://github.com/linsky-dev/PartyOps/tree/main)；Intel Mac 适配与本次发布说明已选择性纳入 main；每个安装包的冻结源码基线、输入状态及清单摘要按签名清单逐包核对，不以 main 提交替代制品来源 |
-| 回滚与延期 | RC.4 历史发布保留；Intel Mac RC.6 有限验收包已完成公开附件核验，Apple Silicon 继续使用 RC.4 历史包 |
+| 源码位置 | [当前公开源码](https://github.com/linsky-dev/PartyOps/tree/main)；本 arm64 候选来自源码提交 `9de8b721225cf6913727614540d431e1c48811e3`；源码文件清单包含 1972 个文件，SHA-256 为 `c48933169424f5e9dc81b06eec7ba92c94dc563cc5ffeea62470ab5906fedea0`；冻结制品来源以新增 manifest 为准 |
+| 回滚与延期 | RC.4 历史发布保留；Apple Silicon RC.6 为 macOS 15.0+ 有限验证候选，未完成 GUI、业务功能和完整生命周期验收 |
 
-RC6 九个安装包均已逐包完成国内全文件回读；GitHub API 显示 20 个附件，九个主安装包大小和摘要与签名清单一致。Intel Mac 国内回读确认时间为 2026-10-08 18:42:10（北京时间，UTC+8）。历史版本变化在 `CHANGELOG.md` 中追溯。
+原九个安装包此前均已逐包完成国内全文件回读；Intel Mac 的确认时间为 2026-10-08 18:42:10（北京时间，UTC+8）。新增 Apple Silicon 包于 2026-10-09 13:59:48（北京时间，UTC+8）单独完成国内全文件回读；本轮对原九包复核 SHA-256 与公开 HEAD，没有重新对全部十包执行全文件回读。新增包的 GitHub 附件核验时间为 2026-10-09 14:02:31（北京时间，UTC+8）。历史版本变化在 `CHANGELOG.md` 中追溯。
 
 ## 30 秒了解 PartyOps
 
@@ -196,9 +196,9 @@ PartyOps 不是一套把表单搬到浏览器里的系统。它解决的是基�
 | `1.4.5-rc.1` | 新增三会一课、中心组学习、发展党员三轨时间轴、多文件可恢复资料、本机硬件检测、12 档模型推荐和身份重新配置 | 历史版本；已由 rc.2 取代 |
 | `1.4.5-rc.2` | 新增本机公文规范排版，修复协同地址、文件打开、发展党员预测、麒麟安装、跨平台启动与卸载保护 | 历史回滚基线 |
 | `1.4.5-rc.3` | 新增内嵌公文排版、可撤销通用台账导入、真实进度时间轴和 Needle 2，补齐生命周期、提醒、ACL 与非 C 盘路径 | 已撤回；旧库原位升级会在迁移前启动失败，仅保留审计 Release |
-| `1.4.5-rc.4` | 修复 `0023 → 0024` 升级前备份缺列崩溃，新增模式无关备份、原子回滚、中断恢复和准确启动诊断 | 历史预发布与回滚点；Apple Silicon 仍保留此版旧包 |
+| `1.4.5-rc.4` | 修复 `0023 → 0024` 升级前备份缺列崩溃，新增模式无关备份、原子回滚、中断恢复和准确启动诊断 | 历史预发布与回滚点；曾作为 Apple Silicon 历史包，现有 RC.6 候选 |
 | `1.4.5-rc.5` | 内部测试版本，未公开发布。 | — |
-| `1.4.5-rc.6` | Win7 x86 b3 本机字体与排版、Windows/Linux/龙芯九包限域验证，含 Intel Mac 有限验收 | 当前公开 Pre-release；Intel Mac 于 2026-10-08 增补并完成公开附件核验，Apple Silicon 仍为 RC.4 |
+| `1.4.5-rc.6` | Win7 x86 b3 本机字体与排版、RC6 十包限域验证，含 Intel Mac 与 Apple Silicon 有限验收 | 当前公开 Pre-release；Apple Silicon GUI/WPS/业务功能未验证；安装包全文件回读及 GitHub 附件大小、摘要核验已完成 |
 
 完整变更、修复与安全说明见 [CHANGELOG.md](CHANGELOG.md)。PartyOps 不会为了看起来“已发布”而隐藏未完成门禁，版本证据、制品哈希和已知限制都会随 Release 一起公开。
 
@@ -250,9 +250,11 @@ Windows 10 x86 使用同一 `windows7_x86` b3 包，Win7/Win10 的范围分别�
 | 芯片 | 安装包 | 大小 | SHA-256 | 状态 |
 | --- | --- | ---: | --- | --- |
 | Intel x86_64 | [国内下载](https://partyops-rc6-win7-x86.app.workbuddy.host/downloads/PartyOps_1.4.5-rc.6_macos_x86_64-UNSIGNED-UNNOTARIZED-CANDIDATE.pkg) · [GitHub](https://github.com/linsky-dev/PartyOps/releases/download/v1.4.5-rc.6/PartyOps_1.4.5-rc.6_macos_x86_64-UNSIGNED-UNNOTARIZED-CANDIDATE.pkg) | 564,985,557 字节 | `8885eea0cfa3c23f58d14109c9a46be2bf762c923cb1be58b9c549628e05c955` | 国内完整回读及 GitHub API 大小、SHA 核验通过；限域验收 |
-| Apple Silicon arm64 | [PartyOps_1.4.5-rc.4_macos_arm64.pkg](https://github.com/linsky-dev/PartyOps/releases/download/v1.4.5-rc.4/PartyOps_1.4.5-rc.4_macos_arm64.pkg) | 历史包 | 以 RC.4 发布记录为准 | 本批仍为 RC.4 |
+| Apple Silicon arm64 | [国内下载](https://partyops-rc6-win7-x86.app.workbuddy.host/downloads/PartyOps_1.4.5-rc.6_macos_arm64-UNSIGNED-UNNOTARIZED-CANDIDATE.pkg) · [GitHub](https://github.com/linsky-dev/PartyOps/releases/download/v1.4.5-rc.6/PartyOps_1.4.5-rc.6_macos_arm64-UNSIGNED-UNNOTARIZED-CANDIDATE.pkg) | 588,743,660 字节 | `bcc370a22545c31ad789324d1d153a0d6faa30ec61fc0632e4b004f82c0ff736` | macOS 15.7.9 / arm64；国内全文件回读通过，GitHub API 大小与 SHA-256 核验通过（2026-10-09 14:02:31，北京时间）；GUI/WPS/业务功能未验证 |
 
 Intel 来源基线提交：`a8aaf44984c1d9ce85981bd4756e71372c6b8cb8`；完整输入状态为 `frozen-dirty-candidate`，`source_input_manifest_sha256` 为 `2dcd1d9db0496daf67106d51d60ccbe8502466561186d79cf511080346c63295`。国内全文件回读确认时间为 2026-10-08 18:42:10（北京时间，UTC+8）；GitHub 附件 API 核验时间为 18:45:27（北京时间，UTC+8）。
+
+Apple Silicon RC.6 来源基线提交：`9de8b721225cf6913727614540d431e1c48811e3`；源码文件清单包含 1972 个文件，SHA-256：`c48933169424f5e9dc81b06eec7ba92c94dc563cc5ffeea62470ab5906fedea0`。macOS 最低支持版本为 15.0；Intel 包仍为 macOS 11.0+。本 ARM 包未使用 Developer ID、未公证；旧用户问题是否解决尚未验证。AI 模型需另行配置。
 
 升级前请在系统内备份。下载后按同一 Release 的 SHA-256 校验；遇到问题保留日志并恢复原包和备份。完整说明见[RC.6 发布记录](docs/release-notes-v1.4.5-rc.6.md)。
 
@@ -333,9 +335,9 @@ sudo dnf install ./PartyOps-1.4.5-0.rc.6.1.x86_64.rpm
 
 安装后从应用菜单打开“党建智办”，按与 Windows 相同的向导选择个人、主机或协同机。启动器会先等待配置页或健康端点真正就绪，再打开系统默认浏览器；若浏览器关联失败会显示中文提示，诊断位于 `~/.config/partyops/desktop-launch.log`。Windows 桌面入口也会在默认浏览器关联损坏或协同页面准备超时时显示中文弹窗，不会静默退出。主机服务数据默认位于 `/var/lib/partyops`；日常用户的协同配置位于 `~/.config/partyops`，接收目录位于用户数据目录。无 sudo 的日常账号应由管理员安装，不要在 root 桌面完成普通用户配置。
 
-### macOS 11+ Apple Silicon / Intel
+### macOS：Intel 11.0+ / Apple Silicon 15.0+
 
-1. 点击苹果菜单 → “关于本机”：Apple M 系列沿用 RC.4 `macos_arm64.pkg` 历史包；Intel 处理器使用 RC.6 `macos_x86_64-UNSIGNED-UNNOTARIZED-CANDIDATE.pkg` 有限验收包；终端 `uname -m` 也会分别显示 `arm64` 或 `x86_64`。
+1. 点击苹果菜单 → “关于本机”确认芯片和系统版本：Apple M 系列使用 RC.6 `macos_arm64-UNSIGNED-UNNOTARIZED-CANDIDATE.pkg` 候选，最低 macOS 15.0；Intel 使用 RC.6 `macos_x86_64-UNSIGNED-UNNOTARIZED-CANDIDATE.pkg`，最低 macOS 11.0。终端 `uname -m` 分别显示 `arm64` 或 `x86_64`。Apple Silicon 当前只有安装后资源签名校验和四项 CLI 自检证据，GUI/Finder 启动及业务功能未实测。
 2. 用 `shasum -a 256 <文件名>` 核对官网或 Release 显示的 SHA-256。Intel RC6 包未使用 Developer ID、未公证，且分页统计前端为 2 页、WPS 为 3 页，需人工核对正文、字体和页码；在 Finder 按住 Control 点击下载的 PKG →“打开”；若仍被阻止，先尝试打开一次，再到“系统设置 → 隐私与安全性”点击对应的“仍要打开”，完成管理员授权并安装到 `/Applications`。
 3. 安装完成后，在 Finder 的“应用程序”中按住 Control 点击“党建智办”并选择“打开”；如系统再次拦截，按同样方式在“隐私与安全性”确认。不要执行全局关闭 Gatekeeper 的命令。
 4. 选择个人、主机或协同模式并等待页面就绪。未打开时依次查看 `~/Library/Logs/PartyOps/launch-probe.log`、`launcher.log` 与 `launch-stderr.log`；前置探针会在冻结向导启动前创建日志，并保留子进程 PID、架构、退出码和标准错误。反馈 Mac 型号、芯片、macOS 版本及脱敏后的日志末尾，不要上传真实业务数据。

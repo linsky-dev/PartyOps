@@ -168,3 +168,17 @@ npx -y edgeone@1.6.28 makers deploy website/dist/edgeone -n partyops-cn-overseas
 ## 九、后台路径判定
 
 `workbuddy_cloudstudio_deploy` 是本项目已验证的 Cloud Studio 后台发布路径。它与“在 WorkBuddy 对话中发送部署消息”不是一回事，也不会必然在 Cloud Studio 网页普通项目列表中创建可见项目。以后发布必须复用这一后台程序、保留每个公开根地址和完整回读报告；未经验证的新上传方式不能替代它。
+
+## 2026-10-09：RC.6 十包批次与 Apple Silicon 回读
+
+本次使用 `fixed-ten-v1` 批次配置并沿用原发布隔离 sandbox。复用原九包文件并保留旧九令牌及状态记录；十包接收器使用独立绑定和状态。原九包未重复 POST 文件体；本轮逐包核对实际 SHA-256，并对公开地址执行 HEAD 检查。原九包本轮没有重新进行全文件 GET 回读；此前完成的国内全文件回读记录仍按既有批次保留。令牌值不写入本记录。
+
+新增 Apple Silicon PKG 通过国内公开地址完成独立全文件回读：`PartyOps_1.4.5-rc.6_macos_arm64-UNSIGNED-UNNOTARIZED-CANDIDATE.pkg`，588743660 字节，SHA-256 `bcc370a22545c31ad789324d1d153a0d6faa30ec61fc0632e4b004f82c0ff736`；公开地址为 [国内 ARM64 下载](https://partyops-rc6-win7-x86.app.workbuddy.host/downloads/PartyOps_1.4.5-rc.6_macos_arm64-UNSIGNED-UNNOTARIZED-CANDIDATE.pkg)。回读确认时间为 2026-10-09 05:59:48.798701 UTC（北京时间 13:59:48）。
+
+十包签名 manifest 以新增文件 `release-manifest-macos-arm64-20261009.json` 上传，SHA-256 为 `32fb5e85874c6ab400d0a1c1c05b9864c3a2e232202b3cf74a452cc8ca12b71c`；原九包 `release-manifest.json` 未覆盖。国内回读记录完成时，GitHub ARM PKG 尚在传输，附件摘要核验待完成。
+
+本次 WorkBuddy 5.7.6 发布操作经官方 GUI 发起一次回退调用：signedBridge 保持 idle，connector 无可用连接。因此这次操作不记为 WorkBuddy 5.7.6 live MCP 验证通过。记录不含令牌、凭据或会话原文。
+
+### 2026-10-09 GitHub 附件核验
+
+核验时间：2026-10-09 06:02:31.051466 UTC（北京时间 14:02:31）。Release 共 23 个附件；原 20 个附件的 ID、大小和摘要完全不变，Release tag 与首次发布时间 `2026-10-02T17:38:00Z` 保持不变。新增 Apple Silicon PKG、SHA-256 文件和签名 manifest 均通过附件摘要核验；PKG 为 588743660 字节，SHA-256 为 `bcc370a22545c31ad789324d1d153a0d6faa30ec61fc0632e4b004f82c0ff736`。新增 manifest `release-manifest-macos-arm64-20261009.json` 经匿名下载后与原始字节精确匹配，SHA-256 为 `32fb5e85874c6ab400d0a1c1c05b9864c3a2e232202b3cf74a452cc8ca12b71c`。
