@@ -221,6 +221,18 @@ def main():
     receipt["archive"] = extract(archive, root)
     # 只用 runner 的系统工具解析结构，不执行任何 bottle 中的程序或库。
     files = [p for p in root.rglob("*") if p.is_file() and not p.is_symlink()]
+    # 下一步 ARM profile 只依据已锁 bottle 的真实配置；不猜测 dllmap。
+    catalog = {"bottle_sha256": digest, "sdk_version": EXPECTED_VERSION, "text_inputs": [], "bcl": []}
+    for path in files:
+        relative = path.relative_to(root).as_posix()
+        if relative in ("mono/6.14.1/etc/mono/config", "mono/6.14.1/etc/mono/4.5/machine.config",
+                        "mono/6.14.1/lib/pkgconfig/mono-2.pc"):
+            content = path.read_bytes()
+            catalog["text_inputs"].append({"path": relative, "sha256": hashlib.sha256(content).hexdigest(),
+                                           "content": content.decode("utf-8")})
+        if relative.startswith("mono/6.14.1/lib/mono/4.5/") and path.suffix == ".dll":
+            catalog["bcl"].append({"path": relative, "sha256": hashlib.sha256(path.read_bytes()).hexdigest()})
+    (reports / "sdk-input-catalog.json").write_text(json.dumps(catalog, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     receipt["structure"] = {"file_count": len(files),
         "static_libraries": [str(p.relative_to(root)) for p in files if p.suffix == ".a"],
         "sdk_entries": [str(p.relative_to(root)) for p in files if p.name in

@@ -35,5 +35,6 @@ jobs:
           path: |
             ${{ runner.temp }}/partyops-arm-sdk-reports/sdk-receipt.json
             ${{ runner.temp }}/partyops-arm-sdk-reports/binary-manifest.json
+            ${{ runner.temp }}/partyops-arm-sdk-reports/sdk-input-catalog.json
           if-no-files-found: warn
           retention-days: 7
