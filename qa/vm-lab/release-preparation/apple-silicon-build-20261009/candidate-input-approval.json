@@ -32,9 +32,14 @@
       "path": "scripts/macos-mono-input-profile.py",
       "bytes": 12386,
       "sha256": "c9973e6bc1c2e8578623c070eed8e78bf6e08a702ff347d393ddc4461f615c00"
+    },
+    {
+      "path": "packaging/macos/build-native-runtimes.sh",
+      "bytes": 15293,
+      "sha256": "90539a6e7211380047de1bdc4cf04178c03f28490cd80c3923d066e1def0ce5b"
     }
   ],
-  "application_patch_sha256": "6bf48740e8ccd1bceec9559b69a2df2b5720afa7e62871f101a9142e4aaeb35f",
+  "application_patch_sha256": "b965f3353bf38ccd6d310640fedca299696a81c0496e3a2e3ca972eb6b053461",
   "native_probe": {
     "run_id": 37881434283,
     "execution_receipt": "native-run-37881434283/partyops-arm-runtime-probe.oSll0i/probe-execution.json",

@@ -14,7 +14,8 @@ ROOT_FILES = (".gitattributes", ".gitignore", "LICENSE", "README.md", "THIRD_PAR
               "CHANGELOG.md", "SECURITY.md", "CONTRIBUTING.md", "DESIGN.md", "install.sh", "一键安装党建智办.sh")
 PATCH_FILES = {"packaging/macos/build-pkg.sh", "packaging/macos/partyops.spec",
                "packaging/macos/validate-bundle.sh", "scripts/build-document-formatter-host-unix.sh",
-               "scripts/validate-source-formatter-runtime.py", "scripts/macos-mono-input-profile.py"}
+               "scripts/validate-source-formatter-runtime.py", "scripts/macos-mono-input-profile.py",
+               "packaging/macos/build-native-runtimes.sh"}
 CS_FILES = {"packaging/windows/formatter-host/" + name + ".cs" for name in
             ("Program", "PortableWpsComBridge", "SourceOptionScope", "MacWpsObjectBridge",
              "MacTaskLeaseRuntime", "MacSessionCoordinator")}
@@ -117,7 +118,7 @@ def approve(checkout, input_root, approval_path, approval_sha, candidate):
         raise ValueError("审批未绑定固定基底与实际候选提交")
     approved = approval["approved_application_files"]
     if validate_rows(checkout, approved) != PATCH_FILES:
-        raise ValueError("审批必须准确列明五个修改文件及新增 ARM profile")
+        raise ValueError("审批必须准确列明原五个修改文件、新增 ARM profile 及 OCR 许可修复共七文件")
     changed = set(git(checkout, ["diff", "--name-only", BASE, candidate, "--", *ROOTS, *ROOT_FILES]).decode().splitlines())
     if not changed.issubset(PATCH_FILES):
         raise ValueError("候选含未批准应用源码差异")
