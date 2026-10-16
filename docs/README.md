@@ -8,8 +8,8 @@
 - [v1.4.5-rc.6 支持矩阵](support-matrix-1.4.5-rc.6.json)
 - [v1.4.5-rc.6 本地验收记录](acceptance-1.4.5-rc.6.md)
 - [v1.4.5-rc.6 模型验收记录](model-validation-1.4.5-rc.6.md)
-- RC.6 八个 Windows/Linux/龙芯安装包已公开，国内完整回读、GitHub 附件校验及官网生产回读完成；验证仅限各包列明范围，完整生命周期和模型全平台门禁未宣称通过。Intel Mac 暂停，M 系列等待远程实机。
-- [本批签名发布清单](release-manifest-1.4.5-rc.6.json)与[逐包实际验证环境](release-validation-environments-1.4.5-rc.6.json)为当前公开制品依据；下方旧验收日期只代表对应历史代码和制品。
+- RC.6 当前提供十个安装包；本批更新麒麟 ARM64 完整候选，其余九包保持不变。各包验证环境与范围见发布说明，未宣称完整生命周期全部通过。
+- [本批签名发布清单](release-manifest-kylin-arm64-20261016.json)与[逐包实际验证环境](release-validation-environments-1.4.5-rc.6.json)为当前公开制品依据；下方旧验收日期只代表对应历史代码和制品。
 
 ## 通用操作文档与历史 1.4.4 记录
 

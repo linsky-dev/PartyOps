@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "as_of": "2026-10-02",
+  "as_of": "2026-10-16",
   "publication_state": "published",
-  "description": "当前公开RC6八包限域验证环境；国内/GitHub/官网已完成发布回读。Mac保留RC4旧包；完整生命周期不宣称通过。",
+  "description": "RC6十包逐包验证记录：本批仅替换麒麟ARM64完整候选；其余九包沿用既有发布与验收记录，完整生命周期及全部系统未宣称通过。",
   "packages": [
     {
       "package_id": "windows_amd64",
@@ -164,56 +164,59 @@
       "package_id": "linux_arm64",
       "file_key": "linuxDebArm64",
       "version": "1.4.5-rc.6",
-      "package_sha256": "b9c9dfda203a74ac05b4a0f3019acb94294fc723cecf51b6840eb4e6f5a2a71e",
+      "package_sha256": "17d0e3a3acf060d3c65299c012078435bacc0da3f1f0a909fe3cc997cbbee69c",
       "publication_state": "published",
       "environments": [
         {
-          "target": "uos-deb-arm64",
-          "os": "UOS 桌面专业版 20（1070）",
+          "target": "kylin-v10-sp1-2503-arm64",
+          "os": "银河麒麟桌面 V10 SP1 2503（内核 5.4.18-142）",
           "architecture": "aarch64",
           "vm_platform": "QEMU",
           "virtualization": "full-system-emulated",
-          "wps_version": null,
-          "wps_note": "原限域验收未记录WPS版本，不推断为未安装",
+          "wps_version": "12.8.2.1119.AK.preload.sw",
+          "guest_uuid_for_binding": "a9dbc36c-5d8e-4198-9f80-efd9fd64d6ba",
           "evidence": {
-            "reference": "lab:vms/uos-deb-arm64/guest-system.json",
-            "sha256": "5ca539f65ff73e319755a90ab61cc4a80d27bcb377f1b261428e450cd85311d7"
-          },
-          "guest_uuid_for_binding": "5207de7d-ba44-41db-9e97-be1c4e463184"
+            "reference": "local:acceptance/formal-evidence-20261016/independent-review-final.json",
+            "sha256": "01fd11742985ad645a77b0ec8c4e1e0df72595e51651bdc8b878f2fe5fd56c04"
+          }
         }
       ],
-      "scope_summary": "普通业务、OCR、同Guest独立会话协作",
-      "not_covered_summary": "完整生命周期、跨机器协作、WPS版本及旧包升级未覆盖",
+      "scope_summary": "覆盖安装、重启及原合成账号/事项/日历/附件保留，基础业务与备份恢复，六项排版十用例、字体和三页金样；新包经程序等同性核对及解包自检",
+      "not_covered_summary": "麒麟9000C实机及其他系统版本、完整生命周期、AI/OCR及跨机器协同全流程",
       "limitations": [
-        "安装版自检中的 LibreOffice --version 探测超过 120 秒，保留失败证据。",
-        "独立构建 Guest 的 ARM64 formatter 六类十用例及逐页 golden 不冒充本 Guest 完整公文实测。",
-        "未声明完整模型、升级、重启和卸载生命周期通过。",
-        "Native ARM64 build and transfer reports passed; raw build receipt keeps requires_installed_manifest_verification tag.",
-        "安装版自检中的LibreOffice --version探测超过120秒，保留失败证据；不声明该项或安装版全部公文功能通过。",
-        "ARM64公文组件在独立构建Guest内已通过6类10用例及逐页金样，此组件证据不冒充本Guest完整公文实测。",
-        "本次未声明完整模型、升级、重启与卸载生命周期通过。"
+        "全部源码回归门禁仍为FULL_FUNCTION_GATE_STALE",
+        "未恢复匹配的完整产品源码及15c/898排版源码快照",
+        "本次新包程序与安装脚本等同于已安装验收基线，仅更新验收记录和校验清单",
+        "字体仅验证获用户授权的QA字体集合，不随安装包分发商业字体"
       ],
       "untested": [
-        "未声明原十三项完整生命周期全部通过。"
+        "麒麟9000C实机和5.10.97内核",
+        "其他麒麟版本、UOS/deepin本候选",
+        "新候选全新安装和完整生命周期",
+        "OCR、AI、跨机协同完整业务端到端",
+        "所有客户字体集合",
+        "UEFI启动"
       ],
       "full_lifecycle_verified": false,
       "sources": [
         {
-          "reference": "lab:reports/uos-deb-arm64/user-acceptance-20260919.json",
-          "sha256": "6a244bafbec37cc1c16bfdf4a58e4df941bbea44a4ec92c279ef10079e78e3c3"
+          "reference": "signed-manifest:release-manifest-kylin-arm64-20261016.json",
+          "sha256": "b52807452932502a5f05a10eb609c87345fabe4addb17d3ffeae3a673e0d0e57"
         }
       ],
       "download": {
-        "filename": "PartyOps_1.4.5-rc.6_linux_arm64.deb",
-        "size_bytes": 352120914,
-        "sha256": "b9c9dfda203a74ac05b4a0f3019acb94294fc723cecf51b6840eb4e6f5a2a71e",
-        "domestic_url": "https://partyops-rc6-win7-x86.app.workbuddy.host/downloads/PartyOps_1.4.5-rc.6_linux_arm64.deb",
-        "github_url": "https://github.com/linsky-dev/PartyOps/releases/download/v1.4.5-rc.6/PartyOps_1.4.5-rc.6_linux_arm64.deb",
-        "confirmed_at": "2026-10-02T17:23:51.093150+00:00",
+        "filename": "PartyOps_1.4.5-rc.6_linux_arm64_kylin-full-20261016.deb",
+        "size_bytes": 352447304,
+        "sha256": "17d0e3a3acf060d3c65299c012078435bacc0da3f1f0a909fe3cc997cbbee69c",
+        "domestic_url": "https://partyops-rc6-win7-x86.app.workbuddy.host/downloads/PartyOps_1.4.5-rc.6_linux_arm64_kylin-full-20261016.deb",
+        "github_url": "https://github.com/linsky-dev/PartyOps/releases/download/v1.4.5-rc.6/PartyOps_1.4.5-rc.6_linux_arm64_kylin-full-20261016.deb",
+        "confirmed_at": "2026-10-16T05:10:48.455509+00:00",
         "time_meaning": "actual observation of upload and full public readback confirmation",
         "source_commit": null,
-        "source_fingerprint": "e4dc8a429dfd0d52bd250ea8bc446d1e7822078343feb599287c95610f62a9b4"
-      }
+        "source_fingerprint": null,
+        "source_state": "固定二进制来源和重包过程可追溯；未恢复与完整产品匹配的源码指纹，不宣称来自已验证的干净提交"
+      },
+      "product_full_function_gate": "FULL_FUNCTION_GATE_STALE"
     },
     {
       "package_id": "rpm_x86_64",
@@ -463,41 +466,141 @@
     {
       "package_id": "macos_x86_64",
       "file_key": "macosX86_64",
-      "version": "1.4.5-rc.4",
-      "publication_state": "existing-old-package",
-      "environments": [],
-      "scope_summary": "当前链接为RC4旧包；本批未完成该架构macOS验收",
-      "not_covered_summary": "Intel Mac本批暂停：接口未监听，权限排查未找到受支持修复",
+      "version": "1.4.5-rc.6",
+      "publication_state": "published",
+      "environments": [
+        {
+          "target": "macos-x64",
+          "os": "macOS 15.7.9",
+          "architecture": "x86_64",
+          "vm_platform": "VMware",
+          "wps_version": "12.1.29166"
+        }
+      ],
+      "scope_summary": "Intel Mac 有限验收：安装、Finder 正常启动、普通 UI 排版与批量格式、业务与导出及 OCR 限定范围通过；14 处引号的 Times New Roman 字体检查通过。",
+      "not_covered_summary": "分页统计存在前端 2 页、WPS 3 页差异，需人工核对正文、字体和页码；AI 未配置模型；完整生命周期、RC4 升级、首次设置与跨机迁移未验证；未使用 Developer ID，未公证。",
       "limitations": [
-        "未以本批RC6证据证明RC4旧包的macOS环境或WPS版本。"
+        "分页统计前端 2 页、WPS 3 页，需人工核对正文、字体和页码。",
+        "AI 模型缺失，未完成 AI 推理。",
+        "未使用 Developer ID，未公证。"
       ],
       "untested": [
-        "本批macOS安装、启动、普通用户业务与WPS验证未完成。"
+        "完整生命周期未验证。",
+        "RC4 升级未验证。",
+        "首次设置完整流程未验证。",
+        "跨机数据迁移未验证。",
+        "Apple Silicon 未在本批 RC6 中验收。"
       ],
       "full_lifecycle_verified": false,
-      "sources": []
+      "sources": [
+        {
+          "reference": "D:/PartyOps-VM-Lab/reports/release-fixed-nine-recovered-20261008/signed-nine/release-manifest.json",
+          "sha256": "4355fe1dcd2dcb49ccf9f82a406cbd44d883d3166f0c54987751b4c376a71cdb"
+        },
+        {
+          "reference": "qa/vm-lab/release-preparation/rc6-resume-20261003/macos-intel/mac-implementation-20261003/installed-diagnostic-qa-20261008/newpkg-acceptance-v2.json",
+          "sha256": "8103225f41bb530b06a5e4f0d61b755532b6a614055a360957d3085fd6bca0ea"
+        },
+        {
+          "reference": "artifacts/cloudstudio-fixed-nine-rc6-20261004/fixed-nine-upload-result.json",
+          "sha256": "ef6e4a391f77234443123ab0ab342bcac7b7d1b3728799709c86f87caaafe8f6"
+        },
+        {
+          "reference": "artifacts/cloudstudio-fixed-nine-rc6-20261004/nine-public-readback-observed-20261008.json",
+          "sha256": "b368d8f0629b1932c14cb5b39b2635773ad268c3fdcd25d0bd7f3cf1ac798326"
+        },
+        {
+          "reference": "qa/vm-lab/release-preparation/rc6-resume-20261003/host/github-nine-assets-verified-20261008.json",
+          "sha256": "5c94826fb1b1b52e29a2fed3093fed1903c4aa198598ee21376447d600f50685"
+        }
+      ],
+      "package_sha256": "8885eea0cfa3c23f58d14109c9a46be2bf762c923cb1be58b9c549628e05c955",
+      "download": {
+        "filename": "PartyOps_1.4.5-rc.6_macos_x86_64-UNSIGNED-UNNOTARIZED-CANDIDATE.pkg",
+        "size_bytes": 564985557,
+        "sha256": "8885eea0cfa3c23f58d14109c9a46be2bf762c923cb1be58b9c549628e05c955",
+        "domestic_url": "https://partyops-rc6-win7-x86.app.workbuddy.host/downloads/PartyOps_1.4.5-rc.6_macos_x86_64-UNSIGNED-UNNOTARIZED-CANDIDATE.pkg",
+        "github_url": "https://github.com/linsky-dev/PartyOps/releases/download/v1.4.5-rc.6/PartyOps_1.4.5-rc.6_macos_x86_64-UNSIGNED-UNNOTARIZED-CANDIDATE.pkg",
+        "confirmed_at": "2026-10-08T10:42:10.593822+00:00",
+        "source_commit": "a8aaf44984c1d9ce85981bd4756e71372c6b8cb8",
+        "source_fingerprint": "2dcd1d9db0496daf67106d51d60ccbe8502466561186d79cf511080346c63295",
+        "source_state": "frozen-dirty-candidate",
+        "source_input_manifest_sha256": "2dcd1d9db0496daf67106d51d60ccbe8502466561186d79cf511080346c63295"
+      }
     },
     {
       "package_id": "macos_arm64",
       "file_key": "macosArm64",
-      "version": "1.4.5-rc.4",
-      "publication_state": "existing-old-package",
-      "environments": [],
-      "scope_summary": "当前链接为RC4旧包；本批未完成该架构macOS验收",
-      "not_covered_summary": "M系列等待用户提供远程机器，本批尚未完成新验收",
+      "version": "1.4.5-rc.6",
+      "publication_state": "published-limited-test-candidate",
+      "package_sha256": "bcc370a22545c31ad789324d1d153a0d6faa30ec61fc0632e4b004f82c0ff736",
+      "environments": [
+        {
+          "target": "macos-arm64",
+          "os": "macOS 15.7.9",
+          "architecture": "arm64",
+          "vm_platform": "GitHub 原生托管主机",
+          "virtualization": "hosted-native-runner",
+          "wps_version": null,
+          "wps_note": "本次未安装和实测WPS，不继承Intel结论",
+          "identity": "github-actions-run-37885692908",
+          "evidence": {
+            "reference": "qa/vm-lab/release-preparation/apple-silicon-build-20261009/candidate-run-37885692908/partyops-arm-candidate-37885692908-1/reports/candidate-validation.json",
+            "sha256": "e4289ffc272848370817bb18464c42e9a6bb64e2438af54cb97d208f4e4d753f"
+          }
+        }
+      ],
+      "scope_summary": "安装、安装后资源与签名检查、四项CLI自检通过；WPS排版未实测",
+      "not_covered_summary": "Finder/GUI、WPS六功能、金样、业务/OCR/AI模型、跨机器协同与完整生命周期未验证",
       "limitations": [
-        "未以本批RC6证据证明RC4旧包的macOS环境或WPS版本。"
+        "仅支持macOS 15及以上；Intel仍为macOS 11及以上。",
+        "应用ad-hoc签名，安装器未签名；未使用Developer ID、未公证。",
+        "缺可操作M芯片实机，真实WPS六功能与排版效果未验证。",
+        "AI模型需另行配置；旧用户原生启动失败是否消除尚未实测。"
       ],
       "untested": [
-        "本批macOS安装、启动、普通用户业务与WPS验证未完成。"
+        "Finder/GUI交互",
+        "WPS六功能与金样",
+        "普通业务、OCR识别和AI模型",
+        "跨机器协同",
+        "旧版升级、备份恢复、重启、卸载重装"
       ],
       "full_lifecycle_verified": false,
-      "sources": []
+      "sources": [
+        {
+          "reference": "qa/vm-lab/release-preparation/apple-silicon-build-20261009/candidate-run-37885692908/partyops-arm-candidate-37885692908-1/reports/candidate-validation.json",
+          "sha256": "e4289ffc272848370817bb18464c42e9a6bb64e2438af54cb97d208f4e4d753f"
+        },
+        {
+          "reference": "qa/vm-lab/release-preparation/apple-silicon-publication-20261009/release-manifest-macos-arm64-20261009.json",
+          "sha256": "32fb5e85874c6ab400d0a1c1c05b9864c3a2e232202b3cf74a452cc8ca12b71c"
+        },
+        {
+          "reference": "qa/vm-lab/release-preparation/apple-silicon-publication-20261009/domestic-arm-readback-observed.json",
+          "sha256": "47364b9fba764c0d277b8cbccae54e5a13392ab92b0dce0ffa688f0347be443f"
+        },
+        {
+          "reference": "qa/vm-lab/release-preparation/apple-silicon-publication-20261009/github-arm-assets-verified.json",
+          "sha256": "f13fcd9bfe0b9210b972df8caa4d9c963c2d516959aebb83c144ea2e4d43e40b"
+        }
+      ],
+      "download": {
+        "filename": "PartyOps_1.4.5-rc.6_macos_arm64-UNSIGNED-UNNOTARIZED-CANDIDATE.pkg",
+        "size_bytes": 588743660,
+        "sha256": "bcc370a22545c31ad789324d1d153a0d6faa30ec61fc0632e4b004f82c0ff736",
+        "domestic_url": "https://partyops-rc6-win7-x86.app.workbuddy.host/downloads/PartyOps_1.4.5-rc.6_macos_arm64-UNSIGNED-UNNOTARIZED-CANDIDATE.pkg",
+        "github_url": "https://github.com/linsky-dev/PartyOps/releases/download/v1.4.5-rc.6/PartyOps_1.4.5-rc.6_macos_arm64-UNSIGNED-UNNOTARIZED-CANDIDATE.pkg",
+        "confirmed_at": "2026-10-09T05:59:48.798701+00:00",
+        "source_commit": "9de8b721225cf6913727614540d431e1c48811e3",
+        "source_fingerprint": "c48933169424f5e9dc81b06eec7ba92c94dc563cc5ffeea62470ab5906fedea0",
+        "source_state": "frozen-dirty-candidate",
+        "source_input_manifest_sha256": "c48933169424f5e9dc81b06eec7ba92c94dc563cc5ffeea62470ab5906fedea0"
+      }
     }
   ],
   "publication_evidence": {
-    "manifest_sha256": "da1b7da65ae525c13726cedfb271a449bbec8e236e5a5342aa06d58336a61ac2",
-    "domestic_readback_confirmed_at": "2026-10-02T17:28:36.311270+00:00",
+    "manifest_sha256": "32fb5e85874c6ab400d0a1c1c05b9864c3a2e232202b3cf74a452cc8ca12b71c",
+    "domestic_readback_confirmed_at": "2026-10-08T10:42:10.593822+00:00",
     "github_published": true,
     "sources": [
       {
@@ -511,10 +614,85 @@
       {
         "reference": "repo:qa/vm-lab/release-preparation/github-release-asset-verification-20261003.json",
         "sha256": "32c3df0269dcba90dc3ea5d91443f144177d8a84a90ac51293d3910b926d8fd0"
+      },
+      {
+        "reference": "artifacts/cloudstudio-fixed-nine-rc6-20261004/fixed-nine-upload-result.json",
+        "sha256": "ef6e4a391f77234443123ab0ab342bcac7b7d1b3728799709c86f87caaafe8f6"
+      },
+      {
+        "reference": "artifacts/cloudstudio-fixed-nine-rc6-20261004/nine-public-readback-observed-20261008.json",
+        "sha256": "b368d8f0629b1932c14cb5b39b2635773ad268c3fdcd25d0bd7f3cf1ac798326"
+      },
+      {
+        "reference": "qa/vm-lab/release-preparation/rc6-resume-20261003/host/github-nine-assets-verified-20261008.json",
+        "sha256": "5c94826fb1b1b52e29a2fed3093fed1903c4aa198598ee21376447d600f50685"
+      },
+      {
+        "reference": "qa/vm-lab/release-preparation/apple-silicon-publication-20261009/domestic-arm-readback-observed.json",
+        "sha256": "47364b9fba764c0d277b8cbccae54e5a13392ab92b0dce0ffa688f0347be443f"
+      },
+      {
+        "reference": "qa/vm-lab/release-preparation/apple-silicon-publication-20261009/github-arm-assets-verified.json",
+        "sha256": "f13fcd9bfe0b9210b972df8caa4d9c963c2d516959aebb83c144ea2e4d43e40b"
       }
     ],
     "github_published_at": "2026-10-02T17:38:00Z",
-    "github_release_url": "https://github.com/linsky-dev/PartyOps/releases/tag/v1.4.5-rc.6"
+    "github_release_url": "https://github.com/linsky-dev/PartyOps/releases/tag/v1.4.5-rc.6",
+    "github_asset_verification": {
+      "verified_at_utc": "2026-10-08T10:45:27.895872+00:00",
+      "release_id": 402021905,
+      "asset_count": 20,
+      "nine_asset_api_digests_verified": true,
+      "manifest_sha256": "4355fe1dcd2dcb49ccf9f82a406cbd44d883d3166f0c54987751b4c376a71cdb",
+      "baseline_manifest_sha256": "da1b7da65ae525c13726cedfb271a449bbec8e236e5a5342aa06d58336a61ac2"
+    },
+    "previous_nine_manifest_sha256": "4355fe1dcd2dcb49ccf9f82a406cbd44d883d3166f0c54987751b4c376a71cdb",
+    "manifest_filename": "release-manifest-macos-arm64-20261009.json",
+    "arm_domestic_readback_confirmed_at": "2026-10-09T05:59:48.798701+00:00",
+    "arm_github_asset_verification": {
+      "verified_at_utc": "2026-10-09T06:02:31.051466+00:00",
+      "release_id": 402021905,
+      "asset_count": 23,
+      "old_twenty_unchanged": true,
+      "tag_unchanged": true,
+      "new_asset_api_digests_verified": true,
+      "anonymous_manifest_exact": true,
+      "manifest_sha256": "32fb5e85874c6ab400d0a1c1c05b9864c3a2e232202b3cf74a452cc8ca12b71c",
+      "assets": [
+        {
+          "id": 624054856,
+          "name": "PartyOps_1.4.5-rc.6_macos_arm64-UNSIGNED-UNNOTARIZED-CANDIDATE.pkg",
+          "size": 588743660,
+          "digest": "sha256:bcc370a22545c31ad789324d1d153a0d6faa30ec61fc0632e4b004f82c0ff736",
+          "browser_download_url": "https://github.com/linsky-dev/PartyOps/releases/download/v1.4.5-rc.6/PartyOps_1.4.5-rc.6_macos_arm64-UNSIGNED-UNNOTARIZED-CANDIDATE.pkg"
+        },
+        {
+          "id": 624054855,
+          "name": "PartyOps_1.4.5-rc.6_macos_arm64-UNSIGNED-UNNOTARIZED-CANDIDATE.pkg.sha256",
+          "size": 134,
+          "digest": "sha256:583f97a2b48b244a5c30390700369c581058e481b14e33032bdba9dd1e5c2f19",
+          "browser_download_url": "https://github.com/linsky-dev/PartyOps/releases/download/v1.4.5-rc.6/PartyOps_1.4.5-rc.6_macos_arm64-UNSIGNED-UNNOTARIZED-CANDIDATE.pkg.sha256"
+        },
+        {
+          "id": 624054859,
+          "name": "release-manifest-macos-arm64-20261009.json",
+          "size": 45446,
+          "digest": "sha256:32fb5e85874c6ab400d0a1c1c05b9864c3a2e232202b3cf74a452cc8ca12b71c",
+          "browser_download_url": "https://github.com/linsky-dev/PartyOps/releases/download/v1.4.5-rc.6/release-manifest-macos-arm64-20261009.json"
+        }
+      ],
+      "original_release_published_at": "2026-10-02T17:38:00Z"
+    }
   },
-  "website_publication_state": "prepared-not-deployed"
+  "website_publication_state": "deployed-and-publicly-verified",
+  "website_publication": {
+    "deployment_id": "dpzpm8p2qe62",
+    "url": "https://partyops.cn/",
+    "verified_at": "2026-10-09T06:21:37.877083+00:00",
+    "artifact_manifest_sha256": "7adca8bfda4ab8ec29f2358a394f666ab8261e1f3475b44215077f6031cb2553",
+    "previous_deployment_id": "dprhy9r1ocbm",
+    "current_root_manifest_sha256": "32fb5e85874c6ab400d0a1c1c05b9864c3a2e232202b3cf74a452cc8ca12b71c",
+    "old_nine_version_manifest_preserved": true,
+    "existing_functions_unchanged": true
+  }
 }

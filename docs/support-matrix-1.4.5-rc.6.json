@@ -59,12 +59,13 @@
       "platform": "linux-deb",
       "architecture": "arm64",
       "support": "preview",
-      "artifact": "PartyOps_1.4.5-rc.6_linux_arm64.deb",
-      "sha256": "b9c9dfda203a74ac05b4a0f3019acb94294fc723cecf51b6840eb4e6f5a2a71e",
-      "size": 352120914,
-      "validation_scope": "见 validation_environments 中对应 package_id",
+      "artifact": "PartyOps_1.4.5-rc.6_linux_arm64_kylin-full-20261016.deb",
+      "sha256": "17d0e3a3acf060d3c65299c012078435bacc0da3f1f0a909fe3cc997cbbee69c",
+      "size": 352447304,
+      "validation_scope": "覆盖安装、重启及原合成账号/事项/日历/附件保留，基础业务与备份恢复，六项排版十用例、字体和三页金样；新包经程序等同性核对及解包自检",
       "package_id": "linux_arm64",
-      "full_lifecycle_verified": false
+      "full_lifecycle_verified": false,
+      "product_full_function_gate": "FULL_FUNCTION_GATE_STALE"
     },
     {
       "platform": "linux-rpm",
@@ -91,16 +92,26 @@
     {
       "platform": "macos",
       "architecture": "amd64",
-      "support": "unavailable",
-      "artifact": null,
-      "note": "本批RC6未发布；旧RC4包仅作为历史下载保留"
+      "support": "preview",
+      "artifact": "PartyOps_1.4.5-rc.6_macos_x86_64-UNSIGNED-UNNOTARIZED-CANDIDATE.pkg",
+      "note": "分页统计存在前端 2 页、WPS 3 页差异，需人工核对正文、字体和页码；AI 未配置模型；完整生命周期、RC4 升级、首次设置与跨机迁移未验证；未使用 Developer ID，未公证。",
+      "sha256": "8885eea0cfa3c23f58d14109c9a46be2bf762c923cb1be58b9c549628e05c955",
+      "size": 564985557,
+      "package_id": "macos_x86_64",
+      "full_lifecycle_verified": false,
+      "validation_scope": "Intel Mac 有限验收：安装、Finder 正常启动、普通 UI 排版与批量格式、业务与导出及 OCR 限定范围通过；14 处引号的 Times New Roman 字体检查通过。"
     },
     {
       "platform": "macos",
       "architecture": "arm64",
-      "support": "unavailable",
-      "artifact": null,
-      "note": "本批RC6未发布；旧RC4包仅作为历史下载保留"
+      "support": "preview",
+      "artifact": "PartyOps_1.4.5-rc.6_macos_arm64-UNSIGNED-UNNOTARIZED-CANDIDATE.pkg",
+      "note": "Finder/GUI、WPS六功能、金样、业务/OCR/AI模型、跨机器协同与完整生命周期未验证",
+      "sha256": "bcc370a22545c31ad789324d1d153a0d6faa30ec61fc0632e4b004f82c0ff736",
+      "size": 588743660,
+      "package_id": "macos_arm64",
+      "full_lifecycle_verified": false,
+      "validation_scope": "安装、安装后资源与签名检查、四项CLI自检通过；WPS排版未实测"
     },
     {
       "platform": "linux-deb",
@@ -123,7 +134,9 @@
     "edgeone_preview": true,
     "edgeone_production": true
   },
-  "note": "八包限域预发布已公开；其他门禁原值保留，不宣称全平台原生构建、模型或完整生命周期全部通过。Mac延期，RC4保留回滚。",
-  "release_manifest": "release-manifest-1.4.5-rc.6.json",
-  "validation_environments": "release-validation-environments-1.4.5-rc.6.json"
+  "gates_scope": "gates 保留早期八包发布的历史门禁结果；本批麒麟候选的发布回读单独记录，不把历史 true 作为本次执行证据。",
+  "note": "当前列十个安装包，本批仅替换麒麟ARM64完整候选；Intel Mac与Apple Silicon沿用既有限定验收。全项目源码回归仍为FULL_FUNCTION_GATE_STALE，不宣称全平台或完整生命周期全部通过。RC4历史记录保留。",
+  "release_manifest": "release-manifest-kylin-arm64-20261016.json",
+  "validation_environments": "release-validation-environments-1.4.5-rc.6.json",
+  "updated_at": "2026-10-16T05:12:28.785107+00:00"
 }

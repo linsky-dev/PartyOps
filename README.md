@@ -18,20 +18,30 @@
 </div>
 
 > [!IMPORTANT]
-> 最新公开候选为 **1.4.5-rc.6**，原候选发布于 **2026-10-03 01:38（北京时间）**。RC6 现列十个可下载安装包，包含 Apple Silicon arm64 候选；该包已完成国内全文件回读及 GitHub 附件大小、SHA-256 核验。Apple Silicon 仍为有限验证候选，实测范围与限制见[发布说明](docs/release-notes-v1.4.5-rc.6.md)。
+> 最新公开候选为 **1.4.5-rc.6**，原候选发布于 **2026-10-03 01:38（北京时间）**。RC6 现列十个可下载安装包，包含 Apple Silicon arm64 候选；该包已完成国内全文件回读及 GitHub 附件大小、SHA-256 核验。Apple Silicon 仍为有限验证候选；本批另更新麒麟 ARM64 完整候选，实测范围与限制见[发布说明](docs/release-notes-v1.4.5-rc.6.md)。
 
 ## 当前公开发布
+
+### 麒麟 ARM64 完整候选（2026-10-16）
+
+- 修复旧数据升级、启动配置检查和排版运行库依赖问题，提供完整安装包，接替旧 ARM64 主包与诊断修复包。其余九个安装包及其验收范围保持不变。
+- 验证环境：官方银河麒麟桌面 V10 SP1 2503 / aarch64 / QEMU / WPS 12.8.2.1119.AK.preload.sw。覆盖安装、重启和原合成账号、事项、日历、附件保留通过；六项排版、字体和三页金样通过。
+- 新包与已安装验收版本的程序和安装脚本一致，仅更新验收记录与校验清单；新包解包后的程序、排版宿主自检通过。麒麟 9000C 实机及其他系统版本仍需复验。
+- **先备份，再覆盖安装，不要先卸载或删库。安装后核对原账号、事项、日历和附件，并再次启动确认。**
+
+完整包：`PartyOps_1.4.5-rc.6_linux_arm64_kylin-full-20261016.deb`，352447304 字节；SHA-256：`17d0e3a3acf060d3c65299c012078435bacc0da3f1f0a909fe3cc997cbbee69c`。
+
 
 | 项目 | 当前状态 |
 | --- | --- |
 | 公开版本 | [v1.4.5-rc.6](https://github.com/linsky-dev/PartyOps/releases/tag/v1.4.5-rc.6)，GitHub Pre-release |
 | 官方网站 | [https://partyops.cn/](https://partyops.cn/) |
-| 制品校验 | 共 23 个附件：十个安装包、十个 SHA-256 文件和三个 manifest；原 20 个附件的 ID、大小与摘要未变，新增 ARM PKG 的 GitHub API 大小与 SHA-256 匹配，新增签名 manifest 匿名回读字节精确匹配 |
+| 制品校验 | 十个当前安装包；本批仅更新麒麟 ARM64 DEB，大小、摘要与范围见本批签名清单及实际回读记录 |
 | 验证边界 | 各包仅按公开的实际验收范围准入，未宣称完整生命周期或全部映射系统通过 |
-| 源码位置 | [当前公开源码](https://github.com/linsky-dev/PartyOps/tree/main)；本 arm64 候选来自源码提交 `9de8b721225cf6913727614540d431e1c48811e3`；源码文件清单包含 1972 个文件，SHA-256 为 `c48933169424f5e9dc81b06eec7ba92c94dc563cc5ffeea62470ab5906fedea0`；冻结制品来源以新增 manifest 为准 |
+| 源码位置 | [当前公开源码](https://github.com/linsky-dev/PartyOps/tree/main)；Apple Silicon arm64 候选来自源码提交 `9de8b721225cf6913727614540d431e1c48811e3`；源码文件清单包含 1972 个文件，SHA-256 为 `c48933169424f5e9dc81b06eec7ba92c94dc563cc5ffeea62470ab5906fedea0`；冻结制品来源以新增 manifest 为准 |
 | 回滚与延期 | RC.4 历史发布保留；Apple Silicon RC.6 为 macOS 15.0+ 有限验证候选，未完成 GUI、业务功能和完整生命周期验收 |
 
-原九个安装包此前均已逐包完成国内全文件回读；Intel Mac 的确认时间为 2026-10-08 18:42:10（北京时间，UTC+8）。新增 Apple Silicon 包于 2026-10-09 13:59:48（北京时间，UTC+8）单独完成国内全文件回读；本轮对原九包复核 SHA-256 与公开 HEAD，没有重新对全部十包执行全文件回读。新增包的 GitHub 附件核验时间为 2026-10-09 14:02:31（北京时间，UTC+8）。历史版本变化在 `CHANGELOG.md` 中追溯。
+原九个安装包此前均已逐包完成国内全文件回读；Intel Mac 的确认时间为 2026-10-08 18:42:10（北京时间，UTC+8）。新增 Apple Silicon 包于 2026-10-09 13:59:48（北京时间，UTC+8）单独完成国内全文件回读；2026-10-09 批次对原九包复核 SHA-256 与公开 HEAD，没有重新对全部十包执行全文件回读。新增包的 GitHub 附件核验时间为 2026-10-09 14:02:31（北京时间，UTC+8）。历史版本变化在 `CHANGELOG.md` 中追溯。
 
 ## 30 秒了解 PartyOps
 
@@ -198,7 +208,7 @@ PartyOps 不是一套把表单搬到浏览器里的系统。它解决的是基�
 | `1.4.5-rc.3` | 新增内嵌公文排版、可撤销通用台账导入、真实进度时间轴和 Needle 2，补齐生命周期、提醒、ACL 与非 C 盘路径 | 已撤回；旧库原位升级会在迁移前启动失败，仅保留审计 Release |
 | `1.4.5-rc.4` | 修复 `0023 → 0024` 升级前备份缺列崩溃，新增模式无关备份、原子回滚、中断恢复和准确启动诊断 | 历史预发布与回滚点；曾作为 Apple Silicon 历史包，现有 RC.6 候选 |
 | `1.4.5-rc.5` | 内部测试版本，未公开发布。 | — |
-| `1.4.5-rc.6` | Win7 x86 b3 本机字体与排版、RC6 十包限域验证，含 Intel Mac 与 Apple Silicon 有限验收 | 当前公开 Pre-release；Apple Silicon GUI/WPS/业务功能未验证；安装包全文件回读及 GitHub 附件大小、摘要核验已完成 |
+| `1.4.5-rc.6` | Win7 x86 b3 本机字体与排版、RC6 十包限域验证，含 Intel Mac 与 Apple Silicon 有限验收；补充麒麟 ARM64 完整候选 | 当前公开 Pre-release；Apple Silicon GUI/WPS/业务功能未验证；安装包全文件回读及 GitHub 附件大小、摘要核验已完成 |
 
 完整变更、修复与安全说明见 [CHANGELOG.md](CHANGELOG.md)。PartyOps 不会为了看起来“已发布”而隐藏未完成门禁，版本证据、制品哈希和已知限制都会随 Release 一起公开。
 
@@ -224,7 +234,7 @@ flowchart LR
 - [PartyOps-1.4.5-0.rc.6.1.aarch64.rpm](https://partyops-rc6-win7-x86.app.workbuddy.host/downloads/PartyOps-1.4.5-0.rc.6.1.aarch64.rpm)
 - [PartyOps-1.4.5-0.rc.6.1.x86_64.rpm](https://partyops-rc6-win7-x86.app.workbuddy.host/downloads/PartyOps-1.4.5-0.rc.6.1.x86_64.rpm)
 - [PartyOps_1.4.5-rc.6_linux_amd64.deb](https://partyops-rc6-win7-x86.app.workbuddy.host/downloads/PartyOps_1.4.5-rc.6_linux_amd64.deb)
-- [PartyOps_1.4.5-rc.6_linux_arm64.deb](https://partyops-rc6-win7-x86.app.workbuddy.host/downloads/PartyOps_1.4.5-rc.6_linux_arm64.deb)
+- [PartyOps_1.4.5-rc.6_linux_arm64_kylin-full-20261016.deb](https://partyops-rc6-win7-x86.app.workbuddy.host/downloads/PartyOps_1.4.5-rc.6_linux_arm64_kylin-full-20261016.deb)
 - [PartyOps_1.4.5-rc.6_linux_loong64.deb](https://partyops-rc6-win7-x86.app.workbuddy.host/downloads/PartyOps_1.4.5-rc.6_linux_loong64.deb)
 - [PartyOps_1.4.5-rc.6_windows7_amd64.exe](https://partyops-rc6-win7-x86.app.workbuddy.host/downloads/PartyOps_1.4.5-rc.6_windows7_amd64.exe)
 - [PartyOps_1.4.5-rc.6_windows7_x86.exe](https://partyops-rc6-win7-x86.app.workbuddy.host/downloads/PartyOps_1.4.5-rc.6_windows7_x86.exe)
@@ -237,7 +247,7 @@ flowchart LR
 | PartyOps_1.4.5-rc.6_windows_amd64.exe | Windows 10 22H2（10.0.19045） / x86_64 / QEMU / WPS 版本未记录 |
 | PartyOps_1.4.5-rc.6_windows7_amd64.exe | Windows 7 SP1（6.1.7601） / x86_64 / QEMU / WPS 版本未记录 |
 | PartyOps_1.4.5-rc.6_linux_amd64.deb | UOS 桌面专业版 20（1070） / x86_64 / QEMU / WPS 版本未记录 |
-| PartyOps_1.4.5-rc.6_linux_arm64.deb | UOS 桌面专业版 20（1070） / aarch64 / QEMU / WPS 版本未记录 |
+| PartyOps_1.4.5-rc.6_linux_arm64_kylin-full-20261016.deb | 官方银河麒麟桌面 V10 SP1 2503 / aarch64 / QEMU / WPS 12.8.2.1119.AK.preload.sw |
 | PartyOps-1.4.5-0.rc.6.1.x86_64.rpm | openEuler 24.03 LTS-SP2 / x86_64 / QEMU / WPS 版本未记录 |
 | PartyOps-1.4.5-0.rc.6.1.aarch64.rpm | openEuler 24.03 LTS-SP2 / aarch64 / QEMU / WPS 版本未记录 |
 | PartyOps_1.4.5-rc.6_linux_loong64.deb | Deepin 25.2.0 / loongarch64 / QEMU / WPS 版本未记录 |
@@ -320,12 +330,12 @@ shasum -a 256 PartyOps_1.4.5-rc.6_macos_x86_64-UNSIGNED-UNNOTARIZED-CANDIDATE.pk
 dpkg --print-architecture
 ```
 
-海光、兆芯、Intel、AMD 通常使用 `amd64/x86_64`；飞腾 D2000/FT-2000、麒麟 9000C/9006C/990、鲲鹏等使用 `arm64/aarch64`。银河麒麟桌面 V10 SP1 2107—2503、UOS、deepin 下载 DEB，openEuler 下载 RPM。截图中 `D2000`、`HUAWEI Kirin 9000C` 且 `uname -m` 返回 `aarch64` 的电脑，都选择同一个 ARM64 DEB：
+海光、兆芯、Intel、AMD 通常使用 `amd64/x86_64`；飞腾 D2000/FT-2000、麒麟 9000C/9006C/990、鲲鹏等使用 `arm64/aarch64`。银河麒麟桌面 V10 SP1 2107—2503、UOS、deepin 下载 DEB，openEuler 下载 RPM。以上为架构选包规则；本次完整候选实际验证仅限官方麒麟 V10 SP1 2503 ARM64 QEMU Guest，其他系统及处理器实机未验证。ARM64 安装命令如下：
 
 ```bash
 sudo install -m 0644 ./PartyOps_1.4.5-rc.6_linux_amd64.deb /var/tmp/partyops.deb
 sudo apt install /var/tmp/partyops.deb
-# ARM64 把第一行文件名改为 PartyOps_1.4.5-rc.6_linux_arm64.deb
+# ARM64 把第一行文件名改为 PartyOps_1.4.5-rc.6_linux_arm64_kylin-full-20261016.deb
 ```
 
 ```bash

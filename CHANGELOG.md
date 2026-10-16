@@ -4,6 +4,14 @@
 
 ## [1.4.5-rc.6] - 2026-10-03
 
+### 麒麟 ARM64 完整候选（2026-10-16）
+
+- 修复旧数据升级、启动配置检查和排版运行库依赖问题，提供完整安装包，接替旧 ARM64 主包与诊断修复包。其余九个安装包及其验收范围保持不变。
+- 验证环境：官方银河麒麟桌面 V10 SP1 2503 / aarch64 / QEMU / WPS 12.8.2.1119.AK.preload.sw。覆盖安装、重启和原合成账号、事项、日历、附件保留通过；六项排版、字体和三页金样通过。
+- 新包与已安装验收版本的程序和安装脚本一致，仅更新验收记录与校验清单；新包解包后的程序、排版宿主自检通过。麒麟 9000C 实机及其他系统版本仍需复验。
+- **先备份，再覆盖安装，不要先卸载或删库。安装后核对原账号、事项、日历和附件，并再次启动确认。**
+
+
 ### 本次更新
 
 - 新增本机智能编排与步骤确认，支持模型规划、权限校验和规则回退。
@@ -24,7 +32,7 @@
 | PartyOps_1.4.5-rc.6_windows_amd64.exe | Windows 10 22H2（10.0.19045） / x86_64 / QEMU / WPS 版本未记录 |
 | PartyOps_1.4.5-rc.6_windows7_amd64.exe | Windows 7 SP1（6.1.7601） / x86_64 / QEMU / WPS 版本未记录 |
 | PartyOps_1.4.5-rc.6_linux_amd64.deb | UOS 桌面专业版 20（1070） / x86_64 / QEMU / WPS 版本未记录 |
-| PartyOps_1.4.5-rc.6_linux_arm64.deb | UOS 桌面专业版 20（1070） / aarch64 / QEMU / WPS 版本未记录 |
+| PartyOps_1.4.5-rc.6_linux_arm64_kylin-full-20261016.deb | 官方银河麒麟桌面 V10 SP1 2503 / aarch64 / QEMU / WPS 12.8.2.1119.AK.preload.sw |
 | PartyOps-1.4.5-0.rc.6.1.x86_64.rpm | openEuler 24.03 LTS-SP2 / x86_64 / QEMU / WPS 版本未记录 |
 | PartyOps-1.4.5-0.rc.6.1.aarch64.rpm | openEuler 24.03 LTS-SP2 / aarch64 / QEMU / WPS 版本未记录 |
 | PartyOps_1.4.5-rc.6_linux_loong64.deb | Deepin 25.2.0 / loongarch64 / QEMU / WPS 版本未记录 |
