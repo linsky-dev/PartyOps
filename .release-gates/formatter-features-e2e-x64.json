@@ -1,0 +1,195 @@
+{
+  "schema": 2,
+  "status": "passed",
+  "verified_at": "2026-10-18T16:54:30+08:00",
+  "timezone": "Asia/Shanghai",
+  "platform": "windows",
+  "architecture": "x64",
+  "provider": "wps",
+  "host_sha256": "c024cfe6689aa8cebd1643d51d08f028abb317234960bda021b36517a6b0dec3",
+  "host": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.release-gates\\formatter-relocated-x64\\PartyOps.DocumentFormatter.Host.exe",
+  "host_identity": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.release-gates\\formatter-relocated-x64\\PartyOps.DocumentFormatter.Host.exe",
+  "case_count": 10,
+  "cases": [
+    {
+      "case": "format",
+      "feature_id": "format",
+      "status": "passed",
+      "host": "partyops-source-host+wps",
+      "outputs": [
+        {
+          "name": "input-manual-break_已排版.docx",
+          "bytes": 17780,
+          "sha256": "783373224c68966e424855b6553cdf2de403653ceecc176f99fe5cdd877c4bf5"
+        }
+      ],
+      "last_progress": {
+        "percent": 100,
+        "message": "排版完成"
+      },
+      "configuration_restored": true
+    },
+    {
+      "case": "replace",
+      "feature_id": "replace",
+      "status": "passed",
+      "host": "partyops-source-host+wps",
+      "outputs": [
+        {
+          "name": "input_已替换.docx",
+          "bytes": 34397,
+          "sha256": "32d82f16d75d2fe7811bba5f65c5940b222d6b6f4e1b6965fb9567bec9a49264"
+        }
+      ],
+      "last_progress": {
+        "percent": 100,
+        "message": "一键替换完成：E2E 四模式，共处理 5 处。"
+      },
+      "configuration_restored": true
+    },
+    {
+      "case": "redheader",
+      "feature_id": "redheader",
+      "status": "passed",
+      "host": "partyops-source-host+wps",
+      "outputs": [
+        {
+          "name": "input_已套红.docx",
+          "bytes": 41136,
+          "sha256": "9f43386dfab585ffb2a8c27a41febb242811f7ff44b090cb21d1dcb005e8d211"
+        }
+      ],
+      "last_progress": {
+        "percent": 100,
+        "message": "已套用红头模板：下行文"
+      },
+      "configuration_restored": true
+    },
+    {
+      "case": "rename",
+      "feature_id": "rename",
+      "status": "passed",
+      "host": "partyops-source-host+wps",
+      "outputs": [
+        {
+          "name": "格式文字-定稿.docx",
+          "bytes": 34433,
+          "sha256": "2f5306cb8f249632dc7b7ac2eb1e9c9556a6cdc171dd857c5237366b523471ec"
+        }
+      ],
+      "last_progress": {
+        "percent": 100,
+        "message": "文档已重命名为：\r\n格式文字-定稿.docx"
+      },
+      "configuration_restored": true
+    },
+    {
+      "case": "convert-docx",
+      "feature_id": "convert",
+      "status": "passed",
+      "host": "partyops-source-host+wps",
+      "outputs": [
+        {
+          "name": "input_已转换(1).docx",
+          "bytes": 36867,
+          "sha256": "72a7a0e1f145b96e7c93d024d3fe8baea3736b4db40d338c1adde8326935b9be"
+        }
+      ],
+      "last_progress": {
+        "percent": 100,
+        "message": "已转换为 DOCX。\r\n输出位置：C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.test-temp\\formatter-parity\\features-x64\\run-02b8508f23994dcf8c53c0cc44445fd0\\convert-docx\\o"
+      },
+      "configuration_restored": true
+    },
+    {
+      "case": "convert-pdf",
+      "feature_id": "convert",
+      "status": "passed",
+      "host": "partyops-source-host+wps",
+      "outputs": [
+        {
+          "name": "input_已转换.pdf",
+          "bytes": 79989,
+          "sha256": "6d5242abdc5312d3dc06841942cb398f493f97579e1c3bb8c7a02e098c9e3cb6"
+        }
+      ],
+      "last_progress": {
+        "percent": 100,
+        "message": "已转换为 PDF。\r\n输出位置：C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.test-temp\\formatter-parity\\features-x64\\run-02b8508f23994dcf8c53c0cc44445fd0\\convert-pdf\\o"
+      },
+      "configuration_restored": true
+    },
+    {
+      "case": "convert-txt",
+      "feature_id": "convert",
+      "status": "passed",
+      "host": "partyops-source-host+wps",
+      "outputs": [
+        {
+          "name": "input_已转换.txt",
+          "bytes": 191,
+          "sha256": "b17850cf886d94d345842a536cd631291e1fc7d56c4ad84876e35b6f50195402"
+        }
+      ],
+      "last_progress": {
+        "percent": 100,
+        "message": "已转换为 TXT。\r\n输出位置：C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.test-temp\\formatter-parity\\features-x64\\run-02b8508f23994dcf8c53c0cc44445fd0\\convert-txt\\o"
+      },
+      "configuration_restored": true
+    },
+    {
+      "case": "convert-png-pages",
+      "feature_id": "convert",
+      "status": "passed",
+      "host": "partyops-source-host+wps",
+      "outputs": [
+        {
+          "name": "input-第1页.png",
+          "bytes": 41522,
+          "sha256": "904a98a27c0956ba2419d3dd400ef3b0ca0533805916413539abce8f3e65822d"
+        }
+      ],
+      "last_progress": {
+        "percent": 100,
+        "message": "图片转换完成。"
+      },
+      "configuration_restored": true
+    },
+    {
+      "case": "convert-jpg-long",
+      "feature_id": "convert",
+      "status": "passed",
+      "host": "partyops-source-host+wps",
+      "outputs": [
+        {
+          "name": "input-长图.jpg",
+          "bytes": 55348,
+          "sha256": "366f35c95eb0414536b41d0c20f9c04b4cd293c9ec45a8382b28733028d05a5d"
+        }
+      ],
+      "last_progress": {
+        "percent": 100,
+        "message": "图片转换完成。"
+      },
+      "configuration_restored": true
+    },
+    {
+      "case": "pdf-to-word",
+      "feature_id": "pdf-to-word",
+      "status": "passed",
+      "host": "partyops-source-host+wps",
+      "outputs": [
+        {
+          "name": "input_已转换.docx",
+          "bytes": 3226,
+          "sha256": "5f13340d1b16745ddfffc58c39170383065eb06667d3f745f74d4613db7dd464"
+        }
+      ],
+      "last_progress": {
+        "percent": 100,
+        "message": "PDF 已在本地转换为可编辑 DOCX。"
+      },
+      "configuration_restored": true
+    }
+  ]
+}

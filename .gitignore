@@ -76,3 +76,11 @@ vendor/windows/dotnet-framework-4.8/*
 
 # 接收器上传令牌：绝不入库
 **/.upload-token
+
+# .NET 排版宿主本地构建输出与重定位测试目录：不入库
+packaging/windows/formatter-host/bin/
+packaging/windows/formatter-host/obj/
+vendor/document-formatter-source/src/*/bin/
+vendor/document-formatter-source/src/*/obj/
+.release-gates/formatter-relocated-x64/
+.release-gates/formatter-relocated-x86/

@@ -1,0 +1,119 @@
+{
+  "schema": 2,
+  "status": "passed",
+  "verified_at": "2026-10-18T16:54:02+08:00",
+  "timezone": "Asia/Shanghai",
+  "platform": "windows",
+  "architecture": "x64",
+  "provider": "wps",
+  "host_sha256": "c024cfe6689aa8cebd1643d51d08f028abb317234960bda021b36517a6b0dec3",
+  "host": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.release-gates\\formatter-relocated-x64\\PartyOps.DocumentFormatter.Host.exe",
+  "host_identity": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.release-gates\\formatter-relocated-x64\\PartyOps.DocumentFormatter.Host.exe",
+  "source": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\backend\\tests\\fixtures\\document-formatter-source\\input-manual-break.docx",
+  "source_sha256": "6b360f0372ae657a9e207ea4e0ec05437cea8fecc34113429a6d5670a8fff287",
+  "golden": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\backend\\tests\\fixtures\\document-formatter-source\\expected-source-formatted.docx",
+  "golden_sha256": "bef6831245bc5a064bcf4135a51252f4dfd0a926f79228c7a2487a9c02639133",
+  "output": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.test-temp\\formatter-parity\\x64\\parity-2c5e2818f22640cfb2d4edf521dbdbf5\\o\\input-manual-break_已排版.docx",
+  "output_sha256": "10423527ca364d1f76220fcd76d32cc23a877114ff178e865b9acf872108c7fe",
+  "semantic_signature_sha256": "54b2b9ac9f46d2d6f173f4dd38ee8101c0da17c3d3ff4df41cd469ad06f41caf",
+  "paragraph_count": 8,
+  "rendered_pages": [
+    {
+      "page": 1,
+      "width": 1191,
+      "height": 1684,
+      "pixel_sha256": "f739ac773686e8e0962b1a8af81c03619b1b2f85306436c2550473035e6485a3"
+    },
+    {
+      "page": 2,
+      "width": 1191,
+      "height": 1684,
+      "pixel_sha256": "be545fe75093fba6eec6144046ee0e7c8b999f26fb62a4dcd2d435b48ff980bf"
+    },
+    {
+      "page": 3,
+      "width": 1191,
+      "height": 1684,
+      "pixel_sha256": "397ba209c2e90a54c1df4438a26730dc7d701649228b77d3bfdf8c226779b81a"
+    }
+  ],
+  "visual_comparison": {
+    "passed": true,
+    "mode": "raw-pixel",
+    "pages": [
+      {
+        "page": 1,
+        "width": 1191,
+        "height": 1684,
+        "raw_equal": true,
+        "mean_abs_channel_delta": 0.0,
+        "same_channel_ratio": 1.0,
+        "passed": true
+      },
+      {
+        "page": 2,
+        "width": 1191,
+        "height": 1684,
+        "raw_equal": true,
+        "mean_abs_channel_delta": 0.0,
+        "same_channel_ratio": 1.0,
+        "passed": true
+      },
+      {
+        "page": 3,
+        "width": 1191,
+        "height": 1684,
+        "raw_equal": true,
+        "mean_abs_channel_delta": 0.0,
+        "same_channel_ratio": 1.0,
+        "passed": true
+      }
+    ]
+  },
+  "events": [
+    {
+      "percent": 2,
+      "message": "正在准备只读源文件"
+    },
+    {
+      "percent": 8,
+      "message": "正在启动原排版源码宿主"
+    },
+    {
+      "percent": 0,
+      "message": "正在准备文件..."
+    },
+    {
+      "percent": 8,
+      "message": "正在创建不会影响原文件的可编辑副本..."
+    },
+    {
+      "percent": 18,
+      "message": "已启动后台文档引擎：Microsoft Word 12.0（D:\\WPS Office\\12.1.0.29161\\office6）"
+    },
+    {
+      "percent": 28,
+      "message": "正在执行一键排版..."
+    },
+    {
+      "percent": 72,
+      "message": "功能执行完成，正在导出所选格式..."
+    },
+    {
+      "percent": 95,
+      "message": "正在关闭文档并完成写盘校验..."
+    },
+    {
+      "percent": 100,
+      "message": "处理完成"
+    },
+    {
+      "percent": 96,
+      "message": "原排版源码已完成，正在校验输出"
+    },
+    {
+      "percent": 100,
+      "message": "排版完成"
+    }
+  ]
+}
