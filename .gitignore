@@ -84,3 +84,5 @@ vendor/document-formatter-source/src/*/bin/
 vendor/document-formatter-source/src/*/obj/
 .release-gates/formatter-relocated-x64/
 .release-gates/formatter-relocated-x86/
+vendor/document-formatter-source/tests/*/bin/
+vendor/document-formatter-source/tests/*/obj/
