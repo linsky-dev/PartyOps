@@ -1,0 +1,23 @@
+{
+  "apps": [
+    {
+      "DisplayName": "WPS Office (12.1.0.28488)",
+      "DisplayVersion": "12.1.0.28488",
+      "InstallLocation": null
+    }
+  ],
+  "processes": [
+    {
+      "Name": "WPS_Setup_x64_28488.exe",
+      "ProcessId": 4236,
+      "SessionId": 1
+    }
+  ],
+  "executables": [
+    {
+      "path": "C:\\Users\\partyopsqa\\AppData\\Local\\Kingsoft\\WPS Office\\12.1.0.28488\\office6\\wps.exe",
+      "sha256": "4ea193b0801a88752b69c4281cfe7513a3ff945afd57aca59fe13f15a87d9798",
+      "version": "12,1,0,28488"
+    }
+  ]
+}

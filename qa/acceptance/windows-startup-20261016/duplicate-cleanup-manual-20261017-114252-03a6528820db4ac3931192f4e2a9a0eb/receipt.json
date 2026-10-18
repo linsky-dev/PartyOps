@@ -1,0 +1,110 @@
+{
+  "schema": 1,
+  "started_at": "2026-10-17T03:42:52.6973053Z",
+  "apply": true,
+  "scope": "一个旧安装原盘及两个已验证OCR重复目录；不访问E盘，不启动或重建VM",
+  "irreversible": "旧system.qcow2删除后失去干净OS基线；不复制qcow2，入口备份不能恢复原盘",
+  "items": [
+    {
+      "path": "C:\\PartyOps-VM-Lab\\vms\\kylin-v10-sp1-arm64\\system.qcow2",
+      "status": "removed",
+      "retained_disk": "C:\\PartyOps-VM-Lab\\vms\\kylin-v10-sp1-arm64\\render-probe.qcow2",
+      "retained_info": {
+        "children": [
+          {
+            "name": "file",
+            "info": {
+              "children": [],
+              "virtual-size": 21178875904,
+              "filename": "C:\\PartyOps-VM-Lab\\vms\\kylin-v10-sp1-arm64\\render-probe.qcow2",
+              "format": "file",
+              "actual-size": 21178875904
+            }
+          }
+        ],
+        "virtual-size": 68719476736,
+        "filename": "C:\\PartyOps-VM-Lab\\vms\\kylin-v10-sp1-arm64\\render-probe.qcow2",
+        "cluster-size": 65536,
+        "format": "qcow2",
+        "actual-size": 21178875904,
+        "format-specific": {
+          "type": "qcow2",
+          "data": {
+            "compat": "1.1",
+            "compression-type": "zlib",
+            "lazy-refcounts": false,
+            "refcount-bits": 16,
+            "corrupt": false,
+            "extended-l2": false
+          }
+        },
+        "dirty-flag": false
+      },
+      "old_info": {
+        "children": [
+          {
+            "name": "file",
+            "info": {
+              "children": [],
+              "virtual-size": 15454830592,
+              "filename": "C:\\PartyOps-VM-Lab\\vms\\kylin-v10-sp1-arm64\\system.qcow2",
+              "format": "file",
+              "actual-size": 15454830592
+            }
+          }
+        ],
+        "virtual-size": 68719476736,
+        "filename": "C:\\PartyOps-VM-Lab\\vms\\kylin-v10-sp1-arm64\\system.qcow2",
+        "cluster-size": 65536,
+        "format": "qcow2",
+        "actual-size": 15454830592,
+        "format-specific": {
+          "type": "qcow2",
+          "data": {
+            "compat": "1.1",
+            "compression-type": "zlib",
+            "lazy-refcounts": false,
+            "refcount-bits": 16,
+            "corrupt": false,
+            "extended-l2": false
+          }
+        },
+        "dirty-flag": false
+      },
+      "old_bytes": 15454830592,
+      "old_sha256": "ec9c18322f391e386dcc0b359a2039c46f4d64c5e09aea0a345a33ddb014d258",
+      "entrypoints": [
+        {
+          "path": "C:\\PartyOps-VM-Lab\\vms\\kylin-v10-sp1-arm64\\boot-installed-kernel.ps1",
+          "before_sha256": "33ae601f2c94c4394dfb76b947d613c592d7a2dc048c9ab98ae3f711c30f2314",
+          "backup": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\qa\\acceptance\\windows-startup-20261016\\duplicate-cleanup-manual-20261017-114252-03a6528820db4ac3931192f4e2a9a0eb\\boot-installed-kernel.ps1.before",
+          "installed": true,
+          "after_sha256": "b5093144beb7866adfaf153c68833a8641690f9fb76db22dd37c64fd209dd865"
+        },
+        {
+          "path": "C:\\PartyOps-VM-Lab\\vms\\kylin-v10-sp1-arm64\\launch.ps1",
+          "before_sha256": "2c5a819443010ca7857eed10cb7e24c0d492a288b0bc4abd39e07959947e06db",
+          "backup": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\qa\\acceptance\\windows-startup-20261016\\duplicate-cleanup-manual-20261017-114252-03a6528820db4ac3931192f4e2a9a0eb\\launch.ps1.before",
+          "installed": true,
+          "after_sha256": "5d9db5ab60bacea2b0955bc677d2a98830906223cedeb73b131b61a550a0d967"
+        }
+      ]
+    },
+    {
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.qa\\ocr-public-recovery-8a79eb0e6a2b4a288463ab60a3ee8129",
+      "status": "removed",
+      "files": 62,
+      "bytes": 114801597,
+      "manifest": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\qa\\acceptance\\windows-startup-20261016\\duplicate-cleanup-manual-20261017-114252-03a6528820db4ac3931192f4e2a9a0eb\\ocr-public-recovery-8a79eb0e6a2b4a288463ab60a3ee8129.files.json"
+    },
+    {
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.qa\\ocr-recovered-inspect",
+      "status": "removed",
+      "files": 62,
+      "bytes": 114801597,
+      "manifest": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\qa\\acceptance\\windows-startup-20261016\\duplicate-cleanup-manual-20261017-114252-03a6528820db4ac3931192f4e2a9a0eb\\ocr-recovered-inspect.files.json"
+    }
+  ],
+  "finished_at": "2026-10-17T03:43:22.8657182Z",
+  "status": "completed"
+}

@@ -1,0 +1,286 @@
+#requires -Version 7.0
+[CmdletBinding()]
+param(
+    [ValidateSet('Validate', 'Install', 'ResumeInstall', 'StartInstalled')]
+    [string]$Action = 'Validate',
+    [ValidateRange(1024, 65535)][int]$SshPort = 23242,
+    [ValidateRange(1024, 65535)][int]$QmpPort = 24442
+)
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+
+# 本入口只管理这个独立QA目录；不关停其他VM，不沿用历史PID判断进程存活。
+$vmRoot = [IO.Path]::GetFullPath($PSScriptRoot)
+$expectedRoot = 'C:\PartyOps-VM-Lab\vms\kylin-v10-sp1-arm64'
+if ($vmRoot -ne $expectedRoot) { throw 'VM_ROOT_MISMATCH：请在登记的独立目录执行。' }
+$qemu = 'D:\PartyOps-VM-Lab\tools\qemu-11.1.0\qemu-system-aarch64.exe'
+$qemuImg = 'D:\PartyOps-VM-Lab\tools\qemu-11.1.0\qemu-img.exe'
+$firmware = 'D:\PartyOps-VM-Lab\tools\qemu-11.1.0\share\edk2-aarch64-code.fd'
+$iso = 'C:\PartyOps-VM-Lab\media\kylin\Kylin-Desktop-V10-SP1-2503-Release-20250430-ARM64.iso'
+$isoSha = '4b95856568cbacbde189c18e75f46b262e2c1b7f966628155a6af1d9e9609875'
+$firmwareSha = '47765fe344818cbc464b1c14ae658fb4b854f5c2ceffa982411731eb4865594d'
+$disk = Join-Path $vmRoot 'system.qcow2'
+$statePath = Join-Path $vmRoot 'vm.json'
+$creationPath = Join-Path $vmRoot 'disk-creation.json'
+$utf8 = [Text.UTF8Encoding]::new($false)
+
+function Assert-RegularFile([string]$Path) {
+    $item = Get-Item -LiteralPath $Path -Force
+    if ($item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+        throw "REGULAR_FILE_REQUIRED：$Path"
+    }
+}
+function Assert-PortAvailable([int]$Port) {
+    $listener = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, $Port)
+    try { $listener.Start() } catch { throw "LOCAL_PORT_BUSY：127.0.0.1:$Port" }
+    finally { $listener.Stop() }
+}
+function Assert-HostCapacity {
+    $volume = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='C:'"
+    $os = Get-CimInstance Win32_OperatingSystem
+    $freeRam = [int64]$os.FreePhysicalMemory * 1KB
+    if ([int64]$volume.FreeSpace -lt 30GB) { throw 'HOST_DISK_HEADROOM：C盘空闲不足30GiB。' }
+    if ($freeRam -lt 8GB) { throw 'HOST_MEMORY_HEADROOM：当前可用RAM不足8GiB。' }
+    return @{ c_free_bytes = [int64]$volume.FreeSpace; available_ram_bytes = $freeRam }
+}
+function Assert-NoActiveVm {
+    # 查询当前系统进程与真实命令行；历史vm.json中的PID不参与判断。
+    $active = @(Get-CimInstance Win32_Process -Filter "Name='qemu-system-aarch64.exe'" |
+        Where-Object { $_.CommandLine -and $_.CommandLine.IndexOf($vmRoot, [StringComparison]::OrdinalIgnoreCase) -ge 0 })
+    if ($active.Count) { throw 'VM_ALREADY_ACTIVE：发现当前命令行引用本VM目录的QEMU；不重复启动或终止。' }
+}
+function Set-PrivateDirectory([string]$Path) {
+    $acl = [Security.AccessControl.DirectorySecurity]::new()
+    $sid = [Security.Principal.WindowsIdentity]::GetCurrent().User
+    $acl.SetOwner($sid)
+    $acl.SetAccessRuleProtection($true, $false)
+    foreach ($principal in @($sid, [Security.Principal.SecurityIdentifier]::new('S-1-5-18'))) {
+        $rule = [Security.AccessControl.FileSystemAccessRule]::new(
+            $principal, 'FullControl', 'ContainerInherit,ObjectInherit', 'None', 'Allow')
+        $acl.AddAccessRule($rule)
+    }
+    Set-Acl -LiteralPath $Path -AclObject $acl
+}
+function Save-Record([string]$Path, $Record) {
+    $temporary = Join-Path $vmRoot ('vm.' + [guid]::NewGuid().ToString('N') + '.tmp')
+    [IO.File]::WriteAllText($temporary, ($Record | ConvertTo-Json -Depth 8), $utf8)
+    [IO.File]::Move($temporary, $Path, $true)
+}
+function Save-State($State) { Save-Record $statePath $State }
+function Assert-IdentityRecord($Record) {
+    if ($Record.schema_version -ne 1 -or $Record.target -ne 'kylin-v10-sp1-arm64' -or
+        $Record.disk -ne $disk -or $Record.iso -ne $iso -or $Record.iso_sha256 -ne $isoSha -or
+        $Record.firmware -ne $firmware -or $Record.firmware_sha256 -ne $firmwareSha -or
+        $Record.architecture -ne 'aarch64') { throw 'VM_STATE_IDENTITY_FAILED' }
+    $parsedUuid = [guid]$Record.uuid
+    if ($parsedUuid -eq [guid]::Empty) { throw 'VM_UUID_EMPTY' }
+}
+function Assert-Disk([string]$Path) {
+    Assert-RegularFile $Path
+    $text = & $qemuImg info --output=json $Path
+    if ($LASTEXITCODE -ne 0) { throw 'DISK_INFO_FAILED：磁盘可能仍被占用，保留原盘。' }
+    $info = ($text -join "`n") | ConvertFrom-Json
+    if ($info.format -ne 'qcow2' -or [int64]$info.'virtual-size' -ne 64GB -or
+        $info.PSObject.Properties['backing-filename']) { throw 'DISK_IDENTITY_FAILED：只接受独立64GiB qcow2。' }
+}
+function Get-QmpIdentity([int]$Port, [string]$Transcript) {
+    $client = [Net.Sockets.TcpClient]::new()
+    try {
+        $task = $client.ConnectAsync('127.0.0.1', $Port)
+        if (-not $task.Wait(1500)) { throw 'QMP_CONNECT_TIMEOUT' }
+        # .NET异步完成值可能是VoidTaskResult；不得污染本函数的唯一UUID返回值。
+        [void]$task.GetAwaiter().GetResult()
+        $stream = $client.GetStream()
+        $stream.ReadTimeout = 2000
+        $stream.WriteTimeout = 2000
+        $reader = [IO.StreamReader]::new($stream, $utf8, $false, 4096, $true)
+        $writer = [IO.StreamWriter]::new($stream, $utf8, 4096, $true)
+        $writer.AutoFlush = $true
+        $greeting = $reader.ReadLine()
+        [IO.File]::AppendAllText($Transcript, "$greeting`n", $utf8)
+        if (-not (($greeting | ConvertFrom-Json).PSObject.Properties['QMP'])) { throw 'QMP_GREETING_INVALID' }
+        $identity = $null
+        foreach ($command in @('qmp_capabilities', 'query-uuid', 'query-status')) {
+            $request = @{ execute = $command; id = $command } | ConvertTo-Json -Compress
+            $writer.WriteLine($request)
+            for ($attempt = 0; $attempt -lt 20; $attempt++) {
+                $line = $reader.ReadLine()
+                if ($null -eq $line) { throw 'QMP_CLOSED' }
+                [IO.File]::AppendAllText($Transcript, "$line`n", $utf8)
+                $response = $line | ConvertFrom-Json
+                if ($response.PSObject.Properties['id'] -and $response.id -eq $command) {
+                    if ($response.PSObject.Properties['error']) { throw "QMP_COMMAND_FAILED：$command" }
+                    if ($command -eq 'query-uuid') { $identity = $response.return.UUID }
+                    break
+                }
+            }
+        }
+        if (-not $identity) { throw 'QMP_UUID_MISSING' }
+        return [string]$identity
+    } finally { $client.Dispose() }
+}
+
+if ($SshPort -eq $QmpPort) { throw 'PORT_COLLISION：SSH与QMP必须使用独立端口。' }
+foreach ($path in @($qemu, $qemuImg, $firmware, $iso)) { Assert-RegularFile $path }
+foreach ($path in @($vmRoot, (Split-Path $vmRoot), (Split-Path (Split-Path $vmRoot)))) {
+    if ((Get-Item -LiteralPath $path -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) {
+        throw "VM_REPARSE_PATH_REFUSED：$path"
+    }
+}
+$capacity = Assert-HostCapacity
+Assert-NoActiveVm
+Assert-PortAvailable $SshPort
+Assert-PortAvailable $QmpPort
+if ((Get-Item -LiteralPath $firmware).Length -ne 64MB -or
+    (Get-FileHash -LiteralPath $firmware -Algorithm SHA256).Hash.ToLowerInvariant() -ne $firmwareSha) {
+    throw 'FIRMWARE_IDENTITY_FAILED：固件大小或SHA256不符。'
+}
+Write-Host '正在只读核对官方ISO的SHA256……'
+if ((Get-FileHash -LiteralPath $iso -Algorithm SHA256).Hash.ToLowerInvariant() -ne $isoSha) {
+    throw 'ISO_IDENTITY_FAILED：安装介质SHA256不符。'
+}
+# 先让原生命令完整结束，再立即保存退出码；Select-Object -First提前关闭
+# 原生输出管道时，StrictMode下LASTEXITCODE可能尚未被设置。
+$qemuVersionOutput = @(& $qemu --version)
+$qemuVersionExitCode = $LASTEXITCODE
+$qemuVersion = ($qemuVersionOutput | Select-Object -First 1)
+if ($qemuVersionExitCode -ne 0 -or $qemuVersion -notmatch 'version 11\.1\.0') { throw 'QEMU_VERSION_MISMATCH' }
+if ($Action -eq 'Validate') {
+    [pscustomobject]@{ status = 'preflight_passed_no_vm_started'; architecture = 'aarch64';
+        os_media = 'Kylin Desktop V10 SP1 2503'; capacity = $capacity;
+        disk_exists = (Test-Path -LiteralPath $disk); ssh_port = $SshPort; qmp_port = $QmpPort }
+    return
+}
+
+# 只在明确安装/续装/硬盘启动后创建记录。并发互斥不依赖PID文件。
+Set-PrivateDirectory $vmRoot
+$lock = [IO.File]::Open((Join-Path $vmRoot '.launch.lock'), 'OpenOrCreate', 'ReadWrite', 'None')
+$uuid = $null
+$phase = 'preflight_completed'
+try {
+    $capacity = Assert-HostCapacity
+    Assert-NoActiveVm
+    Assert-PortAvailable $SshPort
+    Assert-PortAvailable $QmpPort
+    if ($Action -eq 'Install') {
+        if ((Test-Path -LiteralPath $disk) -or (Test-Path -LiteralPath $statePath) -or
+            (Test-Path -LiteralPath $creationPath)) {
+            throw 'EXISTING_VM_REFUSED：安装入口不覆盖已有磁盘或登记文件；续装请用ResumeInstall。'
+        }
+        $uuid = [guid]::NewGuid().ToString()
+        $creationId = [guid]::NewGuid().ToString('N')
+        $stagedDisk = Join-Path $vmRoot ('system.create-' + $creationId + '.qcow2')
+        $phase = 'creating_staged_disk'
+        & $qemuImg create -f qcow2 -o preallocation=off $stagedDisk 64G
+        if ($LASTEXITCODE -ne 0) { throw 'DISK_CREATE_FAILED：保留失败文件，不重建原盘。' }
+        Assert-Disk $stagedDisk
+        # 必须先持久化绑定再发布系统盘。此后即使Move后vm.json写失败，
+        # ResumeInstall仍可核对原始新盘精确摘要，复用原UUID而不创建/覆盖。
+        $creation = [ordered]@{ schema_version = 1; target = 'kylin-v10-sp1-arm64';
+            phase = 'disk_ready_for_publish'; uuid = $uuid; creation_id = $creationId;
+            architecture = 'aarch64'; disk = $disk; staged_disk = $stagedDisk;
+            disk_virtual_bytes = 64GB; disk_initial_file_bytes = (Get-Item -LiteralPath $stagedDisk).Length;
+            disk_initial_sha256 = (Get-FileHash -LiteralPath $stagedDisk -Algorithm SHA256).Hash.ToLowerInvariant();
+            iso = $iso; iso_sha256 = $isoSha; firmware = $firmware; firmware_sha256 = $firmwareSha;
+            created_at = [DateTime]::UtcNow.ToString('o') }
+        Save-Record $creationPath $creation
+        $phase = 'creation_binding_persisted'
+        [IO.File]::Move($stagedDisk, $disk) # 不允许覆盖：如目标被并发创建则失败并保留临时盘。
+        $phase = 'disk_published_state_pending'
+    } else {
+        if (Test-Path -LiteralPath $statePath) {
+            Assert-RegularFile $statePath
+            $previous = Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json
+            Assert-IdentityRecord $previous
+            $uuid = ([guid]$previous.uuid).ToString()
+        } elseif ($Action -eq 'ResumeInstall') {
+            Assert-RegularFile $creationPath
+            $creation = Get-Content -LiteralPath $creationPath -Raw | ConvertFrom-Json
+            Assert-IdentityRecord $creation
+            $creationId = ([guid]$creation.creation_id).ToString('N')
+            if ($creation.phase -ne 'disk_ready_for_publish' -or
+                $creation.staged_disk -ne (Join-Path $vmRoot ('system.create-' + $creationId + '.qcow2')) -or
+                [int64]$creation.disk_virtual_bytes -ne 64GB -or
+                $creation.disk_initial_sha256 -notmatch '^[0-9a-f]{64}$') { throw 'ORPHAN_BINDING_INVALID' }
+            Assert-RegularFile $disk
+            if ((Get-Item -LiteralPath $disk).Length -ne [int64]$creation.disk_initial_file_bytes -or
+                (Get-FileHash -LiteralPath $disk -Algorithm SHA256).Hash.ToLowerInvariant() -ne $creation.disk_initial_sha256) {
+                throw 'ORPHAN_DISK_CHANGED：孤盘与发布前精确绑定不符；保留并交主控核查，不猜测接管。'
+            }
+            $uuid = ([guid]$creation.uuid).ToString()
+            $phase = 'orphan_disk_binding_verified'
+        } else {
+            throw 'VM_STATE_MISSING：禁止无绑定从硬盘启动；有disk-creation.json的原始孤盘可用ResumeInstall。'
+        }
+        Assert-Disk $disk
+    }
+    $runRoot = Join-Path $vmRoot ('runs\' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '-' + [guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Path $runRoot | Out-Null
+    Set-PrivateDirectory $runRoot
+    $serial = Join-Path $runRoot 'serial.log'
+    $stdout = Join-Path $runRoot 'qemu.stdout.log'
+    $stderr = Join-Path $runRoot 'qemu.stderr.log'
+    $qmpLog = Join-Path $runRoot 'qmp-bootstrap.jsonl'
+    $arguments = @('-name', '银河麒麟 ARM64 QA', '-uuid', $uuid, '-machine', 'virt-11.1',
+        '-accel', 'tcg,thread=multi', '-cpu', 'cortex-a72', '-smp', '4', '-m', '6144',
+        '-bios', $firmware, '-drive', "file=$disk,if=virtio,format=qcow2",
+        '-device', 'virtio-gpu-pci', '-device', 'qemu-xhci', '-device', 'usb-kbd', '-device', 'usb-tablet',
+        '-display', 'sdl', '-serial', "file:$serial", '-monitor', 'none',
+        '-qmp', "tcp:127.0.0.1:$QmpPort,server=on,wait=off",
+        '-netdev', "user,id=net0,restrict=on,hostfwd=tcp:127.0.0.1:$SshPort-:22",
+        '-device', 'virtio-net-pci,netdev=net0')
+    if ($Action -in @('Install', 'ResumeInstall')) {
+        $arguments += @('-device', 'virtio-scsi-pci,id=scsi0', '-drive', "file=$iso,if=none,id=cd0,format=raw,readonly=on",
+            '-device', 'scsi-cd,drive=cd0,bus=scsi0.0', '-boot', 'order=d')
+    } else { $arguments += @('-boot', 'order=c') }
+    $state = [ordered]@{ schema_version = 1; target = 'kylin-v10-sp1-arm64'; uuid = $uuid;
+        architecture = 'aarch64'; package_architecture_expected = 'arm64';
+        os_media_label = 'Kylin Desktop V10 SP1 2503 Release 20250430 ARM64';
+        guest_os_identity = 'not_probed'; installation_status = 'not_verified'; product_acceptance = 'not_run';
+        iso = $iso; iso_sha256 = $isoSha; firmware = $firmware; firmware_sha256 = $firmwareSha;
+        qemu_version = $qemuVersion; accelerator = 'tcg'; machine = 'virt-11.1'; memory_mib = 6144; cpus = 4;
+        graphics = 'virtio-gpu-pci'; cpu = 'cortex-a72';
+        disk = $disk; disk_virtual_bytes = 64GB; disk_backing_file = $null;
+        ssh_port = $SshPort; qmp_port = $QmpPort; network = 'restricted-user-localhost-ssh-only';
+        action = $Action; status = 'launch_requested'; requested_at = [DateTime]::UtcNow.ToString('o');
+        capacity = $capacity; run_directory = $runRoot; pid_observed = $null; qmp_uuid = $null; arguments = $arguments }
+    Save-State $state
+    $phase = 'state_persisted_before_launch'
+    # 参数中只有固定路径/UUID/整数；逐参数加引号保留中文标题。可见SDL窗口为QA交互所需。
+    $quotedArguments = @($arguments | ForEach-Object { '"' + $_.Replace('"', '\"') + '"' })
+    try {
+        $process = Start-Process -FilePath $qemu -ArgumentList $quotedArguments -WorkingDirectory $vmRoot `
+            -WindowStyle Normal -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
+        $state.pid_observed = $process.Id
+        $phase = 'qemu_process_started'
+        $identity = $null
+        for ($attempt = 0; $attempt -lt 10; $attempt++) {
+            if ($process.HasExited) { throw "QEMU_EARLY_EXIT：$($process.ExitCode)，请查$stderr" }
+            try { $identity = Get-QmpIdentity $QmpPort $qmpLog; break }
+            catch { if ($attempt -eq 9) { throw }; Start-Sleep -Milliseconds 500 }
+        }
+        if ($identity -ne $uuid) { throw 'QMP_UUID_MISMATCH：不自动关停或操作身份不符的进程。' }
+        $state.qmp_uuid = $identity
+        $state.status = 'qemu_started_guest_not_verified'
+        Save-State $state
+        Write-Host "麒麟QA已交给QEMU，安装/Guest身份/产品验收尚未验证。记录：$statePath；日志：$runRoot"
+    } catch {
+        $state.status = 'launch_failed_or_unconfirmed'
+        $state.failure = $_.Exception.Message
+        Save-State $state
+        throw
+    }
+} catch {
+    $originalFailure = $_
+    $failurePath = Join-Path $vmRoot ('failure-' + [guid]::NewGuid().ToString('N') + '.json')
+    try {
+        Save-Record $failurePath ([ordered]@{ schema_version = 1; target = 'kylin-v10-sp1-arm64';
+            action = $Action; phase = $phase; uuid = $uuid; disk = $disk; creation_binding = $creationPath;
+            state = $statePath; error = $originalFailure.Exception.Message;
+            recorded_at = [DateTime]::UtcNow.ToString('o'); automatic_cleanup = $false })
+        Write-Warning "操作未完成，已保留磁盘和绑定记录；失败回执：$failurePath"
+    } catch {
+        Write-Warning "FAILURE_RECEIPT_WRITE_FAILED：无法保存失败回执；原有盘和disk-creation.json均未清理。阶段：$phase"
+    }
+    throw $originalFailure
+} finally { $lock.Dispose() }

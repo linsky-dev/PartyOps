@@ -1,0 +1,10 @@
+{
+  "time_utc": "2026-10-17T06:29:52.333654+00:00",
+  "operation": "start",
+  "result": {
+    "logon_type": 3,
+    "run_level": 0,
+    "requested": true
+  },
+  "wps_acceptance_passed": false
+}

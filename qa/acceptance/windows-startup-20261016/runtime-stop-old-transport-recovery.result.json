@@ -1,0 +1,16 @@
+{
+  "status": "completed",
+  "time": "2026-10-17T04:56:57.218858+00:00",
+  "attempt_sha256": "924e5e2b75a526dded012df7be83972cb6121a024e09a629cdf9c886ede5d797",
+  "result": {
+    "target_created": "2026-10-17T03:52:53.7626490Z",
+    "close_main_window_attempted": false,
+    "exit_kind": "controlled-qa-process-termination",
+    "gui_normal_exit_acceptance": false,
+    "target_pid": 1724,
+    "controlled_qa_process_termination": true,
+    "close_main_window_accepted": false,
+    "status": "completed",
+    "uac_acceptance": false
+  }
+}

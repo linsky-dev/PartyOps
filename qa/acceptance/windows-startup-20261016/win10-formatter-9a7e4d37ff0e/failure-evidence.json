@@ -1,0 +1,19 @@
+{
+  "stage": "session",
+  "error": "INSTALLED_FORMATTER_HTTP_FAILED",
+  "http_failures": [
+    {
+      "stage": "session",
+      "route": "/v1/sessions",
+      "method": "POST",
+      "exception_type": "IncompleteRead",
+      "http_status": 201
+    }
+  ],
+  "last_request": {
+    "route": "/v1/sessions",
+    "method": "POST"
+  },
+  "safe_jobs": [],
+  "probe_sidecars": []
+}

@@ -1,0 +1,38 @@
+{
+  "status": "bootstrap-page-observed",
+  "candidate": {
+    "package": {
+      "id": "windows_amd64",
+      "version": "1.4.5-rc.6",
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\artifacts\\PartyOps_1.4.5-rc.6_windows_amd64.exe",
+      "sha256": "e3e2ea45ccd38acff059b5713826a78f998a56ccef75341633f67bd4e17e57da",
+      "source_fingerprint": "84bddfca2e3a217cf5052cc7683d83687b4d00b4f7325d120a833a8ee6880d7f",
+      "provenance_status": "verified",
+      "build_receipt": "D:\\PartyOps-VM-Lab\\state\\builds\\e3e2ea45ccd38acff059b5713826a78f998a56ccef75341633f67bd4e17e57da.json",
+      "build_receipt_sha256": "b7c8db9527279faa4b104d30159d6569fbe70b42d87c612bc49a1835420aff0f"
+    },
+    "manifest_sha256": "202a98774b78b49f91fd26dd1dc92b2581b6d7eb6a26d2f129694fa58785b075",
+    "executable_sha256": "1dae862966da6d8e98d22620b4e0d8dbafed7e8c5a85c56a217b43b73c1846ca",
+    "wizard_sha256": "b062ea21fa91c937fa00c31221a0c348deb07780a698927a7b641b5fcaa40649"
+  },
+  "since": "2026-10-18T10:32:53.5625010Z",
+  "attempt_sha256": "933c1eaa5fb5d247b81dffc488c65e67efb11cced0bc59a8eba158c8609b726a",
+  "case": "retained-existing-root",
+  "qa_host_data_directory": "C:\\PartyOps-QA-Host-20261017\\主机 数据",
+  "original_personal_restore_directory": "C:\\Users\\partyopsuser\\Documents\\PartyOps QA\\lifecycle-82dbfdf1894f\\中文 空格业务数据",
+  "account_creation": "not-attempted",
+  "uac_acceptance": "not-verified",
+  "http_status": 200,
+  "bootstrap_admin_page": true,
+  "public_error_codes": [],
+  "host_status": {
+    "present": true,
+    "code": "",
+    "pid": 6624,
+    "exit_code": null,
+    "stage": "ready"
+  },
+  "user_mode": "host",
+  "system_mode": "host",
+  "completed_at": "2026-10-18T10:37:49.865346+00:00"
+}

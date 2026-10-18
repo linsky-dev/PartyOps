@@ -1,0 +1,45 @@
+{
+  "status": "passed",
+  "kind": "windows-system-event-recovery",
+  "candidate": {
+    "package": {
+      "id": "windows_amd64",
+      "version": "1.4.5-rc.6",
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\artifacts\\PartyOps_1.4.5-rc.6_windows_amd64.exe",
+      "sha256": "e3e2ea45ccd38acff059b5713826a78f998a56ccef75341633f67bd4e17e57da",
+      "source_fingerprint": "84bddfca2e3a217cf5052cc7683d83687b4d00b4f7325d120a833a8ee6880d7f",
+      "provenance_status": "verified",
+      "build_receipt": "D:\\PartyOps-VM-Lab\\state\\builds\\e3e2ea45ccd38acff059b5713826a78f998a56ccef75341633f67bd4e17e57da.json",
+      "build_receipt_sha256": "b7c8db9527279faa4b104d30159d6569fbe70b42d87c612bc49a1835420aff0f"
+    },
+    "manifest_sha256": "202a98774b78b49f91fd26dd1dc92b2581b6d7eb6a26d2f129694fa58785b075",
+    "executable_sha256": "1dae862966da6d8e98d22620b4e0d8dbafed7e8c5a85c56a217b43b73c1846ca",
+    "wizard_sha256": "b062ea21fa91c937fa00c31221a0c348deb07780a698927a7b641b5fcaa40649"
+  },
+  "guest_uuid": "f47cf265-72a2-4d51-9cf1-b1f5ae960cb2",
+  "disk": "D:\\PartyOps-VM-Lab\\vms\\win10-x64\\system.qcow2",
+  "normal_attempt_sha256": "a770e6d9349f7bb5a4026ebc6ad56ac94d6ca4209c688c00539a8f062e3e235f",
+  "recover_start_attempt_sha256": "d4d7781bfbe6ca7910e59c1901d9f4a8a004a3c769a51b575290c21931355ae1",
+  "recover_start_result_sha256": "a365477e5889cf1e555dda9b84031a12fa47f6dd74dee92ab2a251589ed94a02",
+  "events_file": "reboot-recovery-events-81f0300cba0e.json",
+  "events_sha256": "3523fc3d970760c2ae5e3ab5add3480bfc03745dd121bb1e7043e34531fea46b",
+  "event_validation": {
+    "kind": "windows-system-event-recovery",
+    "normal_shutdown_event_ids": [
+      13,
+      6006
+    ],
+    "startup_event_ids": [
+      12,
+      6005
+    ],
+    "user32_1074_observed": true,
+    "qmp_shutdown_event_persisted": false,
+    "abnormal_41_6008_observed": false
+  },
+  "qmp_shutdown_event_persisted": false,
+  "actual_boot_id": "2026-10-18T09:43:26.5000000Z",
+  "probe_boot_id": "20261018174326.500000+480",
+  "completed_at": "2026-10-18T09:47:24.138098+00:00",
+  "limitation": "原QMP正常关机事件仅内存返回，未落盘；本次依据实际Windows系统事件及boot变化"
+}

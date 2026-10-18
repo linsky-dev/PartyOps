@@ -1,0 +1,16 @@
+{
+  "expected": {
+    "filename": "release-manifest-windows-startup-20261018.json",
+    "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\qa\\acceptance\\windows-startup-20261016\\publication-windows-20261018\\batch\\release-manifest-windows-startup-20261018.json",
+    "bytes": 67097,
+    "sha256": "9e314cbfa1c5d604ad0f24dd8525b0afcda4f511f1cd8d4571114be1061298ee"
+  },
+  "asset": {
+    "id": 653303744,
+    "name": "release-manifest-windows-startup-20261018.json",
+    "size": 67097,
+    "digest": "sha256:9e314cbfa1c5d604ad0f24dd8525b0afcda4f511f1cd8d4571114be1061298ee"
+  },
+  "command_returned_success": true,
+  "outcome_read_verified": true
+}

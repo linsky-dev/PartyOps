@@ -1,0 +1,9 @@
+{
+  "publisher": "CN=\"Zhuhai Kingsoft Office Software Co., Ltd.\", O=\"Zhuhai Kingsoft Office Software Co., Ltd.\", L=珠海市, S=广东省, C=CN",
+  "signature": "Valid",
+  "sha256": "089eeb02fb7da42a683a4d9c7fcecf155b7b326fcd8b8281cbd0b7acd3d9783a",
+  "size": 342602512,
+  "time_utc": "2026-10-17T05:09:57.151250+00:00",
+  "guest_uuid": "f47cf265-72a2-4d51-9cf1-b1f5ae960cb2",
+  "operation": "stage-official-wps-only-not-installed"
+}

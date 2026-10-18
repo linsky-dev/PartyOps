@@ -1,0 +1,17 @@
+[
+  {
+    "path": "C:\\PartyOps-QA-Host-20261017\\主机 数据\\secrets\\pki\\ca.pem",
+    "sha256": "560424ff8c5448f5d69cd4ee3ed49dce7b9afaa6302d3950688b0b5db6559622",
+    "present": true
+  },
+  {
+    "path": "C:\\ProgramData\\PartyOps\\public-host-ca.pem",
+    "sha256": "560424ff8c5448f5d69cd4ee3ed49dce7b9afaa6302d3950688b0b5db6559622",
+    "present": true
+  },
+  {
+    "path": "C:\\Users\\partyopsuser\\AppData\\Local\\PartyOps\\pki\\ca.pem",
+    "sha256": "3aa5765eb25e1c8f6ce7883a3c452c8bdcc1f1b6b9fc11e2ad8331e0b49363ee",
+    "present": true
+  }
+]

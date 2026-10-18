@@ -1,0 +1,83 @@
+{
+  "time_utc": "2026-10-17T05:27:55.922760+00:00",
+  "attempt_sha256": "e67f3572eb80c440f1a989019e6a346c83f1f1a78164e5dc4b3f169532e112ec",
+  "scope": "QA-user-fonts-only",
+  "fonts": [
+    {
+      "filename": "仿宋_GB2312.ttf",
+      "registry_name": "仿宋_GB2312 (TrueType)",
+      "sha256": "fef7cf991b458cabd184b73378918d9d15429010e1d6c804f08d394395c3c3b4",
+      "bytes": 3996872
+    },
+    {
+      "filename": "楷体_GB2312.ttf",
+      "registry_name": "楷体_GB2312 (TrueType)",
+      "sha256": "99092cbb0df301625f46509e85854db8685556551742097ab3fbbc2e2ca0778b",
+      "bytes": 4135804
+    },
+    {
+      "filename": "方正小标宋简.TTF",
+      "registry_name": "方正小标宋简体 (TrueType)",
+      "sha256": "f6154b97ee71bad19efa7f78edc152cf515c1f943220fc6e98360005d53d1c62",
+      "bytes": 3835244
+    }
+  ],
+  "result": {
+    "scope": "HKCU-and-original-QA-user-font-directory",
+    "guest_uuid": "f47cf265-72a2-4d51-9cf1-b1f5ae960cb2",
+    "sid": "S-1-5-21-2301861879-671312343-3722671823-1003",
+    "packaged_in_product": false,
+    "username": "partyopsuser",
+    "fonts": [
+      {
+        "registered": true,
+        "sha256": "fef7cf991b458cabd184b73378918d9d15429010e1d6c804f08d394395c3c3b4",
+        "filename": "仿宋_GB2312.ttf",
+        "registry_matches": true,
+        "copied": true
+      },
+      {
+        "registered": true,
+        "sha256": "99092cbb0df301625f46509e85854db8685556551742097ab3fbbc2e2ca0778b",
+        "filename": "楷体_GB2312.ttf",
+        "registry_matches": true,
+        "copied": true
+      },
+      {
+        "registered": true,
+        "sha256": "f6154b97ee71bad19efa7f78edc152cf515c1f943220fc6e98360005d53d1c62",
+        "filename": "方正小标宋简.TTF",
+        "registry_matches": true,
+        "copied": true
+      }
+    ],
+    "session_id": 1,
+    "status": "completed",
+    "administrator": false
+  },
+  "after": {
+    "guest_uuid": "f47cf265-72a2-4d51-9cf1-b1f5ae960cb2",
+    "fonts": [
+      {
+        "sha256": "fef7cf991b458cabd184b73378918d9d15429010e1d6c804f08d394395c3c3b4",
+        "filename": "仿宋_GB2312.ttf",
+        "registry_matches": true
+      },
+      {
+        "sha256": "99092cbb0df301625f46509e85854db8685556551742097ab3fbbc2e2ca0778b",
+        "filename": "楷体_GB2312.ttf",
+        "registry_matches": true
+      },
+      {
+        "sha256": "f6154b97ee71bad19efa7f78edc152cf515c1f943220fc6e98360005d53d1c62",
+        "filename": "方正小标宋简.TTF",
+        "registry_matches": true
+      }
+    ],
+    "username": "partyopsuser",
+    "session_id": 1,
+    "standard_account": true
+  },
+  "packaged_in_product": false,
+  "wps_acceptance": "not-verified"
+}

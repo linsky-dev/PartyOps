@@ -1,0 +1,21 @@
+{
+  "time_utc": "2026-10-18T09:35:51.219498+00:00",
+  "purpose": "保留同一安装进程的一次虚拟CPU暂停恢复，非重启",
+  "uuid": {
+    "UUID": "f47cf265-72a2-4d51-9cf1-b1f5ae960cb2"
+  },
+  "before": {
+    "status": "running",
+    "running": true
+  },
+  "stop": {},
+  "paused": {
+    "status": "paused",
+    "running": false
+  },
+  "cont": {},
+  "after": {
+    "status": "running",
+    "running": true
+  }
+}

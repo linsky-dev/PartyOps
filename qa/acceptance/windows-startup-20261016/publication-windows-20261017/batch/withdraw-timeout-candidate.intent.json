@@ -1,0 +1,13 @@
+{
+  "status": "reserved-not-sent",
+  "time_utc": "2026-10-18T07:37:43.447435+00:00",
+  "purpose": "撤下未发布且被P1阻断的Windows候选路由，恢复原10包接收器",
+  "directory": "C:\\PartyOps-VM-Lab\\records\\kylin-20261012\\acceptance\\publication-20261016\\batch\\post-switch-receiver",
+  "receiver_sha256": "d372e6982f37dae0d2c8ac27e76f1c976ac8a91527ebee28909d6440ac691856",
+  "expected_manifest_sha256": "b52807452932502a5f05a10eb609c87345fabe4addb17d3ffeae3a673e0d0e57",
+  "expected_sandbox": "340f98bdbde44864a9730ff6fb58b993",
+  "expected_base_url": "https://partyops-rc6-win7-x86.app.workbuddy.host",
+  "max_calls": 1,
+  "unknown_outcome_no_retry": true,
+  "public_website_or_github_change": false
+}

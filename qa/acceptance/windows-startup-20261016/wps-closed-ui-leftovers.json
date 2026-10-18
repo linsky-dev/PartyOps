@@ -1,0 +1,46 @@
+[
+  {
+    "signature": "Valid",
+    "path": "C:\\ProgramData\\kingsoft\\20261017_140008\\WPS_Setup_x64_28488.exe",
+    "sha": "5e574529af84aa0d5a7916e1ee4fec00a3ede12ac213781b79b5318ced464bd8",
+    "cpu": 0.3125,
+    "title": "",
+    "created": "2026-10-17T06:00:22.7042560Z",
+    "owner": "partyopsuser",
+    "pid": 4236,
+    "window": 0
+  },
+  {
+    "signature": "Valid",
+    "path": "C:\\users\\public\\desktop\\wps_setup_x64_28488.exe",
+    "sha": "089eeb02fb7da42a683a4d9c7fcecf155b7b326fcd8b8281cbd0b7acd3d9783a",
+    "cpu": 1.5,
+    "title": "",
+    "created": "2026-10-17T06:15:08.2929760Z",
+    "owner": "partyopsqa",
+    "pid": 3728,
+    "window": 0
+  },
+  {
+    "signature": "Valid",
+    "path": "C:\\ProgramData\\kingsoft\\20261017_141510\\wps_setup_x64_28488.exe",
+    "sha": "5e574529af84aa0d5a7916e1ee4fec00a3ede12ac213781b79b5318ced464bd8",
+    "cpu": 4.34375,
+    "title": "",
+    "created": "2026-10-17T06:15:23.7225600Z",
+    "owner": "partyopsqa",
+    "pid": 1228,
+    "window": 0
+  },
+  {
+    "signature": "Valid",
+    "path": "C:\\ProgramData\\kingsoft\\20261017_141510\\wps_setup_x64_28488.exe",
+    "sha": "5e574529af84aa0d5a7916e1ee4fec00a3ede12ac213781b79b5318ced464bd8",
+    "cpu": 2.125,
+    "title": "",
+    "created": "2026-10-17T06:15:27.0918040Z",
+    "owner": "partyopsuser",
+    "pid": 3948,
+    "window": 0
+  }
+]

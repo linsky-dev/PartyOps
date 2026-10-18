@@ -1,0 +1,17 @@
+{
+  "date": "2026-10-18",
+  "status": "code-review-passed-not-publication-acceptance",
+  "scope": "publication-windows-20261018 新候选发布验证及附件追加工具",
+  "reviewer": "formatter_qa_review",
+  "independent_readonly_test_methods": 11,
+  "additional_phase_tamper_cases": 10,
+  "phase_link_issues": "已修复实际调用中的重启上下文、Guest身份、阶段摘要、安装摘要、boot关系及host-prepare关联",
+  "wps_policy": "必须新候选完整实际summary，不允许历史resume或未获准的模块域等价证明",
+  "baseline_signature_verification": "原整体及十个资产签名通过，其他九包保留",
+  "github_scope": "仅新四附件追加及匿名完整回读，未知结果不重发，不clobber、不移动tag、不改main",
+  "old_candidate_hold_retained": true,
+  "guest_access_performed": false,
+  "network_access_performed": false,
+  "new_package_acceptance": "pending",
+  "publication_completed": false
+}

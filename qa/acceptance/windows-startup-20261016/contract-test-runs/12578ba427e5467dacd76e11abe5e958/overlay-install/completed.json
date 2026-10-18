@@ -1,0 +1,23 @@
+{
+  "candidate": {
+    "package": {
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "manifest_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "executable_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "wizard_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+  },
+  "attempt_sha256": "0ce09981c857b95b4bfa038808db8dfaec125203f85f31bf45864c5d33e78b9d",
+  "status": "completed",
+  "identity": {
+    "uuid": "f47cf265-72a2-4d51-9cf1-b1f5ae960cb2"
+  },
+  "install": {
+    "exit_code": 0,
+    "app_exists": true,
+    "launcher_exists": true,
+    "formatter_exists": true,
+    "uninstaller_exists": true,
+    "install_log_exists": true
+  }
+}

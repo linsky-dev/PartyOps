@@ -1,0 +1,11 @@
+{
+  "ordinary_token_admin": false,
+  "mutex_ordinary_token_denied": true,
+  "public_read": true,
+  "public_write_denied": true,
+  "private_keys_read_denied": true,
+  "protected_ca_read_denied": true,
+  "explicit_lan_tls_health": true,
+  "loopback_unavailable": true,
+  "desktop_ca_copy": true
+}

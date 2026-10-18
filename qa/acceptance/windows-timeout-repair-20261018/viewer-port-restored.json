@@ -1,0 +1,23 @@
+{
+  "time_utc": "2026-10-18T09:46:08.731600+00:00",
+  "uuid": "f47cf265-72a2-4d51-9cf1-b1f5ae960cb2",
+  "pid": 5560,
+  "before": {
+    "enabled": true,
+    "auth": "none",
+    "family": "ipv4",
+    "clients": [],
+    "service": "14698",
+    "host": "127.0.0.1"
+  },
+  "after": {
+    "enabled": true,
+    "auth": "none",
+    "family": "ipv4",
+    "clients": [],
+    "service": "23995",
+    "host": "127.0.0.1"
+  },
+  "result": {},
+  "scope": "现有本机查看服务目标不变；仅恢复同VM原loopback VNC端口，无重启"
+}

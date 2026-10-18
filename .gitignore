@@ -73,3 +73,6 @@ vendor/windows/*
 !vendor/windows/dotnet-framework-4.8/
 vendor/windows/dotnet-framework-4.8/*
 !vendor/windows/dotnet-framework-4.8/SOURCE.json
+
+# 接收器上传令牌：绝不入库
+**/.upload-token

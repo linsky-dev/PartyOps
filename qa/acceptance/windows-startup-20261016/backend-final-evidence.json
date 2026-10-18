@@ -1,0 +1,67 @@
+{
+  "schema": 1,
+  "recorded_at": "2026-10-16T11:54:15.998635+00:00",
+  "source_commit": "b58cd0505ebd8bc187d40857e92d19c88b2a2b56",
+  "package_source_fingerprint": "6f879341ef736ffd1ca41da9ff171976c5cb17985058fa1af206fa97eecdb702",
+  "package_source_file_count": 1625,
+  "scope": "宿主源码后端：一次全量加两份补充契约测试；不等同于正式全功能门禁或Win10安装版验收",
+  "runs": [
+    {
+      "evidence": "backend-final-20261016-194447.xml",
+      "sha256": "63bd4f1cae49e869bb6a65f71e7dabcdaab1e7ed6cc64a4394db108bfc1e673a",
+      "suites": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "5",
+          "tests": "2184",
+          "time": "290.370",
+          "timestamp": "2026-10-16T19:44:54.526838+08:00",
+          "hostname": "WIN-NQLSP3PSO5O"
+        }
+      ]
+    },
+    {
+      "evidence": "backend-final-contracts.xml",
+      "sha256": "febf13637b4d877585b3f67843fcc347368e373f02bf8fb304abab0971398dee",
+      "suites": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "117",
+          "time": "4.774",
+          "timestamp": "2026-10-16T19:53:13.966012+08:00",
+          "hostname": "WIN-NQLSP3PSO5O"
+        }
+      ]
+    }
+  ],
+  "combined_coverage": {
+    "covered_lines": 29154,
+    "num_statements": 30291,
+    "percent_covered": 95.24132900726879,
+    "percent_covered_display": "95",
+    "missing_lines": 1137,
+    "excluded_lines": 54,
+    "percent_statements_covered": 96.24640982470041,
+    "percent_statements_covered_display": "96",
+    "num_branches": 9468,
+    "num_partial_branches": 669,
+    "covered_branches": 8713,
+    "missing_branches": 755,
+    "percent_branches_covered": 92.02577101816645,
+    "percent_branches_covered_display": "92"
+  },
+  "coverage_report_sha256": "37495539d8f3aa4c2e9aa8fe85518b2d4ad30f94c433eb67a824a7c07a893fab",
+  "formal_full_gate": "blocked",
+  "guest_overlay": "not_started",
+  "publish": "not_started",
+  "blockers": [
+    "隔离PostgreSQL 55432未启动：自动审批拒绝，等待用户手工入口",
+    "VM查看服务4337未启动：自动审批拒绝",
+    "pytest-3清理被自动审批拒绝；98个扫描命中均为该已结束测试的临时合成文件，尚未恢复工作区扫描通过"
+  ]
+}

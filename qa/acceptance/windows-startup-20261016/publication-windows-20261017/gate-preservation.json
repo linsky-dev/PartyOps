@@ -1,0 +1,7 @@
+{
+  "time_utc": "2026-10-18T07:32:03.727161+00:00",
+  "source": ".release-gates\\full-function-tests.json",
+  "retained": "qa\\acceptance\\windows-startup-20261016\\publication-windows-20261017\\full-function-gate-before-timeout-fix.json",
+  "sha256": "85d5cd38a0bbf4c6111a768db455c89a9b49ecaae5b019d5d7b65f9f4f424f80",
+  "reason": "旧3c81候选门禁保留；新源码修复必须重跑正式门禁，不能覆盖历史事实"
+}

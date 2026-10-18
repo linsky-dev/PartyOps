@@ -1,0 +1,29 @@
+{
+  "time_utc": "2026-10-18T07:33:04.567088+00:00",
+  "status": "source-fix-reviewed-not-built",
+  "files": [
+    {
+      "path": "backend/app/setup_wizard.py",
+      "sha256": "0b621a1a012b0c96d5de0929d2d9e11db3aba3129e14e3808b67d384dd08850b"
+    },
+    {
+      "path": "backend/tests/test_windows_host_configuration_transaction.py",
+      "sha256": "ec2c76ea5d997b00d28d841a9af5a6d4af5ce1161bdc4a213b6ac7e5daeb12e1"
+    }
+  ],
+  "worker_targeted_tests": {
+    "passed": 38,
+    "scope": "Windows主机配置事务模块"
+  },
+  "reviewer_independent_cases": {
+    "passed": 13,
+    "scope": "当前函数的纯内存分支验证，非Guest安装验收"
+  },
+  "ruff": "passed",
+  "old_package_sha256": "3c81fdba89781722f94e82d31c7ff99b4357a1374fc6454ad47d3cfa464d1e27",
+  "old_package_publish_allowed": false,
+  "new_package": null,
+  "full_gate": "pending",
+  "guest_acceptance": "not-started",
+  "govpulse": "restored-not-paused-this-turn"
+}

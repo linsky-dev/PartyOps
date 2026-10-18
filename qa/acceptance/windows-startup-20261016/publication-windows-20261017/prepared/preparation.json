@@ -1,0 +1,1086 @@
+{
+  "local_input_status": "valid",
+  "publication_status": "blocked-pending-host-uac-and-wps-acceptance",
+  "network_write_allowed": false,
+  "package": {
+    "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\artifacts\\PartyOps_1.4.5-rc.6_windows_amd64.exe",
+    "bytes": 449978846,
+    "sha256": "3c81fdba89781722f94e82d31c7ff99b4357a1374fc6454ad47d3cfa464d1e27"
+  },
+  "formal_build_receipt": {
+    "path": "D:\\PartyOps-VM-Lab\\state\\builds\\3c81fdba89781722f94e82d31c7ff99b4357a1374fc6454ad47d3cfa464d1e27.json",
+    "bytes": 3432,
+    "sha256": "087422ea86ef1b1b656d9bf8ce3733d6a0368d12d632bd2a7be4369cedf3f56f"
+  },
+  "source_fingerprint_at_build": "6f879341ef736ffd1ca41da9ff171976c5cb17985058fa1af206fa97eecdb702",
+  "embedded_manifest": {
+    "path": "D:\\PartyOps-VM-Lab\\reports\\build-23201c409ec6\\payload-windows_amd64\\release-manifest.json",
+    "sha256": "adce91340993c4ab4f202dd3a926165ab2fd129236c90442ae4eae046c73204e",
+    "bytes": 3209732
+  },
+  "executable_bindings": {
+    "PartyOps.exe": {
+      "sha256": "dbe0ee796d718d7c3cefa3b05550076399e7cd3544cc37964b21c795bde34ce1",
+      "bytes": 19484523
+    },
+    "PartyOpsWizard.exe": {
+      "sha256": "6806ec965293c44fcf8473459b480b9cbf5219ca1f0171b9f60bfd1263b8025d",
+      "bytes": 18827511
+    }
+  },
+  "published_baseline": {
+    "path": "C:\\PartyOps-VM-Lab\\records\\kylin-20261012\\acceptance\\publication-20261016\\batch\\release-manifest-kylin-arm64-20261016.json",
+    "bytes": 51963,
+    "sha256": "b52807452932502a5f05a10eb609c87345fabe4addb17d3ffeae3a673e0d0e57"
+  },
+  "receiver_baseline": {
+    "path": "C:\\PartyOps-VM-Lab\\records\\kylin-20261012\\acceptance\\publication-20261016\\batch\\post-switch-receiver\\upload-metadata.json",
+    "bytes": 2974,
+    "sha256": "77be062cadd112b338ae80859fe2eee4ff0aa0394a56f9980e2b3ceae5666b6b"
+  },
+  "win10_receipts": [
+    {
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\qa\\acceptance\\windows-startup-20261016\\overlay-install\\completed.json",
+      "bytes": 1771,
+      "sha256": "963cb914be5266b62c94cddc22204f19f12dbe0137cbda5ba23c6d049002284a"
+    },
+    {
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\qa\\acceptance\\windows-startup-20261016\\retention-after-overlay.json",
+      "bytes": 2668,
+      "sha256": "dac7fe1325fd1fb77e6cdcc87c9bb158bb1dcdb5120a4aec26e9a7138328a7d3"
+    },
+    {
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\qa\\acceptance\\windows-startup-20261016\\normal-reboot-completed.json",
+      "bytes": 4582,
+      "sha256": "5de8152f22fed5397455cf88e8c4a1c7ffab360f61918fb3b3eb39d26c39cc03"
+    },
+    {
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\qa\\acceptance\\windows-startup-20261016\\retention-after-reboot.json",
+      "bytes": 2772,
+      "sha256": "740ef493191841db56b53327b0bc0ec0136d48ca5e7c44b3c3ad28c531b903c9"
+    }
+  ],
+  "historical_signed_manifests": [
+    {
+      "path": "C:\\PartyOps-VM-Lab\\website-recovered-20261014\\public\\releases\\v1.4.5-rc.6\\release-manifest.json",
+      "bytes": 41663,
+      "sha256": "4355fe1dcd2dcb49ccf9f82a406cbd44d883d3166f0c54987751b4c376a71cdb"
+    },
+    {
+      "path": "C:\\PartyOps-VM-Lab\\website-recovered-20261014\\public\\releases\\v1.4.5-rc.6\\release-manifest-macos-arm64-20261009.json",
+      "bytes": 45446,
+      "sha256": "32fb5e85874c6ab400d0a1c1c05b9864c3a2e232202b3cf74a452cc8ca12b71c"
+    },
+    {
+      "path": "C:\\PartyOps-VM-Lab\\website-recovered-20261014\\public\\releases\\v1.4.5-rc.6\\release-manifest-arm64-startup-diagnostic-20261010.json",
+      "bytes": 2497,
+      "sha256": "533d41a72d3b64768aa52d4c7f103f482d31e14792307b88d407b1b5735f4f05"
+    },
+    {
+      "path": "C:\\PartyOps-VM-Lab\\website-recovered-20261014\\public\\releases\\v1.4.5-rc.6\\release-manifest-kylin-arm64-20261016.json",
+      "bytes": 51963,
+      "sha256": "b52807452932502a5f05a10eb609c87345fabe4addb17d3ffeae3a673e0d0e57"
+    }
+  ],
+  "reused_helper_sources": [
+    {
+      "path": "C:\\PartyOps-VM-Lab\\records\\kylin-20261012\\acceptance\\publication-20261016\\publication.py",
+      "bytes": 20716,
+      "sha256": "53dacc73ac375252594a501a6f90c5872cdd7706b55e736218a06da1c0d7c5ae"
+    },
+    {
+      "path": "C:\\PartyOps-VM-Lab\\records\\kylin-20261012\\acceptance\\publication-20261016\\receiver_factory.py",
+      "bytes": 2852,
+      "sha256": "124cc543bdf909f79c3ea632505242d0ca121c5869d60467679c40a26241dd43"
+    },
+    {
+      "path": "C:\\PartyOps-VM-Lab\\records\\kylin-20261012\\acceptance\\publication-20261016\\github_publication.py",
+      "bytes": 22947,
+      "sha256": "4d2f987bd0a8ce0b5608acf90504d2db2dd33a11847d91f5c7c1089b82c7e558"
+    }
+  ],
+  "reusable_interfaces": {
+    "domestic": {
+      "source": "C:\\PartyOps-VM-Lab\\records\\kylin-20261012\\acceptance\\publication-20261016\\publication.py",
+      "entry": "release_client() -> cloudstudio-scoped-upload.upload_one(root,name,base_url,token_path,profile)",
+      "boundary": "须为Windows独立参数化verify_release/file_health；国内完整GET回读后才能进入后续阶段。"
+    },
+    "receiver": {
+      "source": "C:\\PartyOps-VM-Lab\\records\\kylin-20261012\\acceptance\\publication-20261016\\receiver_factory.py",
+      "entry": "build_receiver(retained,candidate,manifest_sha,require_candidate=False)",
+      "boundary": "旧PROFILE/封存前缀/文案硬编码麒麟，不可直接重放；Windows新批次只允许一个新包上传，旧十包只读保留。"
+    },
+    "backend_deploy": {
+      "source": "C:\\PartyOps-VM-Lab\\records\\kylin-20261012\\acceptance\\publication-recovery-20261016\\workbuddy-cloudstudio-bridge.py",
+      "entry": "官方WorkBuddy connector-proxy / workbuddy_sites_deploy；先独立后台预检与一次新intent",
+      "boundary": "旧桥只接受fixed-eight/nine/ten profile；不能伪称兼容新Windows批次，也不能套用已消耗intent或凭据。"
+    },
+    "github": {
+      "source": "C:\\PartyOps-VM-Lab\\records\\kylin-20261012\\acceptance\\publication-20261016\\github_publication.py",
+      "entry": "gh_api / anonymous_hash / find_asset / 独占写intent后upload",
+      "boundary": "只复用已有gh认证机制，不读取token；旧upload/documents/release-body入口固化麒麟，未来须Windows限域适配。"
+    }
+  },
+  "replacement_plan": {
+    "scope": "windows_amd64-only-replacement-local-plan",
+    "old_windows": {
+      "filename": "PartyOps_1.4.5-rc.6_windows_amd64.exe",
+      "size": 443690896,
+      "sha256": "a7c044b0b830ce416fdf02c84daa2e7aa4929c0833d9b530bc47486d861a81be",
+      "signature": "3lZte+uGz6IHz2Xhw4qHv5hRgQ9uD3srQSs2V2ShAHhhpT767ezvV8Tlr6FLG5USKQWrt7bAI+XNtZ7BaEZKDQ=="
+    },
+    "candidate": {
+      "filename": "PartyOps_1.4.5-rc.6_windows_amd64.exe",
+      "bytes": 449978846,
+      "sha256": "3c81fdba89781722f94e82d31c7ff99b4357a1374fc6454ad47d3cfa464d1e27"
+    },
+    "retained_assets": [
+      {
+        "filename": "PartyOps-1.4.5-0.rc.6.1.aarch64.rpm",
+        "size": 763753980,
+        "sha256": "f507da109c1110e2c553ac9cb44a7f05205156132fb241ba057028571344e4f4",
+        "signature": "tqbgxSxYTDl6+5ttYTEVhRZAl/ZZ/7mXLfAESG2ONAD1/y3zsCB0Z4JD2YmMdeQgqfkt/ckMF82e2yNwbs7MCA=="
+      },
+      {
+        "filename": "PartyOps-1.4.5-0.rc.6.1.x86_64.rpm",
+        "size": 790114068,
+        "sha256": "e7c34a6090689f40dfae3aa3403b7b6ad0b5d4c3748e07005bb73ed1b32632ac",
+        "signature": "3IeMNXAmZACV2nwud+a/QzWvsCVs42fej58+FNxUlI1lL4iBXCiXaZfQ0eUvp2hnYbOfIhLGJJDD/cx1qEo0Dg=="
+      },
+      {
+        "filename": "PartyOps_1.4.5-rc.6_linux_amd64.deb",
+        "size": 366480042,
+        "sha256": "4557129b9f081c1b525d6dd6c6d444f7e0d35d63021b4b1c20c8daeffd4c30ae",
+        "signature": "0nMq/ytAjELAy0vdipqr43B23Rc9Gl0oshkHfQfvcqA/C+09ztQIqObw7BOOizjmb9CzYmAk428bcyA3h+6ACQ=="
+      },
+      {
+        "filename": "PartyOps_1.4.5-rc.6_linux_arm64_kylin-full-20261016.deb",
+        "size": 352447304,
+        "sha256": "17d0e3a3acf060d3c65299c012078435bacc0da3f1f0a909fe3cc997cbbee69c",
+        "signature": "GdHwbkKHAivWkWskLWfv8Q1FEjrJ9ILpVeUiTJO6t9In8oLl3T6ry3rvORjIMdeMJi2jjGy+SD252DUfToJvAg=="
+      },
+      {
+        "filename": "PartyOps_1.4.5-rc.6_linux_loong64.deb",
+        "size": 302195420,
+        "sha256": "bec5993a12a9a66800fa039045f45329ecc486934cd1d1106c10d5e2ecf78017",
+        "signature": "38nT95BvrmQ65XfUxf2N4SbnqOn7mrdmlTEfmsfpD5fGEKn3xBvIaR2XqaryWEPZ0918tzfHyrHzcfrku7F0Dg=="
+      },
+      {
+        "filename": "PartyOps_1.4.5-rc.6_windows7_amd64.exe",
+        "size": 489713934,
+        "sha256": "996159794407f2171de170fbbf95c3b1f3fe234c026116f35113c2d8d3591d7f",
+        "signature": "vvgg8lNKjNg1CWvHTTIF3ynYoDOUXM6HZZQBjkiUuyGcVwJZ7HguXLU2gPg2FqTK5ttBKja0wqu/X+qjmRoVBA=="
+      },
+      {
+        "filename": "PartyOps_1.4.5-rc.6_windows7_x86.exe",
+        "size": 457500557,
+        "sha256": "b3b77f2a5a319906c641ca693df31b93c3fbcb56e28eaae7a52bdfa94913bf88",
+        "signature": "gR5/rmJhimabziNeWV8hkiyE7knQPJmgBDdx5cfH+iieMN0KFLKmD3NRENTZSeGrhGpw/UTmPu/mBDIAJ7/OAg=="
+      },
+      {
+        "filename": "PartyOps_1.4.5-rc.6_macos_x86_64-UNSIGNED-UNNOTARIZED-CANDIDATE.pkg",
+        "size": 564985557,
+        "sha256": "8885eea0cfa3c23f58d14109c9a46be2bf762c923cb1be58b9c549628e05c955",
+        "signature": "toFNup8kepaEHaSQN0AyGE1Phm2oGdKLZE3ghYhCLmkz0hzSRpUvwLkAmCvTzvuButddFH8Jt8l6klCtmK95CQ=="
+      },
+      {
+        "filename": "PartyOps_1.4.5-rc.6_macos_arm64-UNSIGNED-UNNOTARIZED-CANDIDATE.pkg",
+        "size": 588743660,
+        "sha256": "bcc370a22545c31ad789324d1d153a0d6faa30ec61fc0632e4b004f82c0ff736",
+        "signature": "mWZBlZDdE4XYFppwg8JSWJ4rkMaqAos6YlORVt0xsh5Sga36lWYXApD8ZN3RlT9BHdWdRKeQXS43yNWehTTxAQ=="
+      }
+    ],
+    "retained_acceptance": [
+      {
+        "id": "windows7_amd64",
+        "filename": "PartyOps_1.4.5-rc.6_windows7_amd64.exe",
+        "platform": "windows7/amd64",
+        "package_sha256": "996159794407f2171de170fbbf95c3b1f3fe234c026116f35113c2d8d3591d7f",
+        "size": 489713934,
+        "source_fingerprint": "81ffe7d0cc3241cb96adebeec06e780ff6ec8f81f2ac31450495502baad2718c",
+        "source_commit": null,
+        "build_receipt_sha256": "d5293671e1c5cef276f64cd9f7dd648c238c262f0e1cff930b0c5710f02ab632",
+        "build_log_sha256": "8f7e7c40b7641edbaab23d2bd6c2b9ad85e65a5d06b19f73805d5d0f8f1af30a",
+        "targets": [
+          {
+            "target": "win7-x64",
+            "receipt_sha256": "afcc38e9b76b3b6ed63b090db63a85bba58a34674b0ce703456e9542a008b498",
+            "scope": "安装、普通用户启动、health、自检、中文OCR、数据保留、WPS转换与补字体后排版、真实冷启动",
+            "full_lifecycle_verified": false,
+            "limitations": []
+          }
+        ],
+        "build_provenance_status": "requires_installed_manifest_verification",
+        "runtime_source_fingerprint": null,
+        "limitations": [
+          "full_lifecycle_verified=false；按用户确认不追加完整生命周期复测。",
+          "保留非阻断问题：页码检查将 SimSun 与宋体误判为不同字体，实际文档含正确字体及 PAGE 域。",
+          "Build receipt 保留 requires_installed_manifest_verification 标签；package SHA 与 acceptance 中实际安装目标 SHA 一致，但不改写原标签。"
+        ],
+        "untested": [
+          "未声明原十三项完整生命周期全部通过。"
+        ],
+        "untested_targets": [],
+        "full_lifecycle_verified": false
+      },
+      {
+        "id": "linux_amd64",
+        "filename": "PartyOps_1.4.5-rc.6_linux_amd64.deb",
+        "platform": "linux-deb/amd64",
+        "package_sha256": "4557129b9f081c1b525d6dd6c6d444f7e0d35d63021b4b1c20c8daeffd4c30ae",
+        "size": 366480042,
+        "source_fingerprint": "d0a0ce735e8cee94e4a2d16150d1efc88b91ef864116386ef4b9a2d770cad224",
+        "source_commit": null,
+        "build_receipt_sha256": "45355da219c1204c4ad9184426df028b0abe2dd4a12d7d9fbab4d91911dd49a2",
+        "build_log_sha256": "97e565e28fd34ee68c0f7e3aa0cce7b21e756d9798a54297678cb0578e4483fb",
+        "targets": [
+          {
+            "target": "uos-deb-x64",
+            "receipt_sha256": "5a129c125db6f2626c44891b041790a815c1718e1e2dd0e70042607b7d47f99a",
+            "scope": "user-approved-product-use-acceptance",
+            "full_lifecycle_verified": false,
+            "limitations": [
+              "原生意图识别加速正例未通过，保留局部能力限制。",
+              "不声明旧版覆盖升级或全部原始生命周期矩阵已通过。"
+            ]
+          }
+        ],
+        "build_provenance_status": "requires_installed_manifest_verification",
+        "runtime_source_fingerprint": null,
+        "limitations": [
+          "原生意图识别加速正例未通过，保留局部能力限制。",
+          "不声明旧版覆盖升级或全部原始生命周期矩阵通过。",
+          "部分此前已通过证据绑定早期包；本条只列报告明示的当前包 fresh checks 与保留边界。",
+          "Build receipt 原始 provenance 标签为 requires_installed_manifest_verification；验收报告 package SHA 匹配，不将该标签提升为 verified。",
+          "不声明旧版覆盖升级或全部原始生命周期矩阵已通过。"
+        ],
+        "untested": [
+          "未声明原十三项完整生命周期全部通过。"
+        ],
+        "untested_targets": [],
+        "full_lifecycle_verified": false
+      },
+      {
+        "id": "linux_arm64",
+        "filename": "PartyOps_1.4.5-rc.6_linux_arm64_kylin-full-20261016.deb",
+        "platform": "linux-deb/arm64",
+        "package_sha256": "17d0e3a3acf060d3c65299c012078435bacc0da3f1f0a909fe3cc997cbbee69c",
+        "size": 352447304,
+        "source_fingerprint": null,
+        "source_commit": null,
+        "source_state": "固定二进制来源和重包过程可追溯；未恢复与完整产品匹配的源码指纹，不宣称来自已验证的干净提交",
+        "build_receipt_sha256": "b9cc88d8175c11a932b799dad16820f99cda90aac9162882b1a398cd4d1d7666",
+        "build_provenance_status": "verified-binary-equivalence-and-official-dpkg-repack",
+        "binary_provenance": {
+          "installed_baseline_sha256": "f78112f0bbaff0311f9d3d8c95098abb9c71c6cda77ab58830f36626a36fa31c",
+          "application_sha256": "6857b65690decf08954ee60655e9814f81641041809ee240e5d1b5ae42ee8d5b",
+          "formatter_host_sha256": "c84b21908e542218d1ac20c5f5e2f7b13f3f9e6f9f07ec3e08ebd103fa31ad22",
+          "source_host_record_sha256": "754319a3095aa5646db337a0ba723603ec2394f4333da397904df96c444dd19d",
+          "archive_payload_paths": 12098,
+          "archive_control_paths": 7,
+          "application_host_installers_services_unchanged": true,
+          "changed_payload": [
+            "opt/partyops/formatter-host/runtime-evidence.json",
+            "opt/partyops/release-files.sha256"
+          ],
+          "changed_control": [
+            "Installed-Size",
+            "md5sums"
+          ],
+          "runtime_evidence_sha256": "f1b48d33f6eb068ee3ce57b810722355c4b583f2da41cf47ca816856cc8f9247"
+        },
+        "targets": [
+          {
+            "target": "kylin-v10-sp1-2503-arm64",
+            "scope": "user-authorized-scoped-complete-candidate",
+            "os": "官方银河麒麟桌面 V10 SP1 2503 ARM64",
+            "kernel": "5.4.18-142",
+            "architecture": "aarch64",
+            "environment_type": "full-system-emulated",
+            "vm_platform": "QEMU",
+            "guest_uuid": "a9dbc36c-5d8e-4198-9f80-efd9fd64d6ba",
+            "boot_method": "已安装系统直接内核引导",
+            "iso_sha256": "4b95856568cbacbde189c18e75f46b262e2c1b7f966628155a6af1d9e9609875",
+            "wps_version": "12.8.2.1119.AK.preload.sw",
+            "test_data": "独立合成 QA 数据",
+            "full_lifecycle_verified": false,
+            "receipt_sha256": "01fd11742985ad645a77b0ec8c4e1e0df72595e51651bdc8b878f2fe5fd56c04",
+            "baseline_scope_passed": [
+              "覆盖安装",
+              "正常重启",
+              "原合成账号、事项、日历、附件及备份保留",
+              "登录及未认证访问拒绝",
+              "事项与日历增改查",
+              "附件上传下载",
+              "XLSX和DOCX导出",
+              "隔离备份恢复",
+              "WPS六项排版十用例",
+              "十用例配置恢复",
+              "三页金样语义与原始像素一致",
+              "新WPS进程重开测试文档无缺字体提示"
+            ],
+            "baseline_package_sha256": "f78112f0bbaff0311f9d3d8c95098abb9c71c6cda77ab58830f36626a36fa31c",
+            "candidate_specific": {
+              "installed": false,
+              "maintainer_scripts_executed": false,
+              "scope": "同一官方麒麟Guest内独立解包后两项真实自检",
+              "package_selftest_passed": true,
+              "native_host_selftest_passed": true,
+              "both_returncodes": 0,
+              "both_stderr_bytes": 0,
+              "timed_out": false,
+              "owned_processes_exited": true,
+              "runtime_profile": "full",
+              "formatter_features": 6,
+              "formatter_capabilities": 25,
+              "receipt_sha256": "4cf46f64fa514b60fd8ad7cd210ddc3659f1d6d3b95a8d5f643d1d53ae38edbb"
+            },
+            "limitations": [
+              "基线f781安装验收按完整归档等同性关联；未重装17d，不改写原回执受测SHA",
+              "不是麒麟9000C实机验收；客户5.10.97内核未验证"
+            ]
+          }
+        ],
+        "full_lifecycle_verified": false,
+        "product_full_function_gate": "FULL_FUNCTION_GATE_STALE",
+        "scoped_publication_authorized": true,
+        "formal_release_ready": false,
+        "commercial_fonts_in_package": false,
+        "limitations": [
+          "全部源码回归门禁仍为FULL_FUNCTION_GATE_STALE",
+          "未恢复匹配的完整产品源码及15c/898排版源码快照",
+          "本次新包程序与安装脚本等同于已安装验收基线，仅更新验收记录和校验清单",
+          "字体仅验证获用户授权的QA字体集合，不随安装包分发商业字体"
+        ],
+        "untested": [
+          "麒麟9000C实机和5.10.97内核",
+          "其他麒麟版本、UOS/deepin本候选",
+          "新候选全新安装和完整生命周期",
+          "OCR、AI、跨机协同完整业务端到端",
+          "所有客户字体集合",
+          "UEFI启动"
+        ],
+        "evidence": {
+          "official_build": {
+            "path": "packages/kylin-20261012/candidate/runtime-finalization-20261016/official-command-mounted-receipt.json",
+            "sha256": "b9cc88d8175c11a932b799dad16820f99cda90aac9162882b1a398cd4d1d7666"
+          },
+          "archive_verification": {
+            "path": "packages/kylin-20261012/candidate/runtime-finalization-20261016/candidate-verification.json",
+            "sha256": "81e11ca2310a076be55f5f1a6d23fd531cd1b27cf71cfb2a5746974111e8fc76"
+          },
+          "overlay_before": {
+            "path": "records/kylin-20261012/acceptance/windowsbase-r2-public-receipts-readonly-20261015T105714Z/001-before-receipt.json",
+            "sha256": "3e801eff766b604452b93901b535f489d866c9e20009ec8c1e985cea7f037453"
+          },
+          "overlay_after": {
+            "path": "records/kylin-20261012/acceptance/windowsbase-r2-public-receipts-readonly-20261015T112944Z/002-after-receipt.json",
+            "sha256": "2e0170d57af817e7bbc1ed89506736b30c588a199e2c5127c4c08627d3f61dc2"
+          },
+          "business": {
+            "path": "records/kylin-20261012/acceptance/windowsbase-r2-public-receipts-readonly-20261015T112944Z/001-ledger-receipt.json",
+            "sha256": "da0c7b2500cbd25bcd6c2655440d5ca401444297c1cd3c3e83962940e0fdabbb"
+          },
+          "features": {
+            "path": "records/kylin-20261012/acceptance/formal-evidence-20261016/features-schema2.json",
+            "sha256": "493afef74f449c92e3fbb2f3c8f8aa583bdef20752b530657107d239d923c6e0"
+          },
+          "parity": {
+            "path": "records/kylin-20261012/acceptance/formal-evidence-20261016/parity-schema2.json",
+            "sha256": "1bfcd6c2441946fb45546ba64c1e7b44abb496fbb77f0f04dbff4c541b8ce922"
+          },
+          "font_gui": {
+            "path": "records/kylin-20261012/acceptance/formal-evidence-20261016/font-gui-supplement-1010.json",
+            "sha256": "612914d382e03258011ded2fee00bf509126c89ed0f4d0081872d6ee6dfa55a6"
+          },
+          "candidate_selftests": {
+            "path": "records/kylin-20261012/acceptance/final-package-selftest-20261016/final-selftest-readonly-20261016T023128801202Z/final-package-selftest-receipt.json",
+            "sha256": "4cf46f64fa514b60fd8ad7cd210ddc3659f1d6d3b95a8d5f643d1d53ae38edbb"
+          },
+          "independent_review": {
+            "path": "records/kylin-20261012/acceptance/formal-evidence-20261016/independent-review-final.json",
+            "sha256": "01fd11742985ad645a77b0ec8c4e1e0df72595e51651bdc8b878f2fe5fd56c04"
+          }
+        }
+      },
+      {
+        "id": "rpm_x86_64",
+        "filename": "PartyOps-1.4.5-0.rc.6.1.x86_64.rpm",
+        "platform": "linux-rpm/amd64",
+        "package_sha256": "e7c34a6090689f40dfae3aa3403b7b6ad0b5d4c3748e07005bb73ed1b32632ac",
+        "size": 790114068,
+        "source_fingerprint": "d0a0ce735e8cee94e4a2d16150d1efc88b91ef864116386ef4b9a2d770cad224",
+        "source_commit": null,
+        "build_receipt_sha256": "90e94baa7f3b35356d8efa3c718ee1b61911ed5982aba21a64a273e588293277",
+        "build_log_sha256": "97e565e28fd34ee68c0f7e3aa0cce7b21e756d9798a54297678cb0578e4483fb",
+        "targets": [
+          {
+            "target": "openeuler-iso-x64",
+            "receipt_sha256": "008d735e0eec3a7fc8a95e7005bf315349c8da5df355c34df4c1b7d4ed62934d",
+            "scope": "user-approved-product-use-acceptance",
+            "full_lifecycle_verified": false,
+            "limitations": [
+              "原生意图识别加速正例未通过，普通业务已验证；保留该局部能力限制。",
+              "真实旧版覆盖升级及完整卸载生命周期不在本次用户调整后的使用验收结论中。"
+            ]
+          }
+        ],
+        "build_provenance_status": "requires_installed_manifest_verification",
+        "runtime_source_fingerprint": null,
+        "limitations": [
+          "原生意图识别加速正例未通过，保留局部能力限制。",
+          "真实旧版覆盖升级及完整卸载生命周期不在本次使用验收结论中。",
+          "Build receipt 要求 installed-manifest verification；acceptance 的 package SHA 匹配但不重写 provenance。",
+          "Build receipt 原始 provenance 标签为 requires_installed_manifest_verification；验收报告 package SHA 匹配，不将该标签提升为 verified。",
+          "原生意图识别加速正例未通过，普通业务已验证；保留该局部能力限制。",
+          "真实旧版覆盖升级及完整卸载生命周期不在本次用户调整后的使用验收结论中。"
+        ],
+        "untested": [
+          "未声明原十三项完整生命周期全部通过。"
+        ],
+        "untested_targets": [],
+        "full_lifecycle_verified": false
+      },
+      {
+        "id": "rpm_aarch64",
+        "filename": "PartyOps-1.4.5-0.rc.6.1.aarch64.rpm",
+        "platform": "linux-rpm/arm64",
+        "package_sha256": "f507da109c1110e2c553ac9cb44a7f05205156132fb241ba057028571344e4f4",
+        "size": 763753980,
+        "source_fingerprint": "e4dc8a429dfd0d52bd250ea8bc446d1e7822078343feb599287c95610f62a9b4",
+        "source_commit": null,
+        "build_receipt_sha256": "ab443b2ce240d48e74659c6a14a1ceb5926197b5d30bf843ec3f98a8d163f5c9",
+        "build_log_sha256": "43a1cf200613d6107ed1c81358d67f6fad0d62644664aa4f0ce70dce50a68032",
+        "targets": [
+          {
+            "target": "openeuler-iso-arm64",
+            "receipt_sha256": "2e6f3a2d0c469f049a2ea78cbc4878540eee348a7763bcb403576609335a5751",
+            "scope": "user-approved-product-use-acceptance",
+            "full_lifecycle_verified": false,
+            "limitations": [
+              "本次不声明全部模型、公文、升级、重启和卸载生命周期通过。"
+            ]
+          }
+        ],
+        "build_provenance_status": "requires_installed_manifest_verification",
+        "runtime_source_fingerprint": null,
+        "limitations": [
+          "不声明全部模型、公文、升级、重启和卸载生命周期通过。",
+          "Native ARM64 RPM build and transfer reports passed; raw build receipt keeps requires_installed_manifest_verification tag.",
+          "本次不声明全部模型、公文、升级、重启和卸载生命周期通过。"
+        ],
+        "untested": [
+          "未声明原十三项完整生命周期全部通过。"
+        ],
+        "untested_targets": [],
+        "full_lifecycle_verified": false
+      },
+      {
+        "id": "linux_loong64",
+        "filename": "PartyOps_1.4.5-rc.6_linux_loong64.deb",
+        "platform": "linux-deb/loong64",
+        "package_sha256": "bec5993a12a9a66800fa039045f45329ecc486934cd1d1106c10d5e2ecf78017",
+        "size": 302195420,
+        "source_fingerprint": "a008027d4457f4848cbe655ec3e6950e3376b0d8563633803a8263af5d918c82",
+        "source_commit": "ff24ed9bfc965c571fa59537c4796b6e2ffedf48",
+        "build_receipt_sha256": "a1d444dfdfd52e9abb4ac4718f58ae35f3790d5082ae934a1c18ad8104778ef6",
+        "build_log_sha256": "14e22d2456e7b101f6822b610ba0a2d44ca05f477f472e36d29ec5a571e08297",
+        "targets": [
+          {
+            "target": "deepin-deb-loong64",
+            "scope_audit_sha256": "4d111d7e3b1a2975f0daf45ffbff878db6f3105352714bb36aaa192c59e32521",
+            "scopes": [
+              {
+                "id": "install-and-background-verification",
+                "status": "passed_with_scope_limit"
+              },
+              {
+                "id": "configure-and-business",
+                "status": "passed"
+              },
+              {
+                "id": "actual-reboot-and-after-reboot",
+                "status": "passed"
+              },
+              {
+                "id": "ocr",
+                "status": "passed"
+              },
+              {
+                "id": "core-ai-capability-rejection",
+                "status": "passed_as_capability_rejection_only"
+              },
+              {
+                "id": "rules-intent-preview",
+                "status": "passed_as_rules_preview_only"
+              },
+              {
+                "id": "same-guest-collaboration",
+                "status": "passed_same_guest_only"
+              },
+              {
+                "id": "installed-wps-formatter-nine-features",
+                "status": "passed_9_cases"
+              },
+              {
+                "id": "wps-golden-three-pages",
+                "status": "passed_two_documents_three_pages_each"
+              },
+              {
+                "id": "firefox-gui",
+                "status": "passed"
+              },
+              {
+                "id": "uninstall-keep",
+                "status": "passed"
+              },
+              {
+                "id": "same-package-reinstall-and-recovery",
+                "status": "passed_same_package_recovery"
+              },
+              {
+                "id": "remove-registered-test-data",
+                "status": "passed_guarded_scope"
+              },
+              {
+                "id": "normal-guest-shutdown",
+                "status": "stopped_confirmed"
+              },
+              {
+                "id": "old-same-architecture-upgrade-candidate",
+                "status": "not_applicable_candidate"
+              }
+            ],
+            "full_lifecycle_verified": false
+          }
+        ],
+        "build_provenance_status": "requires_installed_manifest_verification",
+        "runtime_source_fingerprint": null,
+        "limitations": [
+          "原始完整生命周期控制器保持 blocked：升级基线为 null，错误含 OLDER_PACKAGE_REMOVED_BY_RETENTION_POLICY；重启后的原始续跑又因 BUSINESS_CONTEXT_CHANGED_RESTART_FROM_CLEAN_BASELINE 阻断。之后独立实际 after-reboot 阶段已通过，但不改写原始 journal，也不能补成完整 FULL_LIFECYCLE_EVIDENCE。"
+        ],
+        "untested": [
+          "旧版同架构包到本版的升级及旧数据迁移；当前无可用候选包。",
+          "OCR/models/intent及formatter报告中的 runtime_environment_passed 字段仍为 false；本汇总只认各报告明确列出的 scope-specific checks。",
+          "复杂 AI 模型推理、原生意图推理及系统级模型活动未验证；Core 仅测能力拒绝与规则预览。",
+          "跨机协同未验证；collaboration-business 报告明确 separate_machine_enrollment_verified=false。",
+          "未在非 Deepin 25.2.0、非 full-system-emulated 环境验证，也未作性能、压力或长期运行测试。",
+          "安装 WPS 使用系统可用组件；QA 字体为额外测试输入，不能据此声称随包字体覆盖或所有用户字体环境均可用。"
+        ],
+        "untested_targets": [],
+        "full_lifecycle_verified": false
+      },
+      {
+        "id": "windows7_x86",
+        "filename": "PartyOps_1.4.5-rc.6_windows7_x86.exe",
+        "platform": "windows7/x86",
+        "package_sha256": "b3b77f2a5a319906c641ca693df31b93c3fbcb56e28eaae7a52bdfa94913bf88",
+        "size": 457500557,
+        "source_fingerprint": "25601a0ef5e01aad4c0f20dc0004ff53b9e28004cbabb9c18abb035dc9add1ab",
+        "source_commit": null,
+        "build_receipt_sha256": "8b63e3bde797f848f8c123314a25e711fb9cc0c0bdb81f6d50696fe4fbeed30b",
+        "build_log_sha256": "94d1d9985e431908484026a9700c45a636128197491d3480ec32decc5a8f6de7",
+        "targets": [
+          {
+            "target": "win7-x86",
+            "scope": "user-approved-product-use-acceptance",
+            "receipt_sha256": "4a18879915e8d0e988e6d8c6aa481a58443abe708b9ebc32fabd49c94dc842a6",
+            "full_lifecycle_verified": false,
+            "strict_golden_passed": false
+          },
+          {
+            "target": "win10-x86",
+            "scope": "win10-x86-scoped-acceptance-only",
+            "summary_sha256": "aa10ae4212f41fd85f842afd7edc415c1099f36bd19d2992a54afee700dd2910",
+            "overall_release_ready": false,
+            "full_lifecycle_verified": false,
+            "original_statuses": [
+              {
+                "id": "install-initial",
+                "status": "partial"
+              },
+              {
+                "id": "configure",
+                "status": "passed"
+              },
+              {
+                "id": "business-backup-export",
+                "status": "passed"
+              },
+              {
+                "id": "collaboration",
+                "status": "passed"
+              },
+              {
+                "id": "ocr",
+                "status": "passed"
+              },
+              {
+                "id": "reboot",
+                "status": "passed"
+              },
+              {
+                "id": "after-reboot",
+                "status": "passed"
+              },
+              {
+                "id": "wps",
+                "status": "passed"
+              },
+              {
+                "id": "browser-gui",
+                "status": "passed"
+              },
+              {
+                "id": "uninstall-keep",
+                "status": "passed"
+              },
+              {
+                "id": "standalone-reinstall-install",
+                "status": "partial"
+              },
+              {
+                "id": "after-reinstall",
+                "status": "passed"
+              },
+              {
+                "id": "uninstall-remove-test-data",
+                "status": "passed"
+              },
+              {
+                "id": "models-limitation",
+                "status": "failed"
+              }
+            ]
+          }
+        ],
+        "build_provenance_status": "requires_installed_manifest_verification",
+        "runtime_source_fingerprint": null,
+        "limitations": [
+          "范围仅证明本轮Win10 x86安装包的有限普通功能与生命周期；不表示windows7_x86包整体release-ready。",
+          "legacy-core本地AI/models阶段失败HTTP409 LOCAL_AI_PACKAGE_UNSUPPORTED，保留失败证据，不声明AI推理通过。",
+          "协同验证使用同一Guest独立职员会话，separate_machine_enrollment_verified=false，不声明跨机器协作通过。",
+          "uninstall-keep后同包重新安装与after-reinstall数据恢复，不是旧版本升级测试；旧包升级未验证。",
+          "Win7 x86目标当前未完成验收。",
+          "各报告runtime_environment_passed=false；任何报告status=passed都不提升为完整矩阵或整体发布通过。",
+          "第一轮reinstall调用生成的install-50fe standalone诊断报告为partial；after-reinstall恢复入口报告通过并明确引用该receipt，未修改原报告。",
+          "three-PDF-strict-pixel-comparison",
+          "Firefox-new-boot-UI",
+          "remaining-uninstall-reinstall-lifecycle",
+          "full_lifecycle_verified=false。",
+          "win10-arm64 未测试。",
+          "构建来源 requires_installed_manifest_verification；不声称重新冻结当前源码。"
+        ],
+        "untested": [
+          "Win7 严格三PDF逐像素金样未完成，用户明确停止额外金样并批准读取本机字体与排版可用范围。",
+          "Win7 剩余卸载重装与新boot Firefox UI不作通过声明。",
+          "Win10 legacy models/跨机器协作/旧包升级不作通过声明。",
+          "win10-arm64 未测试。"
+        ],
+        "untested_targets": [
+          "win10-arm64"
+        ],
+        "full_lifecycle_verified": false
+      },
+      {
+        "id": "macos_x86_64",
+        "filename": "PartyOps_1.4.5-rc.6_macos_x86_64-UNSIGNED-UNNOTARIZED-CANDIDATE.pkg",
+        "platform": "macos/amd64",
+        "package_sha256": "8885eea0cfa3c23f58d14109c9a46be2bf762c923cb1be58b9c549628e05c955",
+        "size": 564985557,
+        "source_commit": "a8aaf44984c1d9ce85981bd4756e71372c6b8cb8",
+        "source_input_manifest_sha256": "2dcd1d9db0496daf67106d51d60ccbe8502466561186d79cf511080346c63295",
+        "source_state": "frozen-dirty-candidate",
+        "installed_host_sha256": "41531d7f8603bc077536c9fec583f6e9c00e23a518d996c695a10cf944ce9a2e",
+        "installed_receipt_sha256": "b75f983a19c12d7c7de96bdd5a9cc8cf622d10f6cdf056f895a15bbcb0154232",
+        "targets": [
+          {
+            "target": "macos-x64",
+            "scope": "installed-limited-candidate",
+            "environment": {
+              "os": "macos",
+              "os_version": "15.7.9",
+              "architecture": "x86_64",
+              "wps_version": "12.1.29166",
+              "type": "vm",
+              "identity": "PartyOps macOS 15 Intel Acceptance; original macos-x64/macos.vmx; primary UUID D8BD7047-6D65-442A-8F0E-4B1D728D145B; QAUID502"
+            },
+            "full_lifecycle_verified": false
+          }
+        ],
+        "feature_validation": {
+          "format": {
+            "status": "passed",
+            "execution": "actual-installed-package",
+            "context": "normal GUI single submission; finite candidate",
+            "cleanup_confirmed": true,
+            "source_unchanged": true,
+            "evidence": {
+              "path": "E:\\codex\\PartyOps\\.publish-github\\qa\\vm-lab\\release-preparation\\rc6-resume-20261003\\macos-intel\\mac-implementation-20261003\\installed-diagnostic-qa-20261008\\ui-finder-copy-final.json",
+              "sha256": "5f6562b48642b99a4fe6ead8de7a2efee9100dc285b484be10d5615d19ea604b"
+            },
+            "output": {
+              "path": "D:\\PartyOps-VM-Lab\\reports\\macos-intel-timeout-diagnostic-candidate-20261007\\installed-qa-acceptance-20261008-v1\\format.docx",
+              "size": 17984,
+              "sha256": "37e102f7816aaf4bf89798a35e58b69db81e8060296a929fb73eaed269b82e9b"
+            },
+            "job_id": "4030f7e4f7fc4baca00a05c4bc91b5b0",
+            "task_id": "c7bcc499d11a41c19587735d0a416f64"
+          },
+          "replace": {
+            "status": "passed",
+            "execution": "actual-installed-package",
+            "context": "API via actual normal Finder-started backend; WPS foreground",
+            "cleanup_confirmed": true,
+            "source_unchanged": true,
+            "evidence": {
+              "path": "E:\\codex\\PartyOps\\.publish-github\\qa\\vm-lab\\release-preparation\\rc6-resume-20261003\\macos-intel\\mac-implementation-20261003\\installed-diagnostic-qa-20261008\\native-api-exact-output-cleanup.json",
+              "sha256": "af3caabb0fe1de17ab744b7b6e5b60cc7d6fedbd6fc09c821f268ddd894d6bf3"
+            },
+            "output": {
+              "path": "D:\\PartyOps-VM-Lab\\reports\\macos-intel-timeout-diagnostic-candidate-20261007\\installed-qa-acceptance-20261008-v1\\replace.docx",
+              "size": 13180,
+              "sha256": "e02796b569f103c412147d2ece48d4f50fc6c3a037bd57fd6b09945b4d6ee76a"
+            },
+            "job_id": "bbef5735f62e4515a2ee5f5e4724304b",
+            "task_id": "1648414aa77446758735a97f565df408"
+          },
+          "redheader": {
+            "status": "passed",
+            "execution": "actual-installed-package",
+            "context": "API via actual normal Finder-started backend; WPS foreground",
+            "cleanup_confirmed": true,
+            "source_unchanged": true,
+            "evidence": {
+              "path": "E:\\codex\\PartyOps\\.publish-github\\qa\\vm-lab\\release-preparation\\rc6-resume-20261003\\macos-intel\\mac-implementation-20261003\\installed-diagnostic-qa-20261008\\native-api-exact-output-cleanup.json",
+              "sha256": "af3caabb0fe1de17ab744b7b6e5b60cc7d6fedbd6fc09c821f268ddd894d6bf3"
+            },
+            "output": {
+              "path": "D:\\PartyOps-VM-Lab\\reports\\macos-intel-timeout-diagnostic-candidate-20261007\\installed-qa-acceptance-20261008-v1\\redheader.docx",
+              "size": 18842,
+              "sha256": "465fc141835563f851a6285f9834859899fc7b4dbd26009097005da606cd4dfa"
+            },
+            "job_id": "038847eb1371423b84098445b1d28f01",
+            "task_id": "46915b6698774ce2814d4bcdce4d0744"
+          },
+          "rename": {
+            "status": "passed",
+            "execution": "actual-installed-package",
+            "context": "API via actual normal Finder-started backend; WPS foreground",
+            "cleanup_confirmed": true,
+            "source_unchanged": true,
+            "evidence": {
+              "path": "E:\\codex\\PartyOps\\.publish-github\\qa\\vm-lab\\release-preparation\\rc6-resume-20261003\\macos-intel\\mac-implementation-20261003\\installed-diagnostic-qa-20261008\\native-api-exact-output-cleanup.json",
+              "sha256": "af3caabb0fe1de17ab744b7b6e5b60cc7d6fedbd6fc09c821f268ddd894d6bf3"
+            },
+            "output": {
+              "path": "D:\\PartyOps-VM-Lab\\reports\\macos-intel-timeout-diagnostic-candidate-20261007\\installed-qa-acceptance-20261008-v1\\rename.docx",
+              "size": 13156,
+              "sha256": "774ad9ba60cf2493a95fffae048bb7a531385727d9bd21405d5aba07c4f8b45e"
+            },
+            "job_id": "2a46d54a58d549fc9f938de42aa08ed8",
+            "task_id": "c33da0115adb4d97a4462818aa35167d"
+          },
+          "convert": {
+            "status": "passed",
+            "execution": "actual-installed-package",
+            "context": "API via actual normal Finder-started backend; WPS foreground",
+            "cleanup_confirmed": true,
+            "source_unchanged": true,
+            "evidence": {
+              "path": "E:\\codex\\PartyOps\\.publish-github\\qa\\vm-lab\\release-preparation\\rc6-resume-20261003\\macos-intel\\mac-implementation-20261003\\installed-diagnostic-qa-20261008\\native-api-exact-output-cleanup.json",
+              "sha256": "af3caabb0fe1de17ab744b7b6e5b60cc7d6fedbd6fc09c821f268ddd894d6bf3"
+            },
+            "output": {
+              "path": "D:\\PartyOps-VM-Lab\\reports\\macos-intel-timeout-diagnostic-candidate-20261007\\installed-qa-acceptance-20261008-v1\\convert.pdf",
+              "size": 152578,
+              "sha256": "0ec78322c92cbb999ff517eee2645f203b88e3990085c0dddce1d8afcbdea46f"
+            },
+            "job_id": "1e965be8049c4950b91f00250db82b89",
+            "task_id": "b89a32811332496cbb0fa683881e4086"
+          },
+          "pdf-to-word": {
+            "status": "passed",
+            "execution": "actual-installed-package",
+            "context": "API via actual normal Finder-started backend; WPS foreground",
+            "cleanup_confirmed": true,
+            "source_unchanged": true,
+            "evidence": {
+              "path": "E:\\codex\\PartyOps\\.publish-github\\qa\\vm-lab\\release-preparation\\rc6-resume-20261003\\macos-intel\\mac-implementation-20261003\\installed-diagnostic-qa-20261008\\native-api-exact-output-cleanup.json",
+              "sha256": "af3caabb0fe1de17ab744b7b6e5b60cc7d6fedbd6fc09c821f268ddd894d6bf3"
+            },
+            "output": {
+              "path": "D:\\PartyOps-VM-Lab\\reports\\macos-intel-timeout-diagnostic-candidate-20261007\\installed-qa-acceptance-20261008-v1\\pdf-to-word.docx",
+              "size": 5740,
+              "sha256": "696a56e5429691c4fda4a765bdb8a1546f578da85d28e9274c4fce861ab5e3ed"
+            },
+            "job_id": "fab6e972ec9043e48bc3e130b3a05c55",
+            "task_id": "79b98d09387347939f045f82c86863a6"
+          }
+        },
+        "checks": {
+          "installation": {
+            "status": "passed",
+            "execution": "actual-installed-package",
+            "scope": "同RC6候选默认升级，不代替RC4基线",
+            "evidence": {
+              "path": "E:\\codex\\PartyOps\\.publish-github\\qa\\vm-lab\\release-preparation\\rc6-resume-20261003\\macos-intel\\mac-implementation-20261003\\installed-diagnostic-qa-20261008\\standard-installer-receipt.json",
+              "sha256": "a10e1cda50316b75447d575f08439498fb37a2cb793ae831afa4358ca62e285b"
+            },
+            "additional_evidence": [
+              {
+                "path": "E:\\codex\\PartyOps\\.publish-github\\qa\\vm-lab\\release-preparation\\rc6-resume-20261003\\macos-intel\\mac-implementation-20261003\\installed-diagnostic-qa-20261008\\installed-bytes-receipt.json",
+                "sha256": "33884e5f574f31d272657a2cce74f6fa4b00dcddf5db55c2d5bdfaec7e2a1498"
+              }
+            ]
+          },
+          "finder_startup": {
+            "status": "passed",
+            "execution": "actual-installed-package",
+            "scope": "Finder正常启动既有QA配置",
+            "evidence": {
+              "path": "E:\\codex\\PartyOps\\.publish-github\\qa\\vm-lab\\release-preparation\\rc6-resume-20261003\\macos-intel\\mac-implementation-20261003\\installed-diagnostic-qa-20261008\\fixture-and-startup-lsof-bound-receipt.json",
+              "sha256": "b32c61653eec8b17d996b9de0e3d66380361ce1ff92aaffc385739300845c719"
+            },
+            "additional_evidence": [
+              {
+                "path": "E:\\codex\\PartyOps\\.publish-github\\qa\\vm-lab\\release-preparation\\rc6-resume-20261003\\macos-intel\\mac-implementation-20261003\\installed-diagnostic-qa-20261008\\GUI操作留痕.md",
+                "sha256": "19544c6aa6a1b0ace1915a55992020e7e479c543a2322c7a5190b741da67755c"
+              }
+            ]
+          },
+          "wizard": {
+            "status": "passed",
+            "execution": "actual-installed-package",
+            "scope": "冻结Tcl/Tk图形运行时自检，仅此范围",
+            "evidence": {
+              "path": "E:\\codex\\PartyOps\\.publish-github\\qa\\vm-lab\\release-preparation\\rc6-resume-20261003\\macos-intel\\mac-implementation-20261003\\installed-diagnostic-qa-20261008\\wizard-runtime-once.json",
+              "sha256": "54b2665700171135e243cc79604db30ed89af29634b090916f55706fc56ed296"
+            },
+            "additional_evidence": []
+          },
+          "health": {
+            "status": "passed",
+            "execution": "actual-installed-package",
+            "scope": "实际healthok1.4.5-rc.6",
+            "evidence": {
+              "path": "E:\\codex\\PartyOps\\.publish-github\\qa\\vm-lab\\release-preparation\\rc6-resume-20261003\\macos-intel\\mac-implementation-20261003\\installed-diagnostic-qa-20261008\\fixture-and-startup-lsof-bound-receipt.json",
+              "sha256": "b32c61653eec8b17d996b9de0e3d66380361ce1ff92aaffc385739300845c719"
+            },
+            "additional_evidence": [
+              {
+                "path": "E:\\codex\\PartyOps\\.publish-github\\qa\\vm-lab\\release-preparation\\rc6-resume-20261003\\macos-intel\\mac-implementation-20261003\\installed-diagnostic-qa-20261008\\native-observe-convert-pdf.json",
+                "sha256": "565f5dcfeb41f120c41b16a17a8d5bf417c79896957e0b85b14c41e88155ec94"
+              }
+            ]
+          },
+          "authentication": {
+            "status": "passed",
+            "execution": "actual-installed-package",
+            "scope": "合成QA GUI登录及auth/me200",
+            "evidence": {
+              "path": "E:\\codex\\PartyOps\\.publish-github\\qa\\vm-lab\\release-preparation\\rc6-resume-20261003\\macos-intel\\mac-implementation-20261003\\installed-diagnostic-qa-20261008\\GUI操作留痕.md",
+              "sha256": "19544c6aa6a1b0ace1915a55992020e7e479c543a2322c7a5190b741da67755c"
+            },
+            "additional_evidence": [
+              {
+                "path": "E:\\codex\\PartyOps\\.publish-github\\qa\\vm-lab\\release-preparation\\rc6-resume-20261003\\macos-intel\\mac-implementation-20261003\\installed-diagnostic-qa-20261008\\ordinary-business.json",
+                "sha256": "dd3b6ab141dbb7a8f6aeb4dd0d9790430e1e91cef164dd772eeb06a00742b3de"
+              }
+            ]
+          },
+          "ordinary-business": {
+            "status": "passed",
+            "execution": "actual-installed-package",
+            "scope": "模拟事项创建读回，backup创建+验证",
+            "evidence": {
+              "path": "E:\\codex\\PartyOps\\.publish-github\\qa\\vm-lab\\release-preparation\\rc6-resume-20261003\\macos-intel\\mac-implementation-20261003\\installed-diagnostic-qa-20261008\\ordinary-business.json",
+              "sha256": "dd3b6ab141dbb7a8f6aeb4dd0d9790430e1e91cef164dd772eeb06a00742b3de"
+            },
+            "additional_evidence": []
+          },
+          "export": {
+            "status": "passed",
+            "execution": "actual-installed-package",
+            "scope": "合成业务DOCX核心内容",
+            "evidence": {
+              "path": "E:\\codex\\PartyOps\\.publish-github\\qa\\vm-lab\\release-preparation\\rc6-resume-20261003\\macos-intel\\mac-implementation-20261003\\installed-diagnostic-qa-20261008\\ordinary-business.json",
+              "sha256": "dd3b6ab141dbb7a8f6aeb4dd0d9790430e1e91cef164dd772eeb06a00742b3de"
+            },
+            "additional_evidence": []
+          },
+          "ocr": {
+            "status": "passed",
+            "execution": "actual-installed-package",
+            "scope": "固定PNG后台OCR五核心关键词",
+            "evidence": {
+              "path": "E:\\codex\\PartyOps\\.publish-github\\qa\\vm-lab\\release-preparation\\rc6-resume-20261003\\macos-intel\\mac-implementation-20261003\\installed-diagnostic-qa-20261008\\ordinary-ocr.json",
+              "sha256": "4535bcc2cfa4f67e52143d4789da45d03ddd8985ef14a8ec5e3d2828ac6ad989"
+            },
+            "additional_evidence": []
+          }
+        },
+        "ai": {
+          "status": "blocked",
+          "limitation": "ai-model-missing",
+          "evidence": {
+            "path": "E:\\codex\\PartyOps\\.publish-github\\qa\\vm-lab\\release-preparation\\rc6-resume-20261003\\macos-intel\\mac-implementation-20261003\\installed-diagnostic-qa-20261008\\final-live-observation.json",
+            "sha256": "a8bad012175d3296e47a97a372a7ee2799b2efa809db85cad1988fbebacbca20"
+          }
+        },
+        "limitations": [
+          "manual-output-review-required",
+          "wps-window-may-appear",
+          "native-document-cycle-unproven",
+          "rollback-unverified",
+          "strict-golden-parity-not-accepted",
+          "unsigned-unnotarized-candidate",
+          "macos-app-data-permission-may-repeat",
+          "frontend-page-count-differs-from-wps",
+          "ai-model-missing",
+          "first-wizard-full-flow-unverified",
+          "rc4-upgrade-unverified",
+          "cross-machine-unverified",
+          "partial-gui-images-not-archived",
+          "apple-silicon-unverified",
+          "silent-unverified",
+          "fullpackage-standard-compliance-unverified"
+        ],
+        "developer_id_signed": false,
+        "notarized": false,
+        "full_lifecycle_verified": false
+      },
+      {
+        "id": "macos_arm64",
+        "filename": "PartyOps_1.4.5-rc.6_macos_arm64-UNSIGNED-UNNOTARIZED-CANDIDATE.pkg",
+        "platform": "macos/arm64",
+        "size": 588743660,
+        "package_sha256": "bcc370a22545c31ad789324d1d153a0d6faa30ec61fc0632e4b004f82c0ff736",
+        "source_commit": "9de8b721225cf6913727614540d431e1c48811e3",
+        "source_input_manifest_sha256": "c48933169424f5e9dc81b06eec7ba92c94dc563cc5ffeea62470ab5906fedea0",
+        "source_state": "frozen-dirty-candidate",
+        "minimum_macos": "15.0",
+        "installed_receipt_sha256": "e4289ffc272848370817bb18464c42e9a6bb64e2438af54cb97d208f4e4d753f",
+        "targets": [
+          {
+            "target": "macos-arm64",
+            "scope": "installed-cli-candidate",
+            "environment": {
+              "os": "macos",
+              "os_version": "15.7.9",
+              "architecture": "arm64",
+              "type": "hosted-native-runner",
+              "identity": "github-actions-run-37885692908",
+              "wps_version": null
+            },
+            "full_lifecycle_verified": false
+          }
+        ],
+        "checks": {
+          "installation": {
+            "status": "passed",
+            "execution": "actual-installed-package",
+            "evidence": {
+              "path": "qa/vm-lab/release-preparation/apple-silicon-build-20261009/candidate-run-37885692908/partyops-arm-candidate-37885692908-1/reports/candidate-validation.json",
+              "sha256": "e4289ffc272848370817bb18464c42e9a6bb64e2438af54cb97d208f4e4d753f"
+            }
+          },
+          "bundle-validation": {
+            "status": "passed",
+            "execution": "actual-installed-package",
+            "evidence": {
+              "path": "qa/vm-lab/release-preparation/apple-silicon-build-20261009/candidate-run-37885692908/partyops-arm-candidate-37885692908-1/reports/candidate-validation.json",
+              "sha256": "e4289ffc272848370817bb18464c42e9a6bb64e2438af54cb97d208f4e4d753f"
+            }
+          },
+          "cli-smoke": {
+            "status": "passed",
+            "execution": "actual-installed-package",
+            "evidence": {
+              "path": "qa/vm-lab/release-preparation/apple-silicon-build-20261009/candidate-run-37885692908/partyops-arm-candidate-37885692908-1/reports/candidate-validation.json",
+              "sha256": "e4289ffc272848370817bb18464c42e9a6bb64e2438af54cb97d208f4e4d753f"
+            }
+          }
+        },
+        "feature_validation": {
+          "format": {
+            "status": "not-run",
+            "execution": "not-run"
+          },
+          "replace": {
+            "status": "not-run",
+            "execution": "not-run"
+          },
+          "redheader": {
+            "status": "not-run",
+            "execution": "not-run"
+          },
+          "rename": {
+            "status": "not-run",
+            "execution": "not-run"
+          },
+          "convert": {
+            "status": "not-run",
+            "execution": "not-run"
+          },
+          "pdf-to-word": {
+            "status": "not-run",
+            "execution": "not-run"
+          }
+        },
+        "gui_wps_validated": false,
+        "publication_class": "unsigned-unnotarized-test-candidate",
+        "developer_id_signed": false,
+        "notarized": false,
+        "full_lifecycle_verified": false,
+        "limitations": [
+          "gui-wps-target-device-validation-pending",
+          "full-lifecycle-unverified",
+          "unsigned-unnotarized-candidate",
+          "macos-15-or-newer-required",
+          "local-ai-model-not-configured"
+        ]
+      }
+    ],
+    "historical_manifest_policy": "保留全部原签名清单原字节；本计划未签名，不能替换正式清单。",
+    "publication_status": "blocked-pending-host-uac-and-wps-acceptance",
+    "formal_release_ready": false,
+    "network_write_allowed": false,
+    "old_windows_withdrawal_allowed": false,
+    "distribution_name_proposal": "PartyOps_1.4.5-rc.6_windows_amd64_startup-20261017.exe",
+    "name_reason": "既有接收器禁止同名不同SHA覆盖；建议新文件名先追加、全量回读后再切入口，旧包保留回滚。"
+  },
+  "credentials_read": false,
+  "deploy_called": false,
+  "uploaded": false,
+  "rollback": {
+    "website_deployment": "dpgtwf7htv3j",
+    "github_main_at_prior_publication": "b58cd0505ebd8bc187d40857e92d19c88b2a2b56",
+    "old_windows": {
+      "filename": "PartyOps_1.4.5-rc.6_windows_amd64.exe",
+      "size": 443690896,
+      "sha256": "a7c044b0b830ce416fdf02c84daa2e7aa4929c0833d9b530bc47486d861a81be",
+      "signature": "3lZte+uGz6IHz2Xhw4qHv5hRgQ9uD3srQSs2V2ShAHhhpT767ezvV8Tlr6FLG5USKQWrt7bAI+XNtZ7BaEZKDQ=="
+    },
+    "old_package_current_public_availability": "not-rechecked-this-run",
+    "rule": "本轮不删除旧Windows包/附件，不改原九包及历史清单；网络切换前须再快照当前远端事实。"
+  },
+  "pending_inputs": [
+    "真实主机安装/UAC失败与恢复验收回执",
+    "真实WPS排版与金样验收回执",
+    "主控确认发布范围、唯一分发文件名及Windows独立签名清单",
+    "现有WorkBuddy后台预检、sandbox/域名的当前只读绑定",
+    "GitHub当前release/tag/main及附件快照",
+    "完整官网候选与预览检查，国内完整回读通过后才进入GitHub与官网切换"
+  ],
+  "local_sidecar": {
+    "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\qa\\acceptance\\windows-startup-20261016\\publication-windows-20261017\\prepared\\PartyOps_1.4.5-rc.6_windows_amd64.exe.sha256",
+    "bytes": 104,
+    "sha256": "e6be3b0370093542bdcc5d2acc5f8d58926b80138102e2c54c4e5efab8925c73"
+  },
+  "local_package_link": {
+    "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\qa\\acceptance\\windows-startup-20261016\\publication-windows-20261017\\prepared\\PartyOps_1.4.5-rc.6_windows_amd64.exe",
+    "bytes": 449978846,
+    "sha256": "3c81fdba89781722f94e82d31c7ff99b4357a1374fc6454ad47d3cfa464d1e27"
+  }
+}

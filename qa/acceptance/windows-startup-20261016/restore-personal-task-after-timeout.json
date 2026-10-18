@@ -1,0 +1,40 @@
+{
+  "tasks": [
+    {
+      "last_run": "2026-10-17T06:28:28.0000000Z",
+      "result": 267009,
+      "name": "PartyOps-QA-Restore-Personal-20261017",
+      "action": [
+        {
+          "Execute": "C:\\PartyOps QA\\中文 程序\\PartyOpsWizard.exe",
+          "Arguments": "--reconfigure --initial-role personal",
+          "WorkingDirectory": "C:\\PartyOps QA\\中文 程序"
+        }
+      ],
+      "state": "Running"
+    }
+  ],
+  "processes": [
+    {
+      "Name": "PartyOps.exe",
+      "ProcessId": 3724,
+      "ExecutablePath": "C:\\PartyOps QA\\中文 程序\\PartyOps.exe",
+      "SessionId": 0,
+      "created": "2026-10-17T06:10:09.2734400Z"
+    },
+    {
+      "Name": "PartyOpsWizard.exe",
+      "ProcessId": 340,
+      "ExecutablePath": "C:\\PartyOps QA\\中文 程序\\PartyOpsWizard.exe",
+      "SessionId": 1,
+      "created": "2026-10-17T06:28:45.0120240Z"
+    }
+  ],
+  "listeners": [
+    {
+      "LocalAddress": "127.0.0.1",
+      "LocalPort": 49733,
+      "OwningProcess": 340
+    }
+  ]
+}

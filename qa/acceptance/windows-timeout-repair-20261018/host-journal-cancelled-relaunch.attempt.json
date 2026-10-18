@@ -1,0 +1,30 @@
+{
+  "candidate": {
+    "package": {
+      "id": "windows_amd64",
+      "version": "1.4.5-rc.6",
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\artifacts\\PartyOps_1.4.5-rc.6_windows_amd64.exe",
+      "sha256": "e3e2ea45ccd38acff059b5713826a78f998a56ccef75341633f67bd4e17e57da",
+      "source_fingerprint": "84bddfca2e3a217cf5052cc7683d83687b4d00b4f7325d120a833a8ee6880d7f",
+      "provenance_status": "verified",
+      "build_receipt": "D:\\PartyOps-VM-Lab\\state\\builds\\e3e2ea45ccd38acff059b5713826a78f998a56ccef75341633f67bd4e17e57da.json",
+      "build_receipt_sha256": "b7c8db9527279faa4b104d30159d6569fbe70b42d87c612bc49a1835420aff0f"
+    },
+    "manifest_sha256": "202a98774b78b49f91fd26dd1dc92b2581b6d7eb6a26d2f129694fa58785b075",
+    "executable_sha256": "1dae862966da6d8e98d22620b4e0d8dbafed7e8c5a85c56a217b43b73c1846ca",
+    "wizard_sha256": "b062ea21fa91c937fa00c31221a0c348deb07780a698927a7b641b5fcaa40649"
+  },
+  "inputs": {
+    "baseline_sha256": "83facee991771d11c84701a157d0ee404d73cfa1e8626da1d07467c731aa40ca",
+    "backup_sha256": "7a7ff62357138d5b79083fc3afbb92dd7aa5f1967ba7b1a9f55abb8a55796bba"
+  },
+  "transaction_id": "O64kAXoRhwD95L4BZpjgV19lLFYC4pGzcxLfqD0LBNs",
+  "cancelled_before_sha256": "d3f5f443c472d01ec688a0f33aead53b8ec9d0a575e9a98e1112f9af612000db",
+  "time_utc": "2026-10-18T10:29:26.915644+00:00",
+  "resume_attempt_sha256": "e62a769f79e179f300ca4d8e53681413f938d67e887e54c843aba6ec7e5baaa0",
+  "resume_result_sha256": "6a5fe03ed00cb373b3da7019936f08b6830f6ec4480c70444e502db6105857a6",
+  "before_sha256": "19875ac0b2a04a9a212e26f2d35523ee217fd8c6815253bbb7dc7e220a2019cf",
+  "cancellation_source": "主控本会话明确UAC取消；不代表产品恢复成功",
+  "failed_host_attempt_sha256": "35ae42b61b596226a840736a7198c2af2f888c519b9ab3cd00a67b5483d4e265",
+  "failed_host_result_sha256": "136e1d585731a2f10c75c79df91c25c01168077ed6520af4d3a3df1c4a62c028"
+}

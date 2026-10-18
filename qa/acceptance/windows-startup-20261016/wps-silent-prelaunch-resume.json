@@ -1,0 +1,5 @@
+{
+  "time_utc": "2026-10-17T06:00:46.562326+00:00",
+  "reason": "Confirmed previous installer exit; prior operation stopped before Start-Process",
+  "guest_uuid": "f47cf265-72a2-4d51-9cf1-b1f5ae960cb2"
+}

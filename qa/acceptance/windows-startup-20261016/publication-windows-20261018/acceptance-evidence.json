@@ -1,0 +1,263 @@
+{
+  "candidate": {
+    "package": {
+      "id": "windows_amd64",
+      "version": "1.4.5-rc.6",
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\artifacts\\PartyOps_1.4.5-rc.6_windows_amd64.exe",
+      "sha256": "e3e2ea45ccd38acff059b5713826a78f998a56ccef75341633f67bd4e17e57da",
+      "source_fingerprint": "84bddfca2e3a217cf5052cc7683d83687b4d00b4f7325d120a833a8ee6880d7f",
+      "provenance_status": "verified",
+      "build_receipt": "D:\\PartyOps-VM-Lab\\state\\builds\\e3e2ea45ccd38acff059b5713826a78f998a56ccef75341633f67bd4e17e57da.json",
+      "build_receipt_sha256": "b7c8db9527279faa4b104d30159d6569fbe70b42d87c612bc49a1835420aff0f"
+    },
+    "manifest_sha256": "202a98774b78b49f91fd26dd1dc92b2581b6d7eb6a26d2f129694fa58785b075",
+    "executable_sha256": "1dae862966da6d8e98d22620b4e0d8dbafed7e8c5a85c56a217b43b73c1846ca",
+    "wizard_sha256": "b062ea21fa91c937fa00c31221a0c348deb07780a698927a7b641b5fcaa40649"
+  },
+  "package": {
+    "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\artifacts\\PartyOps_1.4.5-rc.6_windows_amd64.exe",
+    "sha256": "e3e2ea45ccd38acff059b5713826a78f998a56ccef75341633f67bd4e17e57da",
+    "bytes": 449988807
+  },
+  "build": {
+    "path": "D:\\PartyOps-VM-Lab\\state\\builds\\e3e2ea45ccd38acff059b5713826a78f998a56ccef75341633f67bd4e17e57da.json",
+    "sha256": "b7c8db9527279faa4b104d30159d6569fbe70b42d87c612bc49a1835420aff0f",
+    "bytes": 3432
+  },
+  "gate": {
+    "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.release-gates\\full-function-tests.json",
+    "sha256": "a9898fbb8a038345061ba48053094a669a13a5e7e96d1a7c7070a121eb0efa8e",
+    "bytes": 1190
+  },
+  "source_fingerprint": "84bddfca2e3a217cf5052cc7683d83687b4d00b4f7325d120a833a8ee6880d7f",
+  "fix_sources": [
+    {
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\backend\\app\\setup_wizard.py",
+      "sha256": "0b621a1a012b0c96d5de0929d2d9e11db3aba3129e14e3808b67d384dd08850b",
+      "bytes": 277277
+    },
+    {
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\backend\\app\\windows_elevation.py",
+      "sha256": "ee9c6cff5275d3f2da8c5d39a94c0971e44967079080512c9b54759e7427e8fa",
+      "bytes": 1752
+    }
+  ],
+  "guest_receipts": [
+    {
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\qa\\acceptance\\windows-timeout-repair-20261018\\retention-boot-before.json",
+      "sha256": "69df6c633b3c56d06f9b085eb84911c12745b2d1b8c490d2be4a7debb7815ce6",
+      "bytes": 3598
+    },
+    {
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\qa\\acceptance\\windows-timeout-repair-20261018\\overlay-install\\attempt.json",
+      "sha256": "d3a75ed1b65c7199b0d9b91afbd930b8c4b33cdaedbce7f930a09ee96191eea6",
+      "bytes": 2441
+    },
+    {
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\qa\\acceptance\\windows-timeout-repair-20261018\\overlay-install\\completed.json",
+      "sha256": "419f75489d950cea2fbe4af8976a48fbfe943b8c36d253db659a7070b4720915",
+      "bytes": 1771
+    },
+    {
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\qa\\acceptance\\windows-timeout-repair-20261018\\retention-after-overlay.json",
+      "sha256": "b0d686a169c14f8f4d440c48bd907cb5ec4aa582ceae6f9457cc9773341ef477",
+      "bytes": 2429
+    },
+    {
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\qa\\acceptance\\windows-timeout-repair-20261018\\normal-reboot-attempt.json",
+      "sha256": "a770e6d9349f7bb5a4026ebc6ad56ac94d6ca4209c688c00539a8f062e3e235f",
+      "bytes": 2626
+    },
+    {
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\qa\\acceptance\\windows-timeout-repair-20261018\\retention-after-reboot.json",
+      "sha256": "4848072c9d91c92f06b45456d61b4952a863f8f2d1dc40d96573475c34fb3c10",
+      "bytes": 2853
+    },
+    {
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\qa\\acceptance\\windows-timeout-repair-20261018\\after-journal-first-host-prepare.attempt.json",
+      "sha256": "2d2888ea65953a61f19ba64291267f69edd3b5258b003c55625024c1264cd6f2",
+      "bytes": 2459
+    },
+    {
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\qa\\acceptance\\windows-timeout-repair-20261018\\after-journal-first-host-prepare.result.json",
+      "sha256": "35ecf93ef74cc2e0a9b701f8a63171731eb5b853e4bab9097af57c7ab594fb79",
+      "bytes": 1971
+    },
+    {
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\qa\\acceptance\\windows-timeout-repair-20261018\\after-journal-first-host-approved-existing-root-submit.attempt.json",
+      "sha256": "933c1eaa5fb5d247b81dffc488c65e67efb11cced0bc59a8eba158c8609b726a",
+      "bytes": 2458
+    },
+    {
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\qa\\acceptance\\windows-timeout-repair-20261018\\after-journal-first-host-approved-existing-root-submit.result.json",
+      "sha256": "3bd271da3eb6bec7ad6bb7e6b675792d784c2a0fa8d937bf55fec318c3e78035",
+      "bytes": 1791
+    },
+    {
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\qa\\acceptance\\windows-timeout-repair-20261018\\after-journal-restore-personal-submit.attempt.json",
+      "sha256": "9f1aa7516a8f544b3d50e51bec3351a212569ab698eb88939ba0a28e4e47b680",
+      "bytes": 2472
+    },
+    {
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\qa\\acceptance\\windows-timeout-repair-20261018\\after-journal-restore-personal-submit.result.json",
+      "sha256": "66ebf67419e2154e519dad1203d9275c205e76acdb3f6e72c5ea89cd80d9bb47",
+      "bytes": 4308
+    },
+    {
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\qa\\acceptance\\windows-timeout-repair-20261018\\after-journal-retention-after-host-restore.json",
+      "sha256": "f5dbcd23592f38a50ad425b168524de04aac15c3a06484795dc6673c5d6f0597",
+      "bytes": 2585
+    },
+    {
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\qa\\acceptance\\windows-timeout-repair-20261018\\reboot-recovery-completed.json",
+      "sha256": "5d85eee944467827e1eca826f4dcbbd9e562510f55fc3c0a983c0acc2b22d611",
+      "bytes": 2249
+    },
+    {
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\qa\\acceptance\\windows-timeout-repair-20261018\\recover-start.attempt.json",
+      "sha256": "d4d7781bfbe6ca7910e59c1901d9f4a8a004a3c769a51b575290c21931355ae1",
+      "bytes": 1833
+    },
+    {
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\qa\\acceptance\\windows-timeout-repair-20261018\\recover-start.result.json",
+      "sha256": "a365477e5889cf1e555dda9b84031a12fa47f6dd74dee92ab2a251589ed94a02",
+      "bytes": 1216
+    },
+    {
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\qa\\acceptance\\windows-timeout-repair-20261018\\reboot-recovery-events-81f0300cba0e.json",
+      "sha256": "3523fc3d970760c2ae5e3ab5add3480bfc03745dd121bb1e7043e34531fea46b",
+      "bytes": 3325
+    },
+    {
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\qa\\acceptance\\windows-timeout-repair-20261018\\first-host-prepare.attempt.json",
+      "sha256": "bd540a055cb1b08cba6fe9cfdfab380136f1e54c04ce28d47e4334395c51605f",
+      "bytes": 2360
+    },
+    {
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\qa\\acceptance\\windows-timeout-repair-20261018\\first-host-prepare.result.json",
+      "sha256": "26759ab50130b9f07613ac40809e5dfa41bf1b35efb0a5bb58a6b6cf4292eb54",
+      "bytes": 1875
+    },
+    {
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\qa\\acceptance\\windows-timeout-repair-20261018\\first-host-approved-existing-root-submit.attempt.json",
+      "sha256": "35ae42b61b596226a840736a7198c2af2f888c519b9ab3cd00a67b5483d4e265",
+      "bytes": 2359
+    },
+    {
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\qa\\acceptance\\windows-timeout-repair-20261018\\first-host-approved-existing-root-submit.result.json",
+      "sha256": "136e1d585731a2f10c75c79df91c25c01168077ed6520af4d3a3df1c4a62c028",
+      "bytes": 1543
+    },
+    {
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\qa\\acceptance\\windows-timeout-repair-20261018\\host-journal-recovery-before.json",
+      "sha256": "19875ac0b2a04a9a212e26f2d35523ee217fd8c6815253bbb7dc7e220a2019cf",
+      "bytes": 4206
+    },
+    {
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\qa\\acceptance\\windows-timeout-repair-20261018\\host-journal-reopen.attempt.json",
+      "sha256": "bb550fd8c938206a37a7eb48dcb92592afd22932aa1c2d1e3d4ef62dd5dd56dd",
+      "bytes": 1574
+    },
+    {
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\qa\\acceptance\\windows-timeout-repair-20261018\\host-journal-recovery-verified.json",
+      "sha256": "3415b14fa540a5607927d4ee5e8fee05926c14ed7a25865318e8715353719df5",
+      "bytes": 5372
+    },
+    {
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\qa\\acceptance\\windows-timeout-repair-20261018\\host-journal-cancelled-start.attempt.json",
+      "sha256": "c276ddc037249c2ce7329929b0883c83c548a7513ce76370d71da009b38d6f03",
+      "bytes": 4407
+    },
+    {
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\qa\\acceptance\\windows-timeout-repair-20261018\\host-journal-cancelled-start.result.json",
+      "sha256": "98702482ded600e81cbab4c5b41ae6c37c1178f0abb2ebf6c27f3dc1d4c1f034",
+      "bytes": 1480
+    },
+    {
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\qa\\acceptance\\windows-timeout-repair-20261018\\host-journal-resume-launch.attempt.json",
+      "sha256": "e62a769f79e179f300ca4d8e53681413f938d67e887e54c843aba6ec7e5baaa0",
+      "bytes": 1778
+    },
+    {
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\qa\\acceptance\\windows-timeout-repair-20261018\\host-journal-resume-launch.result.json",
+      "sha256": "6a5fe03ed00cb373b3da7019936f08b6830f6ec4480c70444e502db6105857a6",
+      "bytes": 1513
+    },
+    {
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\qa\\acceptance\\windows-timeout-repair-20261018\\host-journal-cancelled-before.json",
+      "sha256": "d3f5f443c472d01ec688a0f33aead53b8ec9d0a575e9a98e1112f9af612000db",
+      "bytes": 4977
+    },
+    {
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\qa\\acceptance\\windows-timeout-repair-20261018\\host-journal-cancelled-relaunch.attempt.json",
+      "sha256": "9cbe81a63c2e27e531f7ee39f44be8593f6ab0554bae287061af6d542575e4e6",
+      "bytes": 1953
+    },
+    {
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\qa\\acceptance\\windows-timeout-repair-20261018\\host-journal-cancelled-relaunch.result.json",
+      "sha256": "b1a4f56c0972553962e97d88bb9b758850d7099be408aca9bea4d3be913c5cff",
+      "bytes": 1598
+    },
+    {
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\qa\\acceptance\\windows-timeout-repair-20261018\\host-journal-cancelled-relaunch-readonly-diagnosis.json",
+      "sha256": "6cb2de179ff671a7d534d845fddcb795fa015f5e0b7466b26a8267066da84dfc",
+      "bytes": 5086
+    },
+    {
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\qa\\acceptance\\windows-timeout-repair-20261018\\after-journal-restore-personal-prepare.attempt.json",
+      "sha256": "dd69d199269be6bbfce54594c9f02af35f68bf65518d85948bd029a2a777782c",
+      "bytes": 2052
+    },
+    {
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\qa\\acceptance\\windows-timeout-repair-20261018\\after-journal-restore-personal-prepare.result.json",
+      "sha256": "9cfa85ec57c05b23aa2ee3a626321d3ed29929acfbd7ab3b62a280fb880be4e5",
+      "bytes": 1904
+    },
+    {
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\qa\\acceptance\\windows-timeout-repair-20261018\\after-journal-restore-personal-after-prepare-failure-inspect.json",
+      "sha256": "f5f3297b7f68f953685f18fdab2c8c11a82e050be71c1dba67ee7b26ff68890c",
+      "bytes": 6273
+    },
+    {
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\qa\\acceptance\\windows-timeout-repair-20261018\\after-journal-restore-personal-recover-prepare.attempt.json",
+      "sha256": "c4a3fa5914aad67c033c3dff92d4c0eeef35c7703e5971f38c3f2efa53ccc04d",
+      "bytes": 2481
+    },
+    {
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\qa\\acceptance\\windows-timeout-repair-20261018\\after-journal-restore-personal-recover-prepare.result.json",
+      "sha256": "cccc6aa0344a7e66139301822a385633518dd793900bebeee2ea025b12b78f9e",
+      "bytes": 2577
+    },
+    {
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\qa\\acceptance\\windows-timeout-repair-20261018\\after-journal-restore-personal-verify-completion.attempt.json",
+      "sha256": "7db6c23d3658f21f052702c66de5ff58a3276ce5d9408a1cb1adbeede740ccde",
+      "bytes": 1446
+    },
+    {
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\qa\\acceptance\\windows-timeout-repair-20261018\\after-journal-restore-personal-observed-completion.json",
+      "sha256": "fabaef7a27abe033ba177ec7c5df1cd4f6e16ab208b133decbcf4b3d92466f3c",
+      "bytes": 2976
+    },
+    {
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\qa\\acceptance\\windows-timeout-repair-20261018\\after-journal-restore-personal-after-submit-failure-inspect.json",
+      "sha256": "a09d2f84f6a82ecaed4466c53b974d9e08e90b74db0795ccd3a0ca1b279a4e91",
+      "bytes": 5233
+    },
+    {
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\qa\\acceptance\\windows-timeout-repair-20261018\\host-journal-reopen-readonly-diagnosis.json",
+      "sha256": "b3d3447162e37560462a52612a95b5bcabba8be29c84cc6530598b592c7af978",
+      "bytes": 2250
+    },
+    {
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\qa\\acceptance\\windows-timeout-repair-20261018\\host-journal-reopen-failed-script.ps1",
+      "sha256": "abe0cd65b9c732f847f2ff203af7061569aade8d69177d7072ec7ff357d124c0",
+      "bytes": 6139
+    },
+    {
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\qa\\acceptance\\windows-timeout-repair-20261018\\after-journal-restore-personal-failed-prepare.ps1",
+      "sha256": "76cca81f340a8d1553bb6cb449c27f9d1441370997128a25ee26e340783b5d18",
+      "bytes": 5574
+    }
+  ],
+  "wps_evidence_sha256": "736a698699c61326397dd42fb6af3431bc5e0310a8f25790185793e0152fe2e3"
+}

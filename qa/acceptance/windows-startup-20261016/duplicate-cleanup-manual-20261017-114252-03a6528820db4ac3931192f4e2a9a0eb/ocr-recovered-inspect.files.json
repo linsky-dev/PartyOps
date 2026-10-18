@@ -1,0 +1,374 @@
+[
+  {
+    "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.qa\\ocr-recovered-inspect\\app\\ocr\\bin\\libarchive-13.dll",
+    "bytes": 972210,
+    "sha256": "ddabddfdc98e1e1342ce4a7069fb4004de6c870d7bc9f4e95ef243dd18468e97",
+    "retained": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\vendor\\windows\\ocr\\tesseract-5.5.3-windows-amd64-recovered\\bin\\libarchive-13.dll"
+  },
+  {
+    "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.qa\\ocr-recovered-inspect\\app\\ocr\\bin\\libb2-1.dll",
+    "bytes": 34653,
+    "sha256": "77bab532b5421d6cdddb96c3ae9a4bde144eb481ccaf243336c9f8c690a50987",
+    "retained": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\vendor\\windows\\ocr\\tesseract-5.5.3-windows-amd64-recovered\\bin\\libb2-1.dll"
+  },
+  {
+    "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.qa\\ocr-recovered-inspect\\app\\ocr\\bin\\libbrotlicommon.dll",
+    "bytes": 143429,
+    "sha256": "ca7bc06ead80259971badf2cd0bfc688db9154dad65f139f49a38b4be9976f97",
+    "retained": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\vendor\\windows\\ocr\\tesseract-5.5.3-windows-amd64-recovered\\bin\\libbrotlicommon.dll"
+  },
+  {
+    "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.qa\\ocr-recovered-inspect\\app\\ocr\\bin\\libbrotlidec.dll",
+    "bytes": 62461,
+    "sha256": "a142dc6cfa77cb907028aa9426f486f3d8de37855e8db2ae2894147908121881",
+    "retained": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\vendor\\windows\\ocr\\tesseract-5.5.3-windows-amd64-recovered\\bin\\libbrotlidec.dll"
+  },
+  {
+    "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.qa\\ocr-recovered-inspect\\app\\ocr\\bin\\libbz2-1.dll",
+    "bytes": 100964,
+    "sha256": "b79cd3a7102e359ef6324e98966a67939e58ec2b651ae2847cae84a4dfa453f7",
+    "retained": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\vendor\\windows\\ocr\\tesseract-5.5.3-windows-amd64-recovered\\bin\\libbz2-1.dll"
+  },
+  {
+    "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.qa\\ocr-recovered-inspect\\app\\ocr\\bin\\libcairo-2.dll",
+    "bytes": 1247164,
+    "sha256": "c474166543aed18b389b20122ca2741189504994dafd86cd5ed121e95bd82ce4",
+    "retained": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\vendor\\windows\\ocr\\tesseract-5.5.3-windows-amd64-recovered\\bin\\libcairo-2.dll"
+  },
+  {
+    "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.qa\\ocr-recovered-inspect\\app\\ocr\\bin\\libcurl-4.dll",
+    "bytes": 1226963,
+    "sha256": "3d302f9690e810fdfd950254e2f0663d0ff768737f350c602a4ed3a06e9b6b2b",
+    "retained": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\vendor\\windows\\ocr\\tesseract-5.5.3-windows-amd64-recovered\\bin\\libcurl-4.dll"
+  },
+  {
+    "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.qa\\ocr-recovered-inspect\\app\\ocr\\bin\\libdatrie-1.dll",
+    "bytes": 35033,
+    "sha256": "2f784872e6404e57847201fe1e7e591bd5b5be4a319ef38ebcb36014ac7f385d",
+    "retained": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\vendor\\windows\\ocr\\tesseract-5.5.3-windows-amd64-recovered\\bin\\libdatrie-1.dll"
+  },
+  {
+    "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.qa\\ocr-recovered-inspect\\app\\ocr\\bin\\libdeflate.dll",
+    "bytes": 99228,
+    "sha256": "3f3fc3a73bc3623dc93b37bb321c484d3731d93006fd01c0495d15711826eb44",
+    "retained": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\vendor\\windows\\ocr\\tesseract-5.5.3-windows-amd64-recovered\\bin\\libdeflate.dll"
+  },
+  {
+    "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.qa\\ocr-recovered-inspect\\app\\ocr\\bin\\libexpat-1.dll",
+    "bytes": 237603,
+    "sha256": "92ae866c6c58dd2d8366aa0e6230ba8d434d5306e8d8c3a08b7e61750fc16153",
+    "retained": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\vendor\\windows\\ocr\\tesseract-5.5.3-windows-amd64-recovered\\bin\\libexpat-1.dll"
+  },
+  {
+    "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.qa\\ocr-recovered-inspect\\app\\ocr\\bin\\libffi-8.dll",
+    "bytes": 40945,
+    "sha256": "390e4bf8abd037abd0e1dd1f311606715e43f8efe812e5c5b8775acf2cb2f21e",
+    "retained": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\vendor\\windows\\ocr\\tesseract-5.5.3-windows-amd64-recovered\\bin\\libffi-8.dll"
+  },
+  {
+    "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.qa\\ocr-recovered-inspect\\app\\ocr\\bin\\libfontconfig-1.dll",
+    "bytes": 502866,
+    "sha256": "661c44249b9b06820554940a984b783b1daae9740a4a2eb265fe77205962486f",
+    "retained": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\vendor\\windows\\ocr\\tesseract-5.5.3-windows-amd64-recovered\\bin\\libfontconfig-1.dll"
+  },
+  {
+    "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.qa\\ocr-recovered-inspect\\app\\ocr\\bin\\libfreetype-6.dll",
+    "bytes": 790651,
+    "sha256": "bbb3e6390ee229c867ef31f10e42a49a61a92e434a11d40c6139a2608ebc6194",
+    "retained": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\vendor\\windows\\ocr\\tesseract-5.5.3-windows-amd64-recovered\\bin\\libfreetype-6.dll"
+  },
+  {
+    "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.qa\\ocr-recovered-inspect\\app\\ocr\\bin\\libfribidi-0.dll",
+    "bytes": 156403,
+    "sha256": "84930fd86a3b46b62794a3bbaff21fbbaeaade5ff7cdc70be7f717ad29af87ed",
+    "retained": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\vendor\\windows\\ocr\\tesseract-5.5.3-windows-amd64-recovered\\bin\\libfribidi-0.dll"
+  },
+  {
+    "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.qa\\ocr-recovered-inspect\\app\\ocr\\bin\\libgcc_s_seh-1.dll",
+    "bytes": 954773,
+    "sha256": "172cfdc9d83703ec0a0ca2cee08f6cf2a166b801717ee51a56b3a63b36bc2f83",
+    "retained": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\vendor\\windows\\ocr\\tesseract-5.5.3-windows-amd64-recovered\\bin\\libgcc_s_seh-1.dll"
+  },
+  {
+    "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.qa\\ocr-recovered-inspect\\app\\ocr\\bin\\libgif-7.dll",
+    "bytes": 45777,
+    "sha256": "5b3d837ccaab84683dd93fbaddf2d98e1a9f90e0ddb8ea73dc70157adb4d26f1",
+    "retained": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\vendor\\windows\\ocr\\tesseract-5.5.3-windows-amd64-recovered\\bin\\libgif-7.dll"
+  },
+  {
+    "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.qa\\ocr-recovered-inspect\\app\\ocr\\bin\\libgio-2.0-0.dll",
+    "bytes": 1915159,
+    "sha256": "3dc3d4d477633cc9265b0796f9037a9fa387f4a1e8b7258890987a8c2c21eb0a",
+    "retained": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\vendor\\windows\\ocr\\tesseract-5.5.3-windows-amd64-recovered\\bin\\libgio-2.0-0.dll"
+  },
+  {
+    "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.qa\\ocr-recovered-inspect\\app\\ocr\\bin\\libglib-2.0-0.dll",
+    "bytes": 1566649,
+    "sha256": "43f2015fccfb10e22ecece61855d9ea21835f833b6533bc53ab77b54f4d66c34",
+    "retained": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\vendor\\windows\\ocr\\tesseract-5.5.3-windows-amd64-recovered\\bin\\libglib-2.0-0.dll"
+  },
+  {
+    "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.qa\\ocr-recovered-inspect\\app\\ocr\\bin\\libgmodule-2.0-0.dll",
+    "bytes": 26748,
+    "sha256": "69cf44cda7756a6ec4a926e0cf9fe81721f05d65abfab88ff83004fa508bb0e7",
+    "retained": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\vendor\\windows\\ocr\\tesseract-5.5.3-windows-amd64-recovered\\bin\\libgmodule-2.0-0.dll"
+  },
+  {
+    "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.qa\\ocr-recovered-inspect\\app\\ocr\\bin\\libgobject-2.0-0.dll",
+    "bytes": 359475,
+    "sha256": "acf20d5ddd3d2e4b4355576f5cf662c18f42746c50f43eaccc0596592616602a",
+    "retained": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\vendor\\windows\\ocr\\tesseract-5.5.3-windows-amd64-recovered\\bin\\libgobject-2.0-0.dll"
+  },
+  {
+    "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.qa\\ocr-recovered-inspect\\app\\ocr\\bin\\libgraphite2.dll",
+    "bytes": 167155,
+    "sha256": "063a9ad34a5ec87d038b4646660957395224ecf2cf707917256b7d251a7c5f57",
+    "retained": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\vendor\\windows\\ocr\\tesseract-5.5.3-windows-amd64-recovered\\bin\\libgraphite2.dll"
+  },
+  {
+    "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.qa\\ocr-recovered-inspect\\app\\ocr\\bin\\libharfbuzz-0.dll",
+    "bytes": 1541957,
+    "sha256": "54fb644a1143b3b81d494684f299aca9ff4b72134f12a7b1cfb2bd0f8fa9cef7",
+    "retained": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\vendor\\windows\\ocr\\tesseract-5.5.3-windows-amd64-recovered\\bin\\libharfbuzz-0.dll"
+  },
+  {
+    "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.qa\\ocr-recovered-inspect\\app\\ocr\\bin\\libiconv-2.dll",
+    "bytes": 1143148,
+    "sha256": "7a282a854e01be726c6cccfe46f548c716aa45b3014818468253aaa4efbcd067",
+    "retained": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\vendor\\windows\\ocr\\tesseract-5.5.3-windows-amd64-recovered\\bin\\libiconv-2.dll"
+  },
+  {
+    "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.qa\\ocr-recovered-inspect\\app\\ocr\\bin\\libicudt78.dll",
+    "bytes": 33120806,
+    "sha256": "47d19b605a28461d44e0d8c062c465e92c9edfb0244f023a8066f7337d317d0e",
+    "retained": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\vendor\\windows\\ocr\\tesseract-5.5.3-windows-amd64-recovered\\bin\\libicudt78.dll"
+  },
+  {
+    "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.qa\\ocr-recovered-inspect\\app\\ocr\\bin\\libicuin78.dll",
+    "bytes": 3186867,
+    "sha256": "af3341827897a41ab16667ee0699acdb2b0338c3bf4ecc7f510a324f18755422",
+    "retained": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\vendor\\windows\\ocr\\tesseract-5.5.3-windows-amd64-recovered\\bin\\libicuin78.dll"
+  },
+  {
+    "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.qa\\ocr-recovered-inspect\\app\\ocr\\bin\\libicuuc78.dll",
+    "bytes": 1999466,
+    "sha256": "3186171e946552e2a5e371cd0bc68bf37bd6e229a85dbb0d3c40231cf0858b49",
+    "retained": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\vendor\\windows\\ocr\\tesseract-5.5.3-windows-amd64-recovered\\bin\\libicuuc78.dll"
+  },
+  {
+    "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.qa\\ocr-recovered-inspect\\app\\ocr\\bin\\libidn2-0.dll",
+    "bytes": 247081,
+    "sha256": "9880b52651a0247640a2531d777380f7c35fac7efa7e3979b265ddcb78db8642",
+    "retained": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\vendor\\windows\\ocr\\tesseract-5.5.3-windows-amd64-recovered\\bin\\libidn2-0.dll"
+  },
+  {
+    "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.qa\\ocr-recovered-inspect\\app\\ocr\\bin\\libintl-8.dll",
+    "bytes": 298731,
+    "sha256": "0537c3dd2378218508ebe3cc416d72a99ee2d24ae1c5525e23458f32544ef861",
+    "retained": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\vendor\\windows\\ocr\\tesseract-5.5.3-windows-amd64-recovered\\bin\\libintl-8.dll"
+  },
+  {
+    "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.qa\\ocr-recovered-inspect\\app\\ocr\\bin\\libjbig-0.dll",
+    "bytes": 62083,
+    "sha256": "275a827ba6839d47cfdbe059db1b1b403a92ff26e2b76a29362915487868bef2",
+    "retained": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\vendor\\windows\\ocr\\tesseract-5.5.3-windows-amd64-recovered\\bin\\libjbig-0.dll"
+  },
+  {
+    "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.qa\\ocr-recovered-inspect\\app\\ocr\\bin\\libjpeg-8.dll",
+    "bytes": 967968,
+    "sha256": "b564d34adaca83e73af0e2231719dd0198ea6cd074c64b2ba85bfd7182f27db7",
+    "retained": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\vendor\\windows\\ocr\\tesseract-5.5.3-windows-amd64-recovered\\bin\\libjpeg-8.dll"
+  },
+  {
+    "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.qa\\ocr-recovered-inspect\\app\\ocr\\bin\\libleptonica-6.dll",
+    "bytes": 2850600,
+    "sha256": "1869b44e3d46fd830620b042477e5d60a950779582f38f60291547efb27792f1",
+    "retained": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\vendor\\windows\\ocr\\tesseract-5.5.3-windows-amd64-recovered\\bin\\libleptonica-6.dll"
+  },
+  {
+    "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.qa\\ocr-recovered-inspect\\app\\ocr\\bin\\libLerc.dll",
+    "bytes": 804265,
+    "sha256": "6887fb5aeabf382a835a4cb693025e8d48d9c90e82ca4eae5d2d8ffb70c6ca9a",
+    "retained": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\vendor\\windows\\ocr\\tesseract-5.5.3-windows-amd64-recovered\\bin\\libLerc.dll"
+  },
+  {
+    "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.qa\\ocr-recovered-inspect\\app\\ocr\\bin\\liblz4.dll",
+    "bytes": 158649,
+    "sha256": "35f917274bca8f19677ba66f1b3cc3c83568c3249fc43215fc16e76439c8e856",
+    "retained": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\vendor\\windows\\ocr\\tesseract-5.5.3-windows-amd64-recovered\\bin\\liblz4.dll"
+  },
+  {
+    "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.qa\\ocr-recovered-inspect\\app\\ocr\\bin\\liblzma-5.dll",
+    "bytes": 191836,
+    "sha256": "dc9edb9bd83b0371fe68d96cb3e70cd17b7a5aba958326a18f8210cb812432e9",
+    "retained": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\vendor\\windows\\ocr\\tesseract-5.5.3-windows-amd64-recovered\\bin\\liblzma-5.dll"
+  },
+  {
+    "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.qa\\ocr-recovered-inspect\\app\\ocr\\bin\\libopenjp2-7.dll",
+    "bytes": 519082,
+    "sha256": "123587086cb1a25d2a338fb9b7c1d6bda10bf9062625b4f08c6a92b3d9cafe47",
+    "retained": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\vendor\\windows\\ocr\\tesseract-5.5.3-windows-amd64-recovered\\bin\\libopenjp2-7.dll"
+  },
+  {
+    "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.qa\\ocr-recovered-inspect\\app\\ocr\\bin\\libpango-1.0-0.dll",
+    "bytes": 437317,
+    "sha256": "a7722692aa345f88cd0cb0296ad144e14b89a25c9926b5c3bac815331bba2127",
+    "retained": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\vendor\\windows\\ocr\\tesseract-5.5.3-windows-amd64-recovered\\bin\\libpango-1.0-0.dll"
+  },
+  {
+    "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.qa\\ocr-recovered-inspect\\app\\ocr\\bin\\libpangocairo-1.0-0.dll",
+    "bytes": 84876,
+    "sha256": "f0efa65511bc8f35186e9adf4628fb9ed505b31435a93afe218ae6c348197954",
+    "retained": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\vendor\\windows\\ocr\\tesseract-5.5.3-windows-amd64-recovered\\bin\\libpangocairo-1.0-0.dll"
+  },
+  {
+    "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.qa\\ocr-recovered-inspect\\app\\ocr\\bin\\libpangoft2-1.0-0.dll",
+    "bytes": 112015,
+    "sha256": "adeeffc8438397998f449f8da1bd3832f4c031215415d7ed21109582dc6908a6",
+    "retained": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\vendor\\windows\\ocr\\tesseract-5.5.3-windows-amd64-recovered\\bin\\libpangoft2-1.0-0.dll"
+  },
+  {
+    "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.qa\\ocr-recovered-inspect\\app\\ocr\\bin\\libpangowin32-1.0-0.dll",
+    "bytes": 112948,
+    "sha256": "08a8ac72c621158d47eb713139e0ad9021c43bef1af01f1365a41fb7f33272c8",
+    "retained": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\vendor\\windows\\ocr\\tesseract-5.5.3-windows-amd64-recovered\\bin\\libpangowin32-1.0-0.dll"
+  },
+  {
+    "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.qa\\ocr-recovered-inspect\\app\\ocr\\bin\\libpcre2-8-0.dll",
+    "bytes": 717955,
+    "sha256": "a499fb8a7eff453d6e4f0842576bc5171d40a1505d8f7f13fff6cee51b738a62",
+    "retained": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\vendor\\windows\\ocr\\tesseract-5.5.3-windows-amd64-recovered\\bin\\libpcre2-8-0.dll"
+  },
+  {
+    "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.qa\\ocr-recovered-inspect\\app\\ocr\\bin\\libpixman-1-0.dll",
+    "bytes": 740378,
+    "sha256": "55ce45825eb8e825c635416171be4736147a6b0b690469f545d8c4ae8e85b4a3",
+    "retained": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\vendor\\windows\\ocr\\tesseract-5.5.3-windows-amd64-recovered\\bin\\libpixman-1-0.dll"
+  },
+  {
+    "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.qa\\ocr-recovered-inspect\\app\\ocr\\bin\\libpng16-16.dll",
+    "bytes": 264269,
+    "sha256": "3737838ee8d6b893df7bdabf7439775371a57dce7e17ee6b35586023c64bd9ab",
+    "retained": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\vendor\\windows\\ocr\\tesseract-5.5.3-windows-amd64-recovered\\bin\\libpng16-16.dll"
+  },
+  {
+    "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.qa\\ocr-recovered-inspect\\app\\ocr\\bin\\libpsl-5.dll",
+    "bytes": 105304,
+    "sha256": "b31fc70eda598a39b65fe2736d815518db0652d641346f75eac40c2a0499b058",
+    "retained": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\vendor\\windows\\ocr\\tesseract-5.5.3-windows-amd64-recovered\\bin\\libpsl-5.dll"
+  },
+  {
+    "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.qa\\ocr-recovered-inspect\\app\\ocr\\bin\\libsharpyuv-0.dll",
+    "bytes": 53757,
+    "sha256": "ab0c9f61dc69b6bcdff1011e215f8d5fd6e5096aba9be3386ab87f217fbbeffe",
+    "retained": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\vendor\\windows\\ocr\\tesseract-5.5.3-windows-amd64-recovered\\bin\\libsharpyuv-0.dll"
+  },
+  {
+    "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.qa\\ocr-recovered-inspect\\app\\ocr\\bin\\libssh2-1.dll",
+    "bytes": 271318,
+    "sha256": "ee7fe3e749859334c99e9261689481dd879811122598d22585421f95d29fc7ae",
+    "retained": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\vendor\\windows\\ocr\\tesseract-5.5.3-windows-amd64-recovered\\bin\\libssh2-1.dll"
+  },
+  {
+    "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.qa\\ocr-recovered-inspect\\app\\ocr\\bin\\libstdc++-6.dll",
+    "bytes": 26390974,
+    "sha256": "5fe5d4d8f6636eb6f2dc55be99dc5dc8a6c40db1abdf592e84480d1e6985abd0",
+    "retained": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\vendor\\windows\\ocr\\tesseract-5.5.3-windows-amd64-recovered\\bin\\libstdc++-6.dll"
+  },
+  {
+    "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.qa\\ocr-recovered-inspect\\app\\ocr\\bin\\libtesseract-5.dll",
+    "bytes": 3501048,
+    "sha256": "54d54528b453ce3a5ba79487687f8df43e7b194b9ea97beba74200453fe1fb46",
+    "retained": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\vendor\\windows\\ocr\\tesseract-5.5.3-windows-amd64-recovered\\bin\\libtesseract-5.dll"
+  },
+  {
+    "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.qa\\ocr-recovered-inspect\\app\\ocr\\bin\\libthai-0.dll",
+    "bytes": 72294,
+    "sha256": "5d741974fdec19e0f6cddbcdb539428af0c7392740a056634714c2884157fdb9",
+    "retained": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\vendor\\windows\\ocr\\tesseract-5.5.3-windows-amd64-recovered\\bin\\libthai-0.dll"
+  },
+  {
+    "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.qa\\ocr-recovered-inspect\\app\\ocr\\bin\\libtiff-6.dll",
+    "bytes": 625178,
+    "sha256": "47fe69165bf8e211aaa84224f51f145dc894e330fe7ca167f7c99419e0c8c894",
+    "retained": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\vendor\\windows\\ocr\\tesseract-5.5.3-windows-amd64-recovered\\bin\\libtiff-6.dll"
+  },
+  {
+    "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.qa\\ocr-recovered-inspect\\app\\ocr\\bin\\libunistring-5.dll",
+    "bytes": 2251328,
+    "sha256": "b91e2850d3668d4931056a8f4d35783b8ec3eea3735485108a936a072cd16071",
+    "retained": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\vendor\\windows\\ocr\\tesseract-5.5.3-windows-amd64-recovered\\bin\\libunistring-5.dll"
+  },
+  {
+    "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.qa\\ocr-recovered-inspect\\app\\ocr\\bin\\libwebp-7.dll",
+    "bytes": 749724,
+    "sha256": "c6c21a10f8cfe13270832e64640b82709e1d87b956b5f15af435a6c25acd6bbf",
+    "retained": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\vendor\\windows\\ocr\\tesseract-5.5.3-windows-amd64-recovered\\bin\\libwebp-7.dll"
+  },
+  {
+    "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.qa\\ocr-recovered-inspect\\app\\ocr\\bin\\libwebpmux-3.dll",
+    "bytes": 82858,
+    "sha256": "2c8a2e9d7901ec65330f31f9989c2a07ef0506e903b485fcd8b241a6bab9b88f",
+    "retained": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\vendor\\windows\\ocr\\tesseract-5.5.3-windows-amd64-recovered\\bin\\libwebpmux-3.dll"
+  },
+  {
+    "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.qa\\ocr-recovered-inspect\\app\\ocr\\bin\\libwinpthread-1.dll",
+    "bytes": 65955,
+    "sha256": "6a661d5846d80a91394dbb9b2dab87ba3cc705eac80ad45fe73677bff70cd6d2",
+    "retained": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\vendor\\windows\\ocr\\tesseract-5.5.3-windows-amd64-recovered\\bin\\libwinpthread-1.dll"
+  },
+  {
+    "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.qa\\ocr-recovered-inspect\\app\\ocr\\bin\\libzstd.dll",
+    "bytes": 1218273,
+    "sha256": "b95c223a9548a9ecf51377c962e0bc8f0c51eb0c6f67a296dbc885996f0dd40d",
+    "retained": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\vendor\\windows\\ocr\\tesseract-5.5.3-windows-amd64-recovered\\bin\\libzstd.dll"
+  },
+  {
+    "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.qa\\ocr-recovered-inspect\\app\\ocr\\bin\\tesseract.exe",
+    "bytes": 1867784,
+    "sha256": "c66f0f12ed76f6aa455dac97684bbc86756d6a732380bee09122454cfda3f420",
+    "retained": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\vendor\\windows\\ocr\\tesseract-5.5.3-windows-amd64-recovered\\bin\\tesseract.exe"
+  },
+  {
+    "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.qa\\ocr-recovered-inspect\\app\\ocr\\bin\\zlib1.dll",
+    "bytes": 128488,
+    "sha256": "93e9243a44c29200eeacaf9658efe2558581770e4b11ca4b500e18e424a6e3b5",
+    "retained": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\vendor\\windows\\ocr\\tesseract-5.5.3-windows-amd64-recovered\\bin\\zlib1.dll"
+  },
+  {
+    "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.qa\\ocr-recovered-inspect\\app\\ocr\\licenses\\LICENSE-tessdata-fast.txt",
+    "bytes": 11358,
+    "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+    "retained": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\vendor\\windows\\ocr\\tesseract-5.5.3-windows-amd64-recovered\\licenses\\LICENSE-tessdata-fast.txt"
+  },
+  {
+    "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.qa\\ocr-recovered-inspect\\app\\ocr\\licenses\\LICENSE-tesseract.txt",
+    "bytes": 11358,
+    "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+    "retained": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\vendor\\windows\\ocr\\tesseract-5.5.3-windows-amd64-recovered\\licenses\\LICENSE-tessdata-fast.txt"
+  },
+  {
+    "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.qa\\ocr-recovered-inspect\\app\\ocr\\SOURCE.json",
+    "bytes": 1021,
+    "sha256": "4fda65dd8f28888da4817b25e588d3a1c197d34e883f2c297e429dca511830f5",
+    "retained": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\vendor\\windows\\ocr\\tesseract-5.5.3-windows-amd64-recovered\\SOURCE.json"
+  },
+  {
+    "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.qa\\ocr-recovered-inspect\\app\\ocr\\tessdata\\chi_sim.traineddata",
+    "bytes": 2469156,
+    "sha256": "a5fcb6f0db1e1d6d8522f39db4e848f05984669172e584e8d76b6b3141e1f730",
+    "retained": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\vendor\\windows\\ocr\\tesseract-5.5.3-windows-amd64-recovered\\tessdata\\chi_sim.traineddata"
+  },
+  {
+    "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.qa\\ocr-recovered-inspect\\app\\ocr\\tessdata\\eng.traineddata",
+    "bytes": 4113088,
+    "sha256": "7d4322bd2a7749724879683fc3912cb542f19906c83bcc1a52132556427170b2",
+    "retained": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\vendor\\windows\\ocr\\tesseract-5.5.3-windows-amd64-recovered\\tessdata\\eng.traineddata"
+  },
+  {
+    "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.qa\\ocr-recovered-inspect\\app\\ocr\\tessdata\\osd.traineddata",
+    "bytes": 10562727,
+    "sha256": "9cf5d576fcc47564f11265841e5ca839001e7e6f38ff7f7aacf46d15a96b00ff",
+    "retained": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\vendor\\windows\\ocr\\tesseract-5.5.3-windows-amd64-recovered\\tessdata\\osd.traineddata"
+  }
+]

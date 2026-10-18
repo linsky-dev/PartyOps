@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "product": "PartyOps",
+  "version": "1.4.5-rc.6",
+  "platform": "windows",
+  "architecture": "amd64",
+  "runtime_profile": "full",
+  "files": [
+    {
+      "path": "PartyOps.exe",
+      "size": 1,
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "path": "PartyOpsWizard.exe",
+      "size": 2,
+      "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    }
+  ]
+}

@@ -1,0 +1,323 @@
+{
+  "status": "read-only-inventory-no-deletion",
+  "time_utc": "2026-10-18T11:01:47.197346+00:00",
+  "scopes": [
+    "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\artifacts",
+    "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.build-windows",
+    "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.build-kit",
+    "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.qa\\deferred-cache",
+    "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\qa\\acceptance\\windows-startup-20261016\\publication-windows-20261018\\batch",
+    "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\qa\\acceptance\\windows-startup-20261016\\publication-windows-20261017\\batch",
+    "D:\\PartyOps-VM-Lab\\packages"
+  ],
+  "items": [
+    {
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\artifacts\\candidate-history",
+      "kind": "directory",
+      "file_count": 1,
+      "logical_bytes": 449978846,
+      "unique_file_identity_bytes_within_entry": 449978846,
+      "decision": "逐文件复核",
+      "reason": "仅旧完整包可列候选；目录内其他证据保留，不整体删除。",
+      "contains_hardlinked_files": 1
+    },
+    {
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\artifacts\\ocr-recovery-validation",
+      "kind": "directory",
+      "file_count": 62,
+      "logical_bytes": 114801597,
+      "unique_file_identity_bytes_within_entry": 114801597,
+      "decision": "保留",
+      "reason": "验证/准备/迁移回执，属于审计记录。",
+      "contains_hardlinked_files": 0
+    },
+    {
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\artifacts\\ocr-recovery-validation-ps5",
+      "kind": "directory",
+      "file_count": 62,
+      "logical_bytes": 114801597,
+      "unique_file_identity_bytes_within_entry": 114801597,
+      "decision": "保留",
+      "reason": "验证/准备/迁移回执，属于审计记录。",
+      "contains_hardlinked_files": 0
+    },
+    {
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\artifacts\\PartyOps-1.4.5-rc.6-windows-amd64",
+      "kind": "directory",
+      "file_count": 16019,
+      "logical_bytes": 1371949697,
+      "unique_file_identity_bytes_within_entry": 1371949697,
+      "decision": "可清理候选",
+      "reason": "指定范围内可再生成的构建输出/工具缓存；最终包及验证证据另行保留。清理前确认无构建进程使用。",
+      "contains_hardlinked_files": 0
+    },
+    {
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\artifacts\\PartyOps_1.4.5-rc.6_windows_amd64.candidate.json",
+      "kind": "file",
+      "file_count": 1,
+      "logical_bytes": 559,
+      "unique_file_identity_bytes_within_entry": 559,
+      "decision": "保留",
+      "reason": "最终e3e完整包/校验及其正式发布硬链接，禁止删除。"
+    },
+    {
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\artifacts\\PartyOps_1.4.5-rc.6_windows_amd64.exe",
+      "kind": "file",
+      "file_count": 1,
+      "logical_bytes": 449988807,
+      "unique_file_identity_bytes_within_entry": 449988807,
+      "decision": "保留",
+      "reason": "最终e3e完整包/校验及其正式发布硬链接，禁止删除。"
+    },
+    {
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\artifacts\\PartyOps_1.4.5-rc.6_windows_amd64.exe.sha256",
+      "kind": "file",
+      "file_count": 1,
+      "logical_bytes": 104,
+      "unique_file_identity_bytes_within_entry": 104,
+      "decision": "保留",
+      "reason": "最终e3e完整包/校验及其正式发布硬链接，禁止删除。"
+    },
+    {
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\artifacts\\prerequisite-preparation",
+      "kind": "directory",
+      "file_count": 2,
+      "logical_bytes": 121347838,
+      "unique_file_identity_bytes_within_entry": 121347838,
+      "decision": "保留",
+      "reason": "验证/准备/迁移回执，属于审计记录。",
+      "contains_hardlinked_files": 0
+    },
+    {
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\artifacts\\windows-runtime",
+      "kind": "directory",
+      "file_count": 13198,
+      "logical_bytes": 1758282978,
+      "unique_file_identity_bytes_within_entry": 1758282978,
+      "decision": "可清理候选",
+      "reason": "指定范围内可再生成的构建输出/工具缓存；最终包及验证证据另行保留。清理前确认无构建进程使用。",
+      "contains_hardlinked_files": 0
+    },
+    {
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.build-windows\\alembic-data",
+      "kind": "directory",
+      "file_count": 27,
+      "logical_bytes": 128613,
+      "unique_file_identity_bytes_within_entry": 128613,
+      "decision": "可清理候选",
+      "reason": "指定范围内可再生成的构建输出/工具缓存；最终包及验证证据另行保留。清理前确认无构建进程使用。",
+      "contains_hardlinked_files": 0
+    },
+    {
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.build-windows\\sitecustomize",
+      "kind": "directory",
+      "file_count": 2,
+      "logical_bytes": 593,
+      "unique_file_identity_bytes_within_entry": 593,
+      "decision": "可清理候选",
+      "reason": "指定范围内可再生成的构建输出/工具缓存；最终包及验证证据另行保留。清理前确认无构建进程使用。",
+      "contains_hardlinked_files": 0
+    },
+    {
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.build-windows\\spec",
+      "kind": "directory",
+      "file_count": 9,
+      "logical_bytes": 13033,
+      "unique_file_identity_bytes_within_entry": 13033,
+      "decision": "可清理候选",
+      "reason": "指定范围内可再生成的构建输出/工具缓存；最终包及验证证据另行保留。清理前确认无构建进程使用。",
+      "contains_hardlinked_files": 0
+    },
+    {
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.build-windows\\work",
+      "kind": "directory",
+      "file_count": 144,
+      "logical_bytes": 538561110,
+      "unique_file_identity_bytes_within_entry": 538561110,
+      "decision": "可清理候选",
+      "reason": "指定范围内可再生成的构建输出/工具缓存；最终包及验证证据另行保留。清理前确认无构建进程使用。",
+      "contains_hardlinked_files": 0
+    },
+    {
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.build-kit\\downloads",
+      "kind": "directory",
+      "file_count": 1,
+      "logical_bytes": 18399802,
+      "unique_file_identity_bytes_within_entry": 18399802,
+      "decision": "可清理候选",
+      "reason": "指定范围内可再生成的构建输出/工具缓存；最终包及验证证据另行保留。清理前确认无构建进程使用。",
+      "contains_hardlinked_files": 0
+    },
+    {
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.build-kit\\vs2022",
+      "kind": "directory",
+      "file_count": 8169,
+      "logical_bytes": 1062091095,
+      "unique_file_identity_bytes_within_entry": 1062091095,
+      "decision": "可清理候选",
+      "reason": "指定范围内可再生成的构建输出/工具缓存；最终包及验证证据另行保留。清理前确认无构建进程使用。",
+      "contains_hardlinked_files": 0
+    },
+    {
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.build-kit\\vs_BuildTools.exe",
+      "kind": "file",
+      "file_count": 1,
+      "logical_bytes": 4474800,
+      "unique_file_identity_bytes_within_entry": 4474800,
+      "decision": "可清理候选",
+      "reason": "指定范围内可再生成的构建输出/工具缓存；最终包及验证证据另行保留。清理前确认无构建进程使用。"
+    },
+    {
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.qa\\deferred-cache\\relocation-vmware-cache.json",
+      "kind": "file",
+      "file_count": 1,
+      "logical_bytes": 425,
+      "unique_file_identity_bytes_within_entry": 425,
+      "decision": "保留",
+      "reason": "验证/准备/迁移回执，属于审计记录。"
+    },
+    {
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.qa\\deferred-cache\\relocation.json",
+      "kind": "file",
+      "file_count": 1,
+      "logical_bytes": 488,
+      "unique_file_identity_bytes_within_entry": 488,
+      "decision": "保留",
+      "reason": "验证/准备/迁移回执，属于审计记录。"
+    },
+    {
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.qa\\deferred-cache\\VMware-workstation-full-17.6.4-24832109.exe",
+      "kind": "file",
+      "file_count": 1,
+      "logical_bytes": 425426160,
+      "unique_file_identity_bytes_within_entry": 425426160,
+      "decision": "可清理候选",
+      "reason": "主控已确认非活动历史运行时/VMware安装缓存；保留迁移回执和哈希，不影响现有VM/业务。"
+    },
+    {
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.qa\\deferred-cache\\wps-office-runtime.tar.gz",
+      "kind": "file",
+      "file_count": 1,
+      "logical_bytes": 861071098,
+      "unique_file_identity_bytes_within_entry": 861071098,
+      "decision": "可清理候选",
+      "reason": "主控已确认非活动历史运行时/VMware安装缓存；保留迁移回执和哈希，不影响现有VM/业务。"
+    },
+    {
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\qa\\acceptance\\windows-startup-20261016\\publication-windows-20261018\\batch\\PartyOps_1.4.5-rc.6_windows_amd64_startup-20261018.exe",
+      "kind": "file",
+      "file_count": 1,
+      "logical_bytes": 449988807,
+      "unique_file_identity_bytes_within_entry": 449988807,
+      "decision": "保留",
+      "reason": "最终e3e完整包/校验及其正式发布硬链接，禁止删除。"
+    },
+    {
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\qa\\acceptance\\windows-startup-20261016\\publication-windows-20261018\\batch\\PartyOps_1.4.5-rc.6_windows_amd64_startup-20261018.exe.sha256",
+      "kind": "file",
+      "file_count": 1,
+      "logical_bytes": 122,
+      "unique_file_identity_bytes_within_entry": 122,
+      "decision": "保留",
+      "reason": "最终e3e完整包/校验及其正式发布硬链接，禁止删除。"
+    },
+    {
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\qa\\acceptance\\windows-startup-20261016\\publication-windows-20261017\\batch\\PartyOps_1.4.5-rc.6_windows_amd64_startup-20261017.exe",
+      "kind": "file",
+      "file_count": 1,
+      "logical_bytes": 449978846,
+      "unique_file_identity_bytes_within_entry": 449978846,
+      "decision": "可清理候选",
+      "reason": "已永久hold的3c81旧候选包或sidecar；仅清包链接，全部发布/失败/撤回证据保留。"
+    },
+    {
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\qa\\acceptance\\windows-startup-20261016\\publication-windows-20261017\\batch\\PartyOps_1.4.5-rc.6_windows_amd64_startup-20261017.exe.sha256",
+      "kind": "file",
+      "file_count": 1,
+      "logical_bytes": 121,
+      "unique_file_identity_bytes_within_entry": 121,
+      "decision": "可清理候选",
+      "reason": "已永久hold的3c81旧候选包或sidecar；仅清包链接，全部发布/失败/撤回证据保留。"
+    },
+    {
+      "path": "D:\\PartyOps-VM-Lab\\packages",
+      "status": "absent-not-broadened"
+    }
+  ],
+  "candidate_history_executables": [
+    {
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\artifacts\\candidate-history\\3c81fdba89781722f94e82d31c7ff99b4357a1374fc6454ad47d3cfa464d1e27\\PartyOps_1.4.5-rc.6_windows_amd64.exe",
+      "logical_bytes": 449978846,
+      "links": 4,
+      "decision": "可清理候选",
+      "reason": "历史完整Windows候选；先对照硬链接身份，保留最终e3e及旧证据。",
+      "identity": [
+        "774773899694748939",
+        "1688849861643243"
+      ]
+    }
+  ],
+  "hardlink_groups": [
+    {
+      "identity": [
+        "774773899694748939",
+        "2533274791765178"
+      ],
+      "logical_bytes_per_link": 449988807,
+      "reported_link_count": 2,
+      "sha256": "e3e2ea45ccd38acff059b5713826a78f998a56ccef75341633f67bd4e17e57da",
+      "in_scope_paths": [
+        "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\artifacts\\PartyOps_1.4.5-rc.6_windows_amd64.exe",
+        "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\qa\\acceptance\\windows-startup-20261016\\publication-windows-20261018\\batch\\PartyOps_1.4.5-rc.6_windows_amd64_startup-20261018.exe"
+      ],
+      "hardlink_aliases_from_fsutil": [
+        "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\artifacts\\PartyOps_1.4.5-rc.6_windows_amd64.exe",
+        "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\qa\\acceptance\\windows-startup-20261016\\publication-windows-20261018\\batch\\PartyOps_1.4.5-rc.6_windows_amd64_startup-20261018.exe"
+      ],
+      "physical_release_note": "删除单一链接不释放完整文件数据；只有最后链接删除才可能释放。未盘点别名内容。",
+      "final_e3e_keep": true
+    },
+    {
+      "identity": [
+        "774773899694748939",
+        "1688849861643243"
+      ],
+      "logical_bytes_per_link": 449978846,
+      "reported_link_count": 4,
+      "sha256": "3c81fdba89781722f94e82d31c7ff99b4357a1374fc6454ad47d3cfa464d1e27",
+      "in_scope_paths": [
+        "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\artifacts\\candidate-history\\3c81fdba89781722f94e82d31c7ff99b4357a1374fc6454ad47d3cfa464d1e27\\PartyOps_1.4.5-rc.6_windows_amd64.exe",
+        "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\qa\\acceptance\\windows-startup-20261016\\publication-windows-20261017\\batch\\PartyOps_1.4.5-rc.6_windows_amd64_startup-20261017.exe"
+      ],
+      "hardlink_aliases_from_fsutil": [
+        "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\qa\\acceptance\\windows-startup-20261016\\publication-windows-20261017\\prepared\\PartyOps_1.4.5-rc.6_windows_amd64.exe",
+        "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\qa\\acceptance\\windows-startup-20261016\\publication-windows-20261017\\draft\\PartyOps_1.4.5-rc.6_windows_amd64_startup-20261017.exe",
+        "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\qa\\acceptance\\windows-startup-20261016\\publication-windows-20261017\\batch\\PartyOps_1.4.5-rc.6_windows_amd64_startup-20261017.exe",
+        "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\artifacts\\candidate-history\\3c81fdba89781722f94e82d31c7ff99b4357a1374fc6454ad47d3cfa464d1e27\\PartyOps_1.4.5-rc.6_windows_amd64.exe"
+      ],
+      "physical_release_note": "删除单一链接不释放完整文件数据；只有最后链接删除才可能释放。未盘点别名内容。",
+      "final_e3e_keep": false
+    }
+  ],
+  "skipped_reparse_points": [],
+  "errors": [],
+  "protected": [
+    "最终e3e唯一完整包及SHA和发布链接",
+    "全部验证记录/WPS金样输出/源码/业务备份/VM",
+    "pytest/.test-temp（不扫描）",
+    "E盘（不访问）"
+  ],
+  "physical_bytes_note": "目录logical_bytes不可直接相加为可释放空间；同身份/未盘点硬链接会重复，释放量未保证。",
+  "network_write_performed": false,
+  "inventory_method": "限定目录os.scandir枚举，每个文件显式os.stat(follow_symlinks=False)取Windows真实file-id/link-count；不使用DirEntry缓存中的零身份字段；fsutil仅查询既知候选硬链接别名。",
+  "summary": {
+    "candidate_entries": 13,
+    "candidate_logical_bytes_sum": 6490377946,
+    "old_3c81_all_aliases_logical_bytes": 1799915384,
+    "old_3c81_unique_file_data_bytes": 449978846,
+    "deferred_cache_binary_bytes": 1286497258,
+    "final_e3e_unique_file_data_bytes": 449988807,
+    "final_e3e_retained_hardlinks": 2,
+    "note": "候选逻辑总和含hardlink重复；prepared/draft旧别名未遍历，仅fsutil确认路径。最后清理须同时核对其四链接，保留全部证据。"
+  }
+}

@@ -1,0 +1,44 @@
+{
+  "time_utc": "2026-10-18T10:38:58.8903575Z",
+  "since": "2026-10-18T10:38:19.4228091Z",
+  "candidate": {
+    "package": {
+      "id": "windows_amd64",
+      "version": "1.4.5-rc.6",
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\artifacts\\PartyOps_1.4.5-rc.6_windows_amd64.exe",
+      "sha256": "e3e2ea45ccd38acff059b5713826a78f998a56ccef75341633f67bd4e17e57da",
+      "source_fingerprint": "84bddfca2e3a217cf5052cc7683d83687b4d00b4f7325d120a833a8ee6880d7f",
+      "provenance_status": "verified",
+      "build_receipt": "D:\\PartyOps-VM-Lab\\state\\builds\\e3e2ea45ccd38acff059b5713826a78f998a56ccef75341633f67bd4e17e57da.json",
+      "build_receipt_sha256": "b7c8db9527279faa4b104d30159d6569fbe70b42d87c612bc49a1835420aff0f"
+    },
+    "manifest_sha256": "202a98774b78b49f91fd26dd1dc92b2581b6d7eb6a26d2f129694fa58785b075",
+    "executable_sha256": "1dae862966da6d8e98d22620b4e0d8dbafed7e8c5a85c56a217b43b73c1846ca",
+    "wizard_sha256": "b062ea21fa91c937fa00c31221a0c348deb07780a698927a7b641b5fcaa40649"
+  },
+  "action": "submit",
+  "host_success_sha256": "3bd271da3eb6bec7ad6bb7e6b675792d784c2a0fa8d937bf55fec318c3e78035",
+  "preserved_inputs": {
+    "baseline_sha256": "83facee991771d11c84701a157d0ee404d73cfa1e8626da1d07467c731aa40ca",
+    "backup_sha256": "7a7ff62357138d5b79083fc3afbb92dd7aa5f1967ba7b1a9f55abb8a55796bba"
+  },
+  "original_personal_instance": null,
+  "recovery_links": {
+    "failed_prepare_sha256": "9cfa85ec57c05b23aa2ee3a626321d3ed29929acfbd7ab3b62a280fb880be4e5",
+    "failed_prepare_attempt_sha256": "dd69d199269be6bbfce54594c9f02af35f68bf65518d85948bd029a2a777782c",
+    "partial_inspection_sha256": "f5f3297b7f68f953685f18fdab2c8c11a82e050be71c1dba67ee7b26ff68890c",
+    "failed_guest_script_sha256": "76cca81f340a8d1553bb6cb449c27f9d1441370997128a25ee26e340783b5d18"
+  },
+  "prepared_source": "recover-prepare",
+  "clock_observation": {
+    "host_before": "2026-10-18T10:41:50.120898+00:00",
+    "guest_utc": "2026-10-18T10:38:58.8903575Z",
+    "host_after": "2026-10-18T10:41:50.744918+00:00",
+    "guest_minus_host_seconds": -171.230541
+  },
+  "host_time_utc": "2026-10-18T10:41:50.744918+00:00",
+  "original_personal_data_directory": "C:\\Users\\partyopsuser\\Documents\\PartyOps QA\\lifecycle-82dbfdf1894f\\中文 空格业务数据",
+  "configuration_route": "product-reconfigure-personal",
+  "automatic_uac_acceptance": false,
+  "account_creation": "not-attempted"
+}

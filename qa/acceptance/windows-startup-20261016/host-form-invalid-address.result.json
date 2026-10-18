@@ -1,0 +1,17 @@
+{
+  "case": "invalid-address",
+  "attempt_sha256": "043187c3d9459f3092fd5ed68eb8b96d34550016cfcd87049a3a057984ef4695",
+  "status": "recorded",
+  "states": [
+    {
+      "status": "failed",
+      "code": "RUNTIME_CONFIGURATION_INVALID"
+    }
+  ],
+  "uac_acceptance": "not-verified",
+  "host_acceptance": "not-verified",
+  "negative_case_failed": true,
+  "address_specific_rejection": false,
+  "unexpected_ready": false,
+  "completed_at": "2026-10-17T05:14:48.875749+00:00"
+}

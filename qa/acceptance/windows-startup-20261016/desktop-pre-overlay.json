@@ -1,0 +1,21 @@
+{
+  "uuid": "F47CF265-72A2-4D51-9CF1-B1F5AE960CB2",
+  "username": "partyopsuser",
+  "administrator": false,
+  "desktop": [
+    {
+      "pid": 3828,
+      "session_id": 1,
+      "owner": "partyopsuser"
+    }
+  ],
+  "processes": [
+    {
+      "name": "PartyOps.exe",
+      "pid": 1724,
+      "session_id": 1,
+      "owner": "partyopsuser",
+      "path": "C:\\PartyOps QA\\中文 程序\\PartyOps.exe"
+    }
+  ]
+}

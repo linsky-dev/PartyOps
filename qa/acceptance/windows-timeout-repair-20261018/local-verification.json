@@ -1,0 +1,25 @@
+{
+  "verified_date": "2026-10-18",
+  "scope": "本地离线控制器及契约测试，不操作 Guest",
+  "workspace": "C:/PartyOps-VM-Lab/windows-startup-repair-20261016",
+  "checks": [
+    {
+      "command": "python -m unittest discover -s qa/acceptance/windows-timeout-repair-20261018 -p test_controller.py -v",
+      "exit_code": 0,
+      "tests": 13,
+      "status": "passed",
+      "note": "包括模拟安装/重启各仅调用一次及第二次调用阻断；正式旧回执和原备份正例直接读取本地实物。"
+    },
+    {
+      "command": "python -m py_compile qa/acceptance/windows-timeout-repair-20261018/controller.py qa/acceptance/windows-timeout-repair-20261018/test_controller.py",
+      "exit_code": 0,
+      "status": "passed"
+    }
+  ],
+  "guest_connected": false,
+  "guest_installed": false,
+  "guest_rebooted": false,
+  "new_package_preflight": "尚未执行，新正式包 SHA 待提供",
+  "overall_acceptance": "not-run",
+  "rollback": "仅新增本目录文件；未修改旧证据或产品。执行后产生的 attempt 不得删除以重试。"
+}

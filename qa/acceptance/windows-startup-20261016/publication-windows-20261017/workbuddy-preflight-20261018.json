@@ -1,0 +1,113 @@
+{
+  "_purpose": "2026-10-18 发布准备只读预检。本次未调用 workbuddy_sites_deploy、未做任何部署试探、未上传、未改官网/GitHub、未重放或创建任何 intent。仅记录公开字段。",
+  "_mode": "read-only",
+  "_tool_invoked": false,
+  "_deploy_probe_performed": false,
+  "_deployment_authorized": false,
+  "_captured_at_local": "2026-10-18 12:06 (本机时区 GMT+8)",
+  "_workspace": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016",
+  "_e_drive_accessed": false,
+  "_sensitive_handling": "未记录任何令牌、认证头、授权头、私钥或 .upload-token 内容。",
+
+  "tool_availability": {
+    "tool_name": "workbuddy_sites_deploy",
+    "available": true,
+    "schema_loaded": true,
+    "required": ["directory"],
+    "additionalProperties": false,
+    "properties": {
+      "action": {"type": "string", "enum": ["deploy", "unpublish"], "default": "deploy"},
+      "directory": {"type": "string"},
+      "language": {"type": "string", "enum": ["node", "python", "go", "static", "auto"]},
+      "port": {"type": "number"},
+      "installCmd": {"type": "string"},
+      "startCmd": {"type": "string"},
+      "entryHtml": {"type": "string"},
+      "userAskedToPublish": {"type": "boolean"},
+      "miniProgramRequested": {"type": "boolean"},
+      "appName": {"type": "string"},
+      "domainPrefix": {"type": "string", "maxLength": 32},
+      "appId": {"type": "string"}
+    },
+    "absent_parameters": ["sandboxId", "deployTargetId", "dryRun", "preview", "inspect"],
+    "schema_changes_noted_vs_earlier_sessions": [
+      "新增失败契约：OTHER FAILURES 返回 {\"type\":\"sites_deploy_failed\"}，含 code / retryable / userMessage / agentGuidance / detail；retryable=false 时不得自行重发。",
+      "目标说明更新：产品已无「创建应用」入口，「设置—数据管理—已发布应用」只能查看、发布、下线、删除。",
+      "成功回包新增 genieFilePath 字段（工作区 .genie 标记文件）。"
+    ]
+  },
+
+  "input_contract": {
+    "target_selection": "发布目标由 directory 唯一决定；appName 仅在首次创建应用时生效，重复发布沿用既有名称；domainPrefix 仅在新建应用时申请子域名首段，deploy 时必填。appId 常规发布无需传入，且不能新建应用或改变目标。",
+    "shape_used_by_this_task": {
+      "action": "deploy",
+      "language": "node",
+      "port": 3000,
+      "installCmd": "",
+      "startCmd": "ROOT=/workspace node /workspace/_serve.js",
+      "entryHtml": "index.html",
+      "appName": "partyops-rc6-fixed-eight",
+      "domainPrefix": "partyops-rc6-fixed-eight",
+      "userAskedToPublish": true,
+      "directory": "<本次接收器目录绝对路径，待授权后确定>"
+    },
+    "consent_rule": "userAskedToPublish 仅在用户最新一条消息明确要求发布时才可置 true；授权不跨轮次延续。",
+    "failure_rule": "返回 sites_deploy_failed 时按 retryable 决定：false 不得自行重发，true 最多提供一次重试。"
+  },
+
+  "binding_verification": {
+    "required_sandbox_id": "340f98bdbde44864a9730ff6fb58b993",
+    "required_base_url": "https://partyops-rc6-win7-x86.app.workbuddy.host",
+    "evidence_sources_all_on_c_drive": [
+      "C:/PartyOps-VM-Lab/records/kylin-20261012/acceptance/publication-20261016/workbuddy-official-deployment-raw.json",
+      "C:/PartyOps-VM-Lab/records/kylin-20261012/acceptance/publication-20261016/official-deployment-result.json",
+      "C:/PartyOps-VM-Lab/records/kylin-20261012/acceptance/publication-20261016/workbuddy-post-switch-raw.json",
+      "C:/PartyOps-VM-Lab/records/kylin-20261012/acceptance/publication-20261016/post-switch-deployment-result.json"
+    ],
+    "observed_returns": [
+      {"date": "2026-10-16", "phase": "kylin-full 部署", "directory_root": "C:/PartyOps-VM-Lab/records/.../batch/receiver", "sandboxId": "340f98bdbde44864a9730ff6fb58b993", "shareLink": "https://partyops-rc6-win7-x86.app.workbuddy.host/", "verified": true, "deployedAs": "http-service"},
+      {"date": "2026-10-16", "phase": "旧 ARM64 撤下 (post-switch)", "directory_root": "C:/PartyOps-VM-Lab/records/.../batch/post-switch-receiver", "sandboxId": "340f98bdbde44864a9730ff6fb58b993", "shareLink": "https://partyops-rc6-win7-x86.app.workbuddy.host/", "verified": true, "deployedAs": "http-service"}
+    ],
+    "conclusion": "截至本次预检，C 盘留档可证的两次调用均返回既有 sandbox 340f98bdbde44864a9730ff6fb58b993 与既有域名，未新建应用。绑定仍视为有效。",
+    "cannot_be_proven_pre_call": "工具无 dry-run / inspect / 目标查询参数，无法在调用前以官方方式读出本次将落到哪个 appId/sandbox；上述结论基于历史实证与 schema 说明，而非预查询。"
+  },
+
+  "c_drive_directory_allowance": {
+    "question": "是否允许使用 C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016 下的目录作为 directory？",
+    "answer": "允许（基于实证，非 schema 明文）。",
+    "reasoning": [
+      "directory 参数仅约束为『本地项目目录绝对路径』，未限定盘符或必须位于 IDE 工作区。",
+      "2026-10-16 两次成功调用均使用 C:/PartyOps-VM-Lab/... 下的目录，且仍解析到既有应用与 sandbox，证明 C 盘目录可用且不会因此新建应用。",
+      "本次工作区 C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016 与 10-16 使用的 records 目录根不同，但既有证据显示跨根目录仍复用同一应用。"
+    ],
+    "residual_risk": "本次工作区根目录此前未做过部署，其 directory→app 解析结果只能在真正调用后由回包 sandboxId 证实；若回包 sandboxId 不是 340f98bdbde44864a9730ff6fb58b993，则须按失败处理并停止，不得重发。",
+    "recommended_guard": "调用后先比对回包 sandboxId 与 340f98bdbde44864a9730ff6fb58b993，一致才视为沿用成功。"
+  },
+
+  "current_readiness_blockers": [
+    "draft/binding.json: publication_authorized=false、formal_release_ready=false（formal_gate=FULL_FUNCTION_GATE_PASSED），尚未获得发布授权。",
+    "draft/receiver 目录当前仅 3 个文件（_serve.js、index.html、upload-metadata.json），缺少官方上传所需的 .upload-token，尚不满足四文件接收器形态。",
+    "draft/.deployment-state 不存在，未创建本次独立 intent；本次亦未创建。",
+    "用户说明：新包排版验收仍在进行，本消息不构成部署授权。"
+  ],
+
+  "draft_binding_declared": {
+    "scope": "windows-startup-20261017-only",
+    "filename": "PartyOps_1.4.5-rc.6_windows_amd64_startup-20261017.exe",
+    "bytes": 449978846,
+    "package_sha256": "3c81fdba89781722f94e82d31c7ff99b4357a1374fc6454ad47d3cfa464d1e27",
+    "manifest_sha256": "c42229d415ae66f04e3889b254dd950d2cf8a01cdafc3e6692fc06a14b2cfca0",
+    "baseline_manifest_sha256": "b52807452932502a5f05a10eb609c87345fabe4addb17d3ffeae3a673e0d0e57",
+    "receiver_sha256": "5548732e29b28981b9a9478b10461aa58d41f1c78c395f4b8bef2d421a1d9833",
+    "note": "以上为声明值，本次仅登记，未重建、未修改、未校验哈希。"
+  },
+
+  "_not_done_by_this_preflight": [
+    "未调用 workbuddy_sites_deploy",
+    "未上传任何安装包或分块",
+    "未修改官网 / GitHub",
+    "未创建、重放或修改任何 intent / .deployment-state",
+    "未访问 E 盘",
+    "未读取令牌、认证头或私钥"
+  ]
+}

@@ -1,0 +1,54 @@
+{
+  "shared": [
+    {
+      "FullName": "C:\\Program Files\\Kingsoft\\office6",
+      "Attributes": 16,
+      "Target": []
+    }
+  ],
+  "users": [
+    {
+      "apps": [
+        {
+          "DisplayName": "WPS Office (12.1.0.28488)",
+          "InstallPath": null,
+          "InstallLocation": null,
+          "DisplayIcon": "C:\\Users\\partyopsqa\\AppData\\Local\\Kingsoft\\WPS Office\\ksolaunch.exe",
+          "UninstallString": "C:\\Users\\partyopsqa\\AppData\\Local\\Kingsoft\\WPS Office\\12.1.0.28488\\utility\\uninst.exe"
+        }
+      ],
+      "com_exists": true,
+      "user": "partyopsqa",
+      "vendor_path": "C:\\Users\\partyopsqa\\AppData\\Local\\Kingsoft\\WPS Office\\12.1.0.28488"
+    },
+    {
+      "apps": [],
+      "com_exists": false,
+      "user": "partyopsuser",
+      "vendor_path": null
+    }
+  ],
+  "utility": [
+    {
+      "Name": "diffbase",
+      "Length": null
+    },
+    {
+      "Name": "crcmap.dat",
+      "Length": 976556
+    },
+    {
+      "Name": "install.ini",
+      "Length": 596
+    },
+    {
+      "Name": "installfilelist.dat",
+      "Length": 430586
+    },
+    {
+      "Name": "uninst.exe",
+      "Length": 4837616
+    }
+  ],
+  "machine_com": false
+}

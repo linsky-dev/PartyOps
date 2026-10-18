@@ -1,0 +1,21 @@
+{
+  "processes": [
+    {
+      "Name": "WPS_Setup_x64_28488.exe",
+      "ProcessId": 2424,
+      "ExecutablePath": "C:\\Users\\Public\\Desktop\\WPS_Setup_x64_28488.exe"
+    },
+    {
+      "Name": "WPS_Setup_x64_28488.exe",
+      "ProcessId": 5540,
+      "ExecutablePath": "C:\\ProgramData\\kingsoft\\20261017_131420\\WPS_Setup_x64_28488.exe"
+    },
+    {
+      "Name": "WPS_Setup_x64_28488.exe",
+      "ProcessId": 2764,
+      "ExecutablePath": "C:\\ProgramData\\kingsoft\\20261017_131420\\WPS_Setup_x64_28488.exe"
+    }
+  ],
+  "installed": [],
+  "staged_sha256": "089eeb02fb7da42a683a4d9c7fcecf155b7b326fcd8b8281cbd0b7acd3d9783a"
+}

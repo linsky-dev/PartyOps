@@ -1,0 +1,103 @@
+{
+  "candidate": {
+    "package": {
+      "id": "windows_amd64",
+      "version": "1.4.5-rc.6",
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\artifacts\\PartyOps_1.4.5-rc.6_windows_amd64.exe",
+      "sha256": "e3e2ea45ccd38acff059b5713826a78f998a56ccef75341633f67bd4e17e57da",
+      "source_fingerprint": "84bddfca2e3a217cf5052cc7683d83687b4d00b4f7325d120a833a8ee6880d7f",
+      "provenance_status": "verified",
+      "build_receipt": "D:\\PartyOps-VM-Lab\\state\\builds\\e3e2ea45ccd38acff059b5713826a78f998a56ccef75341633f67bd4e17e57da.json",
+      "build_receipt_sha256": "b7c8db9527279faa4b104d30159d6569fbe70b42d87c612bc49a1835420aff0f"
+    },
+    "manifest_sha256": "202a98774b78b49f91fd26dd1dc92b2581b6d7eb6a26d2f129694fa58785b075",
+    "executable_sha256": "1dae862966da6d8e98d22620b4e0d8dbafed7e8c5a85c56a217b43b73c1846ca",
+    "wizard_sha256": "b062ea21fa91c937fa00c31221a0c348deb07780a698927a7b641b5fcaa40649"
+  },
+  "runtime": {
+    "processes": [
+      {
+        "path": "C:\\PartyOps QA\\中文 程序\\PartyOps.exe",
+        "pid": 6208,
+        "created": "2026-10-18T09:44:41.9347000Z"
+      }
+    ],
+    "http_owners": [
+      6208
+    ],
+    "wizard_sha256": "b062ea21fa91c937fa00c31221a0c348deb07780a698927a7b641b5fcaa40649",
+    "guest_uuid": "f47cf265-72a2-4d51-9cf1-b1f5ae960cb2",
+    "boot_id": "2026-10-18T09:43:26.5000000Z",
+    "manifest_sha256": "202a98774b78b49f91fd26dd1dc92b2581b6d7eb6a26d2f129694fa58785b075",
+    "purpose": "disposable-qa",
+    "executable_sha256": "1dae862966da6d8e98d22620b4e0d8dbafed7e8c5a85c56a217b43b73c1846ca",
+    "probe_boot_id": "20261018174326.500000+480"
+  },
+  "collected_at": "2026-10-18T09:45:31.436548+00:00",
+  "events": [
+    {
+      "record_id": 2433,
+      "provider": "Microsoft-Windows-Kernel-General",
+      "utc": "2026-10-18T04:00:05.8017188Z",
+      "id": 12,
+      "log": "System"
+    },
+    {
+      "record_id": 2450,
+      "provider": "Microsoft-Windows-Kernel-Power",
+      "utc": "2026-10-18T04:00:15.8525026Z",
+      "id": 41,
+      "log": "System"
+    },
+    {
+      "record_id": 2468,
+      "provider": "EventLog",
+      "utc": "2026-10-18T04:00:35.8899992Z",
+      "id": 6008,
+      "log": "System"
+    },
+    {
+      "record_id": 2470,
+      "provider": "EventLog",
+      "utc": "2026-10-18T04:00:35.8899992Z",
+      "id": 6005,
+      "log": "System"
+    },
+    {
+      "record_id": 2488,
+      "provider": "User32",
+      "utc": "2026-10-18T09:37:26.6574690Z",
+      "id": 1074,
+      "log": "System"
+    },
+    {
+      "record_id": 2490,
+      "provider": "EventLog",
+      "utc": "2026-10-18T09:37:27.5804044Z",
+      "id": 6006,
+      "log": "System"
+    },
+    {
+      "record_id": 2499,
+      "provider": "EventLog",
+      "utc": "2026-10-18T09:43:55.5791037Z",
+      "id": 6005,
+      "log": "System"
+    },
+    {
+      "record_id": 2502,
+      "provider": "Microsoft-Windows-Kernel-General",
+      "utc": "2026-10-18T09:37:31.2291748Z",
+      "id": 13,
+      "log": "System"
+    },
+    {
+      "record_id": 2503,
+      "provider": "Microsoft-Windows-Kernel-General",
+      "utc": "2026-10-18T09:43:26.8211984Z",
+      "id": 12,
+      "log": "System"
+    }
+  ],
+  "source": "actual-Windows-System-event-log"
+}

@@ -1,0 +1,7 @@
+{
+  "package": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\artifacts\\PartyOps_1.4.5-rc.6_windows_amd64.exe",
+  "sha256": "e3e2ea45ccd38acff059b5713826a78f998a56ccef75341633f67bd4e17e57da",
+  "build_receipt": "D:\\PartyOps-VM-Lab\\state\\builds\\e3e2ea45ccd38acff059b5713826a78f998a56ccef75341633f67bd4e17e57da.json",
+  "gate": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.release-gates\\full-function-tests.json",
+  "wps_summary": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\qa\\acceptance\\windows-startup-20261016\\win10-formatter-7de930093bcc\\summary.json"
+}

@@ -1,0 +1,51 @@
+{
+  "id": "a6faa5ab96fe484eb7c91a9d79617acc",
+  "feature": "format",
+  "state": "completed",
+  "outputs": [
+    {
+      "file": "formatted-1.docx",
+      "sha256": "48686ec9350272a2aa09d98586b9ca47128f803e6f42ad057f26482a62afd356"
+    },
+    {
+      "file": "formatted-2.docx",
+      "sha256": "b88a7c4a61f9233e087338793c65664762054de217e35d388d9e6ffd63cf6702"
+    }
+  ],
+  "host_proofs": [
+    {
+      "job": "a6faa5ab96fe484eb7c91a9d79617acc",
+      "document": "9beb29c2776e4da29cc818d0dc6dfc9e",
+      "index": 0,
+      "feature": "format",
+      "input_sha256": "6b360f0372ae657a9e207ea4e0ec05437cea8fecc34113429a6d5670a8fff287",
+      "host_display_name": "Microsoft Word 12.0（C:\\Users\\partyopsuser\\AppData\\Local\\Kingsoft\\WPS Office\\12.1.0.28488\\office6）",
+      "outputs": [
+        {
+          "extension": ".docx",
+          "sha256": "48686ec9350272a2aa09d98586b9ca47128f803e6f42ad057f26482a62afd356",
+          "bytes": 17773
+        }
+      ],
+      "request_sha256": "eab20ba014ffa785630fb296f12505e5fcd4117be7fedb0f2d1c65d40eb3d5e7",
+      "response_sha256": "ae9bb7ba2559bafc1674e68f8dce099d587d0354b9edee7e0127061b7c961b25"
+    },
+    {
+      "job": "a6faa5ab96fe484eb7c91a9d79617acc",
+      "document": "b90fb75320ab48e694fb2e6f28eb469d",
+      "index": 1,
+      "feature": "format",
+      "input_sha256": "6b360f0372ae657a9e207ea4e0ec05437cea8fecc34113429a6d5670a8fff287",
+      "host_display_name": "Microsoft Word 12.0（C:\\Users\\partyopsuser\\AppData\\Local\\Kingsoft\\WPS Office\\12.1.0.28488\\office6）",
+      "outputs": [
+        {
+          "extension": ".docx",
+          "sha256": "b88a7c4a61f9233e087338793c65664762054de217e35d388d9e6ffd63cf6702",
+          "bytes": 17766
+        }
+      ],
+      "request_sha256": "403bede64e8be2d1ef76903f471f4b7f22efc31e9a79518e741e673ad58a9ab2",
+      "response_sha256": "7a88687758f3dc4b8897fd81aeac892671056fa6bcc9f46596101f4eb9bee230"
+    }
+  ]
+}

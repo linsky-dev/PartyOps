@@ -1,0 +1,602 @@
+{
+  "scope": "original-win10-x64-installed-http-formatter",
+  "status": "passed",
+  "candidate": {
+    "package": {
+      "id": "windows_amd64",
+      "version": "1.4.5-rc.6",
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\artifacts\\PartyOps_1.4.5-rc.6_windows_amd64.exe",
+      "sha256": "e3e2ea45ccd38acff059b5713826a78f998a56ccef75341633f67bd4e17e57da",
+      "source_fingerprint": "84bddfca2e3a217cf5052cc7683d83687b4d00b4f7325d120a833a8ee6880d7f",
+      "provenance_status": "verified",
+      "build_receipt": "D:\\PartyOps-VM-Lab\\state\\builds\\e3e2ea45ccd38acff059b5713826a78f998a56ccef75341633f67bd4e17e57da.json",
+      "build_receipt_sha256": "b7c8db9527279faa4b104d30159d6569fbe70b42d87c612bc49a1835420aff0f"
+    },
+    "manifest_sha256": "202a98774b78b49f91fd26dd1dc92b2581b6d7eb6a26d2f129694fa58785b075",
+    "executable_sha256": "1dae862966da6d8e98d22620b4e0d8dbafed7e8c5a85c56a217b43b73c1846ca",
+    "wizard_sha256": "b062ea21fa91c937fa00c31221a0c348deb07780a698927a7b641b5fcaa40649"
+  },
+  "generated_at": "2026-10-18T09:46:29.811851+00:00",
+  "full_acceptance_passed": false,
+  "runtime_environment_passed": false,
+  "six_feature_native_host_proof": "passed",
+  "font_render_use": "passed",
+  "checks": [
+    {
+      "id": "installed-wps-x64-font-files",
+      "result": {
+        "signer_is_kingsoft": true,
+        "pe_machine": 34404,
+        "username": "partyopsuser",
+        "fonts": [
+          {
+            "file_load_readable": true,
+            "font": "宋体"
+          },
+          {
+            "file_load_readable": true,
+            "font": "黑体"
+          },
+          {
+            "file_load_readable": true,
+            "font": "仿宋_GB2312"
+          },
+          {
+            "file_load_readable": true,
+            "font": "楷体_GB2312"
+          },
+          {
+            "file_load_readable": true,
+            "font": "方正小标宋简体"
+          }
+        ],
+        "version": "12.1.0.28488",
+        "executable_path": "C:\\Users\\partyopsuser\\AppData\\Local\\Kingsoft\\WPS Office\\12.1.0.28488\\office6\\wps.exe",
+        "registration_scope": "target-user",
+        "signature_status": "Valid",
+        "identity_sources": [
+          "machine-vendor",
+          "target-user-app-path",
+          "target-user-vendor"
+        ],
+        "com_registered": true,
+        "executable_sha256": "4ea193b0801a88752b69c4281cfe7513a3ff945afd57aca59fe13f15a87d9798",
+        "binary_scope": "target-user-profile"
+      }
+    },
+    {
+      "id": "feature-native-source-host",
+      "result": {
+        "status": "passed",
+        "feature_case_count": 9,
+        "format_native_proof": "separate-golden-jobs",
+        "pdf_to_word_engine": "original-native-source-host-local-pdf-engine",
+        "wps_features": [
+          "format",
+          "replace",
+          "redheader",
+          "rename",
+          "convert"
+        ]
+      },
+      "proofs": {
+        "d79846dd76444ed596152e11f5c9931f": {
+          "host_sha256": "c024cfe6689aa8cebd1643d51d08f028abb317234960bda021b36517a6b0dec3",
+          "outputs": [
+            {
+              "extension": ".docx",
+              "sha256": "c01ea50f69c7a862b38f7661a10ae4b29b2e7d1f2a7eb86afdc9a118b5a51de5",
+              "bytes": 33742
+            }
+          ],
+          "host_display_name": "Microsoft Word 12.0（C:\\Users\\partyopsuser\\AppData\\Local\\Kingsoft\\WPS Office\\12.1.0.28488\\office6）",
+          "input_sha256": "b06294888454e94781ed048b084391eb72e9958260099cbe7ff119c81c504e75",
+          "response_sha256": "40506fcb89ac08b00667b9012238db9f02d52de12039331eb6ed94f0dbd2eaf2",
+          "request_sha256": "7d1fba55bdb3d528515cb447ad330804c13066b5e9efdbb97713738654ad9da2",
+          "feature": "replace"
+        },
+        "432eb615fd08492594e062e959e34ac6": {
+          "host_sha256": "c024cfe6689aa8cebd1643d51d08f028abb317234960bda021b36517a6b0dec3",
+          "outputs": [
+            {
+              "extension": ".docx",
+              "sha256": "f3a5adf25d5d53e22df34cbe17ddcb4387d035f52aa995aba58a14903578adf1",
+              "bytes": 40379
+            }
+          ],
+          "host_display_name": "Microsoft Word 12.0（C:\\Users\\partyopsuser\\AppData\\Local\\Kingsoft\\WPS Office\\12.1.0.28488\\office6）",
+          "input_sha256": "b06294888454e94781ed048b084391eb72e9958260099cbe7ff119c81c504e75",
+          "response_sha256": "6fc3e6bcd35a745d42bb8fd7d59044a1a5435c4d6d5e83ba860052ebe8c11e9a",
+          "request_sha256": "fdd0bc10377a6667f7fc3e6ee3ec6c0942eb9f1f23456038ef9720aef91c6812",
+          "feature": "redheader"
+        },
+        "f722b0e69ef748abb8013ed29776c72d": {
+          "host_sha256": "c024cfe6689aa8cebd1643d51d08f028abb317234960bda021b36517a6b0dec3",
+          "outputs": [
+            {
+              "extension": ".docx",
+              "sha256": "04ba321e09bc4181a9ffd32aeb7e62cad462495ee413ddb1a35f849748d24e35",
+              "bytes": 33680
+            }
+          ],
+          "host_display_name": "Microsoft Word 12.0（C:\\Users\\partyopsuser\\AppData\\Local\\Kingsoft\\WPS Office\\12.1.0.28488\\office6）",
+          "input_sha256": "b06294888454e94781ed048b084391eb72e9958260099cbe7ff119c81c504e75",
+          "response_sha256": "f1dae6c2bebf753d82ce636db1fba2df8edca5e508ee8ba8f8a9142d27b78e20",
+          "request_sha256": "08ccdda55d9f4dc25423af71bea72d2451541f299f985452c859b5a4befff267",
+          "feature": "rename"
+        },
+        "a117f774dfdf4502bd95f0cb090bfb14": {
+          "host_sha256": "c024cfe6689aa8cebd1643d51d08f028abb317234960bda021b36517a6b0dec3",
+          "outputs": [
+            {
+              "extension": ".docx",
+              "sha256": "b06294888454e94781ed048b084391eb72e9958260099cbe7ff119c81c504e75",
+              "bytes": 36867
+            }
+          ],
+          "host_display_name": "Microsoft Word 12.0（C:\\Users\\partyopsuser\\AppData\\Local\\Kingsoft\\WPS Office\\12.1.0.28488\\office6）",
+          "input_sha256": "b06294888454e94781ed048b084391eb72e9958260099cbe7ff119c81c504e75",
+          "response_sha256": "f2c252d9f7dddf3b3c70bf195b62cbb9e4e50ef371024541173d526bb5788d9e",
+          "request_sha256": "cf8c836d23bd9ef2dc55d963d395a7ff997ff8eedc4b2545393646e51e957f01",
+          "feature": "convert"
+        },
+        "bfb1488cc789472e933fe84063143914": {
+          "host_sha256": "c024cfe6689aa8cebd1643d51d08f028abb317234960bda021b36517a6b0dec3",
+          "outputs": [
+            {
+              "extension": ".pdf",
+              "sha256": "19390255195963f4b69213b5afbff3069504867542e3964c384540a5522afb61",
+              "bytes": 58401
+            }
+          ],
+          "host_display_name": "Microsoft Word 12.0（C:\\Users\\partyopsuser\\AppData\\Local\\Kingsoft\\WPS Office\\12.1.0.28488\\office6）",
+          "input_sha256": "b06294888454e94781ed048b084391eb72e9958260099cbe7ff119c81c504e75",
+          "response_sha256": "972967665cbc793d771496ca2ed45ce1d6e47681740a5f981c9a75a1fe66d782",
+          "request_sha256": "79dc56ffd808e28975f8f8034551dce4e2f5b29e39d4381674a521c1f743306c",
+          "feature": "convert"
+        },
+        "54a8bb52bcb04279a781b562fea3f2ef": {
+          "host_sha256": "c024cfe6689aa8cebd1643d51d08f028abb317234960bda021b36517a6b0dec3",
+          "outputs": [
+            {
+              "extension": ".txt",
+              "sha256": "b17850cf886d94d345842a536cd631291e1fc7d56c4ad84876e35b6f50195402",
+              "bytes": 191
+            }
+          ],
+          "host_display_name": "Microsoft Word 12.0（C:\\Users\\partyopsuser\\AppData\\Local\\Kingsoft\\WPS Office\\12.1.0.28488\\office6）",
+          "input_sha256": "b06294888454e94781ed048b084391eb72e9958260099cbe7ff119c81c504e75",
+          "response_sha256": "7b918e6df89372067f22dd2eba958886d8f55441a4afb5b7264b4382b0079d56",
+          "request_sha256": "7bc23d065f58d956ea79d2c0bb7fb184ffce51971931e2b4a68a8bd11d4ce921",
+          "feature": "convert"
+        },
+        "412f101d67d9484ca33c7525f1d0d03c": {
+          "host_sha256": "c024cfe6689aa8cebd1643d51d08f028abb317234960bda021b36517a6b0dec3",
+          "outputs": [
+            {
+              "extension": ".pdf",
+              "sha256": "acc5e6ef4adbc7e4593cc1bd36167f952b6eed7380175e133b539062301c71ac",
+              "bytes": 58401
+            }
+          ],
+          "host_display_name": "Microsoft Word 12.0（C:\\Users\\partyopsuser\\AppData\\Local\\Kingsoft\\WPS Office\\12.1.0.28488\\office6）",
+          "input_sha256": "b06294888454e94781ed048b084391eb72e9958260099cbe7ff119c81c504e75",
+          "response_sha256": "b42ce8990825a5ab8fa30f08bc59b42f7ce5c65d87104081aa5e1bbafded70ec",
+          "request_sha256": "9a0f4d1cbf497a4f2ad851d70dce3dea12fcdaa5e71667d9a405c0ff1e04d8f2",
+          "feature": "convert",
+          "image_derivative": {
+            "status": "passed",
+            "native_pdf_sha256": "acc5e6ef4adbc7e4593cc1bd36167f952b6eed7380175e133b539062301c71ac",
+            "native_pdf_pages": 1,
+            "page_pixels_at_144dpi": [
+              [
+                1224,
+                1584
+              ]
+            ],
+            "dpi": 144,
+            "mode": "pages",
+            "format": "png",
+            "algorithm_source": "backend/app/official_format_features.py:_render_pdf_images",
+            "algorithm_source_sha256": "225c3d6787065e5b1e34dc5bc045d0d123c9f9a65470937ba310d03e2d69e039",
+            "png_exact": true,
+            "jpeg_tolerance": {
+              "mean_channel_delta_max": 0.5,
+              "maximum_channel_delta_max": 32,
+              "channel_delta_over_8_ratio_max": 0.002
+            },
+            "images": [
+              {
+                "sha256": "53778b2a79ee25617a6e34d3c3d5dd7661177a0baa23ed50c9ecc7e6980a1b66",
+                "pixels": [
+                  1224,
+                  1584
+                ],
+                "mean_channel_delta": 0.0,
+                "maximum_channel_delta": 0,
+                "channel_delta_over_8_ratio": 0.0
+              }
+            ]
+          }
+        },
+        "0f99862c6e5641c18633585b60588d69": {
+          "host_sha256": "c024cfe6689aa8cebd1643d51d08f028abb317234960bda021b36517a6b0dec3",
+          "outputs": [
+            {
+              "extension": ".pdf",
+              "sha256": "55bac3e1a2d7ab1497480bedb16d48cb370cde504635126041b8829254b5aeae",
+              "bytes": 58401
+            }
+          ],
+          "host_display_name": "Microsoft Word 12.0（C:\\Users\\partyopsuser\\AppData\\Local\\Kingsoft\\WPS Office\\12.1.0.28488\\office6）",
+          "input_sha256": "b06294888454e94781ed048b084391eb72e9958260099cbe7ff119c81c504e75",
+          "response_sha256": "60e073dabd756f3900671b3c797ad5d438f201b2bcc31d1dd337c19983ad8d88",
+          "request_sha256": "ed7669f97446a5b858ce5b20879687ef46148a619a36a9489332db98cb24170e",
+          "feature": "convert",
+          "image_derivative": {
+            "status": "passed",
+            "native_pdf_sha256": "55bac3e1a2d7ab1497480bedb16d48cb370cde504635126041b8829254b5aeae",
+            "native_pdf_pages": 1,
+            "page_pixels_at_144dpi": [
+              [
+                1224,
+                1584
+              ]
+            ],
+            "dpi": 144,
+            "mode": "long",
+            "format": "jpg",
+            "algorithm_source": "backend/app/official_format_features.py:_render_pdf_images",
+            "algorithm_source_sha256": "225c3d6787065e5b1e34dc5bc045d0d123c9f9a65470937ba310d03e2d69e039",
+            "png_exact": false,
+            "jpeg_tolerance": {
+              "mean_channel_delta_max": 0.5,
+              "maximum_channel_delta_max": 32,
+              "channel_delta_over_8_ratio_max": 0.002
+            },
+            "images": [
+              {
+                "sha256": "324a55715e6c21984a3db376b156e8c3299a930da8c917a1a8013a397b43f5a3",
+                "pixels": [
+                  1224,
+                  1584
+                ],
+                "mean_channel_delta": 0.0,
+                "maximum_channel_delta": 0,
+                "channel_delta_over_8_ratio": 0.0
+              }
+            ]
+          }
+        },
+        "2e7417c697bd4fed9dcabf3907e05e13": {
+          "host_sha256": "c024cfe6689aa8cebd1643d51d08f028abb317234960bda021b36517a6b0dec3",
+          "outputs": [
+            {
+              "extension": ".docx",
+              "sha256": "a8ba592862e7f6257d93fc4598e02fd83582e79bdc02158ad735707501fca97b",
+              "bytes": 3226
+            }
+          ],
+          "host_display_name": "",
+          "input_sha256": "324f5736d1eafb500c39037ed75f0acb742810a1d41cd129e92668a58ebd5243",
+          "response_sha256": "de1e61d8d44ba85981bb37e0a7a34bd8ace8f7d1cdac15f0263aa08c2e6902d1",
+          "request_sha256": "267f039fef1b89193963996e8acc5195bce50c7dbd05e4ad86ee8e78e340d6d8",
+          "feature": "pdf-to-word"
+        }
+      }
+    },
+    {
+      "id": "six-feature-http-output-contracts",
+      "status": "passed",
+      "cases": 9,
+      "image_decode": "passed"
+    },
+    {
+      "id": "format-and-pdf-golden",
+      "status": "passed",
+      "host_proofs": [
+        {
+          "job": "a6faa5ab96fe484eb7c91a9d79617acc",
+          "document": "9beb29c2776e4da29cc818d0dc6dfc9e",
+          "index": 0,
+          "feature": "format",
+          "input_sha256": "6b360f0372ae657a9e207ea4e0ec05437cea8fecc34113429a6d5670a8fff287",
+          "host_display_name": "Microsoft Word 12.0（C:\\Users\\partyopsuser\\AppData\\Local\\Kingsoft\\WPS Office\\12.1.0.28488\\office6）",
+          "outputs": [
+            {
+              "extension": ".docx",
+              "sha256": "48686ec9350272a2aa09d98586b9ca47128f803e6f42ad057f26482a62afd356",
+              "bytes": 17773
+            }
+          ],
+          "request_sha256": "eab20ba014ffa785630fb296f12505e5fcd4117be7fedb0f2d1c65d40eb3d5e7",
+          "response_sha256": "ae9bb7ba2559bafc1674e68f8dce099d587d0354b9edee7e0127061b7c961b25"
+        },
+        {
+          "job": "a6faa5ab96fe484eb7c91a9d79617acc",
+          "document": "b90fb75320ab48e694fb2e6f28eb469d",
+          "index": 1,
+          "feature": "format",
+          "input_sha256": "6b360f0372ae657a9e207ea4e0ec05437cea8fecc34113429a6d5670a8fff287",
+          "host_display_name": "Microsoft Word 12.0（C:\\Users\\partyopsuser\\AppData\\Local\\Kingsoft\\WPS Office\\12.1.0.28488\\office6）",
+          "outputs": [
+            {
+              "extension": ".docx",
+              "sha256": "b88a7c4a61f9233e087338793c65664762054de217e35d388d9e6ffd63cf6702",
+              "bytes": 17766
+            }
+          ],
+          "request_sha256": "403bede64e8be2d1ef76903f471f4b7f22efc31e9a79518e741e673ad58a9ab2",
+          "response_sha256": "7a88687758f3dc4b8897fd81aeac892671056fa6bcc9f46596101f4eb9bee230"
+        },
+        {
+          "job": "ab0bd86ae06f47d18f9da20c928fa900",
+          "document": "167e1302deca41118ef66ec22855c452",
+          "index": 0,
+          "feature": "convert",
+          "input_sha256": "bef6831245bc5a064bcf4135a51252f4dfd0a926f79228c7a2487a9c02639133",
+          "host_display_name": "Microsoft Word 12.0（C:\\Users\\partyopsuser\\AppData\\Local\\Kingsoft\\WPS Office\\12.1.0.28488\\office6）",
+          "outputs": [
+            {
+              "extension": ".pdf",
+              "sha256": "d2c9cffa2965c8dcdbe8d3e1994cba8137a6dc15438b3189054fd25c357e4845",
+              "bytes": 291816
+            }
+          ],
+          "request_sha256": "d06e5e1a9e9cae561f8e1e790a973504b822e7717ce490d5d956adbafc795639",
+          "response_sha256": "983fec534cf9f068e09b6b014c4ba6bfd525670050349574c817dd73f5662493"
+        },
+        {
+          "job": "ab0bd86ae06f47d18f9da20c928fa900",
+          "document": "c99bf5535319441a94480d19c2d7f3ca",
+          "index": 1,
+          "feature": "convert",
+          "input_sha256": "48686ec9350272a2aa09d98586b9ca47128f803e6f42ad057f26482a62afd356",
+          "host_display_name": "Microsoft Word 12.0（C:\\Users\\partyopsuser\\AppData\\Local\\Kingsoft\\WPS Office\\12.1.0.28488\\office6）",
+          "outputs": [
+            {
+              "extension": ".pdf",
+              "sha256": "1ef42feaa57a16ce2a136173e8f93c54712a52482ef372912cb85c5e268896ab",
+              "bytes": 291816
+            }
+          ],
+          "request_sha256": "f7249c82bf6c987f09cc4a1a51d5b20b55219de8e69717b8c8d06df08c7ce316",
+          "response_sha256": "ca3c9358fa64cf72648f2d57b6aec1a605fd14d79a799ffeb5a54fbedc74dcf8"
+        },
+        {
+          "job": "ab0bd86ae06f47d18f9da20c928fa900",
+          "document": "e767892319714a7ab2aefc6e6c5b9336",
+          "index": 2,
+          "feature": "convert",
+          "input_sha256": "b88a7c4a61f9233e087338793c65664762054de217e35d388d9e6ffd63cf6702",
+          "host_display_name": "Microsoft Word 12.0（C:\\Users\\partyopsuser\\AppData\\Local\\Kingsoft\\WPS Office\\12.1.0.28488\\office6）",
+          "outputs": [
+            {
+              "extension": ".pdf",
+              "sha256": "03112ae80b65ebaf0425c31f0a05a7ace49fa5e3b032356af7a55ae08f851a85",
+              "bytes": 291816
+            }
+          ],
+          "request_sha256": "211677eee7d16da001633be4a8d1e893df31a239deca9e8dc3b82b82b3bc25e2",
+          "response_sha256": "68cfa28b4c210e2ee7aa502ce3ce68de60271cfb11a2d5261684185a52271548"
+        }
+      ],
+      "visual_comparisons": [
+        {
+          "passed": true,
+          "mode": "raw-pixel",
+          "pages": [
+            {
+              "page": 1,
+              "width": 1191,
+              "height": 1684,
+              "raw_equal": true,
+              "mean_abs_channel_delta": 0.0,
+              "same_channel_ratio": 1.0,
+              "passed": true
+            },
+            {
+              "page": 2,
+              "width": 1191,
+              "height": 1684,
+              "raw_equal": true,
+              "mean_abs_channel_delta": 0.0,
+              "same_channel_ratio": 1.0,
+              "passed": true
+            },
+            {
+              "page": 3,
+              "width": 1191,
+              "height": 1684,
+              "raw_equal": true,
+              "mean_abs_channel_delta": 0.0,
+              "same_channel_ratio": 1.0,
+              "passed": true
+            }
+          ]
+        },
+        {
+          "passed": true,
+          "mode": "raw-pixel",
+          "pages": [
+            {
+              "page": 1,
+              "width": 1191,
+              "height": 1684,
+              "raw_equal": true,
+              "mean_abs_channel_delta": 0.0,
+              "same_channel_ratio": 1.0,
+              "passed": true
+            },
+            {
+              "page": 2,
+              "width": 1191,
+              "height": 1684,
+              "raw_equal": true,
+              "mean_abs_channel_delta": 0.0,
+              "same_channel_ratio": 1.0,
+              "passed": true
+            },
+            {
+              "page": 3,
+              "width": 1191,
+              "height": 1684,
+              "raw_equal": true,
+              "mean_abs_channel_delta": 0.0,
+              "same_channel_ratio": 1.0,
+              "passed": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "five-font-visible-pdf-glyphs",
+      "status": "passed",
+      "fonts": [
+        {
+          "font": "宋体",
+          "actual_pdf_fonts": [
+            "SimSun"
+          ],
+          "synthetic_marker_drawn": true,
+          "visible_trace_count": 1
+        },
+        {
+          "font": "黑体",
+          "actual_pdf_fonts": [
+            "SimHei"
+          ],
+          "synthetic_marker_drawn": true,
+          "visible_trace_count": 1
+        },
+        {
+          "font": "仿宋_GB2312",
+          "actual_pdf_fonts": [
+            "FangSong_GB2312"
+          ],
+          "synthetic_marker_drawn": true,
+          "visible_trace_count": 1
+        },
+        {
+          "font": "楷体_GB2312",
+          "actual_pdf_fonts": [
+            "KaiTi_GB2312"
+          ],
+          "synthetic_marker_drawn": true,
+          "visible_trace_count": 1
+        },
+        {
+          "font": "方正小标宋简体",
+          "synthetic_marker_drawn": true,
+          "actual_font_source": "pinned-ttf-independent-glyph-raster-match",
+          "reference_sha256": "f6154b97ee71bad19efa7f78edc152cf515c1f943220fc6e98360005d53d1c62",
+          "reference_os2_fs_type": 2,
+          "renderer": "Pillow-FreeType",
+          "reference_pixel_size": 400,
+          "metrics": {
+            "iou": 0.9520791138449228,
+            "mae": 0.015254778825610585,
+            "per_glyph_iou": [
+              0.9734072022160665,
+              0.9623907764669891,
+              0.9209945247284804,
+              0.9529601433049709,
+              0.9628317415606708
+            ],
+            "ink_pixels": [
+              1987,
+              389
+            ]
+          },
+          "visible_page_metrics": {
+            "iou": 0.9402963465484149,
+            "mae": 0.019626190937600728,
+            "per_glyph_iou": [
+              0.9792522998629869,
+              0.9787053957872464,
+              0.9012396107125098,
+              0.9257861413378953,
+              0.9366322457480042
+            ],
+            "ink_pixels": [
+              1989,
+              389
+            ]
+          },
+          "pdf_behavior": "restricted-embedding-font-rasterized",
+          "pdf_image_xref": 29,
+          "pdf_smask_xref": 30,
+          "visible_bbox": [
+            90.0,
+            234.5500030517578,
+            189.95899963378906,
+            257.5
+          ]
+        }
+      ],
+      "input_sha256": "da06ce3e2c72f030ca402c308b83608d0001fb8535001a66402c0611c9ed24b5",
+      "pdf_sha256": "f58f9f2d81c3c60b8b1a8bc857a0e9cde68119425e6f8fc9faec9f9d042c581b",
+      "native_host_proofs": [
+        {
+          "job": "a46f675e8751469cac91fdd5a3c0de3e",
+          "document": "71e5c3cbfe7241f688005fd3a8f1c6e1",
+          "index": 0,
+          "feature": "convert",
+          "input_sha256": "da06ce3e2c72f030ca402c308b83608d0001fb8535001a66402c0611c9ed24b5",
+          "host_display_name": "Microsoft Word 12.0（C:\\Users\\partyopsuser\\AppData\\Local\\Kingsoft\\WPS Office\\12.1.0.28488\\office6）",
+          "outputs": [
+            {
+              "extension": ".pdf",
+              "sha256": "f58f9f2d81c3c60b8b1a8bc857a0e9cde68119425e6f8fc9faec9f9d042c581b",
+              "bytes": 110925
+            }
+          ],
+          "request_sha256": "fc738d2da3dc2b88c9d4305aa2957217f4c54b86cc8d39ee582a06ff3d645604",
+          "response_sha256": "d79e1161afdf6ae2f05a4027a24d5b1cdf09c3e6be6b44505e54d1741d5cc8d9"
+        }
+      ]
+    }
+  ],
+  "stage": "completed",
+  "http_failures": [],
+  "session_transport": [
+    {
+      "route": "/v1/sessions",
+      "method": "POST",
+      "status": 201,
+      "protocol": 10,
+      "request_body_bytes": 0,
+      "request_content_type_present": false,
+      "request_content_length": 0,
+      "response_content_length": 136,
+      "actual_response_bytes": 136
+    },
+    {
+      "route": "/v1/sessions/{id}",
+      "method": "DELETE",
+      "status": 204,
+      "protocol": 10,
+      "request_body_bytes": 0,
+      "request_content_type_present": false,
+      "request_content_length": null,
+      "response_content_length": 0,
+      "actual_response_bytes": 0
+    }
+  ],
+  "last_request": {
+    "route": "/v1/sessions/{id}",
+    "method": "DELETE"
+  },
+  "font_render_observed_names": [
+    "FangSong_GB2312",
+    "KaiTi_GB2312",
+    "SimHei",
+    "SimSun"
+  ],
+  "native_host_sha256": "c024cfe6689aa8cebd1643d51d08f028abb317234960bda021b36517a6b0dec3",
+  "formatter_acceptance_passed": true,
+  "scope_limitation": "仅本次安装版HTTP排版/五字体/六入口/金样；不代替主机UAC、完整产品生命周期或其它平台验收。",
+  "executable_checks_status": "passed",
+  "completed_at": "2026-10-18T09:53:56.484359+00:00"
+}

@@ -1,0 +1,52 @@
+{
+  "status": "passed",
+  "phase": "after-host-restore",
+  "candidate": {
+    "package": {
+      "id": "windows_amd64",
+      "version": "1.4.5-rc.6",
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\artifacts\\PartyOps_1.4.5-rc.6_windows_amd64.exe",
+      "sha256": "e3e2ea45ccd38acff059b5713826a78f998a56ccef75341633f67bd4e17e57da",
+      "source_fingerprint": "84bddfca2e3a217cf5052cc7683d83687b4d00b4f7325d120a833a8ee6880d7f",
+      "provenance_status": "verified",
+      "build_receipt": "D:\\PartyOps-VM-Lab\\state\\builds\\e3e2ea45ccd38acff059b5713826a78f998a56ccef75341633f67bd4e17e57da.json",
+      "build_receipt_sha256": "b7c8db9527279faa4b104d30159d6569fbe70b42d87c612bc49a1835420aff0f"
+    },
+    "manifest_sha256": "202a98774b78b49f91fd26dd1dc92b2581b6d7eb6a26d2f129694fa58785b075",
+    "executable_sha256": "1dae862966da6d8e98d22620b4e0d8dbafed7e8c5a85c56a217b43b73c1846ca",
+    "wizard_sha256": "b062ea21fa91c937fa00c31221a0c348deb07780a698927a7b641b5fcaa40649"
+  },
+  "inputs": {
+    "baseline_sha256": "83facee991771d11c84701a157d0ee404d73cfa1e8626da1d07467c731aa40ca",
+    "backup_sha256": "7a7ff62357138d5b79083fc3afbb92dd7aa5f1967ba7b1a9f55abb8a55796bba"
+  },
+  "guest_uuid": "f47cf265-72a2-4d51-9cf1-b1f5ae960cb2",
+  "disk": "D:\\PartyOps-VM-Lab\\vms\\win10-x64\\system.qcow2",
+  "runtime": {
+    "processes": [
+      {
+        "path": "C:\\PartyOps QA\\中文 程序\\PartyOps.exe",
+        "pid": 3380,
+        "created": "2026-10-18T10:40:38.5126370Z"
+      }
+    ],
+    "http_owners": [
+      3380
+    ],
+    "wizard_sha256": "b062ea21fa91c937fa00c31221a0c348deb07780a698927a7b641b5fcaa40649",
+    "guest_uuid": "f47cf265-72a2-4d51-9cf1-b1f5ae960cb2",
+    "boot_id": "2026-10-18T09:43:26.5000000Z",
+    "manifest_sha256": "202a98774b78b49f91fd26dd1dc92b2581b6d7eb6a26d2f129694fa58785b075",
+    "purpose": "disposable-qa",
+    "executable_sha256": "1dae862966da6d8e98d22620b4e0d8dbafed7e8c5a85c56a217b43b73c1846ca"
+  },
+  "personal_restore_completed_sha256": "fabaef7a27abe033ba177ec7c5df1cd4f6e16ab208b133decbcf4b3d92466f3c",
+  "host_success_sha256": "3bd271da3eb6bec7ad6bb7e6b675792d784c2a0fa8d937bf55fec318c3e78035",
+  "retained": {
+    "user_id": "7284a400-70db-423f-9163-3f2524ebe4bb",
+    "task_id": "c78f16aa-3b30-4b58-8c9c-02ca4159fd0d",
+    "attachment_sha256": "c4f7f3fce73f84df0d10d1b018a42dca617ec7eb1ad637af595d2709245d3f47"
+  },
+  "calendar_id": "54e9d4b1-a3b5-46db-b088-3c5e311677db",
+  "calendar_sha256": "e6aa24530f94589eb6e816cac6938e7ecfbd6dc7c583cfd4afc75e7877e6df31"
+}

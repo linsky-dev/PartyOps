@@ -1,0 +1,18 @@
+{
+  "host_acceptance": {
+    "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\qa\\acceptance\\windows-startup-20261016\\first-host-approved-existing-root-submit.result.json",
+    "sha256": "955d81cb13d8ab3d7d9fb1d60f6dd4e435e28fc318f5c03b13d654240723bb14"
+  },
+  "personal_restore": {
+    "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\qa\\acceptance\\windows-startup-20261016\\restore-personal-observed-completion.json",
+    "sha256": "fb9cfb59dfc11466c1a003f9039195e9a9e489927513e71b082763f89fb4557d"
+  },
+  "retained_business": {
+    "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\qa\\acceptance\\windows-startup-20261016\\retention-after-host-restore.json",
+    "sha256": "f8da6ecb7484bb2893b4d814b72d37bdb9d7e71f5455b301d29dcc3343817da3"
+  },
+  "wps_acceptance": {
+    "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\qa\\acceptance\\windows-startup-20261016\\win10-formatter-595d684e3890\\summary.json",
+    "sha256": "73a6874d83c078ff5ea3c24c2ba99d903e6dad8a3ac3b2b2290c40d5d073d610"
+  }
+}

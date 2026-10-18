@@ -1,0 +1,36 @@
+{
+  "time_utc": "2026-10-17T06:34:30.476808+00:00",
+  "operation": "status",
+  "result": {
+    "wps_acceptance_passed": false,
+    "username": "partyopsuser",
+    "guest_uuid": "f47cf265-72a2-4d51-9cf1-b1f5ae960cb2",
+    "task_state": 4,
+    "records": {
+      "process.json": {
+        "username": "partyopsuser",
+        "status": "running",
+        "administrator": false,
+        "installer_pid": 3628
+      },
+      "started.json": {
+        "session_id": 1,
+        "administrator": false,
+        "source": {
+          "signer_is_kingsoft": true,
+          "ui_access": "false",
+          "bytes": 346496264,
+          "signature_status": "Valid",
+          "sha256": "5e574529af84aa0d5a7916e1ee4fec00a3ede12ac213781b79b5318ced464bd8",
+          "requested_execution_level": "asInvoker",
+          "manifest_sha256": "a99154f9b70934bc5ff4800676bdfc72d35aba37ad81de1a13ffbe9c5e8e56e4"
+        },
+        "username": "partyopsuser",
+        "status": "starting",
+        "sid": "S-1-5-21-2301861879-671312343-3722671823-1003"
+      }
+    },
+    "last_task_result": 267009
+  },
+  "wps_acceptance_passed": false
+}

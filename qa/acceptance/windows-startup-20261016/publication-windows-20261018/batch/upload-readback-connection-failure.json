@@ -1,0 +1,15 @@
+{
+  "at": "2026-10-18T11:13:17.617240+00:00",
+  "status": "upload-finalized-public-readback-connection-failed",
+  "error": "URLError SSLEOFError UNEXPECTED_EOF_WHILE_READING at HTTPS handshake in verify_remote",
+  "original_process_exit_code": 1,
+  "public_health_file_ready": true,
+  "new_probe": {
+    "range_bytes": 65536,
+    "status": 206,
+    "content_range": "bytes 0-65535/449988807",
+    "magic": "4d5a5000"
+  },
+  "not_claimed": "full public readback passed",
+  "next": "existing read-only finalize recovery; no upload or deploy retry"
+}

@@ -1,0 +1,16 @@
+[
+  {
+    "path": "D:\\PartyOps-TestTemp\\inno-dotnet48-contract\\PartyOps-dotnet48-contract.exe",
+    "bytes": 449824129,
+    "sha256": "830de659b16a96313d8e379148cf26260ff1b988c783241982a1378f341dd0f7",
+    "reason": "本次不再使用的旧RC4安装器/旧独立契约测试安装器；当前源码无引用，已核对无进程占用",
+    "date": "2026-10-16T18:08:37.7899380+08:00"
+  },
+  {
+    "path": "D:\\PartyOps-TestTemp\\rc4-exact-runtime\\PartyOps_1.4.5-rc.4_windows_amd64.exe",
+    "bytes": 135588606,
+    "sha256": "b3ff08dec4ea8f08b75fa3944a2ea8c293dcc4696b0b377cccb01c4fb079f845",
+    "reason": "本次不再使用的旧RC4安装器/旧独立契约测试安装器；当前源码无引用，已核对无进程占用",
+    "date": "2026-10-16T18:08:38.0000298+08:00"
+  }
+]

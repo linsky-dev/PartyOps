@@ -1,0 +1,17 @@
+{
+  "scope": "current-run-readonly-native-output-supplement",
+  "run": "win10-formatter-aac5c77979a7",
+  "attempt": "3fc69ef18be2",
+  "status": "failed",
+  "jobs": [
+    {
+      "job": "d6e044109b624d01a15acae3287272f1",
+      "outputs": 2
+    },
+    {
+      "job": "758678c897524e0ab9ffec6c0a9544ce",
+      "outputs": 3
+    }
+  ],
+  "error": "WPS_CURRENT_HOST_PROOF_MISSING_OR_AMBIGUOUS"
+}

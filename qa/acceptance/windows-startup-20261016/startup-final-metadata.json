@@ -1,0 +1,64 @@
+{
+  "execution_environment": "Windows宿主健康C工作区；不是Win10 Guest，也不是安装版/UAC交互验收",
+  "verified_at_utc": "2026-10-16T11:24:10.933561+00:00",
+  "windows": {
+    "platform_version": [
+      10,
+      0,
+      26100
+    ],
+    "major": 10,
+    "minor": 0,
+    "build": 26200,
+    "win32_ver": [
+      "11",
+      "10.0.26200",
+      "SP0",
+      "Multiprocessor Free"
+    ],
+    "machine": "AMD64"
+  },
+  "freeze_at": "2026-10-16T19:19:44+08:00",
+  "python": "3.12.10",
+  "pytest_summary": "301 passed, 7 warnings, 3 subtests passed in 36.60s",
+  "junit_attributes": {
+    "name": "pytest",
+    "errors": "0",
+    "failures": "0",
+    "skipped": "0",
+    "tests": "304",
+    "time": "36.136",
+    "timestamp": "2026-10-16T19:21:04.596286+08:00",
+    "hostname": "WIN-NQLSP3PSO5O"
+  },
+  "product_sha256": {
+    "backend/app/main.py": "aa9236278077ce82a93ba45e57335ede9355198573f6db89b06a81db1fbfa1d9",
+    "backend/app/setup_wizard.py": "d02bad6fcabb58d6cd04e765ae6b496ba202643b78d6aba374d83d1ba1d06fb9",
+    "backend/app/windows_host_status.py": "2a75835011dd176fc8521dd46a65e6665bf730b76449c8f09e9f2060b78e8e5f",
+    "backend/app/windows_elevation.py": "ee9c6cff5275d3f2da8c5d39a94c0971e44967079080512c9b54759e7427e8fa",
+    "backend/app/windows_public_files.py": "c4e7a879aaffcb24ebee51978eaed60c5b88c01cb8d9c8eb28295ed73cd21408",
+    "backend/app/pki.py": "94911cd4b17d2afdfcd85e9298a8c4eb42b11e087b0af455485b2294a9bd6c65",
+    "packaging/windows/windows_launcher.py": "7b5d1e6381ec9a326b2590c73c2e8151b619f7dfdd1ef36c7659a76ceae3fce3",
+    "packaging/windows/windows_service.py": "3abf9294c9026bfe24376eedfa5d2cfaad106769b14c7e4fd34a16c380867418"
+  },
+  "test_sha256": {
+    "backend/tests/test_windows_public_acl_real.py": "99ba050668038d75debc53e45a000d983aed0fb1249f064a0473ec0dbde05926",
+    "backend/tests/test_windows_host_configuration_transaction.py": "9e6accaa0840941469435d98eae225248edde9825f60e13c99485f35073e1451",
+    "backend/tests/test_windows_startup_transport.py": "3a8e91e924e0fba0d20f14d41e62326a6ff122be97859b95cb5254a7dbf038ee",
+    "backend/tests/test_windows_launcher_visible_handoff.py": "f2a977c8961dcbc795b3975e838fb5658d0bd1aed5371f383f6003526ac1c780",
+    "backend/tests/test_setup_wizard_rc3_branch_matrix.py": "93225e1d3d275e8e7e30676b64abaa074d761cb2a3626760acc71e306a07b611",
+    "backend/tests/test_setup_wizard_cli_release_matrix.py": "c95a1306e8997a88e654dfc28583b25ed8d8c869cbd47aff5af87fe00a6d5979",
+    "backend/tests/test_setup_wizard_http_release.py": "c69bb514bd291b099e2598b17f66b108c27c0a0fd9b1d365dd7c46aca631fbbe",
+    "backend/tests/test_173_rc3_wizard_transaction_branches.py": "9d2c5c934cdaee9f61a0c4a090e78089c9fd9820ac94f5ed09c911b94334593c",
+    "backend/tests/test_144_first_run_collaboration.py": "492ab360bce0eca514800878822a290c1bfdf16a538969faa28a0130dd5a5fcd",
+    "backend/tests/test_setup_wizard_release_paths.py": "a02636072ff7f0c4dd59a8b20ab89a5c843fe756234f61f63a54f1d3226a5cce",
+    "backend/tests/test_runtime_probe_followup.py": "cf447990f91eac43a1502e853e53d7f5417f929c3552bcdbc121e14763305722",
+    "backend/tests/test_role_reconfiguration.py": "9399306727a6c8d75dbd6fa98ebc12137996a5b9cfdca96628a29b2c85216eb9",
+    "backend/tests/test_adversarial_rc3_release.py": "658cdfc7aad0ae3980ad00a8adef3beedf99d797381cdca4ea1de8bf5ae83526",
+    "backend/tests/test_145_release_rc2_regressions.py": "f222b0e627abcd3abf1ed07e66f0bc15b554ecd88fc44a3344b7034c6d0810d5"
+  },
+  "junit_sha256": "f4681cdd05d4ebe3eaa9e72496d4bebfea59c3de471a604519b091c00d4569f7",
+  "ordinary_token_method": "CreateRestrictedToken(DISABLE_MAX_PRIVILEGE, Administrators deny-only) + ImpersonateLoggedOnUser; actual Windows ACL checks and strict TLS requests",
+  "mutex_abandoned_owner_actual_test": true,
+  "active_prepare_abort_serialized_actual_mutex_test": true
+}

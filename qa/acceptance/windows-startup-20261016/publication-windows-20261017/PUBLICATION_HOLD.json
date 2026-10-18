@@ -1,0 +1,19 @@
+{
+  "status": "blocked",
+  "date": "2026-10-18",
+  "blocked_package_sha256": "3c81fdba89781722f94e82d31c7ff99b4357a1374fc6454ad47d3cfa464d1e27",
+  "severity": "P1",
+  "reason": "host_configuration_transaction 在提权 TimeoutExpired 且助手尚未创建 pending 时删除 journal；wrapper 超时不证明管理员子进程已结束，迟到助手仍可能写主机配置。",
+  "review_evidence": {
+    "reviewer": "/root/formatter_qa_review",
+    "architect": "/root/formatter_transport_arch",
+    "reviewer_observed": ["实际函数 AST 纯内存执行：journal_retained=false、abort_or_restore_called=false", "Windows PowerShell wrapper 超时后仅 Start-Sleep 子进程仍 STILL_ACTIVE，随后自然退出0"],
+    "source": ["backend/app/setup_wizard.py:2845", "backend/app/windows_elevation.py:37"]
+  },
+  "public_switch_allowed": false,
+  "github_upload_allowed": false,
+  "website_deploy_allowed": false,
+  "prior_wps_evidence": "保留为该旧候选已完成的范围验收，不代表新修复包通过",
+  "domestic_upload": "在独立复核发现前已启动；保留真实完成/失败状态，不切换官网，不伪造撤回结果",
+  "resolution": "最小事务修复、专项回归、正式构建生成新哈希及目标安装版升级/恢复验收后，用新批次发布；本旧批次永久封存，不删除失败和验收证据"
+}

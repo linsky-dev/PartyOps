@@ -1,0 +1,23 @@
+{
+  "action": "stop-old",
+  "time_utc": "2026-10-18T09:21:29.763822+00:00",
+  "guest_uuid": "f47cf265-72a2-4d51-9cf1-b1f5ae960cb2",
+  "disk": "D:\\PartyOps-VM-Lab\\vms\\win10-x64\\system.qcow2",
+  "inputs": {
+    "baseline_sha256": "83facee991771d11c84701a157d0ee404d73cfa1e8626da1d07467c731aa40ca",
+    "backup_sha256": "7a7ff62357138d5b79083fc3afbb92dd7aa5f1967ba7b1a9f55abb8a55796bba"
+  },
+  "candidate": null,
+  "allow_qa_process_termination": true,
+  "scope": "qa-runtime-transition-only-not-gui-exit-or-uac-acceptance",
+  "target": {
+    "pid": 6620,
+    "owner": "partyopsuser",
+    "session_id": 1,
+    "local_owner": true,
+    "name": "PartyOps.exe",
+    "created": "2026-10-18T04:01:34.0264130Z",
+    "path": "C:\\PartyOps QA\\中文 程序\\PartyOps.exe",
+    "domain": "PARTYOPS-QA"
+  }
+}

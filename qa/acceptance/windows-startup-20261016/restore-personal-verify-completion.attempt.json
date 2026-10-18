@@ -1,0 +1,23 @@
+{
+  "candidate": {
+    "package": {
+      "id": "windows_amd64",
+      "version": "1.4.5-rc.6",
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\artifacts\\PartyOps_1.4.5-rc.6_windows_amd64.exe",
+      "sha256": "3c81fdba89781722f94e82d31c7ff99b4357a1374fc6454ad47d3cfa464d1e27",
+      "source_fingerprint": "6f879341ef736ffd1ca41da9ff171976c5cb17985058fa1af206fa97eecdb702",
+      "provenance_status": "verified",
+      "build_receipt": "D:\\PartyOps-VM-Lab\\state\\builds\\3c81fdba89781722f94e82d31c7ff99b4357a1374fc6454ad47d3cfa464d1e27.json",
+      "build_receipt_sha256": "087422ea86ef1b1b656d9bf8ce3733d6a0368d12d632bd2a7be4369cedf3f56f"
+    },
+    "manifest_sha256": "adce91340993c4ab4f202dd3a926165ab2fd129236c90442ae4eae046c73204e",
+    "executable_sha256": "dbe0ee796d718d7c3cefa3b05550076399e7cd3544cc37964b21c795bde34ce1",
+    "wizard_sha256": "6806ec965293c44fcf8473459b480b9cbf5219ca1f0171b9f60bfd1263b8025d"
+  },
+  "time_utc": "2026-10-17T06:44:13.782319+00:00",
+  "operation": "read-only-verify-completion",
+  "submit_attempt_sha256": "3d8852a7ef59b08b4962c0990592ffbb43800c50fe85c1e9f80a0fd736f051ab",
+  "failed_submit_sha256": "692acf76552afdce7270a0d6a20937a8719d0d4955bff06bd2e13d14531076cd",
+  "observed_prepare_sha256": "ad8ce81c5c4b293625119cdb20080ff060527cd3f5ba07ae1c82df38ade2b305",
+  "host_success_sha256": "955d81cb13d8ab3d7d9fb1d60f6dd4e435e28fc318f5c03b13d654240723bb14"
+}

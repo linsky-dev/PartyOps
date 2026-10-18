@@ -1,0 +1,68 @@
+{
+  "status": "restored-ready",
+  "candidate": {
+    "package": {
+      "id": "windows_amd64",
+      "version": "1.4.5-rc.6",
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\artifacts\\PartyOps_1.4.5-rc.6_windows_amd64.exe",
+      "sha256": "e3e2ea45ccd38acff059b5713826a78f998a56ccef75341633f67bd4e17e57da",
+      "source_fingerprint": "84bddfca2e3a217cf5052cc7683d83687b4d00b4f7325d120a833a8ee6880d7f",
+      "provenance_status": "verified",
+      "build_receipt": "D:\\PartyOps-VM-Lab\\state\\builds\\e3e2ea45ccd38acff059b5713826a78f998a56ccef75341633f67bd4e17e57da.json",
+      "build_receipt_sha256": "b7c8db9527279faa4b104d30159d6569fbe70b42d87c612bc49a1835420aff0f"
+    },
+    "manifest_sha256": "202a98774b78b49f91fd26dd1dc92b2581b6d7eb6a26d2f129694fa58785b075",
+    "executable_sha256": "1dae862966da6d8e98d22620b4e0d8dbafed7e8c5a85c56a217b43b73c1846ca",
+    "wizard_sha256": "b062ea21fa91c937fa00c31221a0c348deb07780a698927a7b641b5fcaa40649"
+  },
+  "attempt_sha256": "7db6c23d3658f21f052702c66de5ff58a3276ce5d9408a1cb1adbeede740ccde",
+  "submit_attempt_sha256": "9f1aa7516a8f544b3d50e51bec3351a212569ab698eb88939ba0a28e4e47b680",
+  "failed_submit_sha256": "66ebf67419e2154e519dad1203d9275c205e76acdb3f6e72c5ea89cd80d9bb47",
+  "recovered_prepare_sha256": "cccc6aa0344a7e66139301822a385633518dd793900bebeee2ea025b12b78f9e",
+  "host_success_sha256": "3bd271da3eb6bec7ad6bb7e6b675792d784c2a0fa8d937bf55fec318c3e78035",
+  "completion_kind": "read-only-observed-after-submit",
+  "http_terminal_observed": false,
+  "original_personal_data_directory": "C:\\Users\\partyopsuser\\Documents\\PartyOps QA\\lifecycle-82dbfdf1894f\\中文 空格业务数据",
+  "account_creation": "not-attempted",
+  "runtime": {
+    "processes": [
+      {
+        "path": "C:\\PartyOps QA\\中文 程序\\PartyOps.exe",
+        "pid": 3380,
+        "created": "2026-10-18T10:40:38.5126370Z"
+      }
+    ],
+    "http_owners": [
+      3380
+    ],
+    "wizard_sha256": "b062ea21fa91c937fa00c31221a0c348deb07780a698927a7b641b5fcaa40649",
+    "guest_uuid": "f47cf265-72a2-4d51-9cf1-b1f5ae960cb2",
+    "boot_id": "2026-10-18T09:43:26.5000000Z",
+    "manifest_sha256": "202a98774b78b49f91fd26dd1dc92b2581b6d7eb6a26d2f129694fa58785b075",
+    "purpose": "disposable-qa",
+    "executable_sha256": "1dae862966da6d8e98d22620b4e0d8dbafed7e8c5a85c56a217b43b73c1846ca"
+  },
+  "services": [
+    {
+      "start_mode": "Manual",
+      "pid": 0,
+      "name": "PartyOpsHost",
+      "state": "Stopped"
+    },
+    {
+      "start_mode": "Manual",
+      "pid": 0,
+      "name": "PartyOpsUpdateService",
+      "state": "Stopped"
+    }
+  ],
+  "user_mode": "personal",
+  "system_mode": "personal",
+  "pending_mode_switch": false,
+  "user_journal_present": false,
+  "original_data_directory_verified": true,
+  "guest_clock": {
+    "guest_utc": "2026-10-18T10:42:23.7654031Z"
+  },
+  "completed_at": "2026-10-18T10:45:15.402591+00:00"
+}

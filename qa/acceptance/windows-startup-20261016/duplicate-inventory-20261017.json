@@ -1,0 +1,41 @@
+{
+  "schema": 1,
+  "checked_date": "2026-10-17",
+  "scope": "C/D 指定测试根目录定点只读盘点；E 盘未扫描",
+  "executed_deletions": [],
+  "retained": [
+    {"path": "D:/PartyOps-VM-Lab/vms/win10-x64/system.qcow2", "reason": "当前 Win10 验收盘，QEMU PID 27436 正在使用"},
+    {"path": "C:/PartyOps-VM-Lab/vms/kylin-v10-sp1-arm64/render-probe.qcow2", "reason": "麒麟后续覆盖、重启、数据保留和排版验收使用的独立磁盘；保留全部 Guest 数据"},
+    {"path": "C:/PartyOps-VM-Lab/media/relocated-from-d-20261016", "reason": "四份迁移媒体没有发现相同副本，本轮不删除唯一安装源"}
+  ],
+  "verified_candidates": [
+    {
+      "path": "C:/PartyOps-VM-Lab/vms/kylin-v10-sp1-arm64/system.qcow2",
+      "bytes": 15454830592,
+      "reason": "首次安装旧基线；当时克隆比对 Images identical，后续产品验收在 render-probe 上完成；两盘无 backing 依赖",
+      "prerequisite": "先修正现有启动入口对旧原盘的校验依赖并禁止旧入口重建，确认未被进程使用，再移除",
+      "lost_capability": "删除后无法直接回到这个干净 OS 磁盘状态；当前 Guest 及业务备份保留",
+      "evidence": "C:/PartyOps-VM-Lab/records/kylin-20261012/progress.md"
+    },
+    {
+      "path": ".qa/ocr-public-recovery-8a79eb0e6a2b4a288463ab60a3ee8129",
+      "bytes": 114801597,
+      "files": 62,
+      "reason": "所有文件 SHA-256 均在 vendor/windows/ocr 中找到完整保留副本"
+    },
+    {
+      "path": ".qa/ocr-recovered-inspect",
+      "bytes": 114801597,
+      "files": 62,
+      "reason": "与另一 OCR 临时目录逐路径哈希相同，所有文件在最终 vendor 中保留"
+    }
+  ],
+  "candidate_bytes_total": 15684433786,
+  "approval_review": {
+    "action": "精确删除两份已确认 OCR 临时副本",
+    "result": "blocked by policy",
+    "executed": false,
+    "details": "工具未给出更具体原因；未换工具或委派执行删除"
+  },
+  "limitations": ["未全面扫描 C/D 全盘", "未删除或读取 E 盘", "暂不清理待查错的 pytest-3 目录", "D:/PartyOps-VM-Lab/test-tmp 定点遍历未发现可释放文件，未把空目录计作释放空间"]
+}

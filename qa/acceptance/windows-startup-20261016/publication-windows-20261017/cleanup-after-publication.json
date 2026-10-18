@@ -1,0 +1,15 @@
+{
+  "status": "planned-not-executed",
+  "scope": "windows-startup-20261017-only",
+  "requires": ["new-package-domestic-full-readback", "new-package-github-full-readback", "website-production-download-verified"],
+  "candidates": [
+    {
+      "path": "C:/PartyOps-VM-Lab/windows-startup-repair-20261016/.qa/windows-existing-public/PartyOps_1.4.5-rc.6_windows_amd64.exe",
+      "bytes": 443690896,
+      "expected_sha256": "a7c044b0b830ce416fdf02c84daa2e7aa4929c0833d9b530bc47486d861a81be",
+      "reason": "已替换的旧 Windows 公开包测试副本；删除前重新核对摘要与使用状态"
+    }
+  ],
+  "preserve": ["当前唯一 Win10 虚拟机及磁盘", "业务数据与覆盖前备份", "源码与有效修改", "全部失败和成功验收回执", "原发布回滚记录", "新冻结安装包及其硬链接", "其他平台制品"],
+  "notes": "其他中间产物未确认依赖，不递归清理；不得扫描故障 E 盘。GitHub 旧 Windows 主包及校验附件仅在新包上线验证后撤下，其他九包不变。"
+}

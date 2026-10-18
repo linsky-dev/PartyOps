@@ -1,0 +1,21 @@
+{
+  "corrected_at": "2026-10-17T06:10:20.451657+00:00",
+  "reason": "本轮正式全套门禁已通过；不得继承历史麒麟STALE例外。",
+  "prior_bytes": {
+    "manifest-signing-input.json": "c865bb3c179059024906d2559c7ef389a2d1e7acbaa00dce9eedf22aefabbfa3",
+    "binding.json": "b37a3ae6f84dfd0d2e18add3ed8adeabbc2e2d5826c01ad6f117e9c47e3ca869",
+    "preparation-receipt.json": "c819e82c19730c18b2ac779216288010525361310542dca80b7c6ad953ac7b74",
+    "receiver/_serve.js": "dc6ec0c35f8bf6dd4ec1cb178eaa65e3abc52a09a76861811f8ce05aab24474e",
+    "receiver/upload-metadata.json": "8970c832142b5b4f34232f567e2be083d30ecdd6a3ea92e66e39342fe28191f5"
+  },
+  "current_gate": {
+    "status": "passed",
+    "tested_at": "2026-10-17T12:38:32+08:00",
+    "source_fingerprint": "6f879341ef736ffd1ca41da9ff171976c5cb17985058fa1af206fa97eecdb702",
+    "gate_receipt_sha256": "85d5cd38a0bbf4c6111a768db455c89a9b49ecaae5b019d5d7b65f9f4f424f80",
+    "build_receipt_sha256": "087422ea86ef1b1b656d9bf8ce3733d6a0368d12d632bd2a7be4369cedf3f56f",
+    "package_sha256": "3c81fdba89781722f94e82d31c7ff99b4357a1374fc6454ad47d3cfa464d1e27"
+  },
+  "network_write_allowed": false,
+  "authorization": "用户已有验收通过后发布授权；只等待真实Guest证据，无新增审批。"
+}

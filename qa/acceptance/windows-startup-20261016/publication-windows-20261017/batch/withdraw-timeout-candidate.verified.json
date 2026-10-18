@@ -1,0 +1,102 @@
+{
+  "time_utc": "2026-10-18T07:39:27.341877+00:00",
+  "status": "original-ten-routes-restored-candidate-withdrawn",
+  "health": {
+    "ok": true,
+    "version": "1.4.5-rc.6",
+    "receiver": "kylin-full-replace-v1",
+    "manifest_sha256": "b52807452932502a5f05a10eb609c87345fabe4addb17d3ffeae3a673e0d0e57",
+    "withdrawal": [
+      {
+        "filename": "PartyOps_1.4.5-rc.6_linux_arm64.deb",
+        "sha256": "b9c9dfda203a74ac05b4a0f3019acb94294fc723cecf51b6840eb4e6f5a2a71e",
+        "bytes": 352120914,
+        "result": "already-absent"
+      },
+      {
+        "filename": "PartyOps_1.4.5-rc.6_linux_arm64_sameversion-kylin9000c-diagnostic-20261010.deb",
+        "sha256": "c4ba88eb4f654599cbefd1a4f6eafde55865cb0035ae66c55ff82887cf4ac3dd",
+        "bytes": 352209994,
+        "result": "already-absent"
+      }
+    ],
+    "files": {
+      "PartyOps-1.4.5-0.rc.6.1.aarch64.rpm": {
+        "file_ready": true,
+        "bytes": 763753980,
+        "sha256": "f507da109c1110e2c553ac9cb44a7f05205156132fb241ba057028571344e4f4",
+        "reused": true
+      },
+      "PartyOps-1.4.5-0.rc.6.1.x86_64.rpm": {
+        "file_ready": true,
+        "bytes": 790114068,
+        "sha256": "e7c34a6090689f40dfae3aa3403b7b6ad0b5d4c3748e07005bb73ed1b32632ac",
+        "reused": true
+      },
+      "PartyOps_1.4.5-rc.6_linux_amd64.deb": {
+        "file_ready": true,
+        "bytes": 366480042,
+        "sha256": "4557129b9f081c1b525d6dd6c6d444f7e0d35d63021b4b1c20c8daeffd4c30ae",
+        "reused": true
+      },
+      "PartyOps_1.4.5-rc.6_linux_loong64.deb": {
+        "file_ready": true,
+        "bytes": 302195420,
+        "sha256": "bec5993a12a9a66800fa039045f45329ecc486934cd1d1106c10d5e2ecf78017",
+        "reused": true
+      },
+      "PartyOps_1.4.5-rc.6_windows7_amd64.exe": {
+        "file_ready": true,
+        "bytes": 489713934,
+        "sha256": "996159794407f2171de170fbbf95c3b1f3fe234c026116f35113c2d8d3591d7f",
+        "reused": true
+      },
+      "PartyOps_1.4.5-rc.6_windows7_x86.exe": {
+        "file_ready": true,
+        "bytes": 457500557,
+        "sha256": "b3b77f2a5a319906c641ca693df31b93c3fbcb56e28eaae7a52bdfa94913bf88",
+        "reused": true
+      },
+      "PartyOps_1.4.5-rc.6_windows_amd64.exe": {
+        "file_ready": true,
+        "bytes": 443690896,
+        "sha256": "a7c044b0b830ce416fdf02c84daa2e7aa4929c0833d9b530bc47486d861a81be",
+        "reused": true
+      },
+      "PartyOps_1.4.5-rc.6_macos_x86_64-UNSIGNED-UNNOTARIZED-CANDIDATE.pkg": {
+        "file_ready": true,
+        "bytes": 564985557,
+        "sha256": "8885eea0cfa3c23f58d14109c9a46be2bf762c923cb1be58b9c549628e05c955",
+        "reused": true
+      },
+      "PartyOps_1.4.5-rc.6_macos_arm64-UNSIGNED-UNNOTARIZED-CANDIDATE.pkg": {
+        "file_ready": true,
+        "bytes": 588743660,
+        "sha256": "bcc370a22545c31ad789324d1d153a0d6faa30ec61fc0632e4b004f82c0ff736",
+        "reused": true
+      },
+      "PartyOps_1.4.5-rc.6_linux_arm64_kylin-full-20261016.deb": {
+        "file_ready": true,
+        "bytes": 352447304,
+        "sha256": "17d0e3a3acf060d3c65299c012078435bacc0da3f1f0a909fe3cc997cbbee69c",
+        "reused": true
+      }
+    }
+  },
+  "anonymous_head_checks": [
+    {
+      "name": "PartyOps_1.4.5-rc.6_windows_amd64_startup-20261017.exe",
+      "status": 404,
+      "content_length": "21",
+      "expected": 404
+    },
+    {
+      "name": "PartyOps_1.4.5-rc.6_windows_amd64.exe",
+      "status": 200,
+      "content_length": "443690896",
+      "expected": 200
+    }
+  ],
+  "scope": "实际匿名健康及HEAD验证；不等于全文件回读或新包验收",
+  "website_and_github_changed": false
+}

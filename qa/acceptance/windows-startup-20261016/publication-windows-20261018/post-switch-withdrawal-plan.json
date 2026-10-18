@@ -1,0 +1,42 @@
+{
+  "status": "planned-not-executed",
+  "root": "/workspace",
+  "downloads_root": "/workspace/downloads",
+  "old_assets": [
+    {
+      "file_name": "PartyOps_1.4.5-rc.6_windows_amd64.exe",
+      "bytes": 443690896,
+      "sha256": "a7c044b0b830ce416fdf02c84daa2e7aa4929c0833d9b530bc47486d861a81be",
+      "magic_hex": "4d5a5000",
+      "content_type": "application/octet-stream"
+    },
+    {
+      "file_name": "PartyOps_1.4.5-rc.6_windows_amd64_startup-20261017.exe",
+      "bytes": 449978846,
+      "sha256": "3c81fdba89781722f94e82d31c7ff99b4357a1374fc6454ad47d3cfa464d1e27",
+      "magic_hex": "4d5a5000",
+      "content_type": "application/octet-stream"
+    }
+  ],
+  "github_old_assets": [
+    {
+      "id": 606128919,
+      "name": "PartyOps_1.4.5-rc.6_windows_amd64.exe",
+      "size": 443690896,
+      "digest": "sha256:a7c044b0b830ce416fdf02c84daa2e7aa4929c0833d9b530bc47486d861a81be"
+    },
+    {
+      "id": 606131252,
+      "name": "PartyOps_1.4.5-rc.6_windows_amd64.exe.sha256",
+      "size": 105,
+      "digest": "sha256:b81d7b11fa23a0809c13e801650702a3e151cbc9455142c08ca196f2acace868"
+    }
+  ],
+  "retained_count": 10,
+  "final_windows_name": "PartyOps_1.4.5-rc.6_windows_amd64_startup-20261018.exe",
+  "required_proofs": [
+    "production-website-readback",
+    "four-github-anonymous-full-get"
+  ],
+  "network_write_performed": false
+}

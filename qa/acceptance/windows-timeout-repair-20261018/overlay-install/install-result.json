@@ -1,0 +1,21 @@
+{
+  "exit_code": 0,
+  "install_dir": "C:\\PartyOps QA\\中文 程序",
+  "app_exists": true,
+  "launcher_exists": true,
+  "formatter_exists": true,
+  "uninstaller_exists": true,
+  "install_log_exists": true,
+  "services": [
+    {
+      "name": "PartyOpsHost",
+      "status": "Stopped",
+      "start_type": "Manual"
+    },
+    {
+      "name": "PartyOpsUpdateService",
+      "status": "Stopped",
+      "start_type": "Manual"
+    }
+  ]
+}

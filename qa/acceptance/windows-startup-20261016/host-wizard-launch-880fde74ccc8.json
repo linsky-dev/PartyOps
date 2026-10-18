@@ -1,0 +1,75 @@
+{
+  "time_utc": "2026-10-17T05:10:58.628855+00:00",
+  "candidate": {
+    "package": {
+      "id": "windows_amd64",
+      "version": "1.4.5-rc.6",
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\artifacts\\PartyOps_1.4.5-rc.6_windows_amd64.exe",
+      "sha256": "3c81fdba89781722f94e82d31c7ff99b4357a1374fc6454ad47d3cfa464d1e27",
+      "source_fingerprint": "6f879341ef736ffd1ca41da9ff171976c5cb17985058fa1af206fa97eecdb702",
+      "provenance_status": "verified",
+      "build_receipt": "D:\\PartyOps-VM-Lab\\state\\builds\\3c81fdba89781722f94e82d31c7ff99b4357a1374fc6454ad47d3cfa464d1e27.json",
+      "build_receipt_sha256": "087422ea86ef1b1b656d9bf8ce3733d6a0368d12d632bd2a7be4369cedf3f56f"
+    },
+    "manifest_sha256": "adce91340993c4ab4f202dd3a926165ab2fd129236c90442ae4eae046c73204e",
+    "executable_sha256": "dbe0ee796d718d7c3cefa3b05550076399e7cd3544cc37964b21c795bde34ce1",
+    "wizard_sha256": "6806ec965293c44fcf8473459b480b9cbf5219ca1f0171b9f60bfd1263b8025d"
+  },
+  "since": "2026-10-17T05:10:50.328612+00:00",
+  "snapshot": {
+    "processes": [
+      {
+        "session_id": 1,
+        "name": "PartyOps.exe",
+        "pid": 6116,
+        "installed_path_matches": true,
+        "created": "2026-10-17T05:06:59.7597610Z",
+        "owner_is_original_user": true
+      },
+      {
+        "session_id": 1,
+        "name": "PartyOpsWizard.exe",
+        "pid": 612,
+        "installed_path_matches": true,
+        "created": "2026-10-17T05:10:53.2190260Z",
+        "owner_is_original_user": true
+      }
+    ],
+    "username": "partyopsuser",
+    "user_mode": "personal",
+    "host_configuration_acceptance": "not-verified",
+    "wizard_exists": true,
+    "pending_mode_switch": false,
+    "uac_acceptance": "not-verified",
+    "administrator": false,
+    "system_mode": "missing",
+    "user_journal_present": false,
+    "qa_host_data_marker_present": false,
+    "fixed_qa_host_status": {
+      "present": false
+    },
+    "session_id": 1,
+    "listeners": [
+      {
+        "port": 49693,
+        "pid": 612,
+        "owned_by_wizard": true,
+        "loopback": true
+      },
+      {
+        "port": 18777,
+        "pid": 6116,
+        "owned_by_wizard": false,
+        "loopback": true
+      },
+      {
+        "port": 18775,
+        "pid": 6116,
+        "owned_by_wizard": false,
+        "loopback": true
+      }
+    ],
+    "public_outcomes_since_launch": []
+  },
+  "scope": "qa-wizard-status-only-not-uac-or-host-acceptance"
+}

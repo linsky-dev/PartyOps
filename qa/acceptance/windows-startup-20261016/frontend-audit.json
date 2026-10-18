@@ -1,0 +1,112 @@
+{
+  "advisories": {
+    "1239990": {
+      "findings": [
+        {
+          "version": "15.0.0",
+          "paths": [
+            ".>markdown-it"
+          ],
+          "dev": false,
+          "optional": false,
+          "bundled": false
+        }
+      ],
+      "id": 1239990,
+      "title": "markdown-it linkify: true has two quadratic paths, so a few hundred KB of markdown blocks the event loop for tens of seconds",
+      "module_name": "markdown-it",
+      "vulnerable_versions": "=15.0.0",
+      "severity": "moderate",
+      "cwe": "CWE-400, CWE-407",
+      "github_advisory_id": "GHSA-253c-mchw-3w2r",
+      "url": "https://github.com/advisories/GHSA-253c-mchw-3w2r"
+    },
+    "1241209": {
+      "findings": [
+        {
+          "version": "1.2.1",
+          "paths": [
+            ".>@arco-design/web-vue>vue>@vue/compiler-dom>@vue/compiler-core>source-map-js",
+            ".>@arco-design/web-vue>vue>@vue/compiler-sfc>@vue/compiler-core>source-map-js",
+            ".>@arco-design/web-vue>vue>@vue/compiler-sfc>@vue/compiler-dom>@vue/compiler-core>source-map-js",
+            ".>@arco-design/web-vue>vue>@vue/compiler-sfc>@vue/compiler-ssr>@vue/compiler-dom>@vue/compiler-core>source-map-js",
+            ".>@arco-design/web-vue>vue>@vue/compiler-sfc>postcss>source-map-js",
+            ".>@arco-design/web-vue>vue>@vue/compiler-sfc>source-map-js",
+            ".>@arco-design/web-vue>vue>@vue/server-renderer>@vue/compiler-ssr>@vue/compiler-dom>@vue/compiler-core>source-map-js",
+            ".>pinia>vue>@vue/compiler-dom>@vue/compiler-core>source-map-js",
+            ".>pinia>vue>@vue/compiler-sfc>@vue/compiler-core>source-map-js",
+            ".>pinia>vue>@vue/compiler-sfc>@vue/compiler-dom>@vue/compiler-core>source-map-js",
+            ".>pinia>vue>@vue/compiler-sfc>@vue/compiler-ssr>@vue/compiler-dom>@vue/compiler-core>source-map-js",
+            ".>pinia>vue>@vue/compiler-sfc>postcss>source-map-js",
+            ".>pinia>vue>@vue/compiler-sfc>source-map-js",
+            ".>pinia>vue>@vue/server-renderer>@vue/compiler-ssr>@vue/compiler-dom>@vue/compiler-core>source-map-js",
+            ".>vue>@vue/compiler-dom>@vue/compiler-core>source-map-js",
+            ".>vue>@vue/compiler-sfc>@vue/compiler-core>source-map-js",
+            ".>vue>@vue/compiler-sfc>@vue/compiler-dom>@vue/compiler-core>source-map-js",
+            ".>vue>@vue/compiler-sfc>@vue/compiler-ssr>@vue/compiler-dom>@vue/compiler-core>source-map-js",
+            ".>vue>@vue/compiler-sfc>postcss>source-map-js",
+            ".>vue>@vue/compiler-sfc>source-map-js",
+            ".>vue>@vue/server-renderer>@vue/compiler-ssr>@vue/compiler-dom>@vue/compiler-core>source-map-js",
+            ".>vue-router>vue>@vue/compiler-dom>@vue/compiler-core>source-map-js",
+            ".>vue-router>vue>@vue/compiler-sfc>@vue/compiler-core>source-map-js",
+            ".>vue-router>vue>@vue/compiler-sfc>@vue/compiler-dom>@vue/compiler-core>source-map-js",
+            ".>vue-router>vue>@vue/compiler-sfc>@vue/compiler-ssr>@vue/compiler-dom>@vue/compiler-core>source-map-js",
+            ".>vue-router>vue>@vue/compiler-sfc>postcss>source-map-js",
+            ".>vue-router>vue>@vue/compiler-sfc>source-map-js",
+            ".>vue-router>vue>@vue/server-renderer>@vue/compiler-ssr>@vue/compiler-dom>@vue/compiler-core>source-map-js"
+          ],
+          "dev": false,
+          "optional": false,
+          "bundled": false
+        }
+      ],
+      "id": 1241209,
+      "title": "source-map-js allows event-loop denial of service through indexed source-map section offsets",
+      "module_name": "source-map-js",
+      "vulnerable_versions": ">=1.0.0 <1.2.2",
+      "patched_versions": ">=1.2.2",
+      "severity": "high",
+      "cwe": "CWE-1284",
+      "github_advisory_id": "GHSA-68fv-2mgg-jv7q",
+      "url": "https://github.com/advisories/GHSA-68fv-2mgg-jv7q"
+    },
+    "1241259": {
+      "findings": [
+        {
+          "version": "3.5.21",
+          "paths": [
+            ".>@arco-design/web-vue>vue>@vue/server-renderer",
+            ".>pinia>vue>@vue/server-renderer",
+            ".>vue>@vue/server-renderer",
+            ".>vue-router>vue>@vue/server-renderer"
+          ],
+          "dev": false,
+          "optional": false,
+          "bundled": false
+        }
+      ],
+      "id": 1241259,
+      "title": "@vue/server-renderer: XSS via missing CR in attribute-name blacklist",
+      "module_name": "@vue/server-renderer",
+      "vulnerable_versions": "<3.5.42",
+      "patched_versions": ">=3.5.42",
+      "severity": "high",
+      "cwe": "CWE-79, CWE-116",
+      "github_advisory_id": "GHSA-g2v6-rqmx-r4w6",
+      "url": "https://github.com/advisories/GHSA-g2v6-rqmx-r4w6"
+    }
+  },
+  "metadata": {
+    "vulnerabilities": {
+      "info": 0,
+      "low": 0,
+      "moderate": 1,
+      "high": 2,
+      "critical": 0
+    },
+    "dependencies": 64,
+    "devDependencies": 0,
+    "optionalDependencies": 1,
+    "totalDependencies": 65
+  }
+}

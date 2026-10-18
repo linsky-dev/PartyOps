@@ -1,0 +1,52 @@
+{
+  "date": "2026-10-18",
+  "status": "candidate-passed-signed-publication-in-progress",
+  "network_write_performed": false,
+  "guest_access_performed": false,
+  "credentials_read": false,
+  "old_hold_changed": false,
+  "unit_tests": {
+    "command": "backend/.venv/Scripts/python.exe -X utf8 -B -m unittest discover -s qa/acceptance/windows-startup-20261016/publication-windows-20261018 -p test_*.py -q",
+    "passed": 18
+  },
+  "strict_formatter_historical_positive_control": {
+    "status": "passed-readonly-control-only",
+    "summary_sha256": "73a6874d83c078ff5ea3c24c2ba99d903e6dad8a3ac3b2b2290c40d5d073d610",
+    "output_count": 17,
+    "new_candidate_acceptance_claimed": false
+  },
+  "frozen_subset_research": "not-approved-for-evidence-reuse",
+  "directory_secret_scan": {
+    "status": "passed",
+    "report": "gitleaks-directory-redacted.json",
+    "exceptions_added": false
+  },
+  "installed_uac_timeout_live_tested": false,
+  "remaining": [
+    "修正后原应用部署结果确认与全量HTTPS回读",
+    "GitHub四附件与匿名回读",
+    "官网预览与生产",
+    "源码文档/main与Release正文",
+    "最后清理旧Windows包与合成中间产物，保留数据和证据"
+  ],
+  "research_cleanup": {
+    "status": "deleted-at-user-request",
+    "released_bytes": 3170576,
+    "runtime_snapshot_dependency": false,
+    "formal_helpers_retained": true
+  },
+  "previous_status": "blocked-awaiting-new-formal-candidate-and-live-evidence",
+  "current_updated_at": "2026-10-18T10:57:12.758927+00:00",
+  "current": {
+    "candidate_sha256": "e3e2ea45ccd38acff059b5713826a78f998a56ccef75341633f67bd4e17e57da",
+    "actual_guest_acceptance": "passed",
+    "reviewer": "passed-scoped",
+    "signed_manifest": "release-manifest-windows-startup-20261018.json",
+    "first_deployment": "definitive-BATCH_TOKENS_INVALID-retained",
+    "correction": "token JSON key only; original token value retained",
+    "corrected_deployment": "sent-once-awaiting-result",
+    "website_switched": false,
+    "github_changed": false,
+    "cleanup": "deferred-until-publication"
+  }
+}

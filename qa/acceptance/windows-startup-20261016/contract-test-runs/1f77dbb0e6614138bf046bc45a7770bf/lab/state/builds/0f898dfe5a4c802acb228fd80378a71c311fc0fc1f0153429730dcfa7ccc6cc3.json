@@ -1,0 +1,39 @@
+{
+  "package": {
+    "id": "windows_amd64",
+    "version": "1.4.5-rc.6",
+    "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\qa\\acceptance\\windows-startup-20261016\\contract-test-runs\\1f77dbb0e6614138bf046bc45a7770bf\\artifacts\\PartyOps_1.4.5-rc.6_windows_amd64.exe",
+    "sha256": "0f898dfe5a4c802acb228fd80378a71c311fc0fc1f0153429730dcfa7ccc6cc3"
+  },
+  "source_before": "source",
+  "source_after": "source",
+  "exit_code": 0,
+  "output_created_during_build": true,
+  "status": "completed",
+  "errors": [],
+  "log": {
+    "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\qa\\acceptance\\windows-startup-20261016\\contract-test-runs\\1f77dbb0e6614138bf046bc45a7770bf\\lab\\reports\\build\\build.log",
+    "sha256": "25b1524aa3ef5285d84e8f6f33a37438bf0deb6aa4e06a1e2548ce2d95c16a81"
+  },
+  "windows_payload": {
+    "schema_version": 1,
+    "capture": "controller-after-successful-build",
+    "package_sha256": "0f898dfe5a4c802acb228fd80378a71c311fc0fc1f0153429730dcfa7ccc6cc3",
+    "manifest": {
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\qa\\acceptance\\windows-startup-20261016\\contract-test-runs\\1f77dbb0e6614138bf046bc45a7770bf\\lab\\reports\\build\\release-manifest.json",
+      "sha256": "938b085076dbd6305fe2d1b3334d38e5814e2af9320df519e1a568d0462fe162",
+      "bytes": 486
+    },
+    "executables": {
+      "PartyOps.exe": {
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "bytes": 1
+      },
+      "PartyOpsWizard.exe": {
+        "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "bytes": 2
+      }
+    },
+    "manifest_file_count": 2
+  }
+}

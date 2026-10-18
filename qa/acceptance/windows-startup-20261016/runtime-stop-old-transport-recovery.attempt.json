@@ -1,0 +1,15 @@
+{
+  "time": "2026-10-17T04:56:55.633536+00:00",
+  "original_attempt_sha256": "2cc84c714535d6b61d3e411823a85855cf48e415ca33a0f9f1e101059885a7db",
+  "reason": "SSH 命令行长度限制；只读确认原 PID、创建时间、路径、用户和 HTTP 所有者未变",
+  "target": {
+    "pid": 1724,
+    "owner": "partyopsuser",
+    "session_id": 1,
+    "local_owner": true,
+    "name": "PartyOps.exe",
+    "created": "2026-10-17T03:52:53.7626490Z",
+    "path": "C:\\PartyOps QA\\中文 程序\\PartyOps.exe",
+    "domain": "PARTYOPS-QA"
+  }
+}

@@ -1,0 +1,23 @@
+[
+  {
+    "source": "D:\\PartyOps-VM-Lab\\downloads\\Win11_25H2_Chinese_Simplified_Arm64_v2.iso",
+    "destination": "C:\\PartyOps-VM-Lab\\media\\relocated-from-d-20261016\\Win11_25H2_Chinese_Simplified_Arm64_v2.iso",
+    "bytes": 8315279360,
+    "sha256": "fccff2f7eef5b29e756e3e51522203e03f7faeebaff093dac9c6e5b67b082432",
+    "verified_at": "2026-10-16T18:07:05.7177240+08:00"
+  },
+  {
+    "source": "D:\\PartyOps-VM-Lab\\downloads\\deepin-desktop-community-25.2.0-loong64.iso",
+    "destination": "C:\\PartyOps-VM-Lab\\media\\relocated-from-d-20261016\\deepin-desktop-community-25.2.0-loong64.iso",
+    "bytes": 6304202752,
+    "sha256": "1835726765d5839481572dbdaf8b8fdb5b2403ed8395cbe06f8d509891fb46c1",
+    "verified_at": "2026-10-16T18:07:34.4773085+08:00"
+  },
+  {
+    "source": "D:\\PartyOps-VM-Lab\\downloads\\Win10_22H2_Chinese_Simplified_x32v1.iso",
+    "destination": "C:\\PartyOps-VM-Lab\\media\\relocated-from-d-20261016\\Win10_22H2_Chinese_Simplified_x32v1.iso",
+    "bytes": 4364279808,
+    "sha256": "c828accb08886622f5e1a127bb83070bae0e9235ef0e31573abc6a8a5cb55286",
+    "verified_at": "2026-10-16T18:07:56.2704030+08:00"
+  }
+]

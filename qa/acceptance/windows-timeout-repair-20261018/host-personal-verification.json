@@ -1,0 +1,22 @@
+{
+  "verified_date": "2026-10-18",
+  "scope": "新增主机及个人恢复薄适配离线契约",
+  "test_command": "python -m unittest discover -s qa/acceptance/windows-timeout-repair-20261018 -p test_host_personal.py -v",
+  "tests": 9,
+  "test_exit_code": 0,
+  "syntax_command": "python -m py_compile qa/acceptance/windows-timeout-repair-20261018/host-personal.py qa/acceptance/windows-timeout-repair-20261018/test_host_personal.py",
+  "syntax_exit_code": 0,
+  "guest_connected": false,
+  "guest_credentials_read": false,
+  "real_host_configuration": "not-run",
+  "real_personal_restore": "not-run",
+  "real_retention": "not-run",
+  "reviewer": {
+    "status": "controller-admitted-for-subsequent-acceptance",
+    "verified_date": "2026-10-18",
+    "source": "主控转交的 Reviewer 最新独立准入结论",
+    "independent_readonly_tests_passed": 8,
+    "temporary_file_test": "另1项仅静态审查，未由Reviewer执行",
+    "summary": "新主机/个人薄适配准入通过；仅允许后续真实验收，不代表新安装包、UAC、主机配置或原数据保留已通过。"
+  }
+}

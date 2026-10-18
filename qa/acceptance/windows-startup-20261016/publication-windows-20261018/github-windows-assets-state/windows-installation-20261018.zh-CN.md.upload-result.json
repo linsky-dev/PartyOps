@@ -1,0 +1,16 @@
+{
+  "expected": {
+    "filename": "windows-installation-20261018.zh-CN.md",
+    "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\qa\\acceptance\\windows-startup-20261016\\publication-windows-20261018\\docs-draft\\docs\\windows-installation-20261018.zh-CN.md",
+    "bytes": 1937,
+    "sha256": "c3d621ad6ae8e1cdd98d0af6f1e5e9641a53050f7b142ffca046b58ddcefc81a"
+  },
+  "asset": {
+    "id": 653303997,
+    "name": "windows-installation-20261018.zh-CN.md",
+    "size": 1937,
+    "digest": "sha256:c3d621ad6ae8e1cdd98d0af6f1e5e9641a53050f7b142ffca046b58ddcefc81a"
+  },
+  "command_returned_success": true,
+  "outcome_read_verified": true
+}

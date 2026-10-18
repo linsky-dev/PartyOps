@@ -1,0 +1,16 @@
+{
+  "time": "2026-10-18T04:36:59.259383+00:00",
+  "status": "passed",
+  "scope": "synthetic-golden-wps-gui-save-close-reopen",
+  "screenshots": {
+    "wps-gui-formatted-open-20261018.png": "9cebaf4b2490ff0a28569083086a24af57399ddd2a2413ea2c8f3e3e873ba94c",
+    "wps-gui-formatted-page3-20261018.png": "f83545f7e71329e52ca6f189f31d0c3a322b8403c899fb3043edf26f16142920",
+    "wps-gui-formatted-reopen-verified-20261018.png": "014395f6c1ab4baea5a0dd7ebf3b619770651024ff973cc8810a3ad2564267d3"
+  },
+  "source_sha256": "f42d22d7ff69b47efeb80ebf2593754dc9dab3f167ed15c5e4738153f393a477",
+  "saved_sha256": "f42d22d7ff69b47efeb80ebf2593754dc9dab3f167ed15c5e4738153f393a477",
+  "semantic_equivalence": true,
+  "page_count_observed": 3,
+  "prior_path_input_error_preserved": "wps-gui-formatted-reopen-20261018.png",
+  "business_documents_accessed": false
+}

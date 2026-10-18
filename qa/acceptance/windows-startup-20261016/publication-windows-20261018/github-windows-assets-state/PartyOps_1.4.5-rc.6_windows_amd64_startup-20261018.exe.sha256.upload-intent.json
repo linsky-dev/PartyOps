@@ -1,0 +1,10 @@
+{
+  "expected": {
+    "filename": "PartyOps_1.4.5-rc.6_windows_amd64_startup-20261018.exe.sha256",
+    "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\qa\\acceptance\\windows-startup-20261016\\publication-windows-20261018\\batch\\PartyOps_1.4.5-rc.6_windows_amd64_startup-20261018.exe.sha256",
+    "bytes": 122,
+    "sha256": "355e7b7e48ba0ff9228afda0fdfb945d6e7db99199cfca5766696a05a758a946"
+  },
+  "payload_sha256": "71f0ed1161917ecd2b59f180be3756cf48f60a00d08900d9751d0c727055ec9c",
+  "created_at": "2026-10-18T11:16:22.633142+00:00"
+}

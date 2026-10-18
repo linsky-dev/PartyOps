@@ -1,0 +1,12 @@
+{
+  "scope": "windows-startup-20261017-only",
+  "receiver": "windows-startup-20261017-v1",
+  "manifest_sha256": "c865bb3c179059024906d2559c7ef389a2d1e7acbaa00dce9eedf22aefabbfa3",
+  "baseline_manifest_sha256": "b52807452932502a5f05a10eb609c87345fabe4addb17d3ffeae3a673e0d0e57",
+  "filename": "PartyOps_1.4.5-rc.6_windows_amd64_startup-20261017.exe",
+  "bytes": 449978846,
+  "package_sha256": "3c81fdba89781722f94e82d31c7ff99b4357a1374fc6454ad47d3cfa464d1e27",
+  "receiver_sha256": "dc6ec0c35f8bf6dd4ec1cb178eaa65e3abc52a09a76861811f8ce05aab24474e",
+  "publication_authorized": false,
+  "formal_release_ready": false
+}

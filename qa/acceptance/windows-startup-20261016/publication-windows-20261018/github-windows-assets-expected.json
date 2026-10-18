@@ -1,0 +1,200 @@
+{
+  "repository": "linsky-dev/PartyOps",
+  "tag": "v1.4.5-rc.6",
+  "release_id": 402021905,
+  "tag_sha": "a8aaf44984c1d9ce85981bd4756e71372c6b8cb8",
+  "main_snapshot_only": "b58cd0505ebd8bc187d40857e92d19c88b2a2b56",
+  "snapshot_sha256": "8fbecbb21d3e7b70ae6754be7b0c76f27d3d23de6aff99e8121f20aacfbc7b83",
+  "package_sha256": "e3e2ea45ccd38acff059b5713826a78f998a56ccef75341633f67bd4e17e57da",
+  "manifest_sha256": "9e314cbfa1c5d604ad0f24dd8525b0afcda4f511f1cd8d4571114be1061298ee",
+  "assets": [
+    {
+      "filename": "PartyOps_1.4.5-rc.6_windows_amd64_startup-20261018.exe",
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\qa\\acceptance\\windows-startup-20261016\\publication-windows-20261018\\batch\\PartyOps_1.4.5-rc.6_windows_amd64_startup-20261018.exe",
+      "bytes": 449988807,
+      "sha256": "e3e2ea45ccd38acff059b5713826a78f998a56ccef75341633f67bd4e17e57da"
+    },
+    {
+      "filename": "PartyOps_1.4.5-rc.6_windows_amd64_startup-20261018.exe.sha256",
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\qa\\acceptance\\windows-startup-20261016\\publication-windows-20261018\\batch\\PartyOps_1.4.5-rc.6_windows_amd64_startup-20261018.exe.sha256",
+      "bytes": 122,
+      "sha256": "355e7b7e48ba0ff9228afda0fdfb945d6e7db99199cfca5766696a05a758a946"
+    },
+    {
+      "filename": "release-manifest-windows-startup-20261018.json",
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\qa\\acceptance\\windows-startup-20261016\\publication-windows-20261018\\batch\\release-manifest-windows-startup-20261018.json",
+      "bytes": 67097,
+      "sha256": "9e314cbfa1c5d604ad0f24dd8525b0afcda4f511f1cd8d4571114be1061298ee"
+    },
+    {
+      "filename": "windows-installation-20261018.zh-CN.md",
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\qa\\acceptance\\windows-startup-20261016\\publication-windows-20261018\\docs-draft\\docs\\windows-installation-20261018.zh-CN.md",
+      "bytes": 1937,
+      "sha256": "c3d621ad6ae8e1cdd98d0af6f1e5e9641a53050f7b142ffca046b58ddcefc81a"
+    }
+  ],
+  "old_assets": [
+    {
+      "id": 621523371,
+      "name": "baseline-manifest.json",
+      "size": 25780,
+      "digest": "sha256:da1b7da65ae525c13726cedfb271a449bbec8e236e5a5342aa06d58336a61ac2"
+    },
+    {
+      "id": 627146494,
+      "name": "diagnostic-installation-20261010.zh-CN.md",
+      "size": 4394,
+      "digest": "sha256:4157c3007a0205b9486778dea7a0bffb3dd596db2f144659f29e4773bdbdcdef"
+    },
+    {
+      "id": 646233111,
+      "name": "kylin-installation-20261016.zh-CN.md",
+      "size": 1683,
+      "digest": "sha256:0e680604c937c67b982e9981229de3292305e62850a6f1c8e00a75a24039dcae"
+    },
+    {
+      "id": 606125532,
+      "name": "PartyOps-1.4.5-0.rc.6.1.aarch64.rpm",
+      "size": 763753980,
+      "digest": "sha256:f507da109c1110e2c553ac9cb44a7f05205156132fb241ba057028571344e4f4"
+    },
+    {
+      "id": 606130936,
+      "name": "PartyOps-1.4.5-0.rc.6.1.aarch64.rpm.sha256",
+      "size": 103,
+      "digest": "sha256:71d1008de219d5fb0162d285f804d092877983e130cb4108de9507498fac1fb1"
+    },
+    {
+      "id": 606125533,
+      "name": "PartyOps-1.4.5-0.rc.6.1.x86_64.rpm",
+      "size": 790114068,
+      "digest": "sha256:e7c34a6090689f40dfae3aa3403b7b6ad0b5d4c3748e07005bb73ed1b32632ac"
+    },
+    {
+      "id": 606130975,
+      "name": "PartyOps-1.4.5-0.rc.6.1.x86_64.rpm.sha256",
+      "size": 102,
+      "digest": "sha256:58afea52368102e9e78c0de8d6ec594a638ad7b396439f882e438d584819ad0f"
+    },
+    {
+      "id": 606125529,
+      "name": "PartyOps_1.4.5-rc.6_linux_amd64.deb",
+      "size": 366480042,
+      "digest": "sha256:4557129b9f081c1b525d6dd6c6d444f7e0d35d63021b4b1c20c8daeffd4c30ae"
+    },
+    {
+      "id": 606131000,
+      "name": "PartyOps_1.4.5-rc.6_linux_amd64.deb.sha256",
+      "size": 103,
+      "digest": "sha256:81dbf2b2cf809ed8a7c31fee4229fb2fb883a19a15c9062626a60abb7fd4f137"
+    },
+    {
+      "id": 646231596,
+      "name": "PartyOps_1.4.5-rc.6_linux_arm64_kylin-full-20261016.deb",
+      "size": 352447304,
+      "digest": "sha256:17d0e3a3acf060d3c65299c012078435bacc0da3f1f0a909fe3cc997cbbee69c"
+    },
+    {
+      "id": 646232792,
+      "name": "PartyOps_1.4.5-rc.6_linux_arm64_kylin-full-20261016.deb.sha256",
+      "size": 123,
+      "digest": "sha256:c85361b287496e335fba46f3ab687d87b024abe6715dd622b5da69755c845601"
+    },
+    {
+      "id": 606125530,
+      "name": "PartyOps_1.4.5-rc.6_linux_loong64.deb",
+      "size": 302195420,
+      "digest": "sha256:bec5993a12a9a66800fa039045f45329ecc486934cd1d1106c10d5e2ecf78017"
+    },
+    {
+      "id": 606131075,
+      "name": "PartyOps_1.4.5-rc.6_linux_loong64.deb.sha256",
+      "size": 105,
+      "digest": "sha256:00600f72bee25403727a281d8ebf550bbd4500995195e6e0f3072fbc7767d1bd"
+    },
+    {
+      "id": 624054856,
+      "name": "PartyOps_1.4.5-rc.6_macos_arm64-UNSIGNED-UNNOTARIZED-CANDIDATE.pkg",
+      "size": 588743660,
+      "digest": "sha256:bcc370a22545c31ad789324d1d153a0d6faa30ec61fc0632e4b004f82c0ff736"
+    },
+    {
+      "id": 624054855,
+      "name": "PartyOps_1.4.5-rc.6_macos_arm64-UNSIGNED-UNNOTARIZED-CANDIDATE.pkg.sha256",
+      "size": 134,
+      "digest": "sha256:583f97a2b48b244a5c30390700369c581058e481b14e33032bdba9dd1e5c2f19"
+    },
+    {
+      "id": 621523368,
+      "name": "PartyOps_1.4.5-rc.6_macos_x86_64-UNSIGNED-UNNOTARIZED-CANDIDATE.pkg",
+      "size": 564985557,
+      "digest": "sha256:8885eea0cfa3c23f58d14109c9a46be2bf762c923cb1be58b9c549628e05c955"
+    },
+    {
+      "id": 621523377,
+      "name": "PartyOps_1.4.5-rc.6_macos_x86_64-UNSIGNED-UNNOTARIZED-CANDIDATE.pkg.sha256",
+      "size": 135,
+      "digest": "sha256:16cb046d646a6f9ac0973b972d67ff0209f400bef41bf6bc018ac08cdb6078c9"
+    },
+    {
+      "id": 606128483,
+      "name": "PartyOps_1.4.5-rc.6_windows7_amd64.exe",
+      "size": 489713934,
+      "digest": "sha256:996159794407f2171de170fbbf95c3b1f3fe234c026116f35113c2d8d3591d7f"
+    },
+    {
+      "id": 606131142,
+      "name": "PartyOps_1.4.5-rc.6_windows7_amd64.exe.sha256",
+      "size": 106,
+      "digest": "sha256:720f10054afcd84cd272122efbcca45ab72734ed6c828117e45c504c3b7185ee"
+    },
+    {
+      "id": 606128838,
+      "name": "PartyOps_1.4.5-rc.6_windows7_x86.exe",
+      "size": 457500557,
+      "digest": "sha256:b3b77f2a5a319906c641ca693df31b93c3fbcb56e28eaae7a52bdfa94913bf88"
+    },
+    {
+      "id": 606131190,
+      "name": "PartyOps_1.4.5-rc.6_windows7_x86.exe.sha256",
+      "size": 104,
+      "digest": "sha256:3a14e802c15ede720bc7dfc4949b3fdf499a3bff3c253e4bf48f47d5ab4ccd1b"
+    },
+    {
+      "id": 606128919,
+      "name": "PartyOps_1.4.5-rc.6_windows_amd64.exe",
+      "size": 443690896,
+      "digest": "sha256:a7c044b0b830ce416fdf02c84daa2e7aa4929c0833d9b530bc47486d861a81be"
+    },
+    {
+      "id": 606131252,
+      "name": "PartyOps_1.4.5-rc.6_windows_amd64.exe.sha256",
+      "size": 105,
+      "digest": "sha256:b81d7b11fa23a0809c13e801650702a3e151cbc9455142c08ca196f2acace868"
+    },
+    {
+      "id": 627146478,
+      "name": "release-manifest-arm64-startup-diagnostic-20261010.json",
+      "size": 2497,
+      "digest": "sha256:533d41a72d3b64768aa52d4c7f103f482d31e14792307b88d407b1b5735f4f05"
+    },
+    {
+      "id": 646232946,
+      "name": "release-manifest-kylin-arm64-20261016.json",
+      "size": 51963,
+      "digest": "sha256:b52807452932502a5f05a10eb609c87345fabe4addb17d3ffeae3a673e0d0e57"
+    },
+    {
+      "id": 624054859,
+      "name": "release-manifest-macos-arm64-20261009.json",
+      "size": 45446,
+      "digest": "sha256:32fb5e85874c6ab400d0a1c1c05b9864c3a2e232202b3cf74a452cc8ca12b71c"
+    },
+    {
+      "id": 621529666,
+      "name": "release-manifest.json",
+      "size": 41663,
+      "digest": "sha256:4355fe1dcd2dcb49ccf9f82a406cbd44d883d3166f0c54987751b4c376a71cdb"
+    }
+  ]
+}

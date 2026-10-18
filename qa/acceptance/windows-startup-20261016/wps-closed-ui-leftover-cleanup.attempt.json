@@ -1,0 +1,5 @@
+{
+  "at": "2026-10-17T06:29:33.785117+00:00",
+  "reason": "Official installer UI exited via Alt+F4/confirm; no install started in this GUI; earlier /S completed0",
+  "binding_sha256": "f0f984b6a05d37f06d1aeca9485ee08eba88b189b598c94c020e0486f5cade96"
+}

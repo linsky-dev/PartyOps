@@ -1,0 +1,216 @@
+{
+  "scope": "installed-http-features-only",
+  "status": "passed",
+  "runtime_environment_passed": false,
+  "case_count": 9,
+  "manifest_sha256": "ecefecb56fef29915c7731d553d4dc85ec7a0eb842b47f7ff6283a422151cdf1",
+  "cases": [
+    {
+      "id": "replace",
+      "feature_id": "replace",
+      "job": {
+        "id": "14aecf3fb38c4647b6af975c44f057e6",
+        "state": "completed",
+        "outputs": [
+          {
+            "id": "8be317cc78794f3eb1bc66866d370477",
+            "document_id": "fc3bccee726946e99d8f702ebb26ace2",
+            "filename": "feature-input_已替换.docx"
+          }
+        ]
+      },
+      "outputs": [
+        {
+          "filename": "replace-0.docx",
+          "download_filename": "feature-input_已替换.docx",
+          "sha256": "e8e3f999dedd38c77e294a3b363617e54b5df9becd135cebb882254dd1c724e3"
+        }
+      ],
+      "status": "passed"
+    },
+    {
+      "id": "redheader",
+      "feature_id": "redheader",
+      "job": {
+        "id": "10afa11be1984ec685396bc61fbf692e",
+        "state": "completed",
+        "outputs": [
+          {
+            "id": "5bb8a965f84745d2b0703205773a0f94",
+            "document_id": "45ad3d814f9743c086b35462b0830ab0",
+            "filename": "feature-input_已套红.docx"
+          }
+        ]
+      },
+      "outputs": [
+        {
+          "filename": "redheader-0.docx",
+          "download_filename": "feature-input_已套红.docx",
+          "sha256": "7989a48017bc4298ea424627b530e64890badb241749a83b00ac8a1ddab5cdb6"
+        }
+      ],
+      "status": "passed"
+    },
+    {
+      "id": "rename",
+      "feature_id": "rename",
+      "job": {
+        "id": "394ae727af5048ffab186924aceef599",
+        "state": "completed",
+        "outputs": [
+          {
+            "id": "696385b21550444ca4a1ba754f073448",
+            "document_id": "d53e08e2484744e7a7deb703e9e072fe",
+            "filename": "格式文字-定稿.docx"
+          }
+        ]
+      },
+      "outputs": [
+        {
+          "filename": "rename-0.docx",
+          "download_filename": "格式文字-定稿.docx",
+          "sha256": "bd9447b44e1dd2af432291a23312bd1376f09ef91bee6e9c5874853f11e3fde7"
+        }
+      ],
+      "status": "passed"
+    },
+    {
+      "id": "convert-docx",
+      "feature_id": "convert",
+      "job": {
+        "id": "74c7caeb79ea4724a0316d9433ed8569",
+        "state": "completed",
+        "outputs": [
+          {
+            "id": "f98a3d1fc4a24ca988b113fead0fbf54",
+            "document_id": "d06448525f6e420dac3f3719048f76be",
+            "filename": "feature-input_已转换(1).docx"
+          }
+        ]
+      },
+      "outputs": [
+        {
+          "filename": "convert-docx-0.docx",
+          "download_filename": "feature-input_已转换(1).docx",
+          "sha256": "58fb585449a77803b01cec7975365a56c14bda8f9f3b6547de31522dd497a0b5"
+        }
+      ],
+      "status": "passed"
+    },
+    {
+      "id": "convert-pdf",
+      "feature_id": "convert",
+      "job": {
+        "id": "804c221418e64a9fb1202c5bbdc1ed5c",
+        "state": "completed",
+        "outputs": [
+          {
+            "id": "1f6f8633d94741bd88ef89a4afb48147",
+            "document_id": "dd6a685b8c1b41fc961a6735ef6194a1",
+            "filename": "feature-input_已转换.pdf"
+          }
+        ]
+      },
+      "outputs": [
+        {
+          "filename": "convert-pdf-0.pdf",
+          "download_filename": "feature-input_已转换.pdf",
+          "sha256": "d5050543ca21e0990f189d45f659836d3ef44db8a91b45c0b247383d97235b6b"
+        }
+      ],
+      "status": "passed"
+    },
+    {
+      "id": "convert-txt",
+      "feature_id": "convert",
+      "job": {
+        "id": "8e792e7caf7e414394837ec46f70446f",
+        "state": "completed",
+        "outputs": [
+          {
+            "id": "44019fec490044c7afbc15c63a020f5c",
+            "document_id": "4108bc0b1c8340c0a665c937672187ce",
+            "filename": "feature-input_已转换.txt"
+          }
+        ]
+      },
+      "outputs": [
+        {
+          "filename": "convert-txt-0.txt",
+          "download_filename": "feature-input_已转换.txt",
+          "sha256": "b17850cf886d94d345842a536cd631291e1fc7d56c4ad84876e35b6f50195402"
+        }
+      ],
+      "status": "passed"
+    },
+    {
+      "id": "convert-png",
+      "feature_id": "convert",
+      "job": {
+        "id": "929325e8ea8a4e1986d3536083b4498c",
+        "state": "completed",
+        "outputs": [
+          {
+            "id": "e6522a861aeb470abd4a4e0a15290545",
+            "document_id": "901b07432b624e08ada79a93578c34e3",
+            "filename": "feature-input-第1页.png"
+          }
+        ]
+      },
+      "outputs": [
+        {
+          "filename": "convert-png-0.png",
+          "download_filename": "feature-input-第1页.png",
+          "sha256": "53778b2a79ee25617a6e34d3c3d5dd7661177a0baa23ed50c9ecc7e6980a1b66"
+        }
+      ],
+      "status": "passed"
+    },
+    {
+      "id": "convert-jpg",
+      "feature_id": "convert",
+      "job": {
+        "id": "a759c85a55bb42a09d65e6fe6eea66fc",
+        "state": "completed",
+        "outputs": [
+          {
+            "id": "924a9cf52f104452b01883a5923ba51d",
+            "document_id": "7fb14dedd2014ea3b1fb0b6faffab6e2",
+            "filename": "feature-input-长图.jpg"
+          }
+        ]
+      },
+      "outputs": [
+        {
+          "filename": "convert-jpg-0.jpg",
+          "download_filename": "feature-input-长图.jpg",
+          "sha256": "324a55715e6c21984a3db376b156e8c3299a930da8c917a1a8013a397b43f5a3"
+        }
+      ],
+      "status": "passed"
+    },
+    {
+      "id": "pdf-to-word",
+      "feature_id": "pdf-to-word",
+      "job": {
+        "id": "63bb282538d34652a05c723275da0ab1",
+        "state": "completed",
+        "outputs": [
+          {
+            "id": "f2b27f94c7884a459804dd313f33f7c2",
+            "document_id": "8f3d8e6de83549a8be2c096011cb50c2",
+            "filename": "feature-input_已转换.docx"
+          }
+        ]
+      },
+      "outputs": [
+        {
+          "filename": "pdf-to-word-0.docx",
+          "download_filename": "feature-input_已转换.docx",
+          "sha256": "6a314058a5992e215518ce4cf73e216f409d4b2d5f21f66b7c884ce8d3e7c4c7"
+        }
+      ],
+      "status": "passed"
+    }
+  ]
+}

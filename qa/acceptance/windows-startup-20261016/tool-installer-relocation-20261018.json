@@ -1,0 +1,9 @@
+{
+  "time_utc": "2026-10-18T03:59:53.5790008Z",
+  "sha256": "F98A8AEB5F7FAEA9765B6DEE28316C266CD179D80354A2FED8E50176F9A2E59F",
+  "source": "D:\\PartyOps-VM-Lab\\downloads\\qemu-w64-setup-20260811.exe",
+  "verified": true,
+  "operation": "relocate-cached-tool-installer",
+  "bytes": 206615928,
+  "destination": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.qa\\relocated-tools-20261018\\qemu-w64-setup-20260811.exe"
+}

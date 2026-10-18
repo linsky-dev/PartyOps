@@ -1,0 +1,159 @@
+{
+  "stage": "font-render",
+  "error": "PDF_ACTUAL_FONT_GLYPHS_NOT_PROVEN",
+  "http_failures": [],
+  "last_request": {
+    "route": "/v1/sessions/{id}/jobs/{id}/outputs/{id}",
+    "method": "GET"
+  },
+  "safe_jobs": [
+    {
+      "id": "14aecf3fb38c4647b6af975c44f057e6",
+      "state": "completed",
+      "outputs": [
+        {
+          "id": "8be317cc78794f3eb1bc66866d370477",
+          "document_id": "fc3bccee726946e99d8f702ebb26ace2",
+          "filename": "feature-input_已替换.docx"
+        }
+      ]
+    },
+    {
+      "id": "10afa11be1984ec685396bc61fbf692e",
+      "state": "completed",
+      "outputs": [
+        {
+          "id": "5bb8a965f84745d2b0703205773a0f94",
+          "document_id": "45ad3d814f9743c086b35462b0830ab0",
+          "filename": "feature-input_已套红.docx"
+        }
+      ]
+    },
+    {
+      "id": "394ae727af5048ffab186924aceef599",
+      "state": "completed",
+      "outputs": [
+        {
+          "id": "696385b21550444ca4a1ba754f073448",
+          "document_id": "d53e08e2484744e7a7deb703e9e072fe",
+          "filename": "格式文字-定稿.docx"
+        }
+      ]
+    },
+    {
+      "id": "74c7caeb79ea4724a0316d9433ed8569",
+      "state": "completed",
+      "outputs": [
+        {
+          "id": "f98a3d1fc4a24ca988b113fead0fbf54",
+          "document_id": "d06448525f6e420dac3f3719048f76be",
+          "filename": "feature-input_已转换(1).docx"
+        }
+      ]
+    },
+    {
+      "id": "804c221418e64a9fb1202c5bbdc1ed5c",
+      "state": "completed",
+      "outputs": [
+        {
+          "id": "1f6f8633d94741bd88ef89a4afb48147",
+          "document_id": "dd6a685b8c1b41fc961a6735ef6194a1",
+          "filename": "feature-input_已转换.pdf"
+        }
+      ]
+    },
+    {
+      "id": "8e792e7caf7e414394837ec46f70446f",
+      "state": "completed",
+      "outputs": [
+        {
+          "id": "44019fec490044c7afbc15c63a020f5c",
+          "document_id": "4108bc0b1c8340c0a665c937672187ce",
+          "filename": "feature-input_已转换.txt"
+        }
+      ]
+    },
+    {
+      "id": "929325e8ea8a4e1986d3536083b4498c",
+      "state": "completed",
+      "outputs": [
+        {
+          "id": "e6522a861aeb470abd4a4e0a15290545",
+          "document_id": "901b07432b624e08ada79a93578c34e3",
+          "filename": "feature-input-第1页.png"
+        }
+      ]
+    },
+    {
+      "id": "a759c85a55bb42a09d65e6fe6eea66fc",
+      "state": "completed",
+      "outputs": [
+        {
+          "id": "924a9cf52f104452b01883a5923ba51d",
+          "document_id": "7fb14dedd2014ea3b1fb0b6faffab6e2",
+          "filename": "feature-input-长图.jpg"
+        }
+      ]
+    },
+    {
+      "id": "63bb282538d34652a05c723275da0ab1",
+      "state": "completed",
+      "outputs": [
+        {
+          "id": "f2b27f94c7884a459804dd313f33f7c2",
+          "document_id": "8f3d8e6de83549a8be2c096011cb50c2",
+          "filename": "feature-input_已转换.docx"
+        }
+      ]
+    },
+    {
+      "id": "d6e044109b624d01a15acae3287272f1",
+      "state": "completed",
+      "outputs": [
+        {
+          "id": "4216a41bea0943538d1f268858ec2673",
+          "document_id": "34df4e353feb4298b893bf21b05923ce",
+          "filename": "中文 空格1_已排版.docx"
+        },
+        {
+          "id": "ac9f288e720148d786b5a262ce8bc3aa",
+          "document_id": "9e6c644c0d72482d9d14fb1d39c525e2",
+          "filename": "中文 空格2_已排版.docx"
+        }
+      ]
+    },
+    {
+      "id": "758678c897524e0ab9ffec6c0a9544ce",
+      "state": "completed",
+      "outputs": [
+        {
+          "id": "f24f9447926d4ff4bb6aefd766667361",
+          "document_id": "d9ec202b09624c2b834c2e41f0d4f95c",
+          "filename": "expected-source-formatted_已转换.pdf"
+        },
+        {
+          "id": "e9d52ebbc85348ecb33fd9da2f692e79",
+          "document_id": "eb123520cefc4c88b7c9c902aa4ba04e",
+          "filename": "formatted-1_已转换.pdf"
+        },
+        {
+          "id": "0598d182b7b842f1b0b3615218900c72",
+          "document_id": "3adfcaee43bc4ddab27f6b5a450dd99e",
+          "filename": "formatted-2_已转换.pdf"
+        }
+      ]
+    },
+    {
+      "id": "97767b308a15400bb87e7b86bcee4d89",
+      "state": "completed",
+      "outputs": [
+        {
+          "id": "9e855f774d584412a07100468b44b444",
+          "document_id": "17b3f2a6f605440a9ed9c8b626398d80",
+          "filename": "five-font-witness_已转换.pdf"
+        }
+      ]
+    }
+  ],
+  "probe_sidecars": []
+}

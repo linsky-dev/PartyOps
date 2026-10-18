@@ -1,0 +1,138 @@
+{
+  "_source": "本次修复后唯一一次官方部署工具调用的原始公开回包留档。tool_result 逐字取自 workbuddy_sites_deploy 工具卡返回的结构化输出（structuredContent/content 正文），仅脱敏凭据类字段，未自造字段、未改写、未补写。",
+  "_tool_name": "workbuddy_sites_deploy",
+  "_call_count": 1,
+  "_max_calls_allowed": 1,
+  "_outcome": "success",
+  "_retry_performed": false,
+  "_retry_unchanged": false,
+  "_captured_at_local": "2026-10-18 18:55 (本机时区 GMT+8)",
+  "_intent_file": "batch/workbuddy-corrected-deployment.intent.json",
+  "_intent_status_before_call": "reserved-not-sent",
+  "_correction_evidence": "batch/token-mapping-correction.json",
+  "_prior_failure_preserved": "batch/workbuddy-deployment-raw.json（首次失败原回包，未被覆盖）",
+  "_e_drive_accessed": false,
+
+  "correction_context": {
+    "prior_call_outcome": "failed",
+    "prior_failure_code": "SITES_START_FAILED",
+    "prior_failure_cause": "BATCH_TOKENS_INVALID（_serve.js 第14行键集合/格式校验未通过）",
+    "correction_scope": "仅将 .upload-token 的 JSON 唯一键重绑为新候选文件名；token 值保持原样；_serve.js / index.html / upload-metadata.json / startCmd 等均未改动",
+    "candidate": "PartyOps_1.4.5-rc.6_windows_amd64_startup-20261018.exe",
+    "credential_output": false
+  },
+
+  "pre_call_verification": {
+    "receiver_directory": "C:/PartyOps-VM-Lab/windows-startup-repair-20261016/qa/acceptance/windows-startup-20261016/publication-windows-20261018/batch/receiver",
+    "file_count": 4,
+    "files": [".upload-token", "_serve.js", "index.html", "upload-metadata.json"],
+    "_serve_js_bytes": 10606,
+    "_serve_js_sha256_measured": "dd21e81cdc062261e54469ff333df4c0dabe28ed6e718e3b31353332738782e7",
+    "intent_receiver_sha256": "dd21e81cdc062261e54469ff333df4c0dabe28ed6e718e3b31353332738782e7",
+    "sha256_matches_intent": true,
+    "receiver_code_unchanged_vs_first_attempt": true,
+    "index_html_sha256": "b5c9d8adfb93522074e52488b07037fe484353af392906b1bb160c5048fc535b",
+    "upload_metadata_sha256": "2eab7763a91e4cf806c2ae643c32507f0de3422d360f88093d959050f8105ac5",
+    "upload_token_bytes": 126,
+    "upload_token_sha256": "4ebcafad810d0274bdbacf3bb016670b903744b83027ac32554ece65197a6680",
+    "upload_token_mtime_local": "2026-10-18 18:54",
+    "upload_token_content_read": false,
+    "upload_token_content_output": false,
+    "note": "令牌文件仅登记大小与摘要，内容未读取、未输出。"
+  },
+
+  "tool_input": {
+    "action": "deploy",
+    "directory": "C:/PartyOps-VM-Lab/windows-startup-repair-20261016/qa/acceptance/windows-startup-20261016/publication-windows-20261018/batch/receiver",
+    "language": "node",
+    "port": 3000,
+    "installCmd": "",
+    "startCmd": "ROOT=/workspace node /workspace/_serve.js",
+    "entryHtml": "index.html",
+    "appName": "partyops-rc6-fixed-eight",
+    "domainPrefix": "partyops-rc6-fixed-eight",
+    "userAskedToPublish": true
+  },
+
+  "tool_result": {
+    "type": "sites_deploy_result",
+    "sandboxId": "340f98bdbde44864a9730ff6fb58b993",
+    "shareLink": "https://partyops-rc6-win7-x86.app.workbuddy.host/",
+    "verified": true,
+    "deployedAs": "http-service",
+    "message": "发布成功，访问链接: https://partyops-rc6-win7-x86.app.workbuddy.host/。"
+  },
+
+  "post_deploy_readback": {
+    "checked_at_local": "2026-10-18 18:56 (本机时区 GMT+8)",
+    "health": {
+      "url": "https://partyops-rc6-win7-x86.app.workbuddy.host/health",
+      "http_status": 200,
+      "content_type": "application/json; charset=utf-8",
+      "body_file": "batch/health-after-corrected-deploy.json",
+      "ok": true,
+      "version": "1.4.5-rc.6",
+      "receiver": "windows-startup-20261018-v1",
+      "manifest_sha256_reported": "9e314cbfa1c5d604ad0f24dd8525b0afcda4f511f1cd8d4571114be1061298ee"
+    },
+    "manifest": {
+      "expected": "9e314cbfa1c5d604ad0f24dd8525b0afcda4f511f1cd8d4571114be1061298ee",
+      "reported": "9e314cbfa1c5d604ad0f24dd8525b0afcda4f511f1cd8d4571114be1061298ee",
+      "matches": true
+    },
+    "sandbox": {
+      "expected": "340f98bdbde44864a9730ff6fb58b993",
+      "returned": "340f98bdbde44864a9730ff6fb58b993",
+      "matches": true,
+      "new_app_created": false
+    },
+    "base_url": {
+      "expected": "https://partyops-rc6-win7-x86.app.workbuddy.host",
+      "returned": "https://partyops-rc6-win7-x86.app.workbuddy.host/",
+      "matches": true
+    },
+    "ten_old_files": {
+      "summary": "10/10 file_ready=true 且 reused=true，Range 回读全部 206",
+      "range_probe": "GET /downloads/<name> with Range: bytes=0-0",
+      "items": [
+        {"file_name": "PartyOps-1.4.5-0.rc.6.1.aarch64.rpm", "bytes": 763753980, "file_ready": true, "reused": true, "range_status": 206, "content_type": "application/octet-stream"},
+        {"file_name": "PartyOps-1.4.5-0.rc.6.1.x86_64.rpm", "bytes": 790114068, "file_ready": true, "reused": true, "range_status": 206, "content_type": "application/octet-stream"},
+        {"file_name": "PartyOps_1.4.5-rc.6_linux_amd64.deb", "bytes": 366480042, "file_ready": true, "reused": true, "range_status": 206, "content_type": "application/octet-stream"},
+        {"file_name": "PartyOps_1.4.5-rc.6_linux_loong64.deb", "bytes": 302195420, "file_ready": true, "reused": true, "range_status": 206, "content_type": "application/octet-stream"},
+        {"file_name": "PartyOps_1.4.5-rc.6_windows7_amd64.exe", "bytes": 489713934, "file_ready": true, "reused": true, "range_status": 206, "content_type": "application/octet-stream"},
+        {"file_name": "PartyOps_1.4.5-rc.6_windows7_x86.exe", "bytes": 457500557, "file_ready": true, "reused": true, "range_status": 206, "content_type": "application/octet-stream"},
+        {"file_name": "PartyOps_1.4.5-rc.6_windows_amd64.exe", "bytes": 443690896, "file_ready": true, "reused": true, "range_status": 206, "content_type": "application/octet-stream"},
+        {"file_name": "PartyOps_1.4.5-rc.6_macos_x86_64-UNSIGNED-UNNOTARIZED-CANDIDATE.pkg", "bytes": 564985557, "file_ready": true, "reused": true, "range_status": 206, "content_type": "application/octet-stream"},
+        {"file_name": "PartyOps_1.4.5-rc.6_macos_arm64-UNSIGNED-UNNOTARIZED-CANDIDATE.pkg", "bytes": 588743660, "file_ready": true, "reused": true, "range_status": 206, "content_type": "application/octet-stream"},
+        {"file_name": "PartyOps_1.4.5-rc.6_linux_arm64_kylin-full-20261016.deb", "bytes": 352447304, "file_ready": true, "reused": true, "range_status": 206, "content_type": "application/octet-stream"}
+      ]
+    },
+    "new_candidate": {
+      "file_name": "PartyOps_1.4.5-rc.6_windows_amd64_startup-20261018.exe",
+      "bytes": 449988807,
+      "file_ready": false,
+      "reused": false,
+      "route_status": 404,
+      "note": "候选文件保留在 metadata 中但未上传，下载路由暂不可用，符合本轮不上传 exe 的约束。"
+    }
+  },
+
+  "_redaction": {
+    "credentials_removed": true,
+    "token_recorded": false,
+    "token_value_anywhere_in_file": false,
+    "session_keys_recorded": false,
+    "authorization_headers_recorded": false,
+    "fields_fabricated": false
+  },
+
+  "_not_done": [
+    "未上传 exe 或任何安装包",
+    "未修改官网 / GitHub",
+    "未删除任何包",
+    "未修改 receiver 任何文件（除主控已完成的 token 键名修正）",
+    "未访问 E 盘，未读业务数据",
+    "未输出任何令牌或凭据",
+    "未发生第二次调用"
+  ]
+}

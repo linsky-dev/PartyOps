@@ -1,0 +1,16 @@
+{
+  "state": 4,
+  "original_user_matches": false,
+  "user": "partyopsuser",
+  "name": "PartyOps-QA-Restore-Personal-20261017",
+  "logon_type": 3,
+  "last_run": "2026-10-17T06:28:45.0000000Z",
+  "actions": [
+    {
+      "path": "C:\\PartyOps QA\\中文 程序\\PartyOpsWizard.exe",
+      "arguments": "--reconfigure --initial-role personal",
+      "working_directory": "C:\\PartyOps QA\\中文 程序"
+    }
+  ],
+  "run_level": 0
+}

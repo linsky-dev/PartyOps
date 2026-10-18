@@ -1,0 +1,22 @@
+[
+ {
+  "RuleID": "generic-api-key",
+  "Description": "Detected a Generic API Key, potentially exposing access to various services and sensitive operations.",
+  "StartLine": 753,
+  "EndLine": 753,
+  "StartColumn": 17,
+  "EndColumn": 62,
+  "Match": "token\": \"REDACTED;",
+  "Secret": "REDACTED",
+  "File": ".build-kit/vs2022/Common7/IDE/CommonExtensions/Microsoft/Identity/ServiceHub/IdentityService/Microsoft.Developer.IdentityService.Core.xml",
+  "SymlinkFile": "",
+  "Commit": "",
+  "Entropy": 4.2045116,
+  "Author": "",
+  "Email": "",
+  "Date": "",
+  "Message": "",
+  "Tags": [],
+  "Fingerprint": ".build-kit/vs2022/Common7/IDE/CommonExtensions/Microsoft/Identity/ServiceHub/IdentityService/Microsoft.Developer.IdentityService.Core.xml:generic-api-key:753"
+ }
+]

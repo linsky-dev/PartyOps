@@ -1,0 +1,153 @@
+{
+  "base_url": "https://partyops-cn-overseas-dpqpl8nic6uu.edgeone.dev",
+  "phase": "preview",
+  "confirmed_at": "2026-10-18T11:26:10.220078+00:00",
+  "all_passed": true,
+  "checks": [
+    {
+      "route": "/",
+      "status": 200,
+      "bytes": 1601,
+      "sha256": "083fd4dbc152cb9b2b08f91c67e9db526301d798e0a6d1dfddb71f94bbae6c4f",
+      "matches_local": true
+    },
+    {
+      "route": "/admin",
+      "status": 200,
+      "bytes": 1601,
+      "sha256": "083fd4dbc152cb9b2b08f91c67e9db526301d798e0a6d1dfddb71f94bbae6c4f",
+      "matches_local": true
+    },
+    {
+      "route": "/changelog",
+      "status": 200,
+      "bytes": 1601,
+      "sha256": "083fd4dbc152cb9b2b08f91c67e9db526301d798e0a6d1dfddb71f94bbae6c4f",
+      "matches_local": true
+    },
+    {
+      "route": "/releases/v1.4.5-rc.6/release-manifest.json",
+      "status": 200,
+      "bytes": 41663,
+      "sha256": "4355fe1dcd2dcb49ccf9f82a406cbd44d883d3166f0c54987751b4c376a71cdb",
+      "matches_local": true
+    },
+    {
+      "route": "/releases/v1.4.5-rc.6/release-manifest-kylin-arm64-20261016.json",
+      "status": 200,
+      "bytes": 51963,
+      "sha256": "b52807452932502a5f05a10eb609c87345fabe4addb17d3ffeae3a673e0d0e57",
+      "matches_local": true
+    },
+    {
+      "route": "/releases/v1.4.5-rc.6/kylin-installation-20261016.zh-CN.md",
+      "status": 200,
+      "bytes": 1683,
+      "sha256": "0e680604c937c67b982e9981229de3292305e62850a6f1c8e00a75a24039dcae",
+      "matches_local": true
+    },
+    {
+      "route": "/releases/v1.4.5-rc.6/release-manifest-windows-startup-20261018.json",
+      "status": 200,
+      "bytes": 67097,
+      "sha256": "9e314cbfa1c5d604ad0f24dd8525b0afcda4f511f1cd8d4571114be1061298ee",
+      "matches_local": true
+    },
+    {
+      "route": "/releases/v1.4.5-rc.6/windows-installation-20261018.zh-CN.md",
+      "status": 200,
+      "bytes": 1937,
+      "sha256": "c3d621ad6ae8e1cdd98d0af6f1e5e9641a53050f7b142ffca046b58ddcefc81a",
+      "matches_local": true
+    },
+    {
+      "route": "/assets/index-6ixHavA-.js",
+      "status": 200,
+      "bytes": 210704,
+      "sha256": "27f66ffe3a9b4b0a127e91f632d8a537eaa1c20e4b1bba0f51fb986a018bb48c",
+      "matches_local": true
+    },
+    {
+      "route": "/assets/react-vendor-IsLpfBRF.js",
+      "status": 200,
+      "bytes": 193814,
+      "sha256": "c2cb0ceafefcebcb1ad3177cbc87a9ef816206a08b29ca38c15e2ff715eaf155",
+      "matches_local": true
+    },
+    {
+      "route": "/assets/motion-vendor-BeK8cLg2.js",
+      "status": 200,
+      "bytes": 138455,
+      "sha256": "6563118ab2d03502213bf74cc556cec4fbb16fc2cdb454bae64f597f8bc9b169",
+      "matches_local": true
+    },
+    {
+      "route": "/assets/icons-vendor-DzrlgPGS.js",
+      "status": 200,
+      "bytes": 109748,
+      "sha256": "5fd0f33a9a3783a0367b9e32642886080227ad2d7bb8f8962ed7b78f25b61593",
+      "matches_local": true
+    },
+    {
+      "route": "/assets/index-Ctu6mBsb.css",
+      "status": 200,
+      "bytes": 68285,
+      "sha256": "da46422ba0456474244d32d6fc759858054edc899df021c76c610248c47be7dd",
+      "matches_local": true
+    },
+    {
+      "route": "/api/reviews",
+      "status": 200,
+      "json_keys": [
+        "items",
+        "total"
+      ],
+      "body_sha256": "4bf7c8639bc34bbbae5aef4aba3c724f9a425cbdc0416ab6384f7745ae1acb96",
+      "expected_status": true
+    },
+    {
+      "route": "/api/sponsors",
+      "status": 200,
+      "json_keys": [
+        "items",
+        "total",
+        "updatedAt",
+        "stale"
+      ],
+      "body_sha256": "62022e9db0b9259436b58d81e9acde4dba04991d67dfc91d44bb615aef414249",
+      "expected_status": true
+    },
+    {
+      "route": "/api/download-count",
+      "status": 200,
+      "json_keys": [
+        "count",
+        "baseline",
+        "source"
+      ],
+      "body_sha256": "d09e6e9359a1bc71a31d42839e2da9fbf472f1b6066b9f04122070882ef51dad",
+      "expected_status": true
+    },
+    {
+      "route": "/api/admin/session",
+      "status": 200,
+      "json_keys": [
+        "authenticated"
+      ],
+      "body_sha256": "3e58c6fcf10a31770582814c2babfd1ff71bb1a72cae32cdb1c1a428f406d47f",
+      "expected_status": true
+    },
+    {
+      "route": "/api/admin/sponsors",
+      "status": 401,
+      "json_keys": [
+        "error"
+      ],
+      "body_sha256": "a1bd50f002121e22ead2ffb4946b8c944a8bcfefee37192d6933c89f79185d8d",
+      "expected_status": true
+    }
+  ],
+  "operations": "public GET only",
+  "inventory_sha256": "980f75260a133008031920956ec9d576bff1b0ecd86c872c8ad44766f4b69c21",
+  "deployment_result_sha256": "9dd5d6b82bea12cfc960905f4ddf2a7a4b22a83a5eab614c72cad74db580660c"
+}

@@ -1,0 +1,19 @@
+{
+  "date": "2026-10-18",
+  "status": "controller-review-passed-not-guest-acceptance",
+  "reviewer": "formatter_qa_review",
+  "independent_readonly_tests_passed": 9,
+  "implementer_offline_tests_passed": 13,
+  "remaining_four_test_review": "涉及临时文件写入的四项已静态复核，独立审查未重跑",
+  "review_scope": [
+    "同一Guest UUID与实际D盘系统盘",
+    "旧包起点及新候选与正式构建证据绑定",
+    "原业务基线和备份只读",
+    "安装、停止、启动、重启均独占记录attempt；未知结果不重放",
+    "精确进程身份与端口归属",
+    "正常关机启动及原业务数据保留验证路径"
+  ],
+  "guest_access_performed": false,
+  "new_candidate_built": false,
+  "device_acceptance_passed": false
+}

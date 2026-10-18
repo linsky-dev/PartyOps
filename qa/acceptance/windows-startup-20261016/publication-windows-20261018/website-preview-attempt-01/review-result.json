@@ -1,0 +1,14 @@
+{
+  "time": "2026-10-18T19:22:06.1624045+08:00",
+  "deployment": "dp66wy39jegp",
+  "reason": "new Windows link/hash valid but card rendered obsolete acceptance metadata",
+  "production_changed": false,
+  "status": "preview-rejected-before-production",
+  "retained_files": [
+    "website-frozen-files.json",
+    "website-preview.intent.json",
+    "website-preview-result.json",
+    "website-preview.log",
+    "preview-website-readback.json"
+  ]
+}

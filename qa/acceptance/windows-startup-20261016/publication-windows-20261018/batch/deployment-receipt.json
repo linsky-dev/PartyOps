@@ -1,0 +1,21 @@
+{
+  "status": "received",
+  "binding": {
+    "filename": "PartyOps_1.4.5-rc.6_windows_amd64_startup-20261018.exe",
+    "bytes": 449988807,
+    "package_sha256": "e3e2ea45ccd38acff059b5713826a78f998a56ccef75341633f67bd4e17e57da",
+    "manifest_sha256": "9e314cbfa1c5d604ad0f24dd8525b0afcda4f511f1cd8d4571114be1061298ee",
+    "baseline_manifest_sha256": "b52807452932502a5f05a10eb609c87345fabe4addb17d3ffeae3a673e0d0e57",
+    "receiver": "windows-startup-20261018-v1",
+    "publication_authorized": true,
+    "formal_release_ready": true,
+    "evidence_sha256": "9dc3fd8a39d4f03d791ce2c2af568f7d3607c84859858ab7f98a37f9c3297ef4"
+  },
+  "base_url": "https://partyops-rc6-win7-x86.app.workbuddy.host",
+  "sandbox_id": "340f98bdbde44864a9730ff6fb58b993",
+  "current_backend_preflight_verified": true,
+  "preflight_route": "official WorkBuddy UI task tool schema and exact target; local connector unavailable",
+  "official_raw_sha256": "ba796e73ce7898ef9f614b9cb0451c41cff3681cdbc3a2cbb2451e1a78b73415",
+  "main_health_sha256": "7dba5cf9cc6dded8b3bca2d8a84911d00dd0bdedebe2f86359b53a92d80ecc46",
+  "observed_at": "2026-10-18T10:58:14.476714+00:00"
+}

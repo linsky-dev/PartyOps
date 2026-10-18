@@ -1,0 +1,15 @@
+{
+  "synthetic_only": true,
+  "files": [
+    {
+      "name": "formatted-1.docx",
+      "sha256": "f42d22d7ff69b47efeb80ebf2593754dc9dab3f167ed15c5e4738153f393a477",
+      "guest_path": "C:/Users/Public/Documents/PartyOps-QA-format-20261018/formatted-1.docx"
+    },
+    {
+      "name": "five-font-witness.docx",
+      "sha256": "d937714d44014b6611f514f81e3c56c176aca5124f5b08f2edf6993783dbac89",
+      "guest_path": "C:/Users/Public/Documents/PartyOps-QA-format-20261018/five-font-witness.docx"
+    }
+  ]
+}

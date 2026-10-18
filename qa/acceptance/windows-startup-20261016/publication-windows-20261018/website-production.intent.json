@@ -1,0 +1,17 @@
+{
+  "command": [
+    "npx.cmd",
+    "--offline",
+    "edgeone@1.6.28",
+    "makers",
+    "deploy",
+    "C:\\PartyOps-VM-Lab\\website-recovered-20261014\\dist\\edgeone",
+    "-n",
+    "partyops-cn-overseas",
+    "-e",
+    "production"
+  ],
+  "inventory_sha256": "980f75260a133008031920956ec9d576bff1b0ecd86c872c8ad44766f4b69c21",
+  "at": "2026-10-18T11:27:02.323918+00:00",
+  "repeat_allowed": false
+}

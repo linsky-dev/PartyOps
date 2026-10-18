@@ -1,0 +1,84 @@
+{
+  "_source": "本次 Win10 完整包接收器发布唯一一次官方部署工具调用的原始公开回包留档。tool_result 逐字取自 workbuddy_sites_deploy 工具卡返回的结构化输出（structuredContent/content 正文），未经聊天重造、未改写、未补写。已排除 token、授权头、context 与会话密钥。未知结果不会重发，不伪造通过回执。",
+  "_tool_name": "workbuddy_sites_deploy",
+  "_call_count": 1,
+  "_max_calls_allowed": 1,
+  "_captured_at_local": "2026-10-18 15:18 (本机时区 GMT+8)",
+  "_intent_file": "batch/workbuddy-deployment.intent.json",
+  "_intent_status_before_call": "reserved-not-sent",
+  "_intent_unknown_outcome_no_retry": true,
+  "_e_drive_accessed": false,
+
+  "pre_call_verification": {
+    "binding_publication_authorized": true,
+    "binding_formal_release_ready": true,
+    "binding_formal_gate": "FULL_FUNCTION_GATE_PASSED",
+    "intent_expected_sandbox": "340f98bdbde44864a9730ff6fb58b993",
+    "intent_expected_base_url": "https://partyops-rc6-win7-x86.app.workbuddy.host",
+    "receiver_directory": "C:/PartyOps-VM-Lab/windows-startup-repair-20261016/qa/acceptance/windows-startup-20261016/publication-windows-20261017/batch/receiver",
+    "file_count": 4,
+    "files": [".upload-token", "_serve.js", "index.html", "upload-metadata.json"],
+    "_serve_js_bytes": 10499,
+    "_serve_js_sha256": "5eee68e8b5d3e123f9abfd1a1ec2f1748d97b33c22ce4c04f0de86a2119bf79d",
+    "binding_receiver_sha256": "5eee68e8b5d3e123f9abfd1a1ec2f1748d97b33c22ce4c04f0de86a2119bf79d",
+    "sha256_matches_binding": true,
+    "token_content_read": false,
+    "token_content_output": false
+  },
+
+  "tool_input": {
+    "action": "deploy",
+    "directory": "C:/PartyOps-VM-Lab/windows-startup-repair-20261016/qa/acceptance/windows-startup-20261016/publication-windows-20261017/batch/receiver",
+    "language": "node",
+    "port": 3000,
+    "installCmd": "",
+    "startCmd": "ROOT=/workspace node /workspace/_serve.js",
+    "entryHtml": "index.html",
+    "appName": "partyops-rc6-fixed-eight",
+    "domainPrefix": "partyops-rc6-fixed-eight",
+    "userAskedToPublish": true
+  },
+
+  "tool_result": {
+    "type": "sites_deploy_result",
+    "sandboxId": "340f98bdbde44864a9730ff6fb58b993",
+    "shareLink": "https://partyops-rc6-win7-x86.app.workbuddy.host/",
+    "verified": true,
+    "deployedAs": "http-service",
+    "error": null,
+    "code": null,
+    "retryable": null,
+    "message": "发布成功，访问链接: https://partyops-rc6-win7-x86.app.workbuddy.host/。"
+  },
+
+  "audit_check": {
+    "expected_sandbox_id": "340f98bdbde44864a9730ff6fb58b993",
+    "returned_sandbox_id": "340f98bdbde44864a9730ff6fb58b993",
+    "sandbox_matches": true,
+    "expected_base_url": "https://partyops-rc6-win7-x86.app.workbuddy.host",
+    "returned_share_link": "https://partyops-rc6-win7-x86.app.workbuddy.host/",
+    "url_matches": true,
+    "status": "success",
+    "new_app_created": false,
+    "parameters_tweaked_for_retry": false,
+    "retry_performed": false,
+    "conclusion": "沿用既有应用、既有 sandbox 与既有域名，发布成功。"
+  },
+
+  "_redaction": {
+    "token_recorded": false,
+    "session_keys_recorded": false,
+    "authorization_headers_recorded": false,
+    "context_recorded": false,
+    "credentials_output": false,
+    "e_drive_accessed": false
+  },
+
+  "_not_done_by_this_call": [
+    "未上传安装包或分块",
+    "未更新官网 / GitHub",
+    "未删除任何远端文件",
+    "未新建应用或付费资源",
+    "未改参数重试，未第二次调用"
+  ]
+}

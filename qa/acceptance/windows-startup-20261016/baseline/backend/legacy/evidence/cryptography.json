@@ -1,0 +1,27 @@
+{
+  "component": "cryptography",
+  "version": "50.0.0+partyops.1",
+  "source_commit": "dcb7050b807b00392fa9fe2eac7cb362fcf355cc",
+  "source_archive_sha256": "eeac2acb5a20ed25e0ad6d1df9891a520b78b404266b6d11778f25d5d691a6c9",
+  "upstream_security_commits": [
+    "cryptography 官方 50.0.0 标签 dcb7050b807b00392fa9fe2eac7cb362fcf355cc",
+    "OpenSSL 3.0.21 官方源码 SHA-256 617e29af8e421f46649484a4937e48c685e47f46488167c982f88bc4ec1d522f"
+  ],
+  "build_parameters": {
+    "python": "CPython 3.8.10",
+    "rust": "nightly-2026-08-16，使用 build-std",
+    "targets": ["x86_64-win7-windows-msvc", "i686-win7-windows-msvc"],
+    "windows_api_floor": "_WIN32_WINNT=0x0601",
+    "openssl": "3.0.21 static",
+    "patch": "../patches/cryptography-50.0.0-partyops-win7.patch",
+    "patch_sha256": "dd12813eb095e4d7aeba7668696647ce2db625c68a159bffc4968daf7c182760"
+  },
+  "wheel_sha256": {
+    "win_amd64": "16193aa10502f380fb3e19b4db420ba3ef4e9daf298df66d53c9ce2a767e8970",
+    "win32": "ac450f1492dd06b59c1b2d1710345e19a4f524d41f1c05e16bd1384703efa7fc"
+  },
+  "sbom": "cryptography.sbom.cdx.json",
+  "vex": "cryptography.vex.cdx.json",
+  "vulnerability_reproduction": "cryptography.reproduction.json",
+  "post_fix_test": "cryptography.post-fix.json"
+}

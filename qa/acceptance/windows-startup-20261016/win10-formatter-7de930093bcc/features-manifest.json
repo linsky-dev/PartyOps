@@ -1,0 +1,196 @@
+{
+  "fixture_generator_sha256": "8533b513c0ec58857940069efdc29d0fd44a4545ffb619422419af4639c67da8",
+  "cases": [
+    {
+      "id": "replace",
+      "feature_id": "replace",
+      "source": "feature-input.docx",
+      "sha256": "b06294888454e94781ed048b084391eb72e9958260099cbe7ff119c81c504e75",
+      "options": {
+        "compatibility_mode": "wps",
+        "plan_name": "E2E 四模式",
+        "rules": [
+          {
+            "mode": "text",
+            "find": "旧称",
+            "replace": "新称"
+          },
+          {
+            "mode": "regex",
+            "find": "2026年",
+            "replace": "二〇二六年"
+          },
+          {
+            "mode": "wildcard",
+            "find": "第[0-9]{1,}条",
+            "replace": "条款"
+          },
+          {
+            "mode": "format",
+            "find": "宋体",
+            "font_name": "黑体",
+            "font_size": 18,
+            "alignment": "center"
+          }
+        ]
+      },
+      "extension": ".docx",
+      "contains": [
+        "新称",
+        "二〇二六年",
+        "条款",
+        "格式文字"
+      ],
+      "excludes": [
+        "旧称",
+        "2026年",
+        "第12条"
+      ]
+    },
+    {
+      "id": "redheader",
+      "feature_id": "redheader",
+      "source": "feature-input.docx",
+      "sha256": "b06294888454e94781ed048b084391eb72e9958260099cbe7ff119c81c504e75",
+      "options": {
+        "compatibility_mode": "wps",
+        "document_type": "down",
+        "copy_number": "1",
+        "security": "秘密★10年",
+        "urgency": "加急",
+        "agency": "中共测试市委文件",
+        "document_number": "测试党发〔2026〕12号",
+        "signatory": "",
+        "imprint": "中共测试市委办公室"
+      },
+      "extension": ".docx",
+      "contains": [
+        "中共测试市委文件",
+        "测试党发〔2026〕12号",
+        "中共测试市委办公室"
+      ],
+      "excludes": []
+    },
+    {
+      "id": "rename",
+      "feature_id": "rename",
+      "source": "feature-input.docx",
+      "sha256": "b06294888454e94781ed048b084391eb72e9958260099cbe7ff119c81c504e75",
+      "options": {
+        "compatibility_mode": "wps",
+        "parts": [
+          "title",
+          "custom"
+        ],
+        "custom_text": "定稿",
+        "separator": "-",
+        "rotation_words": ""
+      },
+      "extension": ".docx",
+      "contains": [],
+      "excludes": []
+    },
+    {
+      "id": "convert-docx",
+      "feature_id": "convert",
+      "source": "feature-input.docx",
+      "sha256": "b06294888454e94781ed048b084391eb72e9958260099cbe7ff119c81c504e75",
+      "options": {
+        "compatibility_mode": "wps",
+        "target_format": "docx",
+        "image_mode": "pages",
+        "page_selection": "all",
+        "dpi": 144,
+        "same_name_policy": "auto-rename"
+      },
+      "extension": ".docx",
+      "contains": [],
+      "excludes": []
+    },
+    {
+      "id": "convert-pdf",
+      "feature_id": "convert",
+      "source": "feature-input.docx",
+      "sha256": "b06294888454e94781ed048b084391eb72e9958260099cbe7ff119c81c504e75",
+      "options": {
+        "compatibility_mode": "wps",
+        "target_format": "pdf",
+        "image_mode": "pages",
+        "page_selection": "all",
+        "dpi": 144,
+        "same_name_policy": "auto-rename"
+      },
+      "extension": ".pdf",
+      "contains": [],
+      "excludes": []
+    },
+    {
+      "id": "convert-txt",
+      "feature_id": "convert",
+      "source": "feature-input.docx",
+      "sha256": "b06294888454e94781ed048b084391eb72e9958260099cbe7ff119c81c504e75",
+      "options": {
+        "compatibility_mode": "wps",
+        "target_format": "txt",
+        "image_mode": "pages",
+        "page_selection": "all",
+        "dpi": 144,
+        "same_name_policy": "auto-rename"
+      },
+      "extension": ".txt",
+      "contains": [
+        "正文内容"
+      ],
+      "excludes": []
+    },
+    {
+      "id": "convert-png",
+      "feature_id": "convert",
+      "source": "feature-input.docx",
+      "sha256": "b06294888454e94781ed048b084391eb72e9958260099cbe7ff119c81c504e75",
+      "options": {
+        "compatibility_mode": "wps",
+        "target_format": "png",
+        "image_mode": "pages",
+        "page_selection": "all",
+        "dpi": 144,
+        "same_name_policy": "auto-rename"
+      },
+      "extension": ".png",
+      "contains": [],
+      "excludes": []
+    },
+    {
+      "id": "convert-jpg",
+      "feature_id": "convert",
+      "source": "feature-input.docx",
+      "sha256": "b06294888454e94781ed048b084391eb72e9958260099cbe7ff119c81c504e75",
+      "options": {
+        "compatibility_mode": "wps",
+        "target_format": "jpg",
+        "image_mode": "long",
+        "page_selection": "all",
+        "dpi": 144,
+        "same_name_policy": "auto-rename"
+      },
+      "extension": ".jpg",
+      "contains": [],
+      "excludes": []
+    },
+    {
+      "id": "pdf-to-word",
+      "feature_id": "pdf-to-word",
+      "source": "feature-input.pdf",
+      "sha256": "324f5736d1eafb500c39037ed75f0acb742810a1d41cd129e92668a58ebd5243",
+      "options": {
+        "compatibility_mode": "wps",
+        "normalize_punctuation": true
+      },
+      "extension": ".docx",
+      "contains": [
+        "PartyOps"
+      ],
+      "excludes": []
+    }
+  ]
+}

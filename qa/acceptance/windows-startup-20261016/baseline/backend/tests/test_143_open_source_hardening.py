@@ -1,0 +1,252 @@
+"""开源发布前的安全边界回归测试。"""
+
+from __future__ import annotations
+
+import base64
+import json
+import stat
+import zipfile
+from pathlib import Path
+
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from fastapi import Request
+
+from app.ai_service import validate_provider_url
+from app.backups import _safe_zip_members, verify_backup
+from app.config import Settings, get_settings
+from app.content_security import may_render_inline
+from app.database import db_runtime
+from app.device_versions import request_device
+from app.intake import MAX_PDF_PAGES, _extract_pdf, extract_path_content
+from app.model_packs import _manifest_signature_valid as model_signature_valid
+from app.models import Device
+from app.problems import ProblemException
+from app.routers.updates import _manifest_signature_valid as update_signature_valid
+from app.spreadsheet_security import safe_spreadsheet_cell, safe_spreadsheet_row
+
+
+def test_presentation_xml_entities_are_rejected(tmp_path) -> None:
+    """回归：不可信 Office XML 不能触发实体扩展。"""
+
+    presentation = tmp_path / "unsafe.pptx"
+    with zipfile.ZipFile(presentation, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr(
+            "ppt/slides/slide1.xml",
+            """<?xml version="1.0"?>
+<!DOCTYPE slide [<!ENTITY payload "expanded">]>
+<p:sld xmlns:p="urn:p" xmlns:a="urn:a"><a:t>&payload;</a:t></p:sld>
+""",
+        )
+
+    result = extract_path_content(presentation)
+
+    assert result.content_status == "error"
+    assert result.error_code == "CONTENT_PARSE_FAILED"
+    assert "expanded" not in result.text
+
+
+def test_default_environment_is_fail_secure() -> None:
+    assert Settings.model_fields["environment"].default == "production"
+
+
+def test_package_cannot_trust_its_own_signing_key(monkeypatch) -> None:
+    """回归：包内自声明公钥不能把恶意更新或可执行模型变成可信包。"""
+
+    private_key = Ed25519PrivateKey.generate()
+    public_key = private_key.public_key().public_bytes(
+        encoding=serialization.Encoding.Raw,
+        format=serialization.PublicFormat.Raw,
+    )
+    manifest = {
+        "format": "partyops-update",
+        "format_version": 2,
+        "version": "9.9.9",
+        "public_key": base64.b64encode(public_key).decode("ascii"),
+    }
+    canonical = json.dumps(
+        manifest,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    manifest["signature"] = base64.b64encode(private_key.sign(canonical)).decode("ascii")
+    settings = get_settings()
+    monkeypatch.setattr(settings, "environment", "test")
+    monkeypatch.setattr(settings, "update_public_key", "")
+    monkeypatch.setattr(settings, "model_pack_public_key", "")
+
+    assert update_signature_valid(manifest) is False
+    assert model_signature_valid(manifest) is False
+
+
+def test_backup_rejects_symlink_member(tmp_path) -> None:
+    archive_path = tmp_path / "symlink.partyops-backup"
+    with zipfile.ZipFile(archive_path, "w") as archive:
+        link = zipfile.ZipInfo("attachments/link")
+        link.create_system = 3
+        link.external_attr = (stat.S_IFLNK | 0o777) << 16
+        archive.writestr(link, "../../outside")
+    with zipfile.ZipFile(archive_path) as archive:
+        try:
+            _safe_zip_members(archive, tmp_path / "output")
+        except ProblemException as exc:
+            assert exc.code == "BACKUP_PATH_INVALID"
+        else:  # pragma: no cover - 安全回归失败时给出清晰断言
+            raise AssertionError("符号链接成员必须被拒绝")
+
+
+def test_backup_rejects_non_array_manifest_files(tmp_path) -> None:
+    archive_path = tmp_path / "invalid.partyops-backup"
+    manifest = {
+        "format": "partyops-backup",
+        "format_version": 1,
+        "schema_version": "0018",
+        "files": {"path": "database/partyops.db"},
+    }
+    with zipfile.ZipFile(archive_path, "w") as archive:
+        archive.writestr("manifest.json", json.dumps(manifest))
+    try:
+        verify_backup(archive_path)
+    except ProblemException as exc:
+        assert exc.code == "BACKUP_MANIFEST_INVALID"
+    else:  # pragma: no cover
+        raise AssertionError("非数组文件清单必须被拒绝")
+
+
+def test_spreadsheet_cells_never_export_untrusted_formulas() -> None:
+    values = ["=HYPERLINK(\"https://attacker.invalid\")", " +1+1", "@SUM(A1:A2)", "正常文字", 7]
+    protected = safe_spreadsheet_row(values)
+    assert protected[:3] == [
+        "'=HYPERLINK(\"https://attacker.invalid\")",
+        "' +1+1",
+        "'@SUM(A1:A2)",
+    ]
+    assert protected[3:] == ["正常文字", 7]
+    assert safe_spreadsheet_cell("-2+3") == "'-2+3"
+
+
+def test_active_xml_content_is_never_rendered_inline() -> None:
+    assert may_render_inline("image/png") is True
+    assert may_render_inline("application/pdf") is True
+    assert may_render_inline("image/svg+xml") is False
+    assert may_render_inline("text/html") is False
+
+
+def test_ai_provider_ssrf_boundary() -> None:
+    assert validate_provider_url("http://127.0.0.1:9000/v1", True, resolve=False) is True
+    for target in (
+        "http://169.254.169.254/latest/meta-data",
+        "http://127.0.0.1:9000/v1",
+        "http://user:password@example.com/v1",
+        "http://example.com/v1",
+    ):
+        try:
+            validate_provider_url(target, False, resolve=False)
+        except ProblemException:
+            pass
+        else:  # pragma: no cover
+            raise AssertionError(f"危险模型地址必须被拒绝：{target}")
+    assert validate_provider_url("https://api.example.com/v1", False, resolve=False) is False
+
+
+def test_business_device_identity_never_falls_back_to_ip(client, admin) -> None:
+    enrollment = client.post(
+        "/api/v1/admin/devices/enrollments",
+        json={"name": "设备身份边界终端"},
+    )
+    assert enrollment.status_code == 201, enrollment.text
+    enrolled = client.post(
+        "/api/v1/devices/enroll",
+        json={
+            "code": enrollment.json()["code"],
+            "name": "设备身份边界终端",
+            "architecture": "amd64",
+            "platform": "windows",
+            "kernel": "test",
+            "app_version": get_settings().app_version,
+            "agent_version": get_settings().app_version,
+        },
+    )
+    assert enrolled.status_code == 201, enrolled.text
+    with db_runtime.session_factory() as db:
+        device = db.get(Device, enrolled.json()["device_id"])
+        assert device is not None
+        device.ip_address = "203.0.113.44"
+        db.commit()
+        request = Request(
+            {
+                "type": "http",
+                "method": "GET",
+                "path": "/api/v1/workspace/roots",
+                "headers": [],
+                "client": ("203.0.113.44", 45000),
+                "scheme": "https",
+                "server": ("partyops.local", 18765),
+            }
+        )
+        assert request_device(request, db) is None
+        assert request_device(request, db, allow_ip_fallback=True).id == device.id
+
+
+def test_cookie_writes_reject_hostile_origin_and_emit_security_headers(client, admin) -> None:
+    login_csrf = client.post(
+        "/api/v1/auth/login",
+        headers={"Origin": "https://attacker.invalid"},
+        json={"username": "admin", "password": "PartyOps@2026"},
+    )
+    assert login_csrf.status_code == 403
+    assert login_csrf.json()["code"] == "ORIGIN_DENIED"
+    bootstrap_csrf = client.post(
+        "/api/v1/bootstrap/host",
+        headers={"Origin": "https://attacker.invalid"},
+        json={
+            "username": "attacker",
+            "display_name": "恶意管理员",
+            "password": "PartyOps@2026",
+        },
+    )
+    assert bootstrap_csrf.status_code == 403
+    assert bootstrap_csrf.json()["code"] == "ORIGIN_DENIED"
+    rejected = client.post(
+        "/api/v1/auth/logout",
+        headers={"Origin": "https://attacker.invalid"},
+    )
+    assert rejected.status_code == 403
+    assert rejected.json()["code"] == "ORIGIN_DENIED"
+    assert rejected.headers["x-frame-options"] == "DENY"
+    assert "frame-ancestors 'none'" in rejected.headers["content-security-policy"]
+    assert client.get("/api/v1/auth/me").status_code == 200
+
+
+def test_intake_rejects_pathological_pdf_page_count() -> None:
+    import fitz
+
+    document = fitz.open()
+    try:
+        for _index in range(MAX_PDF_PAGES + 1):
+            document.new_page(width=72, height=72)
+        payload = document.tobytes()
+    finally:
+        document.close()
+    try:
+        _extract_pdf(payload)
+    except ProblemException as exc:
+        assert exc.code == "INTAKE_PDF_PAGE_LIMIT"
+    else:  # pragma: no cover
+        raise AssertionError("异常页数 PDF 必须在 OCR 前被拒绝")
+
+
+def test_windows_host_data_directory_is_not_user_writable() -> None:
+    installer = (
+        Path(__file__).resolve().parents[2]
+        / "packaging"
+        / "windows"
+        / "PartyOps.iss"
+    ).read_text(encoding="utf-8")
+    program_data_line = next(
+        line for line in installer.splitlines() if '"{commonappdata}\\PartyOps"' in line
+    )
+    assert "admins-full" in program_data_line
+    assert "system-full" in program_data_line
+    assert "users-modify" not in program_data_line

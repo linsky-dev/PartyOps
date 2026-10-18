@@ -1,0 +1,10 @@
+[
+  {
+    "Path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\vendor\\wheels\\amd64\\lxml-6.1.1-cp311-cp311-manylinux_2_26_x86_64.manylinux_2_28_x86_64.whl",
+    "Hash": "18B73C339AE29B90FD2D06E58EBD555A751BDE9CD6BBD36CC0281B9A2C94E9D8"
+  },
+  {
+    "Path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\vendor\\wheels\\arm64\\lxml-6.1.1-cp311-cp311-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl",
+    "Hash": "3A12689BE69A28DDAA0AB99A5A1137DA2AFD5F8F16DF7B5680B66F616D3EDA1D"
+  }
+]

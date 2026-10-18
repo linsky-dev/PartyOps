@@ -1,0 +1,31 @@
+{
+  "status": "completed",
+  "completed_at": "2026-10-17T05:02:51.323123+00:00",
+  "attempt_sha256": "ef1883e69fa98239d65417c841527236f3c203e8aae32ff73aefddb4065c136e",
+  "result": {
+    "status": "completed",
+    "runtime": {
+      "processes": [
+        {
+          "path": "C:\\PartyOps QA\\中文 程序\\PartyOps.exe",
+          "pid": 4364,
+          "created": "2026-10-17T05:02:38.9722880Z"
+        }
+      ],
+      "http_owners": [
+        4364
+      ],
+      "wizard_sha256": "6806ec965293c44fcf8473459b480b9cbf5219ca1f0171b9f60bfd1263b8025d",
+      "guest_uuid": "f47cf265-72a2-4d51-9cf1-b1f5ae960cb2",
+      "boot_id": "2026-10-17T03:51:38.5000000Z",
+      "manifest_sha256": "adce91340993c4ab4f202dd3a926165ab2fd129236c90442ae4eae046c73204e",
+      "purpose": "disposable-qa",
+      "executable_sha256": "dbe0ee796d718d7c3cefa3b05550076399e7cd3544cc37964b21c795bde34ce1"
+    },
+    "username": "partyopsuser",
+    "administrator": false,
+    "launch_count": 1,
+    "gui_normal_exit_acceptance": false,
+    "uac_acceptance": false
+  }
+}

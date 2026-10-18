@@ -1,0 +1,91 @@
+{
+  "_source": "本次唯一一次官方部署工具调用的原始公开回包留档。tool_result 逐字取自 workbuddy_sites_deploy 工具卡返回的结构化输出（structuredContent/content 正文），仅脱敏凭据类字段，未自造字段、未改写、未补写。",
+  "_tool_name": "workbuddy_sites_deploy",
+  "_call_count": 1,
+  "_max_calls_allowed": 1,
+  "_outcome": "failed",
+  "_retry_performed": false,
+  "_auto_retry_refused": true,
+  "_files_modified": false,
+  "_captured_at_local": "2026-10-18 18:52 (本机时区 GMT+8)",
+  "_intent_file": "batch/workbuddy-deployment.intent.json",
+  "_intent_status_before_call": "reserved-not-sent",
+  "_e_drive_accessed": false,
+  "_token_output": false,
+
+  "pre_call_verification": {
+    "receiver_directory": "C:/PartyOps-VM-Lab/windows-startup-repair-20261016/qa/acceptance/windows-startup-20261016/publication-windows-20261018/batch/receiver",
+    "file_count": 4,
+    "files": [".upload-token", "_serve.js", "index.html", "upload-metadata.json"],
+    "_serve_js_bytes": 10606,
+    "_serve_js_sha256_measured": "dd21e81cdc062261e54469ff333df4c0dabe28ed6e718e3b31353332738782e7",
+    "intent_receiver_sha256": "dd21e81cdc062261e54469ff333df4c0dabe28ed6e718e3b31353332738782e7",
+    "sha256_matches_intent": true,
+    "index_html_sha256": "b5c9d8adfb93522074e52488b07037fe484353af392906b1bb160c5048fc535b",
+    "upload_metadata_sha256": "2eab7763a91e4cf806c2ae643c32507f0de3422d360f88093d959050f8105ac5",
+    "token_content_read": false,
+    "token_content_output": false
+  },
+
+  "tool_input": {
+    "action": "deploy",
+    "directory": "C:/PartyOps-VM-Lab/windows-startup-repair-20261016/qa/acceptance/windows-startup-20261016/publication-windows-20261018/batch/receiver",
+    "language": "node",
+    "port": 3000,
+    "installCmd": "",
+    "startCmd": "ROOT=/workspace node /workspace/_serve.js",
+    "entryHtml": "index.html",
+    "appName": "partyops-rc6-fixed-eight",
+    "domainPrefix": "partyops-rc6-fixed-eight",
+    "userAskedToPublish": true
+  },
+
+  "tool_result": {
+    "type": "sites_deploy_failed",
+    "deployed": false,
+    "code": "SITES_START_FAILED",
+    "retryable": false,
+    "appId": "wbapp_4dsfNsi8V8v9hOiODt4xiL",
+    "userMessage": "项目启动失败：服务没有在指定端口上正常响应，这次更新没有完成。原来的服务已经被重启，原来的分享链接现在可能打不开。服务需要监听 PORT 环境变量并绑定 0.0.0.0，修复启动方式后重新发布即可恢复。",
+    "agentGuidance": "The project itself failed. `detail` contains the real output (install log / port, process and app stderr). Explain the likely cause to the user from it and propose a concrete fix; ask before editing their files. Do NOT re-run the same deploy unchanged, do NOT switch language/startCmd to force it, and do NOT fall back to publishing a static placeholder page. Deploy again only after the project is fixed. This failed update had already changed the sandbox behind the existing share link, so that link may be broken now: make sure the user is told this, as stated in `userMessage`. Never work around a failure by publishing somewhere else: do NOT try to create a new app or publish to a different one.",
+    "detail": "service did not become reachable on port 3000 within 60s. Check the start command and logs.\nport 3000 NOT listening\n---\n     99 /.PlnPyKFp4CRfFtgC1/lib/node /.PlnPyKFp4CRfFtgC1/api\n    104 /.PlnPyKFp4CRfFtgC1/lib/node /.PlnPyKFp4CRfFtgC1/terminal/app\n    113 /.PlnPyKFp4CRfFtgC1/lib/node /.PlnPyKFp4CRfFtgC1/local-proxy\n   1418 node /root/.nvm/versions/node/v22.13.1/lib/node_modules/@tencent-ai/codebuddy-code/bin/codebuddy --prewarm --prewarm-id sbx-122-1\n   1419 node /root/.nvm/versions/node/v22.13.1/lib/node_modules/@tencent-ai/codebuddy-code/bin/codebuddy --prewarm --prewarm-id sbx-122-2\n--- app stderr ---\n/workspace/_serve.js:14\nif (Object.keys(tokens).length !== 1 || typeof tokens[candidate.file_name] !== \"string\" || !/^[a-f0-9]{64}$/.test(tokens[candidate.file_name])) throw Error(\"BATCH_TOKENS_INVALID\");\n                                                                                                                                                ^\n\nError: BATCH_TOKENS_INVALID\n    at Object.<anonymous> (/workspace/_serve.js:14:151)\n    at Module._compile (node:internal/modules/cjs/loader:1562:14)\n    at Object..js (node:internal/modules/cjs/loader:1699)\n    at Module.load (node:internal/modules/cjs/loader.js:1313:11)\n    at Module._load (node:internal/modules/cjs/loader:1123:12)\n    at TracingChannel.traceSync (node:diagnostics_channel:322)\n    at wrapModuleLoad (node:internal/modules/cjs/loader.js:1103)\n    at Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main.js:36:49)\n\nNode.js v22.13.1\n"
+  },
+
+  "audit": {
+    "expected_sandbox": "340f98bdbde44864a9730ff6fb58b993",
+    "returned_sandboxId": null,
+    "sandbox_field_present": false,
+    "returned_shareLink": null,
+    "returned_appId": "wbapp_4dsfNsi8V8v9hOiODt4xiL",
+    "deployed_as": null,
+    "new_app_created": false,
+    "note": "失败回包不含 sandboxId / shareLink / deployedAs 字段，故按 null 记录，未推测、未填充。appId 与既有应用一致。",
+    "share_link_risk": "工具明确说明：本次失败的更新已改变既有 share link 背后的 sandbox，该链接现在可能打不开。需由主控在修正后重新发布恢复。"
+  },
+
+  "failure_analysis_from_detail_only": {
+    "immediate_cause": "_serve.js 第 14 行抛错 BATCH_TOKENS_INVALID：解析到的 tokens 对象键数量不为 1，或 tokens[candidate.file_name] 不是 64 位小写十六进制字符串。",
+    "mechanism": "接收器启动时先校验 tokens 与候选文件名严格一一对应，未通过即进程退出，导致 3000 端口 60 秒内无监听，被判定为 SITES_START_FAILED / retryable=false。",
+    "hypothesis_from_main_controller": "本轮 .upload-token 的 JSON 键沿用了旧包文件名，与 upload-metadata.json 中候选 file_name 不匹配，因而键集合校验失败。此为待验证假设，本次未读取令牌内容、未修改任何文件，无法由本回执独立证实。",
+    "recommended_next_step_owner": "主控在确认结果后修正 tokens 映射（键名改为候选 file_name），再决定是否重新发布。"
+  },
+
+  "_redaction": {
+    "credentials_removed": true,
+    "token_recorded": false,
+    "token_value_anywhere_in_file": false,
+    "session_keys_recorded": false,
+    "authorization_headers_recorded": false,
+    "context_recorded": false,
+    "fields_fabricated": false
+  },
+
+  "_not_done": [
+    "未重试部署（retryable=false，且按补充指令不自动重试）",
+    "未修改 receiver 或 .upload-token 任何一个文件",
+    "未改参数试探、未切换 language/startCmd",
+    "未回退到静态占位页、未新建应用或发布到其它应用",
+    "未更新官网 / GitHub，未上传 exe，未删除旧包",
+    "未访问 E 盘，未读业务数据，未输出任何令牌或凭据"
+  ]
+}

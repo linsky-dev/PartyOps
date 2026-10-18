@@ -1,0 +1,6 @@
+{
+  "status": "preflight-stopped",
+  "error": "INSTALLER_HASH_CHANGED",
+  "installation_started": false,
+  "reason": "Official self-extracted signed installer has a distinct verified hash"
+}

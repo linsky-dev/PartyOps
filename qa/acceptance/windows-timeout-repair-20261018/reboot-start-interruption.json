@@ -1,0 +1,12 @@
+{
+  "recorded_at": "2026-10-18T09:39:58.206590+00:00",
+  "source": "exec session 52973 actual traceback observed by primary agent",
+  "status": "normal-shutdown-returned-start-preflight-failed",
+  "error": "DISK_HEADROOM",
+  "reserve_gib": 20,
+  "additional_gib": 2,
+  "site": "retention_contract.py:197 -> QemuLab.start -> check_space",
+  "qmp_shutdown_event_persisted": false,
+  "normal_reboot_completed": false,
+  "recovery": "resume only stopped existing VM; do not repeat shutdown or installation"
+}

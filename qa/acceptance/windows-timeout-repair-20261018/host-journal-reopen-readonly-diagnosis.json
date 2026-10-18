@@ -1,0 +1,86 @@
+{
+  "products": [
+    {
+      "path": "C:\\PartyOps QA\\中文 程序\\PartyOps.exe",
+      "pid": 6208,
+      "name": "PartyOps.exe",
+      "created": "2026-10-18T09:44:41.9347000Z",
+      "parent_pid": 5992
+    }
+  ],
+  "mutation_script_executed": false,
+  "parser_errors": [],
+  "checks": {
+    "single_wizard": {
+      "error_id": "",
+      "value": false,
+      "error_type": ""
+    },
+    "pid": {
+      "error_id": "",
+      "value": false,
+      "error_type": ""
+    },
+    "path": {
+      "error_id": "",
+      "value": false,
+      "error_type": ""
+    },
+    "session": {
+      "error_id": "",
+      "value": false,
+      "error_type": ""
+    },
+    "owner": {
+      "error_id": "",
+      "value": false,
+      "error_type": ""
+    },
+    "cim_creation_match": {
+      "error_id": "ParameterArgumentTransformationError,Test-CimCreationInstant",
+      "value": null,
+      "error_type": "System.Management.Automation.ParameterBindingArgumentTransformationException"
+    },
+    "handle_start_match": {
+      "error_id": "NoProcessFoundForGivenId,Microsoft.PowerShell.Commands.GetProcessCommand",
+      "value": null,
+      "error_type": "Microsoft.PowerShell.Commands.ProcessCommandException"
+    },
+    "no_consent": {
+      "error_id": "",
+      "value": true,
+      "error_type": ""
+    },
+    "no_other_powershell": {
+      "error_id": "",
+      "value": true,
+      "error_type": ""
+    },
+    "no_wizard_children": {
+      "error_id": "",
+      "value": true,
+      "error_type": ""
+    },
+    "journal_present": {
+      "error_id": "",
+      "value": true,
+      "error_type": ""
+    },
+    "pending_absent": {
+      "error_id": "",
+      "value": true,
+      "error_type": ""
+    },
+    "journal_same_id": {
+      "error_id": "",
+      "value": true,
+      "error_type": ""
+    }
+  },
+  "tasks": [],
+  "original_stderr_persisted": false,
+  "failed_script_sha256": "abe0cd65b9c732f847f2ff203af7061569aade8d69177d7072ec7ff357d124c0",
+  "failed_script_source": "/C:/ProgramData/PartyOps-VM-Lab/host-wizard-b208b6437025/operation.ps1",
+  "failed_script_local": "host-journal-reopen-failed-script.ps1",
+  "time_utc": "2026-10-18T10:15:31.212326+00:00"
+}

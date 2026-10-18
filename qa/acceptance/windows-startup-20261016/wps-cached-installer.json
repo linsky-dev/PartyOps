@@ -1,0 +1,10 @@
+{
+  "checked_at": "2026-10-16T19:16:03.2875156+08:00",
+  "path": "D:\\PartyOps-VM-Lab\\downloads\\WPS_Setup_x64_28488.exe",
+  "bytes": 342602512,
+  "version": "12.1.0.28488",
+  "sha256": "089eeb02fb7da42a683a4d9c7fcecf155b7b326fcd8b8281cbd0b7acd3d9783a",
+  "signature": "Valid",
+  "signer": "CN=\"Zhuhai Kingsoft Office Software Co., Ltd.\", O=\"Zhuhai Kingsoft Office Software Co., Ltd.\", L=珠海市, S=广东省, C=CN",
+  "scope": "既有本地缓存，厂商签名有效；本轮未下载、未安装到Guest"
+}

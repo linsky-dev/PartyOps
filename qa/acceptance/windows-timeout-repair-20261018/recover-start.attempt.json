@@ -1,0 +1,31 @@
+{
+  "time_utc": "2026-10-18T09:43:14.969901+00:00",
+  "candidate": {
+    "package": {
+      "id": "windows_amd64",
+      "version": "1.4.5-rc.6",
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\artifacts\\PartyOps_1.4.5-rc.6_windows_amd64.exe",
+      "sha256": "e3e2ea45ccd38acff059b5713826a78f998a56ccef75341633f67bd4e17e57da",
+      "source_fingerprint": "84bddfca2e3a217cf5052cc7683d83687b4d00b4f7325d120a833a8ee6880d7f",
+      "provenance_status": "verified",
+      "build_receipt": "D:\\PartyOps-VM-Lab\\state\\builds\\e3e2ea45ccd38acff059b5713826a78f998a56ccef75341633f67bd4e17e57da.json",
+      "build_receipt_sha256": "b7c8db9527279faa4b104d30159d6569fbe70b42d87c612bc49a1835420aff0f"
+    },
+    "manifest_sha256": "202a98774b78b49f91fd26dd1dc92b2581b6d7eb6a26d2f129694fa58785b075",
+    "executable_sha256": "1dae862966da6d8e98d22620b4e0d8dbafed7e8c5a85c56a217b43b73c1846ca",
+    "wizard_sha256": "b062ea21fa91c937fa00c31221a0c348deb07780a698927a7b641b5fcaa40649"
+  },
+  "guest_uuid": "f47cf265-72a2-4d51-9cf1-b1f5ae960cb2",
+  "disk": "D:\\PartyOps-VM-Lab\\vms\\win10-x64\\system.qcow2",
+  "old_qemu_pid": 2900,
+  "old_pid_source": "主控及Architect本会话实际工具观察；非历史落盘PID回执",
+  "old_pid_absent": true,
+  "no_bound_qemu_process": true,
+  "qmp_unreachable": true,
+  "normal_attempt_sha256": "a770e6d9349f7bb5a4026ebc6ad56ac94d6ca4209c688c00539a8f062e3e235f",
+  "overlay_sha256": "b0d686a169c14f8f4d440c48bd907cb5ec4aa582ceae6f9457cc9773341ef477",
+  "boot_before_sha256": "69df6c633b3c56d06f9b085eb84911c12745b2d1b8c490d2be4a7debb7815ce6",
+  "stopped_vm_state_sha256": "7392a9df6b04e92ee4da75881e7447966e8bc1ba250cd629d13df1199062624e",
+  "operation": "resume-interrupted-normal-reboot-start-only-once",
+  "qmp_shutdown_event_persisted": false
+}

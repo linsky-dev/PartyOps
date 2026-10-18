@@ -1,0 +1,33 @@
+{
+  "recorded_at_utc": "2026-10-17T03:59:57.814799+00:00",
+  "scope": "本次Win10验收控制器，非候选安装通过",
+  "files": {
+    "install-candidate-once.py": "01c3296122dcef3327b40fa78fc5c7c0aab57e9c1799268494c3d90579fa4e29",
+    "verify-retained-business.py": "14eae7aa327bfbb1a461f34a61c870f3d16497bde14163d9c0bcd477da9d884e",
+    "build-candidate.ps1": "ec0aadb92b8b8877547650a105cc320f728b587198809028a9ecdb99b1909a82",
+    "retention_contract.py": "13a075bc929086160a4c72c370d945064e3243ac753397dd3e449f478d7f1252",
+    "record-candidate-build.py": "f6d25da1eae265a5a71003108c7c1f6609b83ff9d3a3852c66a6fb3b5412726f",
+    "test_retention_contract.py": "3a68660521dd5e2b8232e99af6f27c572f3c7e0c7e321ee754f9b6e0e26b46f3",
+    "guest-runtime-recheck.ps1": "2acfe8ac5a55b47748a9850cee23c152a269e947e2b4c8380f6b54bcd978eb44",
+    "govpulse-consumer-pause.py": "6d67bcd59b0f08a2c6e917aa12451385ba056a8e4876efcb90aa1ab845399765"
+  },
+  "implementation_tests": {
+    "groups": 8,
+    "status": "passed-local-contracts-only"
+  },
+  "independent_review": {
+    "original_blockers_closed": 3,
+    "read_only_groups_executed": 6,
+    "write_fixture_groups_source_only": 2,
+    "status": "no-remaining-static-blocker"
+  },
+  "actual_read_only_guest_evidence": [
+    "guest-runtime-recheck.result.json",
+    "retention-boot-before.json"
+  ],
+  "govpulse_restoration_evidence": "govpulse-restoration-verified.json",
+  "candidate_build": "not-started",
+  "overlay_install": "not-started",
+  "publication": "not-started",
+  "blocker": "旧pytest-3手工清理回执仍为pending；不得绕过此前删除自动审批拒绝"
+}

@@ -1,0 +1,17 @@
+{
+  "base_url": "https://partyops-cn-overseas-dpqpl8nic6uu.edgeone.dev",
+  "desktop_visual_verified": true,
+  "new_windows_link_verified": true,
+  "screenshot": "website-preview-windows.png",
+  "time": "2026-10-18T19:26:47.7831036+08:00",
+  "steps": [
+    "Windows10/11选择",
+    "Intel/AMD选择",
+    "实际推荐卡片验收范围及下载地址核对"
+  ],
+  "ten_packages": true,
+  "mobile_new_visual_verified": false,
+  "passed": true,
+  "inventory_sha256": "980f75260a133008031920956ec9d576bff1b0ecd86c872c8ad44766f4b69c21",
+  "visible_record": "website-preview-visible.txt"
+}

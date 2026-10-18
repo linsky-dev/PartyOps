@@ -1,0 +1,33 @@
+{
+  "schema": 3,
+  "status": "passed",
+  "tested_at": "2026-10-17T12:38:32+08:00",
+  "timezone": "Asia/Shanghai",
+  "fingerprint_canonicalization": "text-lf-v1",
+  "source_fingerprints": {
+    "package": {
+      "sha256": "6f879341ef736ffd1ca41da9ff171976c5cb17985058fa1af206fa97eecdb702",
+      "file_count": 1625
+    },
+    "website": {
+      "sha256": "ebc795d0d11f91ae19cc37317b52e1fd670773c3d604b823127e1e665797120a",
+      "file_count": 109
+    },
+    "full": {
+      "sha256": "6592c6154786fa0efb083b18969a0fe0bad11ba593eb87c74d883f9001d2c109",
+      "file_count": 1734
+    }
+  },
+  "suite": "scripts/test.ps1",
+  "scope": [
+    "document-formatter-source-release-x64-x86-build-and-regression",
+    "document-formatter-source-host-x64-x86-user-golden-parity",
+    "document-formatter-source-host-x64-x86-six-feature-12-scenario-real-wps-e2e",
+    "document-formatter-cross-platform-package-contract-manifest-hash-and-selftest-tests",
+    "backend-full-pytest-and-coverage",
+    "backend-mypy-no-incremental",
+    "frontend-typecheck-tests-coverage-build",
+    "website-tests-coverage-build",
+    "dependency-audits-secret-scan-static-analysis"
+  ]
+}

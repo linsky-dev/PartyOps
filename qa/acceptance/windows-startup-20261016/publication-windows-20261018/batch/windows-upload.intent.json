@@ -1,0 +1,15 @@
+{
+  "binding": {
+    "filename": "PartyOps_1.4.5-rc.6_windows_amd64_startup-20261018.exe",
+    "bytes": 449988807,
+    "package_sha256": "e3e2ea45ccd38acff059b5713826a78f998a56ccef75341633f67bd4e17e57da",
+    "manifest_sha256": "9e314cbfa1c5d604ad0f24dd8525b0afcda4f511f1cd8d4571114be1061298ee",
+    "baseline_manifest_sha256": "b52807452932502a5f05a10eb609c87345fabe4addb17d3ffeae3a673e0d0e57",
+    "receiver": "windows-startup-20261018-v1",
+    "publication_authorized": true,
+    "formal_release_ready": true,
+    "evidence_sha256": "9dc3fd8a39d4f03d791ce2c2af568f7d3607c84859858ab7f98a37f9c3297ef4"
+  },
+  "time_utc": "2026-10-18T10:58:26.865248+00:00",
+  "deployment_sha256": "2ce6b99db0676b96c620c22e557f12f6f4f0f8ada48ef7003227119c7f8c80e4"
+}

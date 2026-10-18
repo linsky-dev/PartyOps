@@ -1,0 +1,513 @@
+Browser tab: 4, Title: "PartyOps 1.4.5-rc.6｜本地优先的党建协同工作台", URL: "https://partyops-cn-overseas-dpqpl8nic6uu.edgeone.dev/#download".
+1 AXWebArea PartyOps 1.4.5-rc.6｜本地优先的党建协同工作台, URL: partyops-cn-overseas-dpqpl8nic6uu.edgeone.dev/#download
+	2 container root
+		3 link Description: 跳到主要内容, Value: partyops-cn-overseas-dpqpl8nic6uu.edgeone.dev/#main-content
+		4 container
+			5 link Description: 返回 PartyOps 官网首页, Value: partyops-cn-overseas-dpqpl8nic6uu.edgeone.dev/
+			6 container 主导航
+				7 link Description: 亮点, Value: partyops-cn-overseas-dpqpl8nic6uu.edgeone.dev/#highlights
+				8 link Description: 界面预览, Value: partyops-cn-overseas-dpqpl8nic6uu.edgeone.dev/#screenshots
+				9 link Description: 下载, Value: partyops-cn-overseas-dpqpl8nic6uu.edgeone.dev/#download
+				10 link Description: 安装指南, Value: partyops-cn-overseas-dpqpl8nic6uu.edgeone.dev/#install
+				11 link Description: 本地模型, Value: partyops-cn-overseas-dpqpl8nic6uu.edgeone.dev/models
+				12 link Description: 更新日志, Value: partyops-cn-overseas-dpqpl8nic6uu.edgeone.dev/changelog
+				13 link Description: 开源与支持, Value: partyops-cn-overseas-dpqpl8nic6uu.edgeone.dev/#community
+				14 link Description: 立即体验, Value: partyops-cn-overseas-dpqpl8nic6uu.edgeone.dev/#download
+				15 link Description: 打开 PartyOps GitHub 主页, Value: github.com/linsky-dev/PartyOps
+		16 container main-content
+			17 container 党建智办 PartyOps, ID: top
+				18 container
+					19 text 1.4.5-rc.6
+					20 container 当前季节主题：秋日
+						21 text 秋日
+						22 text 秋意渐深 · 从容归整
+					23 heading 党建智办 PartyOps, Value: 1, ID: hero-title
+						24 text 党建智办
+						25 text PartyOps
+					26 text 本地优先的党建协同工作台 把事项办理、真实文件、重要档案、迎检材料与工作留痕，收进一套可在单位局域网内落地的协同闭环。
+					27 container 产品特性
+						28 text 本地优先 局域协同 数据自主 开源可审计
+					29 link Description: 立即体验, Value: partyops-cn-overseas-dpqpl8nic6uu.edgeone.dev/#download
+					30 link Description: GitHub, Value: github.com/linsky-dev/PartyOps
+					31 image
+					32 text 专为基层党建场景打造的开源桌面系统
+				33 container
+					34 image PartyOps 1.4.5-rc.3 今日工作台真实界面
+					35 text 真实界面 ·  今日工作台
+				36 container 部署边界
+					37 image
+					38 text 完全本地运行
+					39 image
+					40 text 不上传云端
+					41 image
+					42 text 局域网协作
+					43 image
+					44 text 数据不出内网
+			45 container 六大亮点，贴合基层实际, ID: highlights
+				46 text 工作方法，而非功能堆叠
+				47 heading 六大亮点，贴合基层实际, Value: 2, ID: highlights-title
+					48 text 六大亮点，贴合基层实际
+				49 text 把高频工作收进一条清晰的责任链，让材料、流程和记录自然对应。
+				50 content list 六大亮点册页
+					51 container 第壹章：今日工作与可靠提醒
+						52 heading 今日工作与可靠提醒, Value: 3
+							53 text 今日工作与可靠提醒
+						54 text 把事项、日历、材料、党务节点和逾期风险放在第一屏；改期后提醒立即收敛，旧通知不会继续误导。
+					55 container 第贰章：通用台账安全导入
+						56 heading 通用台账安全导入, Value: 3
+							57 text 通用台账安全导入
+						58 text 发展党员、调动、考核和重要档案均可识别表头、预览映射、全量校验后导入；不确定字段必须人工确认并支持撤销。
+					59 container 第叁章：党务真实进度闭环
+						60 heading 党务真实进度闭环, Value: 3
+							61 text 党务真实进度闭环
+						62 text 三会一课、中心组、党建会议与发展党员档案共同协作；真实进度、法规边界和未来计划在同一时间轴可追溯呈现。
+					63 container 第肆章：内嵌公文规范排版
+						64 heading 内嵌公文规范排版, Value: 3
+							65 text 内嵌公文规范排版
+						66 text 无需另开助手窗口，在页面内完成诊断、确认、排版、复检与导出；文档只在当前电脑临时处理，不进入主机或 AI。
+					67 container 第伍章：文件、档案与协同
+						68 heading 文件、档案与协同, Value: 3
+							69 text 文件、档案与协同
+						70 text 真实文件保持原位，PDF 同源预览、Office 本机打开；具备权限的协同人员也能新建业务、编辑文档和归档材料。
+					71 container 第陆章：可恢复的安全治理
+						72 heading 可恢复的安全治理, Value: 3
+							73 text 可恢复的安全治理
+						74 text 删除先看影响、再停用或归档，保留审计并可恢复；安装、启动、更新、备份、模型签名和协同权限都有明确门禁。
+			75 container 系统界面实景, ID: screenshots
+				76 text 全部来自真实浏览器流程
+				77 heading 系统界面实景, Value: 2, ID: gallery-title
+					78 text 系统界面实景
+				79 text 不是设计稿，不是概念图。点击两侧卡片或使用方向键、拖动画面翻看。
+				80 checkbox 全部 37, Value: 1
+					81 text 全部
+					82 text 37
+				83 checkbox 今日 2, Value: 0
+					84 text 今日
+					85 text 2
+				86 checkbox 工作 9, Value: 0
+					87 text 工作
+					88 text 9
+				89 checkbox 党务 5, Value: 0
+					90 text 党务
+					91 text 5
+				92 checkbox 资料 7, Value: 0
+					93 text 资料
+					94 text 7
+				95 checkbox 协同 4, Value: 0
+					96 text 协同
+					97 text 4
+				98 checkbox 管理 10, Value: 0
+					99 text 管理
+					100 text 10
+				101 container 界面画廊：今日工作台，第 1 张，共 37 张
+					102 container
+						103 button 放大查看今日工作台
+							104 image PartyOps 1.4.5-rc.3 今日工作台真实界面
+							105 image
+							106 text 放大查看
+						107 button 切换到备忘录
+							108 image PartyOps 1.4.5-rc.3 备忘录真实界面
+						109 button 切换到事项与清单
+							110 image PartyOps 1.4.5-rc.3 事项与清单真实界面
+						111 button 切换到帮助与上手
+							112 image PartyOps 1.4.5-rc.3 帮助与上手真实界面
+						113 button 切换到本地模型与 Needle 2
+							114 image PartyOps 1.4.5-rc.3 本地模型与 Needle 2 真实界面
+					115 container
+						116 text 01 今日工作台 事项、党务提醒、风险与周期汇总在第一屏集中呈现
+					117 container
+						118 button 上一张界面截图
+							119 image
+						120 button 下一张界面截图
+							121 image
+				122 container 选择界面截图
+					123 checkbox Description: 查看今日工作台, Value: 1
+					124 checkbox Description: 查看备忘录, Value: 0
+					125 checkbox Description: 查看事项与清单, Value: 0
+					126 checkbox Description: 查看我的工作, Value: 0
+					127 checkbox Description: 查看通知中心, Value: 0
+					128 checkbox Description: 查看工作日历, Value: 0
+					129 checkbox Description: 查看快速收件箱, Value: 0
+					130 checkbox Description: 查看周期汇总, Value: 0
+					131 checkbox Description: 查看工作日志, Value: 0
+					132 checkbox Description: 查看专题工作空间, Value: 0
+					133 checkbox Description: 查看三会一课, Value: 0
+					134 checkbox Description: 查看中心组学习, Value: 0
+					135 checkbox Description: 查看发展党员快速测算, Value: 0
+					136 checkbox Description: 查看发展党员全流程时间轴, Value: 0
+					137 checkbox Description: 查看通用台账导入, Value: 0
+					138 checkbox Description: 查看其他党建会议, Value: 0
+					139 checkbox Description: 查看原始文件中心, Value: 0
+					140 checkbox Description: 查看公文规范排版, Value: 0
+					141 checkbox Description: 查看重要档案, Value: 0
+					142 checkbox Description: 查看迎检与归档, Value: 0
+					143 checkbox Description: 查看知识与联系人, Value: 0
+					144 checkbox Description: 查看文档比较与查重, Value: 0
+					145 checkbox Description: 查看在线业务文档, Value: 0
+					146 checkbox Description: 查看设备协同, Value: 0
+					147 checkbox Description: 查看文件接收箱, Value: 0
+					148 checkbox Description: 查看传输任务, Value: 0
+					149 checkbox Description: 查看设备授权权限边界, Value: 0
+					150 checkbox Description: 查看周期与模板, Value: 0
+					151 checkbox Description: 查看党员发展补充材料, Value: 0
+					152 checkbox Description: 查看自动归档规则, Value: 0
+					153 checkbox Description: 查看报告模板, Value: 0
+					154 checkbox Description: 查看AI 草稿审批, Value: 0
+					155 checkbox Description: 查看系统更新, Value: 0
+					156 checkbox Description: 查看备份恢复, Value: 0
+					157 checkbox Description: 查看运行诊断, Value: 0
+					158 checkbox Description: 查看帮助与上手, Value: 0
+					159 checkbox Description: 查看本地模型与 Needle 2, Value: 0
+			160 container 下载 PartyOps 已验证安装包, ID: download
+				161 text 按系统与处理器选择实际版本
+				162 heading 下载 PartyOps 已验证安装包, Value: 2, ID: download-title
+					163 text 下载 PartyOps 
+					164 text 已验证安装包
+				165 link Description: 查看基础版本 v1.4.5-rc.6 Release, Value: github.com/linsky-dev/PartyOps/releases/tag/v1.4.5-rc.6
+				166 text 安全提醒：不建议在涉密、敏感电脑上安装 PartyOps，也不得使用 PartyOps 处理涉密文件。
+				167 text 请按电脑系统选择安装包，升级前先备份。M 系列需 macOS 15 或更新版本；Intel Mac 仍支持 macOS 11 及以上，排版后请再检查。
+				168 text 新手下载助手
+				169 heading 不用看懂文件名，回答两个问题即可, Value: 3
+					170 text 不用看懂文件名，回答两个问题即可
+				171 text 我们不会自动猜测您的电脑，也不会让不兼容的安装包继续下载。
+				172 container 1 您的电脑正在使用什么系统？
+					173 container
+						174 text 1 您的电脑正在使用什么系统？
+					175 checkbox Windows 10 / 11 大多数普通台式机、笔记本, Value: 1
+						176 text Windows 10 / 11
+						177 text 大多数普通台式机、笔记本
+					178 checkbox Windows 7 桌面左下角是圆形开始按钮, Value: 0
+						179 text Windows 7
+						180 text 桌面左下角是圆形开始按钮
+					181 checkbox 麒麟 / UOS / deepin 国产桌面系统，下载 DEB, Value: 0
+						182 text 麒麟 / UOS / deepin
+						183 text 国产桌面系统，下载 DEB
+					184 checkbox openEuler 欧拉系统，下载 RPM, Value: 0
+						185 text openEuler
+						186 text 欧拉系统，下载 RPM
+					187 checkbox macOS · Apple 15+ / Intel 11+ Apple 芯片需 macOS 15 及以上，Intel 仍为 11 及以上, Value: 0
+						188 text macOS · Apple 15+ / Intel 11+
+						189 text Apple 芯片需 macOS 15 及以上，Intel 仍为 11 及以上
+				462 container 2 请选择电脑类型（看品牌也可以）
+					463 container
+						464 text 2 请选择电脑类型（看品牌也可以）
+					465 container
+						466 text 已选择： Windows 10 / 11 。不知道时请点“我不知道”，不要凭感觉下载。
+					467 checkbox Intel / AMD / 海光（绝大多数电脑）, Value: 1
+						468 text Intel / AMD / 海光（绝大多数电脑）
+					469 checkbox Windows 10 · 32 位操作系统, Value: 0
+						470 text Windows 10 · 32 位操作系统
+					471 checkbox 骁龙 / ARM 电脑（本批未测）, Value: 0
+						472 text 骁龙 / ARM 电脑（本批未测）
+					473 checkbox 我不知道，教我查看, Value: 0
+						474 text 我不知道，教我查看
+				485 container
+					486 text 已为您选好，电脑只需下载这一个文件
+					487 heading Windows 10/11 + Intel、AMD 或海光电脑, Value: 4
+						488 text Windows 10/11 + Intel、AMD 或海光电脑
+					489 text 对应版本： Windows 10/11 x64
+					490 link Description: 下载 Windows 安装器（推荐）, Value: partyops-rc6-win7-x86.app.workbuddy.host/downloads/PartyOps_1.4.5-rc.6_windows_amd64_startup-20261018.exe
+					491 text 验收环境： Windows 10 专业版 22H2（10.0.19045） x64 · QEMU · WPS 12.1.0.28488 范围： 覆盖安装、正常重启、原账号及事项/日历/附件保留、主机配置后恢复个人模式；WPS六项排版、五种字体及三页金样检查通过 。未覆盖： UAC 180秒超时及完整安装和升级生命周期未全部验收 。 系统签名：Windows 安装包未签名 文件大小： 449,988,807 字节（429.1 MB） 安装包上传时间 ： 2026-10-18 19:14:32（北京时间，UTC+8） 国内镜像全文件核验 ： 2026-10-18 19:14:32（北京时间，UTC+8） 源码提交： 未登记；逐包来源见签名清单 来源指纹： 84bddfca2e3a217cf5052cc7683d83687b4d00b4f7325d120a833a8ee6880d7f
+					492 container e3e2ea45ccd38acff059b5713826a78f998a56ccef75341633f67bd4e17e57da
+						493 text SHA-256： e3e2ea45ccd38acff059b5713826a78f998a56ccef75341633f67bd4e17e57da
+					494 button 复制 SHA-256
+					495 text 不要同时下载其他版本，也不要使用“强制架构安装”。安装器还会再核对一次，发现选错会安全停止。
+				190 button (collapsed) 我懂电脑，查看 10 个可下载安装包 Windows、国产 Linux 与 macOS 均按系统和处理器精确选包, Secondary Actions: Expand
+					191 container
+						192 text 我懂电脑，查看  10  个可下载安装包
+					193 text Windows、国产 Linux 与 macOS 均按系统和处理器精确选包
+				194 text 已有
+				475 text 4161
+				196 text 人次从官网下载 PartyOps
+				197 text 主下载线路异常时，先选择需要的安装包：
+				198 pop up button (collapsed, settable) 主下载线路异常时，先选择需要的安装包：, Value: Windows 10/11 x64, ID: fallback-artifact, Secondary Actions: Expand
+					199 menu
+						200 (selected) Windows 10/11 x64
+						201 Windows 7 SP1 x64
+						202 Windows 7 SP1 / Windows 10 · x86
+						203 麒麟 / UOS / deepin · AMD64
+						204 麒麟 / UOS / deepin · ARM64
+						205 龙芯 LoongArch64 · DEB
+						206 openEuler · x86_64
+						207 openEuler · aarch64
+						208 macOS 15+ · Apple 芯片
+						209 macOS 11+ · Intel 芯片
+				210 link Description: 官方源 · GitHub, Value: github.com/linsky-dev/PartyOps/releases/download/v1.4.5-rc.6/PartyOps_1.4.5-rc.6_windows_amd64_startup-20261018.exe
+			211 container 新手三步安装指南, ID: install
+				212 text 先确认，再安装；看见就绪，再使用
+				213 heading 新手三步安装指南, Value: 2, ID: install-title
+					214 text 新手三步安装指南
+				215 text Windows、国产 Linux 和 macOS 都只下载一个文件；下面把每一步该看什么、该点什么写清楚。
+				216 heading 安装前先确认这 4 件事, Value: 3
+					217 text 安装前先确认这 4 件事
+				218 content list
+					219 text Windows 10/11 的 64 位系统选 x64；Windows 10 的 32 位系统选共用 b3 x86 包，ARM 本批未测。Windows 7 必须确认 SP1、KB2533623、Universal CRT 和 32/64 位；国产 Linux 请确认发行版、DEB/RPM 与架构；macOS 请确认 Apple 芯片或 Intel：Apple Silicon 需 macOS 15 及以上，Intel 仍支持 macOS 11 及以上，两者均为有限验收的 RC6 候选。
+					220 text 主机数据目录必须在本机固定磁盘，至少保留 2 GB 可用空间；附件或模型较多时应预留更多空间。
+					221 text 升级前先完成一次备份并退出正在运行的 PartyOps；安装和升级默认保留原数据目录。
+					222 text 候选版尚未签名。只有下载自本页且 SHA-256 完全一致时，才继续处理系统安全提示。
+				223 tab group 选择安装平台
+					224 tab (selected, settable, boolean) Windows 10/11, ID: windows-tab, Value: 1
+Windows 10/11
+					225 tab (selectable, settable, boolean) 国产 Linux, ID: uos-tab, Value: 0
+国产 Linux
+					226 tab (selectable, settable, boolean) macOS, ID: macos-tab, Value: 0
+macOS
+				227 container Description: Windows 10/11, ID: install-guide
+					228 container
+						229 text 0 1
+						230 heading 下载并核对一个 EXE, Value: 3
+							231 text 下载并核对一个 EXE
+						232 text 点击 Windows 主按钮只下载一个 EXE，不需要再找校验包。下载完成后先看文件名和大小；需要更严格核验时，用下面任一命令计算 SHA-256，并与下载卡片上的 64 位值逐字对比。
+						233 content list
+							234 container
+								235 AXListMarker • 
+								236 text Windows 10/11 x64 文件名应包含 1.4.5-rc.6 和 windows_amd64；Win7 64位为windows7_amd64，Win7/Win10 32位共用windows7_x86。
+							237 container
+								238 AXListMarker • 
+								239 text 哈希不一致、文件大小明显不符或浏览器提示下载未完成时，请删除后重新下载。
+						240 tab group 选择命令终端
+							241 tab (selected, settable, boolean) PowerShell, Value: 1
+							242 tab (selectable, settable, boolean) 命令提示符, Value: 0
+						243 text Get-FileHash .\PartyOps_1.4.5-rc.6_windows_amd64_startup-20261018.exe -Algorithm SHA256
+						244 image
+					245 container
+						246 text 0 2
+						247 heading Win7 先检查补丁和系统位数, Value: 3
+							248 text Win7 先检查补丁和系统位数
+						249 text 只在受控局域网使用。打开“控制面板 → 系统”，确认 Windows 7 SP1 和系统类型；64 位下载 amd64，32 位下载 x86。安装器会在释放文件前检查 KB2533623 与 Universal CRT，缺少时用中文页面停止并给出修复步骤。
+						250 content list
+							251 container
+								252 AXListMarker • 
+								253 text Win7 已停止系统级安全维护，PartyOps 的制品门禁不能恢复操作系统或旧浏览器的安全性。
+							254 container
+								255 AXListMarker • 
+								256 text x86 版本不含语义重排和本地 LLM，这是明确能力边界，不是安装失败后的静默降级。
+						257 image
+					258 container
+						259 text 0 3
+						260 heading 中文向导中分别选择两个目录, Value: 3
+							261 text 中文向导中分别选择两个目录
+						262 text 双击安装器并在 UAC 中确认。若 SmartScreen 提示未知发布者，先确认哈希一致，再点“更多信息 → 仍要运行”。PartyOps 中文向导会先询问程序安装目录，再询问业务数据目录；两者彼此独立，都不会锁死在 C 盘。
+						263 content list
+							264 container
+								265 AXListMarker • 
+								266 text 程序目录可选 E:\PartyOps\PartyOps 等本机固定磁盘路径；数据目录可选 D:\党建资料\PartyOps 数据，不要把两者选成同一个文件夹。
+							267 container
+								268 AXListMarker • 
+								269 text 数据库、附件、备份、证书、模型、缓存和日志跟随数据目录；中文、空格和非 C 盘路径都支持，升级会分别沿用原程序目录和数据目录。
+						270 image
+					271 container
+						272 text 0 4
+						273 heading 选择角色并等到就绪, Value: 3
+							274 text 选择角色并等到就绪
+						275 text 只给自己使用时选择“个人使用（新手推荐）”，日常启动无需管理员授权且不会开放局域网；多台电脑协同时，第一台稳定电脑选“配置为主机”，其余电脑选“加入已有主机”。只有健康检查通过后才创建首位管理员并打开页面。
+						276 content list
+							277 container
+								278 AXListMarker • 
+								279 text 个人模式默认使用 18775，只监听 127.0.0.1；以后需要协同时可在向导中明确切换为主机并完成一次 UAC 授权。
+							280 container
+								281 AXListMarker • 
+								282 text 正常冷启动目标为 90 秒内；诊断最多等待 180 秒，明确错误会立即停止并显示诊断码。
+							283 container
+								284 AXListMarker • 
+								285 text 协同机请从主机端复制完整地址和一次性入网码，不要凭记忆手输 IP、端口或 https。
+						286 image
+				287 link Description: 查看完整安装、升级与回滚文档, Value: github.com/linsky-dev/PartyOps/tree/main/docs
+				288 container 把安装验证提示词发给常用 AI
+					289 text 看不懂安装教程，也能逐步核对
+					290 heading 把安装验证提示词发给常用 AI, Value: 3, ID: ai-install-title
+						291 text 把安装验证提示词发给常用 AI
+					292 text 适用于 DeepSeek、豆包、Kimi、WorkBuddy 等支持文字或截图问答的桌面端；AI 负责逐步解释和核对，安装决定仍由你确认。
+					293 content list 适用 AI 工具
+						294 text DeepSeek
+						295 text 豆包
+						296 text Kimi
+						297 text WorkBuddy
+						298 text 其他支持文字/截图问答的 AI
+					299 container
+						300 text Windows 10/11 与 Windows 7  安装验证提示词
+						301 text entry area Description: 可复制的 PartyOps 安装验证提示词, Value: 你是 PartyOps 安装与验收助手。当前电脑平台：Windows。
+
+目标：帮助一名不熟悉电脑的用户，只使用 PartyOps 官网（https://partyops.cn）或 GitHub 官方 Release 中与系统、架构完全匹配的安装包，逐步完成安装或升级，并验证系统确实可用。
+
+请严格遵守：
+1. 一次只给一个小步骤，先解释这一步的目的，再等待用户回复结果或提供脱敏截图；不要一次倾倒整页命令。
+2. 第一步先询问：系统版本、处理器架构、首次安装还是升级、个人/主机/协同机角色，以及安装包所在位置。不要猜测架构、地址、端口或文件名。
+3. 先执行只读检查：打开“设置/控制面板 → 系统”确认 Windows 版本和 32/64 位；使用 PowerShell 的 Get-FileHash 或命令提示符的 certutil 计算安装包 SHA-256
+4. 要求用户在 PartyOps 官网下载区复制该制品公开的文件名、文件大小和 SHA-256；在本机计算 SHA-256 并逐字比对。任何一项不一致都立即停止，不能建议绕过。
+5. 不得关闭杀毒软件、防火墙、SmartScreen、Gatekeeper、SELinux 或系统安全策略；不得使用 --force、来源不明的 DLL/补丁/证书或第三方下载站。
+6. 需要管理员权限、修改系统服务、覆盖安装或删除数据前，先说明影响并单独征得用户确认。升级前先指导用户在 PartyOps 内完成备份。
+7. 安装后必须验证：应用能打开、页面版本与安装包一致、健康/运行诊断为就绪、数据库迁移成功、提醒设置可读取；主机/协同机还要验证公布地址不是 127.0.0.1、双方心跳和业务权限正常。
+8. 如果失败，只收集诊断码和日志最后 120 行。提醒用户先遮盖用户名、内网地址、文件名和业务内容；绝不索要或上传密码、密钥、令牌、数据库、业务文件或完整日志。
+9. 不替用户声称“安装成功”。只有上述核验全部通过，才输出一份清单：已通过项、未通过项、日志位置和安全的下一步。
+
+现在先用通俗中文询问第 2 条所需信息，不要立即给安装命令。
+					302 button 复制安装验证提示词
+						303 image
+						304 text 复制安装验证提示词
+					305 image
+					306 text 不要把密码、密钥、业务文件或未脱敏的完整日志发给任何 AI。
+				307 heading 新手常见问题, Value: 3
+					308 text 新手常见问题
+				309 text 先按问题类型找答案；报错时请优先保留诊断码和日志，不要反复重装。
+				310 container 下载与安装
+					311 heading 下载与安装, Value: 4, ID: faq-下载与安装
+						312 text 下载与安装
+					313 button (collapsed) 我不懂 AMD64、ARM64、x86_64 和 aarch64，应该选哪个？, Secondary Actions: Expand
+						314 text 我不懂 AMD64、ARM64、x86_64 和 aarch64，应该选哪个？
+					315 button (collapsed) 现在到底要下载几个文件？, Secondary Actions: Expand
+						316 text 现在到底要下载几个文件？
+					317 button (collapsed) Windows 提示“未知发布者”或被 SmartScreen 拦住怎么办？, Secondary Actions: Expand
+						318 text Windows 提示“未知发布者”或被 SmartScreen 拦住怎么办？
+					319 button (collapsed) Mac 提示“Apple 无法验证 PartyOps PKG 是否包含恶意软件”怎么办？, Secondary Actions: Expand
+						320 text Mac 提示“Apple 无法验证 PartyOps PKG 是否包含恶意软件”怎么办？
+					321 button (collapsed) 数据可以放到 D 盘、中文目录或带空格的目录吗？, Secondary Actions: Expand
+						322 text 数据可以放到 D 盘、中文目录或带空格的目录吗？
+					323 button (collapsed) 程序安装目录也能改吗，还是只能装到 C 盘？, Secondary Actions: Expand
+						324 text 程序安装目录也能改吗，还是只能装到 C 盘？
+					325 button (collapsed) 从 rc.1 或旧版本升级会丢数据吗？, Secondary Actions: Expand
+						326 text 从 rc.1 或旧版本升级会丢数据吗？
+					327 button (collapsed) 升级时提示旧文件无法替换或显示英文错误框怎么办？, Secondary Actions: Expand
+						328 text 升级时提示旧文件无法替换或显示英文错误框怎么办？
+				329 container 首次配置与主机服务
+					330 heading 首次配置与主机服务, Value: 4, ID: faq-首次配置与主机服务
+						331 text 首次配置与主机服务
+					332 button (collapsed) 个人模式、主机模式和协同机模式怎么选？, Secondary Actions: Expand
+						333 text 个人模式、主机模式和协同机模式怎么选？
+					334 button (collapsed) 为什么以前提示主机配置需要管理员授权？, Secondary Actions: Expand
+						335 text 为什么以前提示主机配置需要管理员授权？
+					336 button (collapsed) 出现“[WinError 786] 管理员用策略规则限制了访问”怎么办？, Secondary Actions: Expand
+						337 text 出现“[WinError 786] 管理员用策略规则限制了访问”怎么办？
+					338 button (collapsed) 提示“PartyOps 主机服务未能启动”怎么办？, Secondary Actions: Expand
+						339 text 提示“PartyOps 主机服务未能启动”怎么办？
+					340 button (collapsed) 个人模式提示“[RUNTIME_PERMISSION_DENIED] 启动探针发现明确故障”怎么办？, Secondary Actions: Expand
+						341 text 个人模式提示“[RUNTIME_PERMISSION_DENIED] 启动探针发现明确故障”怎么办？
+					342 button (collapsed) 提示“90 秒内未能就绪（https://局域网IP:18765）”怎么办？, Secondary Actions: Expand
+						343 text 提示“90 秒内未能就绪（https://局域网IP:18765）”怎么办？
+					344 button (collapsed) 创建管理员时报 WinError 10061 怎么办？, Secondary Actions: Expand
+						345 text 创建管理员时报 WinError 10061 怎么办？
+					346 button (collapsed) 提示“[PORT_IN_USE] 个人模式端口 18775 已被身份不明的程序占用”怎么办？, Secondary Actions: Expand
+						347 text 提示“[PORT_IN_USE] 个人模式端口 18775 已被身份不明的程序占用”怎么办？
+					348 button (collapsed) 安装提示“[LEGACY SERVICE CONFLICT] 同名 PartyOps 主机服务无法证明归属”怎么办？, Secondary Actions: Expand
+						349 text 安装提示“[LEGACY SERVICE CONFLICT] 同名 PartyOps 主机服务无法证明归属”怎么办？
+					350 button (collapsed) Windows 安装提示“[PROTOCOL_REGISTRY_DENIED] 无法写入协议注册表”怎么办？, Secondary Actions: Expand
+						351 text Windows 安装提示“[PROTOCOL_REGISTRY_DENIED] 无法写入协议注册表”怎么办？
+					352 button (collapsed) Windows 7 提示未检测到 KB2533623，但系统已经更新怎么办？, Secondary Actions: Expand
+						353 text Windows 7 提示未检测到 KB2533623，但系统已经更新怎么办？
+					354 button (collapsed) Windows 7 双击后提示“[CHILD_EXITED] 个人进程启动后提前退出”怎么办？, Secondary Actions: Expand
+						355 text Windows 7 双击后提示“[CHILD_EXITED] 个人进程启动后提前退出”怎么办？
+					356 button (collapsed) 提示“程序升级尚未完成：页面与服务版本不同”怎么办？, Secondary Actions: Expand
+						357 text 提示“程序升级尚未完成：页面与服务版本不同”怎么办？
+					358 button (collapsed) 打开后是空白页，应该刷新还是重装？, Secondary Actions: Expand
+						359 text 打开后是空白页，应该刷新还是重装？
+				360 container UOS、更新与功能使用
+					361 heading UOS、更新与功能使用, Value: 4, ID: faq-UOS、更新与功能使用
+						362 text UOS、更新与功能使用
+					363 button (collapsed) UOS 安装时出现“_apt 无法访问”并以 dpkg error code 1 结束怎么办？, Secondary Actions: Expand
+						364 text UOS 安装时出现“_apt 无法访问”并以 dpkg error code 1 结束怎么办？
+					365 button (collapsed) UOS 桌面有图标，但提示 LAUNCH_LOCK_TIMEOUT 或 180 秒未显示页面怎么办？, Secondary Actions: Expand
+						366 text UOS 桌面有图标，但提示 LAUNCH_LOCK_TIMEOUT 或 180 秒未显示页面怎么办？
+					367 button (collapsed) 提示 RUNTIME_VERSION_MISMATCH，端口上不是当前版本怎么办？, Secondary Actions: Expand
+						368 text 提示 RUNTIME_VERSION_MISMATCH，端口上不是当前版本怎么办？
+					369 button (collapsed) 国产 Linux 的安装和验证真的合在一起了吗？, Secondary Actions: Expand
+						370 text 国产 Linux 的安装和验证真的合在一起了吗？
+					371 button (collapsed) UOS 仍提示 cryptography 重复或 arm64 闭包不完整怎么办？, Secondary Actions: Expand
+						372 text UOS 仍提示 cryptography 重复或 arm64 闭包不完整怎么办？
+					373 button (collapsed) 麒麟 ARM64 一直提示安全中心阻止 libgcc_s.so.1 启动怎么办？, Secondary Actions: Expand
+						374 text 麒麟 ARM64 一直提示安全中心阻止 libgcc_s.so.1 启动怎么办？
+					375 button (collapsed) 协同电脑必须和主机在同一网段吗？, Secondary Actions: Expand
+						376 text 协同电脑必须和主机在同一网段吗？
+					377 button (collapsed) 卸载 PartyOps 会删除业务数据吗？, Secondary Actions: Expand
+						378 text 卸载 PartyOps 会删除业务数据吗？
+					379 button (collapsed) 以后升级还要重新到官网下载安装包吗？, Secondary Actions: Expand
+						380 text 以后升级还要重新到官网下载安装包吗？
+					381 button (collapsed) 主机和不同系统的协同电脑会不会下错更新包？, Secondary Actions: Expand
+						382 text 主机和不同系统的协同电脑会不会下错更新包？
+					383 button (collapsed) 一事一档误操作后可以回退吗？, Secondary Actions: Expand
+						384 text 一事一档误操作后可以回退吗？
+					385 button (collapsed) 文档管理中心为什么看不到“新建文件夹”按钮？, Secondary Actions: Expand
+						386 text 文档管理中心为什么看不到“新建文件夹”按钮？
+					387 button (collapsed) 发展党员时间节点计算完成后如何导出 Word？, Secondary Actions: Expand
+						388 text 发展党员时间节点计算完成后如何导出 Word？
+			389 container 大家的使用感受
+				390 text 真实体验 · 审核后公开
+				391 heading 大家的使用感受, Value: 2, ID: reviews-title
+					392 text 大家的使用感受
+				393 text 你的体验，也能帮助下一位使用者。
+				476 text 还没有公开的使用感受。
+				477 text 欢迎留下你的真实体验，审核后将在这里展示。
+				395 button 写下使用感受
+					396 text 写下使用感受
+				397 text 审核后展示，不会即时出现在页面上。
+			398 container 欢迎大家前来体验，并提出宝贵意见, ID: community
+				399 container
+					400 text 开源、免费与开发者说明 本系统遵循开源协议，永久免费提供下载使用。党建智办由个人利用工作之余独立开发、维护与升级，与所在单位无关。欢迎体验和学习借鉴；商业使用与再分发必须严格遵守 GPLv3/AGPLv3 的源码提供和同许可证义务，禁止冒充官方、违法倒卖或以虚假承诺误导用户。因个人开发资金有限，现开放完全自愿的支持通道，作为长期免费开发的一点回馈。
+				401 container
+					402 text 每一份支持都有名字
+					403 heading 感谢支持者, Value: 2
+						404 text 感谢支持者
+					405 text 如果 PartyOps 的体验帮助到了你，欢迎自愿赞助，支持后续开发、国产系统适配与持续更新。
+					406 content list PartyOps 赞助榜
+						478 container
+							479 text 🧚今天一定会按时下班！ 首位支持者 · 2026.08
+						480 container
+							481 text 子木 支持者 · 2026.08
+						482 container
+							483 text 葵了花了鹿 支持者
+					484 text 共  3  位支持者 名单已加载，支持记录同步稍有延迟
+					408 button (collapsed) 展开完整赞助榜, Secondary Actions: Expand
+					409 container 一份支持，一纸谢意
+						410 text AFDIAN × PARTYOPS
+						411 heading 一份支持，一纸谢意, Value: 3, ID: sponsor-printer-title
+							412 text 一份支持，一纸谢意
+						413 text 支持 PartyOps 持续开发，也为这份心意留下一张专属回执。
+						414 container PartyOps 收据打印机
+							415 text PartyOps
+							416 text 收据打印机 · 就绪
+							417 container
+								418 text 一张回执，珍藏一份心意 等待下一位同行者 READY 爱发电订阅 · 专属感谢回执
+						419 container
+							420 text 致每一位同行者 谢谢你，让这份热爱继续。 订阅成功后，生成包含你的昵称与公开编号的专属回执。看它缓缓印出，亲手切下，再保存或打印留念。
+						421 button 前往爱发电订阅
+						422 text 自愿支持，自由选择。订阅后请返回本页领取回执。
+				423 text 让真实反馈推动真实改进
+				424 heading 欢迎大家前来体验，并提出宝贵意见, Value: 2, ID: community-title
+					425 text 欢迎大家前来体验，并提出宝贵意见
+				426 text 一个按钮不够清楚、一种材料不好录、一台协同电脑断线后不易恢复，都是值得解决的问题。
+				427 image
+				428 heading 开源透明, Value: 3
+					429 text 开源透明
+				430 text 查看源码、版本证据和公开路线。
+				431 link Description: 查看 GitHub 仓库, Value: github.com/linsky-dev/PartyOps
+				432 image
+				433 heading 报告问题, Value: 3
+					434 text 报告问题
+				435 text 带上版本、系统、复现步骤和脱敏日志。
+				436 link Description: 提交 Issue, Value: github.com/linsky-dev/PartyOps/issues
+				437 image
+				438 heading 提出建议, Value: 3
+					439 text 提出建议
+				440 text 分享真实工作场景、卡点和希望改进的细节。
+				441 link Description: 参与 Discussions, Value: github.com/linsky-dev/PartyOps/discussions
+				442 image
+				443 heading 参与共建, Value: 3
+					444 text 参与共建
+				445 text 贡献代码、文档、测试或真机验证证据。
+				446 link Description: 阅读贡献指南, Value: github.com/linsky-dev/PartyOps/blob/main/CONTRIBUTING.md
+				447 image
+				448 text 请勿在公开 Issue 或 Discussion 上传真实档案、账号、密钥、内部文件或未脱敏日志。
+		449 container
+			450 text 党建智办 PartyOps 本地优先的党建协同工作台 ｜开源 · 自主 · 可核验
+			451 container 项目资料
+				452 link Description: Gitee 代码镜像, Value: gitee.com/lintianbei/PartyOps
+				453 link Description: 项目文档, Value: github.com/linsky-dev/PartyOps/tree/main/docs
+				454 link Description: 安全策略, Value: github.com/linsky-dev/PartyOps/blob/main/SECURITY.md
+				455 link Description: GPL-3.0, Value: github.com/linsky-dev/PartyOps/blob/main/LICENSE
+				456 link Description: 第三方许可, Value: github.com/linsky-dev/PartyOps/blob/main/THIRD_PARTY_NOTICES.md
+				457 link Description: 版本更新记录, Value: partyops-cn-overseas-dpqpl8nic6uu.edgeone.dev/changelog
+				458 link Description: 本地智能模型, Value: partyops-cn-overseas-dpqpl8nic6uu.edgeone.dev/models
+				459 link Description: 作者个人简历, Value: partyops-cn-overseas-dpqpl8nic6uu.edgeone.dev/resume/
+				460 link Description: 网站管理, Value: partyops-cn-overseas-dpqpl8nic6uu.edgeone.dev/admin
+			461 text © 2026 PartyOps 项目 · 当前版本  1.4.5-rc.6  · 下载版本  v1.4.5-rc.6
+
+The focused UI element is 467 checkbox Intel / AMD / 海光（绝大多数电脑）, Value: 1

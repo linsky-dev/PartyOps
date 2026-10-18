@@ -1,0 +1,9 @@
+{
+  "version": "12,1,0,28488",
+  "bytes": 346496264,
+  "signer": "CN=\"Zhuhai Kingsoft Office Software Co., Ltd.\", O=\"Zhuhai Kingsoft Office Software Co., Ltd.\", L=珠海市, S=广东省, C=CN",
+  "signature_status": "Valid",
+  "sha256": "5e574529af84aa0d5a7916e1ee4fec00a3ede12ac213781b79b5318ced464bd8",
+  "created": "2026-08-31T03:41:32.0000000Z",
+  "receipt_exists": false
+}

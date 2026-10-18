@@ -1,0 +1,31 @@
+{
+  "time_utc": "2026-10-17T06:29:50.330948+00:00",
+  "request": {
+    "uuid": "f47cf265-72a2-4d51-9cf1-b1f5ae960cb2",
+    "username": "partyopsuser",
+    "installer": "C:\\ProgramData\\kingsoft\\20261017_140008\\WPS_Setup_x64_28488.exe",
+    "sha256": "5e574529af84aa0d5a7916e1ee4fec00a3ede12ac213781b79b5318ced464bd8",
+    "bytes": 346496264,
+    "transport": "C:\\Users\\partyopsuser\\AppData\\Local\\PartyOpsQa\\wps-install-8fd47b16f2f0",
+    "task": "PartyOps-QA-Ordinary-WPS-8fd47b16f2f0"
+  },
+  "precheck": {
+    "session_id": 1,
+    "source": {
+      "signer_is_kingsoft": true,
+      "ui_access": "false",
+      "bytes": 346496264,
+      "signature_status": "Valid",
+      "sha256": "5e574529af84aa0d5a7916e1ee4fec00a3ede12ac213781b79b5318ced464bd8",
+      "requested_execution_level": "asInvoker",
+      "manifest_sha256": "a99154f9b70934bc5ff4800676bdfc72d35aba37ad81de1a13ffbe9c5e8e56e4"
+    },
+    "ordinary_wps_registered": false,
+    "username": "partyopsuser",
+    "guest_uuid": "f47cf265-72a2-4d51-9cf1-b1f5ae960cb2",
+    "standard_account": true,
+    "installer_processes": []
+  },
+  "operation": "ordinary-user-real-asInvoker-inner-installer-once",
+  "automatic_retry": false
+}

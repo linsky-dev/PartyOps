@@ -1,0 +1,12 @@
+[
+  {
+    "arguments": "/prometheus /fromksolaunch /from=startmenu",
+    "name": "WPS Office.lnk",
+    "target": "C:\\Users\\partyopsqa\\AppData\\Local\\kingsoft\\WPS Office\\ksolaunch.exe"
+  },
+  {
+    "arguments": "",
+    "name": "配置工具.lnk",
+    "target": "C:\\Users\\partyopsqa\\AppData\\Local\\kingsoft\\WPS Office\\12.1.0.28488\\office6\\ksomisc.exe"
+  }
+]

@@ -1,0 +1,31 @@
+{
+  "id": "d6e044109b624d01a15acae3287272f1",
+  "feature": "format",
+  "state": "completed",
+  "outputs": [
+    {
+      "file": "formatted-1.docx",
+      "sha256": "f42d22d7ff69b47efeb80ebf2593754dc9dab3f167ed15c5e4738153f393a477"
+    },
+    {
+      "file": "formatted-2.docx",
+      "sha256": "a82731a0cf9f5050083367d6f02e924ae440e3b055e893a09c5352a096213120"
+    }
+  ],
+  "host_proofs": [
+    {
+      "feature": "format",
+      "input_sha256": "6b360f0372ae657a9e207ea4e0ec05437cea8fecc34113429a6d5670a8fff287",
+      "host_display_name": "Microsoft Word 12.0（C:\\Users\\partyopsuser\\AppData\\Local\\Kingsoft\\WPS Office\\12.1.0.28488\\office6）",
+      "request_sha256": "6ca0566332486ad0fa3bd192c614719367afb49ebccb065227152b171b2d1a98",
+      "response_sha256": "637f34b6395e401d8c2fdb6f469320f9cc6d46cd14f32d4974dcbe0744b702bd"
+    },
+    {
+      "feature": "format",
+      "input_sha256": "6b360f0372ae657a9e207ea4e0ec05437cea8fecc34113429a6d5670a8fff287",
+      "host_display_name": "Microsoft Word 12.0（C:\\Users\\partyopsuser\\AppData\\Local\\Kingsoft\\WPS Office\\12.1.0.28488\\office6）",
+      "request_sha256": "5789df87a21957cf9aa4c2ef989441a923420abcc705b0634c7bdaa244ba10ad",
+      "response_sha256": "3d792c0af5c091a8d428027b3be378ca4cab0dcb5fc725ac1f8e2275a4f19333"
+    }
+  ]
+}

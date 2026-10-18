@@ -1,0 +1,12 @@
+{
+  "schema": 1,
+  "passed": true,
+  "source": "PartyOps.DocumentFormatter.Source",
+  "file_count": 898,
+  "aggregate_sha256": "7ae0eb67a0cb6a2d4a332cde74adf8977d93ae73541f864f01df214d39fefdf2",
+  "text_line_endings_normalized": true,
+  "historical_revision": "f889ed325b7bc3a9bb213ebed5580e4809f4653e",
+  "restored_file": "src/PartyOps.DocumentFormatter.AddIn/DocumentRepository/Services/Formatting/EastAsianPunctuationFontService.cs",
+  "current_mac_source_preserved": true,
+  "destination": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.qa\\windows-formatter-upstream"
+}

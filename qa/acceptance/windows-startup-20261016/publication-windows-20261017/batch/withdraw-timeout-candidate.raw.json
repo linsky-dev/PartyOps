@@ -1,0 +1,92 @@
+{
+  "_source": "本次回退（恢复原十包路由）唯一一次官方部署工具调用的原始公开回包留档。tool_result 逐字取自 workbuddy_sites_deploy 工具卡返回的结构化输出（structuredContent/content 正文），仅去除凭据类字段，未自造字段、未改写、未补写。",
+  "_tool_name": "workbuddy_sites_deploy",
+  "_call_count": 1,
+  "_max_calls_allowed": 1,
+  "_unknown_outcome_no_retry": true,
+  "_retry_performed": false,
+  "_captured_at_local": "2026-10-18 15:38 (本机时区 GMT+8)",
+  "_intent_file": "batch/withdraw-timeout-candidate.intent.json",
+  "_intent_status_before_call": "reserved-not-sent",
+  "_intent_purpose": "撤下未发布且被P1阻断的Windows候选路由，恢复原10包接收器",
+  "_e_drive_accessed": false,
+
+  "pre_call_verification": {
+    "receiver_directory": "C:/PartyOps-VM-Lab/records/kylin-20261012/acceptance/publication-20261016/batch/post-switch-receiver",
+    "file_count": 4,
+    "files": [".upload-token", "_serve.js", "index.html", "upload-metadata.json"],
+    "_serve_js_bytes": 12607,
+    "_serve_js_sha256_measured": "d372e6982f37dae0d2c8ac27e76f1c976ac8a91527ebee28909d6440ac691856",
+    "intent_receiver_sha256": "d372e6982f37dae0d2c8ac27e76f1c976ac8a91527ebee28909d6440ac691856",
+    "sha256_matches_intent": true,
+    "token_content_read": false,
+    "token_content_printed_or_modified": false
+  },
+
+  "tool_input": {
+    "action": "deploy",
+    "directory": "C:/PartyOps-VM-Lab/records/kylin-20261012/acceptance/publication-20261016/batch/post-switch-receiver",
+    "language": "node",
+    "port": 3000,
+    "installCmd": "",
+    "startCmd": "ROOT=/workspace node /workspace/_serve.js",
+    "entryHtml": "index.html",
+    "appName": "partyops-rc6-fixed-eight",
+    "domainPrefix": "partyops-rc6-fixed-eight",
+    "userAskedToPublish": true
+  },
+
+  "tool_result": {
+    "type": "sites_deploy_result",
+    "sandboxId": "340f98bdbde44864a9730ff6fb58b993",
+    "shareLink": "https://partyops-rc6-win7-x86.app.workbuddy.host/",
+    "verified": true,
+    "deployedAs": "http-service",
+    "message": "发布成功，访问链接: https://partyops-rc6-win7-x86.app.workbuddy.host/。"
+  },
+
+  "verification": {
+    "sandbox": {
+      "expected": "340f98bdbde44864a9730ff6fb58b993",
+      "returned": "340f98bdbde44864a9730ff6fb58b993",
+      "matches": true,
+      "new_app_created": false
+    },
+    "base_url": {
+      "expected": "https://partyops-rc6-win7-x86.app.workbuddy.host",
+      "returned": "https://partyops-rc6-win7-x86.app.workbuddy.host/",
+      "matches": true
+    },
+    "manifest": {
+      "expected_baseline_manifest_sha256": "b52807452932502a5f05a10eb609c87345fabe4addb17d3ffeae3a673e0d0e57",
+      "note": "该清单为签名基线清单；本次未下载、未重建、未修改任何清单文件或安装包，未做公开回读（按指令由主控完成）。因此此项为预期值登记，非本次实测。"
+    },
+    "receiver": {
+      "_serve_js_sha256": "d372e6982f37dae0d2c8ac27e76f1c976ac8a91527ebee28909d6440ac691856",
+      "matches_intent": true,
+      "note": "该接收器仅将路由恢复为现官网对应十包；原两个 ARM 旧包已不存在，其既有校验及幂等清理不可扩展。"
+    },
+    "status": "success",
+    "error_field_present": false
+  },
+
+  "_redaction": {
+    "credentials_removed": true,
+    "token_recorded": false,
+    "session_keys_recorded": false,
+    "authorization_headers_recorded": false,
+    "context_recorded": false,
+    "fields_fabricated": false,
+    "fields_omitted_besides_credentials": false
+  },
+
+  "_not_done_by_this_call": [
+    "未更新官网或 GitHub",
+    "未上传任何安装包或分块",
+    "未新建应用或付费资源",
+    "未变更或打印 .upload-token",
+    "未删除任何远端文件（新的 Windows 候选文件保留，仅不提供下载路由）",
+    "未访问 E 盘，未读业务文件",
+    "未重复调用"
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "date": "2026-10-18",
+  "scope": "仅本新目录的单次恢复开机入口、事件证据适配及消费调用",
+  "initial_basic_tests": {"count": 4, "status": "passed"},
+  "latest_targeted_tests": {
+    "command": "python -m unittest discover -s qa/acceptance/windows-timeout-repair-20261018 -p test_reboot_recovery.py -v",
+    "count": 12,
+    "exit_code": 0,
+    "status": "passed"
+  },
+  "combined_tests_before_actual_event_followup": {
+    "command": "python -m unittest discover -s qa/acceptance/windows-timeout-repair-20261018 -p test_*.py -v",
+    "count": 33,
+    "exit_code": 0
+  },
+  "syntax": "passed",
+  "actual_event_followup": {
+    "source": "reboot-recovery-events-82c20dedd363.json",
+    "initial_qa_failure": "ORDERED_SYSTEM_LOG_START_REQUIRED",
+    "correction": "跨provider事件RecordID不能代表产生时间全序；改为UTC时序，保留唯一RecordID/provider校验及本次41/6008拒绝",
+    "original_evidence_modified": false
+  },
+  "qmp_shutdown_event_persisted": false,
+  "normal_reboot_completion_fabricated": false,
+  "guest_actions_performed_by_worker": false,
+  "real_runtime_acceptance": "以主控实际生成的独立恢复回执及retention-after-reboot为准，本记录仅本地验证",
+  "publication_consumer": "由主控协调调用reboot_evidence.validate_retention，未修改发布控制器",
+  "reviewer": "pending"
+}

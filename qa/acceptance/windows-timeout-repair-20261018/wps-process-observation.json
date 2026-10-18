@@ -1,0 +1,59 @@
+{
+  "processes": [
+    {
+      "ProcessName": "MsMpEng",
+      "Id": 2628,
+      "CPU": 38.484375,
+      "WorkingSet64": 306593792
+    },
+    {
+      "ProcessName": "PartyOps",
+      "Id": 6208,
+      "CPU": 4.140625,
+      "WorkingSet64": 192249856
+    },
+    {
+      "ProcessName": "sshd",
+      "Id": 1972,
+      "CPU": 0.453125,
+      "WorkingSet64": 8683520
+    },
+    {
+      "ProcessName": "sshd",
+      "Id": 2540,
+      "CPU": 0,
+      "WorkingSet64": 8974336
+    },
+    {
+      "ProcessName": "sshd",
+      "Id": 2580,
+      "CPU": 0.046875,
+      "WorkingSet64": 7811072
+    },
+    {
+      "ProcessName": "sshd",
+      "Id": 2664,
+      "CPU": 0.03125,
+      "WorkingSet64": 8138752
+    },
+    {
+      "ProcessName": "sshd",
+      "Id": 5872,
+      "CPU": 0.015625,
+      "WorkingSet64": 9183232
+    },
+    {
+      "ProcessName": "wps",
+      "Id": 5460,
+      "CPU": 0.65625,
+      "WorkingSet64": 37810176
+    },
+    {
+      "ProcessName": "wps",
+      "Id": 6020,
+      "CPU": 0.28125,
+      "WorkingSet64": 44109824
+    }
+  ],
+  "utc": "2026-10-18T09:49:32.3439978Z"
+}

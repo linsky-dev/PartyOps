@@ -1,0 +1,55 @@
+{
+  "phase": "after-host-restore",
+  "time_utc": "2026-10-17T06:44:41.393513+00:00",
+  "guest_uuid": "f47cf265-72a2-4d51-9cf1-b1f5ae960cb2",
+  "disk": "D:\\PartyOps-VM-Lab\\vms\\win10-x64\\system.qcow2",
+  "boot_id": "2026-10-17T05:05:48.5000000Z",
+  "probe_boot_id": "20261017130548.500000+480",
+  "installed_source_commit": "b58cd0505ebd8bc187d40857e92d19c88b2a2b56",
+  "installed_manifest_sha256": "adce91340993c4ab4f202dd3a926165ab2fd129236c90442ae4eae046c73204e",
+  "code_scope": "安装版真实HTTP；控制器不运行产品源码",
+  "retained": {
+    "user_id": "7284a400-70db-423f-9163-3f2524ebe4bb",
+    "task_id": "c78f16aa-3b30-4b58-8c9c-02ca4159fd0d",
+    "attachment_sha256": "c4f7f3fce73f84df0d10d1b018a42dca617ec7eb1ad637af595d2709245d3f47"
+  },
+  "calendar_id": "54e9d4b1-a3b5-46db-b088-3c5e311677db",
+  "calendar_sha256": "e6aa24530f94589eb6e816cac6938e7ecfbd6dc7c583cfd4afc75e7877e6df31",
+  "personal_restore_completed_sha256": "fb9cfb59dfc11466c1a003f9039195e9a9e489927513e71b082763f89fb4557d",
+  "personal_restore_evidence": "restore-personal-observed-completion.json",
+  "candidate": {
+    "package": {
+      "id": "windows_amd64",
+      "version": "1.4.5-rc.6",
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\artifacts\\PartyOps_1.4.5-rc.6_windows_amd64.exe",
+      "sha256": "3c81fdba89781722f94e82d31c7ff99b4357a1374fc6454ad47d3cfa464d1e27",
+      "source_fingerprint": "6f879341ef736ffd1ca41da9ff171976c5cb17985058fa1af206fa97eecdb702",
+      "provenance_status": "verified",
+      "build_receipt": "D:\\PartyOps-VM-Lab\\state\\builds\\3c81fdba89781722f94e82d31c7ff99b4357a1374fc6454ad47d3cfa464d1e27.json",
+      "build_receipt_sha256": "087422ea86ef1b1b656d9bf8ce3733d6a0368d12d632bd2a7be4369cedf3f56f"
+    },
+    "manifest_sha256": "adce91340993c4ab4f202dd3a926165ab2fd129236c90442ae4eae046c73204e",
+    "executable_sha256": "dbe0ee796d718d7c3cefa3b05550076399e7cd3544cc37964b21c795bde34ce1",
+    "wizard_sha256": "6806ec965293c44fcf8473459b480b9cbf5219ca1f0171b9f60bfd1263b8025d"
+  },
+  "runtime": {
+    "processes": [
+      {
+        "path": "C:\\PartyOps QA\\中文 程序\\PartyOps.exe",
+        "pid": 4920,
+        "created": "2026-10-17T06:37:59.4511140Z"
+      }
+    ],
+    "http_owners": [
+      4920
+    ],
+    "wizard_sha256": "6806ec965293c44fcf8473459b480b9cbf5219ca1f0171b9f60bfd1263b8025d",
+    "guest_uuid": "f47cf265-72a2-4d51-9cf1-b1f5ae960cb2",
+    "boot_id": "2026-10-17T05:05:48.5000000Z",
+    "manifest_sha256": "adce91340993c4ab4f202dd3a926165ab2fd129236c90442ae4eae046c73204e",
+    "purpose": "disposable-qa",
+    "executable_sha256": "dbe0ee796d718d7c3cefa3b05550076399e7cd3544cc37964b21c795bde34ce1"
+  },
+  "install_completed_sha256": "963cb914be5266b62c94cddc22204f19f12dbe0137cbda5ba23c6d049002284a",
+  "status": "passed"
+}

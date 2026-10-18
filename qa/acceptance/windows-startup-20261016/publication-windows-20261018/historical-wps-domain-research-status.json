@@ -1,0 +1,6 @@
+{
+  "status": "not-approved-for-evidence-reuse",
+  "reason": "子集未覆盖完整PYZ模块、CArchive入口及运行钩子，不能证明完整等价。",
+  "decision": "必须执行新候选完整安装版WPS实际验收，旧调研不用于发布复用。",
+  "cleanup": "按用户只保留最终摘要的要求，已删除废弃调研快照、转换回执和转换脚本；保留正式驱动所需helper。"
+}

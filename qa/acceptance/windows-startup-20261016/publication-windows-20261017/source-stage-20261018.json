@@ -1,0 +1,183 @@
+{
+  "head": "b58cd0505ebd8bc187d40857e92d19c88b2a2b56",
+  "files": [
+    {
+      "path": ".gitleaks.toml",
+      "sha256": "90f73409f677791cfbd0fc8b8473afa7442a4877ea4de587d673cb4286f6927b"
+    },
+    {
+      "path": "CHANGELOG.md",
+      "sha256": "4133db0a6cc4513a272cdec690108dff9a4e745c32c2771825fa5e264f749a1a"
+    },
+    {
+      "path": "README.md",
+      "sha256": "4c08225825b9ee92ec9d70cb45525b2fd3a3a841976b277407992809eb003908"
+    },
+    {
+      "path": "backend/app/main.py",
+      "sha256": "aa9236278077ce82a93ba45e57335ede9355198573f6db89b06a81db1fbfa1d9"
+    },
+    {
+      "path": "backend/app/package_selftest.py",
+      "sha256": "5298601fb538fe4899f6007618eca457c3eb30a5b6334b939f1174119687ecd8"
+    },
+    {
+      "path": "backend/app/pki.py",
+      "sha256": "94911cd4b17d2afdfcd85e9298a8c4eb42b11e087b0af455485b2294a9bd6c65"
+    },
+    {
+      "path": "backend/app/setup_wizard.py",
+      "sha256": "d02bad6fcabb58d6cd04e765ae6b496ba202643b78d6aba374d83d1ba1d06fb9"
+    },
+    {
+      "path": "backend/app/windows_elevation.py",
+      "sha256": "ee9c6cff5275d3f2da8c5d39a94c0971e44967079080512c9b54759e7427e8fa"
+    },
+    {
+      "path": "backend/app/windows_host_status.py",
+      "sha256": "2a75835011dd176fc8521dd46a65e6665bf730b76449c8f09e9f2060b78e8e5f"
+    },
+    {
+      "path": "backend/app/windows_public_files.py",
+      "sha256": "c4e7a879aaffcb24ebee51978eaed60c5b88c01cb8d9c8eb28295ed73cd21408"
+    },
+    {
+      "path": "backend/tests/test_144_first_run_collaboration.py",
+      "sha256": "492ab360bce0eca514800878822a290c1bfdf16a538969faa28a0130dd5a5fcd"
+    },
+    {
+      "path": "backend/tests/test_173_rc3_wizard_transaction_branches.py",
+      "sha256": "9d2c5c934cdaee9f61a0c4a090e78089c9fd9820ac94f5ed09c911b94334593c"
+    },
+    {
+      "path": "backend/tests/test_document_formatter_source_snapshot.py",
+      "sha256": "84ab1b0a93103017ebafbea95fa8f7e1e06a136ff264d0ccac9389a4b3a43919"
+    },
+    {
+      "path": "backend/tests/test_formatter_runtime_evidence.py",
+      "sha256": "b297c7e3c72aa7e12291b3afe473d64b80dee946f9381b0bb8518e9610b87f78"
+    },
+    {
+      "path": "backend/tests/test_loong_core_ocr_contract.py",
+      "sha256": "31419c5dbc07e859eb1209d9ea6e0d6feb8f6fe47096a0c12939578518b66022"
+    },
+    {
+      "path": "backend/tests/test_mac_format_product_entry.py",
+      "sha256": "cbb3993e63fefe17300681524dbb376ddc2f63f6f2afe3026675500cc8bab3f1"
+    },
+    {
+      "path": "backend/tests/test_mac_format_workspace.py",
+      "sha256": "db6eac6eb9cbbbcb6d54a7a0131a4fc799c6e1c5ad7ce73b995b5deca11b9342"
+    },
+    {
+      "path": "backend/tests/test_macos_packaging.py",
+      "sha256": "9612cde64d9c68ab3fc6dd55dee4be9f8b0461be10f8f94c157373c357e2777e"
+    },
+    {
+      "path": "backend/tests/test_package_selftest_contracts.py",
+      "sha256": "5f12f3937792497848699e9dfd9e79a73e7ccfd7e85fc4a5e6d416bfe34dac11"
+    },
+    {
+      "path": "backend/tests/test_security_utility_release_matrix.py",
+      "sha256": "9f4db4570d00cebf52f840cfe82020d196b3e022e3483476ddadaa76465b4ac5"
+    },
+    {
+      "path": "backend/tests/test_setup_wizard_cli_release_matrix.py",
+      "sha256": "c95a1306e8997a88e654dfc28583b25ed8d8c869cbd47aff5af87fe00a6d5979"
+    },
+    {
+      "path": "backend/tests/test_setup_wizard_http_release.py",
+      "sha256": "c69bb514bd291b099e2598b17f66b108c27c0a0fd9b1d365dd7c46aca631fbbe"
+    },
+    {
+      "path": "backend/tests/test_setup_wizard_rc3_branch_matrix.py",
+      "sha256": "93225e1d3d275e8e7e30676b64abaa074d761cb2a3626760acc71e306a07b611"
+    },
+    {
+      "path": "backend/tests/test_source_formatter_runtime_validation.py",
+      "sha256": "310ef431d345a96b9b94fe1d6824a3728a4813cbcd5aa7cec3bb0ac052fd1887"
+    },
+    {
+      "path": "backend/tests/test_windows_host_configuration_transaction.py",
+      "sha256": "9e6accaa0840941469435d98eae225248edde9825f60e13c99485f35073e1451"
+    },
+    {
+      "path": "backend/tests/test_windows_host_status_edge_cases.py",
+      "sha256": "929f8f5cb16fc2e0aa7975047985d98b4d8b612bba9f4ae6ad12604f5e3085cb"
+    },
+    {
+      "path": "backend/tests/test_windows_launcher_visible_handoff.py",
+      "sha256": "f2a977c8961dcbc795b3975e838fb5658d0bd1aed5371f383f6003526ac1c780"
+    },
+    {
+      "path": "backend/tests/test_windows_ocr_public_recovery.py",
+      "sha256": "5c97f8d966691e2b99fb72c5046c620cdefe20e1bd5538c8bdbb0c7a46a4190d"
+    },
+    {
+      "path": "backend/tests/test_windows_public_acl_real.py",
+      "sha256": "99ba050668038d75debc53e45a000d983aed0fb1249f064a0473ec0dbde05926"
+    },
+    {
+      "path": "backend/tests/test_windows_startup_transport.py",
+      "sha256": "3a8e91e924e0fba0d20f14d41e62326a6ff122be97859b95cb5254a7dbf038ee"
+    },
+    {
+      "path": "backend/tests/test_workspace_gitleaks_exceptions.py",
+      "sha256": "e1a86343a35b8fd5abc8de77608dc291832dba377373106e3b33d46900746e29"
+    },
+    {
+      "path": "docs/README.md",
+      "sha256": "b90dc4f4c8829b4b6a9132f5607cb0beb3983cd7e9727cec0db78c2dbfe06cb9"
+    },
+    {
+      "path": "docs/release-notes-v1.4.5-rc.6.md",
+      "sha256": "1390b923de2b4a90bacee7d1c11919951ef24854d0d4efbe19985c035ed38e7f"
+    },
+    {
+      "path": "docs/windows-installation-20261017.zh-CN.md",
+      "sha256": "665cf07d8386eafd782627ed61159eea7a51f1441ff3da1e34222726afb5fb69"
+    },
+    {
+      "path": "frontend/package.json",
+      "sha256": "7c47fc1c392ba7f56f5f965a9d142ca10711bf787308c0b9ea3662d3d22c88d6"
+    },
+    {
+      "path": "frontend/pnpm-lock.yaml",
+      "sha256": "3f414d5394d9b6d08af97d01eebe5b660d1f1e6cac7a0c6479dc16ed24c59d6c"
+    },
+    {
+      "path": "packaging/windows/OCR-PUBLIC-RECOVERY.md",
+      "sha256": "75afe4ca141947130ca71df3f2e0b8f038215623480653f02d584f00fc2970c1"
+    },
+    {
+      "path": "packaging/windows/PartyOps.iss",
+      "sha256": "02619026876ec272645631ee1999fc507388a87cbbbe133dcca2b94cafab8041"
+    },
+    {
+      "path": "packaging/windows/ocr-public-recovery-manifest.json",
+      "sha256": "fa4ef50093a52c72932550a48c01cdea7fe44056d44bcc6460fa40cdffdbdff3"
+    },
+    {
+      "path": "packaging/windows/prepare-ocr-runtime.ps1",
+      "sha256": "7985af85c3c82eedeb66333beab0409841dff75575df13859f6bd0ae845dc5e1"
+    },
+    {
+      "path": "packaging/windows/recover-ocr-from-public-installer.ps1",
+      "sha256": "8d60701826ee91ce8fdfc4040ef97f6fd8e6ddcd364f6dbe7bd5d1bd331ad3ab"
+    },
+    {
+      "path": "packaging/windows/windows_launcher.py",
+      "sha256": "7b5d1e6381ec9a326b2590c73c2e8151b619f7dfdd1ef36c7659a76ceae3fce3"
+    },
+    {
+      "path": "packaging/windows/windows_service.py",
+      "sha256": "3abf9294c9026bfe24376eedfa5d2cfaad106769b14c7e4fd34a16c380867418"
+    },
+    {
+      "path": "scripts/build-document-formatter-host.ps1",
+      "sha256": "6d648b840d806558f6d6bfaace1c52b0c50f4b037070a1f6614c8a47cc5382d0"
+    }
+  ],
+  "committed": false,
+  "pushed": false
+}

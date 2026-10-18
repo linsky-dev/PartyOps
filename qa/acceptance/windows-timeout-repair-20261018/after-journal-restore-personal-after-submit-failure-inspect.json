@@ -1,0 +1,180 @@
+{
+  "candidate": {
+    "package": {
+      "id": "windows_amd64",
+      "version": "1.4.5-rc.6",
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\artifacts\\PartyOps_1.4.5-rc.6_windows_amd64.exe",
+      "sha256": "e3e2ea45ccd38acff059b5713826a78f998a56ccef75341633f67bd4e17e57da",
+      "source_fingerprint": "84bddfca2e3a217cf5052cc7683d83687b4d00b4f7325d120a833a8ee6880d7f",
+      "provenance_status": "verified",
+      "build_receipt": "D:\\PartyOps-VM-Lab\\state\\builds\\e3e2ea45ccd38acff059b5713826a78f998a56ccef75341633f67bd4e17e57da.json",
+      "build_receipt_sha256": "b7c8db9527279faa4b104d30159d6569fbe70b42d87c612bc49a1835420aff0f"
+    },
+    "manifest_sha256": "202a98774b78b49f91fd26dd1dc92b2581b6d7eb6a26d2f129694fa58785b075",
+    "executable_sha256": "1dae862966da6d8e98d22620b4e0d8dbafed7e8c5a85c56a217b43b73c1846ca",
+    "wizard_sha256": "b062ea21fa91c937fa00c31221a0c348deb07780a698927a7b641b5fcaa40649"
+  },
+  "time_utc": "2026-10-18T10:44:23.866394+00:00",
+  "snapshot": {
+    "processes": [
+      {
+        "session_id": 1,
+        "name": "PartyOpsWizard.exe",
+        "pid": 3444,
+        "installed_path_matches": true,
+        "created": "2026-10-18T10:38:25.5850570Z",
+        "owner_is_original_user": true
+      },
+      {
+        "session_id": 1,
+        "name": "PartyOps.exe",
+        "pid": 3380,
+        "installed_path_matches": true,
+        "created": "2026-10-18T10:40:38.5126370Z",
+        "owner_is_original_user": true
+      }
+    ],
+    "username": "partyopsuser",
+    "user_mode": "personal",
+    "host_configuration_acceptance": "not-verified",
+    "wizard_exists": true,
+    "pending_mode_switch": false,
+    "uac_acceptance": "not-verified",
+    "administrator": false,
+    "system_mode": "personal",
+    "user_journal_present": false,
+    "qa_host_data_marker_present": true,
+    "fixed_qa_host_status": {
+      "present": true,
+      "code": "",
+      "pid": 6624,
+      "exit_code": null,
+      "stage": "ready"
+    },
+    "session_id": 1,
+    "listeners": [
+      {
+        "port": 49893,
+        "pid": 3444,
+        "owned_by_wizard": true,
+        "loopback": true
+      },
+      {
+        "port": 18777,
+        "pid": 3380,
+        "owned_by_wizard": false,
+        "loopback": true
+      },
+      {
+        "port": 18775,
+        "pid": 3380,
+        "owned_by_wizard": false,
+        "loopback": true
+      }
+    ],
+    "public_outcomes_since_launch": []
+  },
+  "metadata": {
+    "services": [
+      {
+        "start_mode": "Manual",
+        "name": "PartyOpsHost",
+        "state": "Stopped"
+      },
+      {
+        "start_mode": "Manual",
+        "name": "PartyOpsUpdateService",
+        "state": "Stopped"
+      }
+    ],
+    "resume_task": {
+      "last_run": "2026-10-18T10:17:19.0000000Z",
+      "actions": [
+        {
+          "path_matches": true,
+          "arguments": "--reconfigure --initial-role personal"
+        }
+      ],
+      "run_level": 0,
+      "state": 3,
+      "original_user_matches": true,
+      "logon_type": 3
+    },
+    "pending": false,
+    "consent_count": 0,
+    "recovery_task_count": 1,
+    "wizard_children": [
+      {
+        "name": "PartyOps.exe",
+        "pid": 3380
+      },
+      {
+        "name": "conhost.exe",
+        "pid": 4824
+      }
+    ],
+    "transaction_id": "",
+    "wizard_count": 1,
+    "journal_sha256": "",
+    "outcome": "",
+    "cancel_relaunch_task_count": 1,
+    "journal_present": false,
+    "other_powershell_count": 0
+  },
+  "runtime": {
+    "processes": [
+      {
+        "path": "C:\\PartyOps QA\\中文 程序\\PartyOps.exe",
+        "pid": 3380,
+        "created": "2026-10-18T10:40:38.5126370Z"
+      }
+    ],
+    "http_owners": [
+      3380
+    ],
+    "wizard_sha256": "b062ea21fa91c937fa00c31221a0c348deb07780a698927a7b641b5fcaa40649",
+    "guest_uuid": "f47cf265-72a2-4d51-9cf1-b1f5ae960cb2",
+    "boot_id": "2026-10-18T09:43:26.5000000Z",
+    "manifest_sha256": "202a98774b78b49f91fd26dd1dc92b2581b6d7eb6a26d2f129694fa58785b075",
+    "purpose": "disposable-qa",
+    "executable_sha256": "1dae862966da6d8e98d22620b4e0d8dbafed7e8c5a85c56a217b43b73c1846ca"
+  },
+  "services": {
+    "services": [
+      {
+        "start_mode": "Manual",
+        "pid": 0,
+        "name": "PartyOpsHost",
+        "state": "Stopped"
+      },
+      {
+        "start_mode": "Manual",
+        "pid": 0,
+        "name": "PartyOpsUpdateService",
+        "state": "Stopped"
+      }
+    ],
+    "host_process_tree": []
+  },
+  "details": {
+    "consent_count": 0,
+    "mutation_executed": false,
+    "wizard_identities": [
+      {
+        "owner_original": true,
+        "privileged_abort": false,
+        "session": 1,
+        "path_matches": true,
+        "privileged_apply": false,
+        "created": "2026-10-18T10:38:25.5850570Z",
+        "owner_system": false,
+        "parent_pid": 1108,
+        "handle_exists": true,
+        "pid": 3444,
+        "has_exited": false
+      }
+    ]
+  },
+  "failed_submit_sha256": "66ebf67419e2154e519dad1203d9275c205e76acdb3f6e72c5ea89cd80d9bb47",
+  "scope": "read-only-not-terminal-http-proof"
+}

@@ -1,0 +1,9 @@
+{
+  "attempt_sha256": "6568b58e6d4db1dcd53569a22fddaa13494361548cd46cd1e1dec23eb1a0a269",
+  "request": {
+    "launch_requested": true,
+    "uac_accepted": false,
+    "task_runlevel": 0,
+    "configuration_submitted": false
+  }
+}

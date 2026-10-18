@@ -1,0 +1,8 @@
+{
+  "time_utc": "2026-10-17T03:58:53.220718+00:00",
+  "status": "restored",
+  "workers": 4,
+  "queues": 6,
+  "differences": [],
+  "scope": "actual active_queues compared with original queue and exchange options; no new control commands"
+}

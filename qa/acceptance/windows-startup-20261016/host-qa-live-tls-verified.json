@@ -1,0 +1,22 @@
+{
+  "time_utc": "2026-10-17T06:33:10.393962+00:00",
+  "guest_uuid": "f47cf265-72a2-4d51-9cf1-b1f5ae960cb2",
+  "tls_validation": "system default verification plus explicit QA public root; never disable verification",
+  "ports": [
+    {
+      "port": 18765,
+      "certificate_verified": true,
+      "tls_version": "TLSv1.3",
+      "server_certificate_sha256": "0f52f80fea0e58be4072ab362cf399d9fd415e5223f34c7f0063814ba0f9d797",
+      "http_status_line": "HTTP/1.1 200 OK"
+    },
+    {
+      "port": 18766,
+      "certificate_verified": true,
+      "tls_version": "TLSv1.3",
+      "server_certificate_sha256": "0f52f80fea0e58be4072ab362cf399d9fd415e5223f34c7f0063814ba0f9d797",
+      "error_type": "RuntimeError",
+      "error_code": "REMOTE_EOF"
+    }
+  ]
+}

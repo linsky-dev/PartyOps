@@ -1,0 +1,7 @@
+{
+  "code": "WPS_CURRENT_HOST_PROOF_MISSING_OR_AMBIGUOUS",
+  "exception_type": "System.Management.Automation.RuntimeException",
+  "category": "OperationStopped",
+  "script_line": 23,
+  "binding": {}
+}

@@ -1,0 +1,88 @@
+{
+  "status": "passed_static_and_mock_only",
+  "python_syntax": "passed",
+  "cases": [
+    {
+      "case": "readonly",
+      "passed": true,
+      "mock_chmod_calls": 1,
+      "mock_retry_calls": 1
+    },
+    {
+      "case": "writable",
+      "passed": true,
+      "mock_chmod_calls": 0,
+      "mock_retry_calls": 0
+    },
+    {
+      "case": "outside",
+      "passed": true,
+      "mock_chmod_calls": 0,
+      "mock_retry_calls": 0
+    },
+    {
+      "case": "symlink",
+      "passed": true,
+      "mock_chmod_calls": 0,
+      "mock_retry_calls": 0
+    },
+    {
+      "case": "junction",
+      "passed": true,
+      "mock_chmod_calls": 0,
+      "mock_retry_calls": 0
+    },
+    {
+      "case": "reparse",
+      "passed": true,
+      "mock_chmod_calls": 0,
+      "mock_retry_calls": 0
+    },
+    {
+      "case": "hardlink",
+      "passed": true,
+      "mock_chmod_calls": 0,
+      "mock_retry_calls": 0
+    },
+    {
+      "case": "directory",
+      "passed": true,
+      "mock_chmod_calls": 0,
+      "mock_retry_calls": 0
+    },
+    {
+      "case": "wrong_errno",
+      "passed": true,
+      "mock_chmod_calls": 0,
+      "mock_retry_calls": 0
+    },
+    {
+      "case": "wrong_type",
+      "passed": true,
+      "mock_chmod_calls": 0,
+      "mock_retry_calls": 0
+    },
+    {
+      "case": "wrong_func",
+      "passed": true,
+      "mock_chmod_calls": 0,
+      "mock_retry_calls": 0
+    },
+    {
+      "case": "retry_failure",
+      "passed": true,
+      "mock_chmod_calls": 1,
+      "mock_retry_calls": 1
+    },
+    {
+      "case": "winerror5",
+      "passed": true,
+      "mock_chmod_calls": 1,
+      "mock_retry_calls": 1
+    }
+  ],
+  "cleanup_executed": false,
+  "real_chmod_calls": 0,
+  "real_delete_calls": 0,
+  "notes": "Only isolated function and mocked paths, attributes and callbacks; no rmtree/full script execution."
+}

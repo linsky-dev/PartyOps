@@ -1,0 +1,50 @@
+{
+  "status": "passed",
+  "repository": "linsky-dev/PartyOps",
+  "tag": "v1.4.5-rc.6",
+  "release_id": 402021905,
+  "package_sha256": "e3e2ea45ccd38acff059b5713826a78f998a56ccef75341633f67bd4e17e57da",
+  "manifest_sha256": "9e314cbfa1c5d604ad0f24dd8525b0afcda4f511f1cd8d4571114be1061298ee",
+  "expected_sha256": "71f0ed1161917ecd2b59f180be3756cf48f60a00d08900d9751d0c727055ec9c",
+  "domestic_readback_sha256": "22eca48de53c19ec4cea9b2fa54bad9daaf59c72c5975c8198af42172a70c116",
+  "assets": [
+    {
+      "asset_id": 653300216,
+      "filename": "PartyOps_1.4.5-rc.6_windows_amd64_startup-20261018.exe",
+      "url": "https://github.com/linsky-dev/PartyOps/releases/download/v1.4.5-rc.6/PartyOps_1.4.5-rc.6_windows_amd64_startup-20261018.exe",
+      "bytes": 449988807,
+      "sha256": "e3e2ea45ccd38acff059b5713826a78f998a56ccef75341633f67bd4e17e57da",
+      "public_readback_verified": true
+    },
+    {
+      "asset_id": 653303518,
+      "filename": "PartyOps_1.4.5-rc.6_windows_amd64_startup-20261018.exe.sha256",
+      "url": "https://github.com/linsky-dev/PartyOps/releases/download/v1.4.5-rc.6/PartyOps_1.4.5-rc.6_windows_amd64_startup-20261018.exe.sha256",
+      "bytes": 122,
+      "sha256": "355e7b7e48ba0ff9228afda0fdfb945d6e7db99199cfca5766696a05a758a946",
+      "public_readback_verified": true
+    },
+    {
+      "asset_id": 653303744,
+      "filename": "release-manifest-windows-startup-20261018.json",
+      "url": "https://github.com/linsky-dev/PartyOps/releases/download/v1.4.5-rc.6/release-manifest-windows-startup-20261018.json",
+      "bytes": 67097,
+      "sha256": "9e314cbfa1c5d604ad0f24dd8525b0afcda4f511f1cd8d4571114be1061298ee",
+      "public_readback_verified": true
+    },
+    {
+      "asset_id": 653303997,
+      "filename": "windows-installation-20261018.zh-CN.md",
+      "url": "https://github.com/linsky-dev/PartyOps/releases/download/v1.4.5-rc.6/windows-installation-20261018.zh-CN.md",
+      "bytes": 1937,
+      "sha256": "c3d621ad6ae8e1cdd98d0af6f1e5e9641a53050f7b142ffca046b58ddcefc81a",
+      "public_readback_verified": true
+    }
+  ],
+  "missing": [],
+  "all_four_anonymous_full_get_verified": true,
+  "old_27_preserved": true,
+  "tag_unchanged": true,
+  "network_write_performed": false,
+  "observed_at": "2026-10-18T11:19:08.130170+00:00"
+}

@@ -1,0 +1,306 @@
+"""Windows 主机服务与首次配置向导共享的启动状态协议。"""
+
+from __future__ import annotations
+
+import json
+import os
+import re
+import ssl
+import urllib.error
+import urllib.request
+from pathlib import Path
+from typing import Any
+
+from .startup_diagnostics import (
+    DATA_DIR_FULL,
+    DATABASE_CORRUPT,
+    DATABASE_IO_FAILED,
+    DATABASE_LOCKED,
+    DATABASE_SCHEMA_FAILED,
+    DATABASE_STARTUP_FAILED,
+    INSTANCE_ALREADY_RUNNING,
+    SQLITE_RUNTIME_FAILED,
+    UPGRADE_BACKUP_FAILED,
+)
+from .time_utils import beijing_iso
+
+SERVICE_MISSING = "SERVICE_MISSING"
+SERVICE_STOPPED = "SERVICE_STOPPED"
+CHILD_EXITED = "CHILD_EXITED"
+PORT_IN_USE = "PORT_IN_USE"
+DATA_DIR_DENIED = "DATA_DIR_DENIED"
+TLS_INIT_FAILED = "TLS_INIT_FAILED"
+HEALTH_TIMEOUT = "HEALTH_TIMEOUT"
+RUNTIME_VERSION_MISMATCH = "RUNTIME_VERSION_MISMATCH"
+RUNTIME_EXECUTABLE_MISSING = "RUNTIME_EXECUTABLE_MISSING"
+RUNTIME_DEPENDENCY_MISSING = "RUNTIME_DEPENDENCY_MISSING"
+RUNTIME_BINARY_INCOMPATIBLE = "RUNTIME_BINARY_INCOMPATIBLE"
+RUNTIME_PACKAGE_MISMATCH = "RUNTIME_PACKAGE_MISMATCH"
+RUNTIME_SYSTEM_UPDATE_REQUIRED = "RUNTIME_SYSTEM_UPDATE_REQUIRED"
+RUNTIME_NATIVE_CRASH = "RUNTIME_NATIVE_CRASH"
+RUNTIME_PERMISSION_DENIED = "RUNTIME_PERMISSION_DENIED"
+CONFIG_MIGRATION_FAILED = "CONFIG_MIGRATION_FAILED"
+
+TERMINAL_CODES = {
+    "LOCAL_FORMAT_PORT_IN_USE",
+    "LOCAL_FORMAT_CONFIG_WRITE_FAILED",
+    "LOCAL_FORMAT_SECRET_INVALID",
+    CHILD_EXITED,
+    PORT_IN_USE,
+    DATA_DIR_DENIED,
+    TLS_INIT_FAILED,
+    DATABASE_LOCKED,
+    DATABASE_CORRUPT,
+    DATABASE_SCHEMA_FAILED,
+    DATABASE_IO_FAILED,
+    DATA_DIR_FULL,
+    DATABASE_STARTUP_FAILED,
+    RUNTIME_VERSION_MISMATCH,
+    RUNTIME_EXECUTABLE_MISSING,
+    RUNTIME_DEPENDENCY_MISSING,
+    RUNTIME_BINARY_INCOMPATIBLE,
+    RUNTIME_PACKAGE_MISMATCH,
+    RUNTIME_SYSTEM_UPDATE_REQUIRED,
+    RUNTIME_NATIVE_CRASH,
+    RUNTIME_PERMISSION_DENIED,
+    SQLITE_RUNTIME_FAILED,
+    UPGRADE_BACKUP_FAILED,
+    CONFIG_MIGRATION_FAILED,
+    INSTANCE_ALREADY_RUNNING,
+}
+
+
+def classify_runtime_failure(
+    detail: str,
+    *,
+    exit_code: int | None = None,
+    winerror: int | None = None,
+) -> str:
+    """把 Loader、SQLite、迁移、端口和权限故障映射为稳定诊断码。"""
+
+    text = detail[-12000:]
+    lowered = text.lower()
+    unsigned = exit_code & 0xFFFFFFFF if exit_code is not None else None
+    # OS 已明确给出的 Loader/架构/原生异常优先于日志文本，不能被旧错误码覆盖。
+    native_exits = {
+        0xC0000135: RUNTIME_DEPENDENCY_MISSING,
+        0xC000007B: RUNTIME_BINARY_INCOMPATIBLE,
+        0xC0000005: RUNTIME_NATIVE_CRASH,
+        0xC0000409: RUNTIME_NATIVE_CRASH,
+    }
+    native_errors = {2: RUNTIME_EXECUTABLE_MISSING, 5: RUNTIME_PERMISSION_DENIED,
+                     126: RUNTIME_DEPENDENCY_MISSING, 193: RUNTIME_BINARY_INCOMPATIBLE}
+    if winerror in native_errors:
+        return native_errors[winerror]
+    if unsigned in native_exits:
+        return native_exits[unsigned]
+    known_codes = TERMINAL_CODES | {
+        DATABASE_LOCKED,
+        DATABASE_CORRUPT,
+        DATABASE_SCHEMA_FAILED,
+        DATABASE_IO_FAILED,
+        DATA_DIR_FULL,
+        DATABASE_STARTUP_FAILED,
+    }
+    for match in reversed(re.findall(r"\[([A-Z][A-Z0-9_]{2,63})\]", text)):
+        if match in known_codes:
+            return match
+    if "winerror 2" in lowered or "no such file or directory" in lowered:
+        return RUNTIME_EXECUTABLE_MISSING
+    if any(
+        marker in lowered
+        for marker in (
+            "winerror 126", "dll load failed", "module not found", "modulenotfounderror",
+            "api-ms-win-", "vcruntime", "ucrtbase", "找不到指定的模块", "找不到 dll",
+        )
+    ):
+        return RUNTIME_DEPENDENCY_MISSING
+    if any(
+        marker in lowered
+        for marker in ("winerror 193", "not a valid win32 application", "bad image", "incorrect format", "不是有效的 win32")
+    ):
+        return RUNTIME_BINARY_INCOMPATIBLE
+    if any(
+        marker in lowered
+        for marker in (
+            "no such table",
+            "no such column",
+            "has no column named",
+            "duplicate column",
+        )
+    ):
+        return DATABASE_SCHEMA_FAILED
+    if any(marker in lowered for marker in ("database disk image is malformed", "file is not a database")):
+        return DATABASE_CORRUPT
+    if any(marker in lowered for marker in ("database is locked", "database table is locked")):
+        return DATABASE_LOCKED
+    if any(
+        marker in lowered
+        for marker in (
+            "no such module: fts5",
+            "未启用 fts5",
+            "sqlite runtime",
+            "pysqlite",
+            "低于生产最低版本",
+        )
+    ):
+        return SQLITE_RUNTIME_FAILED
+    if any(marker in lowered for marker in ("alembic", "migration", "迁移", "schema upgrade")):
+        return CONFIG_MIGRATION_FAILED
+    if any(marker in lowered for marker in ("address already in use", "winerror 10048", "端口", "占用")):
+        return PORT_IN_USE
+    if any(marker in lowered for marker in ("permission denied", "access is denied", "拒绝访问", "权限")):
+        return RUNTIME_PERMISSION_DENIED
+    if any(marker in lowered for marker in ("ssl", "tls", "certificate", "证书", "内部 ca")):
+        return TLS_INIT_FAILED
+    return CHILD_EXITED
+
+
+def service_log_path(data_dir: Path) -> Path:
+    """返回用户可直接提交的主机服务日志位置。"""
+
+    return data_dir / "logs" / "partyops-host-service.log"
+
+
+def service_status_path(data_dir: Path) -> Path:
+    """返回服务与向导之间的原子状态文件位置。"""
+
+    return data_dir / "logs" / "partyops-host-status.json"
+
+
+def write_service_status(
+    data_dir: Path,
+    *,
+    stage: str,
+    code: str = "",
+    detail: str = "",
+    pid: int | None = None,
+    exit_code: int | None = None,
+) -> Path:
+    """原子写入不含密钥的服务状态，供向导快速失败与复制诊断。"""
+
+    path = service_status_path(data_dir)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload: dict[str, Any] = {
+        "format_version": 1,
+        "updated_at": beijing_iso(),
+        "stage": stage,
+        "code": code,
+        "detail": detail[-2000:],
+    }
+    if pid is not None:
+        payload["pid"] = pid
+    if exit_code is not None:
+        payload["exit_code"] = exit_code
+    temporary = path.with_suffix(".json.tmp")
+    temporary.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    os.replace(temporary, path)
+    return path
+
+
+def read_service_status(data_dir: Path) -> dict[str, Any] | None:
+    """读取状态文件；半写、旧格式或损坏内容视为暂无状态。"""
+
+    try:
+        payload = json.loads(service_status_path(data_dir).read_text(encoding="utf-8"))
+    except (OSError, ValueError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, dict) or payload.get("format_version") != 1:
+        return None
+    return payload
+
+
+def tail_service_log(data_dir: Path, *, max_bytes: int = 8192) -> str:
+    """读取日志尾部并容忍冻结进程正在追加内容。"""
+
+    try:
+        path = service_log_path(data_dir)
+        size = path.stat().st_size
+        with path.open("rb") as stream:
+            offset = max(0, size - max_bytes)
+            stream.seek(offset)
+            text = stream.read(max_bytes).decode("utf-8", errors="replace")
+        # 从文件中部读取时丢弃第一条残行，避免 UTF-8 多字节字符被切开后
+        # 在向导中显示成乱码；完整原始日志不受影响。
+        if offset and "\n" in text:
+            text = text.split("\n", 1)[1]
+        return text
+    except OSError:
+        return ""
+
+
+def probe_loopback_health(
+    port: int,
+    *,
+    tls: bool,
+    timeout: float = 3.0,
+    ca_file: Path | None = None,
+    expected_version: str | None = None,
+) -> tuple[bool, str]:
+    """探测本机 PartyOps 健康接口，供 Windows 监督服务持续上报阶段。
+
+    这里只访问固定的 127.0.0.1 地址；TLS 证书由 PartyOps 内部 CA 签发，
+    服务进程尚未把 CA 安装到系统信任区时也必须能够完成本机就绪探测。
+    """
+
+    if not 1024 <= port <= 65534:
+        return False, "主机服务端口超出允许范围"
+    scheme = "https" if tls else "http"
+    if tls and ca_file is not None:
+        if not ca_file.is_file():
+            return False, "PartyOps 内部 CA 尚未生成"
+        try:
+            # 即使目标固定为回环地址，也校验 PartyOps 自己的 CA，避免其他本机
+            # 进程抢占端口后伪造健康响应。
+            context = ssl.create_default_context(cafile=str(ca_file.resolve()))
+        except (OSError, ssl.SSLError, ValueError) as exc:
+            return False, f"PartyOps 内部 CA 无法读取：{exc}"
+    elif tls:
+        return False, "TLS 健康检查缺少 PartyOps 内部 CA"
+    else:
+        context = None
+    request = urllib.request.Request(f"{scheme}://127.0.0.1:{port}/api/v1/health")
+    try:
+        with urllib.request.urlopen(  # nosec B310 - URL 固定为本机回环地址与健康路径。
+            request,
+            timeout=max(0.5, min(timeout, 5.0)),
+            context=context,
+        ) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+        if health_payload_ready(payload, expected_version=expected_version):
+            return True, ""
+        return False, "健康检查返回内容无效"
+    except (
+        ConnectionResetError,
+        ssl.SSLError,
+        urllib.error.HTTPError,
+        urllib.error.URLError,
+        TimeoutError,
+        OSError,
+        json.JSONDecodeError,
+        ValueError,
+    ) as exc:
+        return False, str(exc)[-2000:]
+
+
+def health_payload_ready(
+    payload: object,
+    *,
+    expected_version: str | None = None,
+    expected_mode: str = "host",
+) -> bool:
+    """只有完整且模式匹配的 PartyOps 健康契约才能标记进程就绪。"""
+
+    if not isinstance(payload, dict) or expected_mode not in {"host", "personal"}:
+        return False
+    sqlite_info = payload.get("sqlite")
+    version = str(payload.get("app_version") or "").strip()
+    return bool(
+        payload.get("status") == "ok"
+        and payload.get("mode") == expected_mode
+        and isinstance(sqlite_info, dict)
+        and sqlite_info.get("safe_version") is True
+        and sqlite_info.get("fts5") is True
+        and version
+        and (expected_version is None or version == expected_version)
+    )

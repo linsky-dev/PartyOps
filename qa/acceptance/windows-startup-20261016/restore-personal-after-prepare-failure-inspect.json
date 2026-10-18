@@ -1,0 +1,40 @@
+{
+  "processes": [
+    {
+      "Name": "WPS_Setup_x64_28488.exe",
+      "ProcessId": 4236,
+      "ParentProcessId": 3672,
+      "SessionId": 1,
+      "created": "2026-10-17T06:00:22.7042560Z"
+    },
+    {
+      "Name": "PartyOps.exe",
+      "ProcessId": 3724,
+      "ParentProcessId": 3596,
+      "SessionId": 0,
+      "created": "2026-10-17T06:10:09.2734400Z"
+    },
+    {
+      "Name": "WPS_Setup_x64_28488.exe",
+      "ProcessId": 3728,
+      "ParentProcessId": 3672,
+      "SessionId": 1,
+      "created": "2026-10-17T06:15:08.2929760Z"
+    },
+    {
+      "Name": "wps_setup_x64_28488.exe",
+      "ProcessId": 1228,
+      "ParentProcessId": 3728,
+      "SessionId": 1,
+      "created": "2026-10-17T06:15:23.7225600Z"
+    },
+    {
+      "Name": "wps_setup_x64_28488.exe",
+      "ProcessId": 3948,
+      "ParentProcessId": 3672,
+      "SessionId": 1,
+      "created": "2026-10-17T06:15:27.0918040Z"
+    }
+  ],
+  "tasks": []
+}

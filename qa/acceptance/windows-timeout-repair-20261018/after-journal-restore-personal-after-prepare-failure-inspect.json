@@ -1,0 +1,216 @@
+{
+  "candidate": {
+    "package": {
+      "id": "windows_amd64",
+      "version": "1.4.5-rc.6",
+      "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\artifacts\\PartyOps_1.4.5-rc.6_windows_amd64.exe",
+      "sha256": "e3e2ea45ccd38acff059b5713826a78f998a56ccef75341633f67bd4e17e57da",
+      "source_fingerprint": "84bddfca2e3a217cf5052cc7683d83687b4d00b4f7325d120a833a8ee6880d7f",
+      "provenance_status": "verified",
+      "build_receipt": "D:\\PartyOps-VM-Lab\\state\\builds\\e3e2ea45ccd38acff059b5713826a78f998a56ccef75341633f67bd4e17e57da.json",
+      "build_receipt_sha256": "b7c8db9527279faa4b104d30159d6569fbe70b42d87c612bc49a1835420aff0f"
+    },
+    "manifest_sha256": "202a98774b78b49f91fd26dd1dc92b2581b6d7eb6a26d2f129694fa58785b075",
+    "executable_sha256": "1dae862966da6d8e98d22620b4e0d8dbafed7e8c5a85c56a217b43b73c1846ca",
+    "wizard_sha256": "b062ea21fa91c937fa00c31221a0c348deb07780a698927a7b641b5fcaa40649"
+  },
+  "time_utc": "2026-10-18T10:39:23.539409+00:00",
+  "snapshot": {
+    "processes": [
+      {
+        "session_id": 0,
+        "name": "PartyOps.exe",
+        "pid": 6624,
+        "installed_path_matches": true,
+        "created": "2026-10-18T10:33:33.3680140Z",
+        "owner_is_original_user": false
+      }
+    ],
+    "username": "partyopsuser",
+    "user_mode": "host",
+    "host_configuration_acceptance": "not-verified",
+    "wizard_exists": false,
+    "pending_mode_switch": false,
+    "uac_acceptance": "not-verified",
+    "administrator": false,
+    "system_mode": "host",
+    "user_journal_present": false,
+    "qa_host_data_marker_present": true,
+    "fixed_qa_host_status": {
+      "present": true,
+      "code": "",
+      "pid": 6624,
+      "exit_code": null,
+      "stage": "ready"
+    },
+    "session_id": 1,
+    "listeners": [
+      {
+        "port": 18768,
+        "pid": 6624,
+        "owned_by_wizard": false,
+        "loopback": true
+      },
+      {
+        "port": 18766,
+        "pid": 6624,
+        "owned_by_wizard": false,
+        "loopback": false
+      },
+      {
+        "port": 18765,
+        "pid": 6624,
+        "owned_by_wizard": false,
+        "loopback": false
+      }
+    ],
+    "public_outcomes_since_launch": []
+  },
+  "metadata": {
+    "services": [
+      {
+        "start_mode": "Auto",
+        "name": "PartyOpsHost",
+        "state": "Running"
+      },
+      {
+        "start_mode": "Auto",
+        "name": "PartyOpsUpdateService",
+        "state": "Running"
+      }
+    ],
+    "resume_task": {
+      "last_run": "2026-10-18T10:17:19.0000000Z",
+      "actions": [
+        {
+          "path_matches": true,
+          "arguments": "--reconfigure --initial-role personal"
+        }
+      ],
+      "run_level": 0,
+      "state": 3,
+      "original_user_matches": true,
+      "logon_type": 3
+    },
+    "pending": false,
+    "consent_count": 0,
+    "recovery_task_count": 1,
+    "wizard_children": [],
+    "transaction_id": "",
+    "wizard_count": 0,
+    "journal_sha256": "",
+    "outcome": "",
+    "cancel_relaunch_task_count": 1,
+    "journal_present": false,
+    "other_powershell_count": 0
+  },
+  "runtime": {
+    "processes": [
+      {
+        "path": "C:\\PartyOps QA\\中文 程序\\PartyOps.exe",
+        "pid": 6624,
+        "created": "2026-10-18T10:33:33.3680140Z"
+      }
+    ],
+    "http_owners": [],
+    "wizard_sha256": "b062ea21fa91c937fa00c31221a0c348deb07780a698927a7b641b5fcaa40649",
+    "guest_uuid": "f47cf265-72a2-4d51-9cf1-b1f5ae960cb2",
+    "boot_id": "2026-10-18T09:43:26.5000000Z",
+    "manifest_sha256": "202a98774b78b49f91fd26dd1dc92b2581b6d7eb6a26d2f129694fa58785b075",
+    "purpose": "disposable-qa",
+    "executable_sha256": "1dae862966da6d8e98d22620b4e0d8dbafed7e8c5a85c56a217b43b73c1846ca"
+  },
+  "services": {
+    "services": [
+      {
+        "start_mode": "Auto",
+        "pid": 7376,
+        "name": "PartyOpsHost",
+        "state": "Running"
+      },
+      {
+        "start_mode": "Auto",
+        "pid": 8108,
+        "name": "PartyOpsUpdateService",
+        "state": "Running"
+      }
+    ],
+    "host_process_tree": [
+      {
+        "path": "C:\\PartyOps QA\\中文 程序\\PartyOpsService.exe",
+        "pid": 7376,
+        "name": "PartyOpsService.exe",
+        "created": "2026-10-18T10:33:26.6276520Z",
+        "parent_pid": 580
+      },
+      {
+        "path": "C:\\PartyOps QA\\中文 程序\\PartyOps.exe",
+        "pid": 6624,
+        "name": "PartyOps.exe",
+        "created": "2026-10-18T10:33:33.3680140Z",
+        "parent_pid": 7376
+      },
+      {
+        "path": "C:\\Windows\\system32\\conhost.exe",
+        "pid": 3556,
+        "name": "conhost.exe",
+        "created": "2026-10-18T10:33:33.4194790Z",
+        "parent_pid": 6624
+      }
+    ]
+  },
+  "details": {
+    "mutation_script_executed": false,
+    "original_stderr_persisted": false,
+    "parser_errors": [],
+    "tasks": [
+      {
+        "last_result": -1,
+        "name": "PartyOps-QA-After-Journal-Host-20261018",
+        "state": 3
+      }
+    ],
+    "listeners": [
+      {
+        "port": 18768,
+        "pid": 6624
+      },
+      {
+        "port": 18766,
+        "pid": 6624
+      },
+      {
+        "port": 18765,
+        "pid": 6624
+      }
+    ],
+    "handles": [
+      {
+        "created": "",
+        "pid": 7492,
+        "has_exited": null,
+        "exists": false
+      },
+      {
+        "created": "2026-10-18T10:33:33.3680146Z",
+        "pid": 6624,
+        "has_exited": false,
+        "exists": true
+      }
+    ],
+    "processes": [
+      {
+        "created": "2026-10-18T10:33:33.3680140Z",
+        "pid": 6624,
+        "name": "PartyOps.exe",
+        "parent_pid": 7376
+      }
+    ]
+  },
+  "old_host_wizard_pid": 7492,
+  "failed_result_sha256": "9cfa85ec57c05b23aa2ee3a626321d3ed29929acfbd7ab3b62a280fb880be4e5",
+  "failed_script_source": "/C:/ProgramData/PartyOps-VM-Lab/host-wizard-b1570e72457a/operation.ps1",
+  "failed_script_local": "after-journal-restore-personal-failed-prepare.ps1",
+  "failed_script_sha256": "76cca81f340a8d1553bb6cb449c27f9d1441370997128a25ee26e340783b5d18",
+  "scope": "read-only-not-recovery-completion"
+}

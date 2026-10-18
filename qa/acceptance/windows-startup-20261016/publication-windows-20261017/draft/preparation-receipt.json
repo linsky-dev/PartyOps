@@ -1,0 +1,24 @@
+{
+  "status": "local-prepared-no-network",
+  "binding": {
+    "scope": "windows-startup-20261017-only",
+    "receiver": "windows-startup-20261017-v1",
+    "manifest_sha256": "c42229d415ae66f04e3889b254dd950d2cf8a01cdafc3e6692fc06a14b2cfca0",
+    "baseline_manifest_sha256": "b52807452932502a5f05a10eb609c87345fabe4addb17d3ffeae3a673e0d0e57",
+    "filename": "PartyOps_1.4.5-rc.6_windows_amd64_startup-20261017.exe",
+    "bytes": 449978846,
+    "package_sha256": "3c81fdba89781722f94e82d31c7ff99b4357a1374fc6454ad47d3cfa464d1e27",
+    "receiver_sha256": "5548732e29b28981b9a9478b10461aa58d41f1c78c395f4b8bef2d421a1d9833",
+    "publication_authorized": false,
+    "formal_release_ready": false,
+    "formal_gate": "FULL_FUNCTION_GATE_PASSED"
+  },
+  "network_write_allowed": false,
+  "old_windows_withdrawal_allowed": false,
+  "retained_existing_files": 10,
+  "retained_other_active_packages": 9,
+  "token_created": false,
+  "bridge_supported": false,
+  "formal_gate": "FULL_FUNCTION_GATE_PASSED",
+  "publication_block_reason": "guest-host-and-wps-evidence-pending"
+}

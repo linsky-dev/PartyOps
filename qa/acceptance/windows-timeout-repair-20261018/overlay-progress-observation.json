@@ -1,0 +1,18 @@
+{
+  "incoming_bytes": 449988807,
+  "incoming_write": "2026-10-18T17:21:55.0275565+08:00",
+  "log_bytes": 4474952,
+  "log_write": "2026-10-18T17:25:37.6384105+08:00",
+  "installers": [
+    {
+      "Id": 5040,
+      "ProcessName": "PartyOps_1.4.5-rc.6_windows_amd64",
+      "CPU": 0.1875
+    },
+    {
+      "Id": 7156,
+      "ProcessName": "PartyOps_1.4.5-rc.6_windows_amd64.tmp",
+      "CPU": 55.75
+    }
+  ]
+}

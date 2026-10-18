@@ -1,0 +1,8 @@
+{
+  "corrected_at": "2026-10-18T10:54:42.610427+00:00",
+  "prior_result_sha256": "d4fc4d8cb596b54cd836ab5bd53982c8586f10f200485ef6563cd2d1cef39472",
+  "change": "Only token JSON key rebound to final candidate filename; original token value retained",
+  "candidate": "PartyOps_1.4.5-rc.6_windows_amd64_startup-20261018.exe",
+  "credential_output": false,
+  "receiver_code_unchanged": true
+}

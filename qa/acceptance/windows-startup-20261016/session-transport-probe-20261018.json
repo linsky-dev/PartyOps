@@ -1,0 +1,42 @@
+[
+  {
+    "step": 0,
+    "method": "POST",
+    "status": 200,
+    "content_length": "221",
+    "protocol": 11,
+    "actual_bytes": 221
+  },
+  {
+    "step": 1,
+    "method": "POST",
+    "status": 200,
+    "content_length": "405",
+    "protocol": 11,
+    "actual_bytes": 405
+  },
+  {
+    "step": 2,
+    "method": "POST",
+    "status": 201,
+    "content_length": "136",
+    "protocol": 10,
+    "actual_bytes": 136
+  },
+  {
+    "step": 3,
+    "method": "GET",
+    "status": 200,
+    "content_length": "129",
+    "protocol": 10,
+    "actual_bytes": 129
+  },
+  {
+    "step": 4,
+    "method": "DELETE",
+    "status": 204,
+    "content_length": "0",
+    "protocol": 10,
+    "actual_bytes": 0
+  }
+]

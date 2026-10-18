@@ -1,0 +1,6 @@
+{
+  "status": "failed-inspect-without-retry",
+  "error_type": "RuntimeError",
+  "attempt_sha256": "2cc84c714535d6b61d3e411823a85855cf48e415ca33a0f9f1e101059885a7db",
+  "completed_at": "2026-10-17T04:55:34.331946+00:00"
+}

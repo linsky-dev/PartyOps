@@ -1,0 +1,29 @@
+{
+  "status": "passed_static_only",
+  "powershell": "7.6.5",
+  "cleanup_sha256": "064918bfb2878948d64ef5799cee74b5da3886667bde270ca9b875837987df39",
+  "candidates": [
+    {
+      "path": "C:\\PartyOps-VM-Lab\\vms\\kylin-v10-sp1-arm64\\boot-installed-kernel.ps1",
+      "original_sha256": "33ae601f2c94c4394dfb76b947d613c592d7a2dc048c9ab98ae3f711c30f2314",
+      "candidate_characters": 8819
+    },
+    {
+      "path": "C:\\PartyOps-VM-Lab\\vms\\kylin-v10-sp1-arm64\\launch.ps1",
+      "original_sha256": "2c5a819443010ca7857eed10cb7e24c0d492a288b0bc4abd39e07959947e06db",
+      "candidate_characters": 15769
+    }
+  ],
+  "checks": [
+    "UTF8 ParseInput",
+    "fixed path ancestry",
+    "original entrypoint hashes",
+    "in-memory patches parse",
+    "shared function bodies unchanged",
+    "default and switch use retained disk",
+    "old launcher top-level retirement guard",
+    "two literal delete commands"
+  ],
+  "destructive_script_executed": false,
+  "vm_started": false
+}

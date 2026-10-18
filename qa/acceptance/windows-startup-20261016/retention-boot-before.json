@@ -1,0 +1,10 @@
+{
+  "time_utc": "2026-10-17T03:59:19.317789+00:00",
+  "guest_uuid": "f47cf265-72a2-4d51-9cf1-b1f5ae960cb2",
+  "disk": "D:\\PartyOps-VM-Lab\\vms\\win10-x64\\system.qcow2",
+  "baseline_sha256": "83facee991771d11c84701a157d0ee404d73cfa1e8626da1d07467c731aa40ca",
+  "boot_id": "2026-10-17T03:51:38.5000000Z",
+  "probe_boot_id": "20261017115138.500000+480",
+  "operation": "read-only-pre-overlay-boot",
+  "status": "recorded"
+}

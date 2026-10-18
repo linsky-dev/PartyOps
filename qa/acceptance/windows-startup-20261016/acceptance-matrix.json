@@ -1,0 +1,75 @@
+{
+  "schema": 1,
+  "target": "Windows 10 专业版 22H2 10.0.19045 x64 / QEMU",
+  "guest_uuid": "f47cf265-72a2-4d51-9cf1-b1f5ae960cb2",
+  "candidate_sha256": "3c81fdba89781722f94e82d31c7ff99b4357a1374fc6454ad47d3cfa464d1e27",
+  "baseline_evidence": "retention-baseline.json",
+  "scope_note": "仅复用既有 Guest，一次覆盖安装；宿主源码测试不计入安装版通过。主机测试使用独立 QA 目录，原个人数据单独核对。",
+  "cases": [
+    {
+      "id": "WIN10-BASELINE",
+      "status": "通过",
+      "expected": "原合成账号、事项、日历、附件可读且覆盖前备份校验成功",
+      "evidence": "retention-baseline.json",
+      "artifact_scope": "旧安装版"
+    },
+    {
+      "id": "WIN10-OVERLAY",
+      "status": "通过",
+      "expected": "覆盖安装成功，安装清单摘要与新候选一致，不卸载或删除业务数据",
+      "evidence": "overlay-install/completed.json"
+    },
+    {
+      "id": "WIN10-RETAIN",
+      "status": "通过",
+      "expected": "原账号登录、事项、日历ID及附件摘要保持一致",
+      "evidence": "retention-after-overlay.json"
+    },
+    {
+      "id": "WIN10-STANDARD-LAUNCH",
+      "status": "未验证",
+      "expected": "普通桌面账号首次启动及重复启动可用，无重复实例",
+      "evidence": null
+    },
+    {
+      "id": "WIN10-HOST-CONFIG",
+      "status": "通过",
+      "expected": "默认QA主机目录完成真实管理员确认、测试CA信任、双端口TLS和主机模式持久化",
+      "evidence": "first-host-approved-existing-root-submit.result.json",
+      "detail": "18765 HTTPS健康200；18766 TLS证书通过，未代替设备鉴权；单网卡绑定的源码回归不计Guest实测。见host-qa-live-tls-verified.json；CA超时历史失败保留。"
+    },
+    {
+      "id": "WIN10-BIND-ERROR",
+      "status": "未验证",
+      "expected": "失效地址和占用端口明确诊断，失败不改原模式或原数据",
+      "evidence": null
+    },
+    {
+      "id": "WIN10-INTERRUPTION",
+      "status": "未验证",
+      "expected": "未prepare中断、启动失败、提交后中断均恢复到与持久凭据一致的模式",
+      "evidence": "host-rollback-final-state.json",
+      "detail": "本轮新增CA确认超时后的产品回滚及原数据保留通过，不能代替全部中断场景"
+    },
+    {
+      "id": "WIN10-REBOOT",
+      "status": "通过",
+      "expected": "正常重启后新包启动成功，原账号、事项、日历和附件再次核对一致",
+      "evidence": "retention-after-reboot.json"
+    },
+    {
+      "id": "WIN10-FORMATTER",
+      "status": "未验证",
+      "expected": "新安装版六功能、字体读取及适用金样通过；不能继承宿主源码结果",
+      "evidence": "win10-formatter-87b0e65401ae/summary.json",
+      "detail": "普通用户官方WPS12.1.0.28488及五字体文件读取已验证；排版作业证据与HTTP诊断仍在修复，未判六功能或金样通过。"
+    },
+    {
+      "id": "WIN10-PUBLISH",
+      "status": "未验证",
+      "expected": "验收通过后冻结包完整回读，官网/GitHub引用新摘要，最后撤下过时包",
+      "evidence": null
+    }
+  ],
+  "last_checked": "2026-10-18T12:08:00+08:00"
+}

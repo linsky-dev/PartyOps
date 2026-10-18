@@ -1,0 +1,125 @@
+{
+  "snapshot": {
+    "processes": [
+      {
+        "session_id": 1,
+        "name": "PartyOpsWizard.exe",
+        "pid": 5872,
+        "installed_path_matches": true,
+        "created": "2026-10-17T05:25:05.4063860Z",
+        "owner_is_original_user": true
+      },
+      {
+        "session_id": 0,
+        "name": "PartyOps.exe",
+        "pid": 3724,
+        "installed_path_matches": true,
+        "created": "2026-10-17T06:10:09.2734400Z",
+        "owner_is_original_user": false
+      }
+    ],
+    "username": "partyopsuser",
+    "user_mode": "host",
+    "host_configuration_acceptance": "not-verified",
+    "wizard_exists": true,
+    "pending_mode_switch": false,
+    "uac_acceptance": "not-verified",
+    "administrator": false,
+    "system_mode": "host",
+    "user_journal_present": false,
+    "qa_host_data_marker_present": true,
+    "fixed_qa_host_status": {
+      "present": true,
+      "code": "",
+      "pid": 3724,
+      "exit_code": null,
+      "stage": "ready"
+    },
+    "session_id": 1,
+    "listeners": [
+      {
+        "port": 49699,
+        "pid": 5872,
+        "owned_by_wizard": true,
+        "loopback": true
+      },
+      {
+        "port": 18768,
+        "pid": 3724,
+        "owned_by_wizard": false,
+        "loopback": true
+      },
+      {
+        "port": 18766,
+        "pid": 3724,
+        "owned_by_wizard": false,
+        "loopback": false
+      },
+      {
+        "port": 18765,
+        "pid": 3724,
+        "owned_by_wizard": false,
+        "loopback": false
+      }
+    ],
+    "public_outcomes_since_launch": [
+      "commit",
+      "rollback"
+    ]
+  },
+  "services": {
+    "services": [
+      {
+        "start_mode": "Auto",
+        "pid": 3596,
+        "name": "PartyOpsHost",
+        "state": "Running"
+      },
+      {
+        "start_mode": "Auto",
+        "pid": 800,
+        "name": "PartyOpsUpdateService",
+        "state": "Running"
+      }
+    ],
+    "host_process_tree": [
+      {
+        "path": "C:\\PartyOps QA\\中文 程序\\PartyOpsService.exe",
+        "pid": 3596,
+        "name": "PartyOpsService.exe",
+        "created": "2026-10-17T06:10:02.5647820Z",
+        "parent_pid": 580
+      },
+      {
+        "path": "C:\\PartyOps QA\\中文 程序\\PartyOps.exe",
+        "pid": 3724,
+        "name": "PartyOps.exe",
+        "created": "2026-10-17T06:10:09.2734400Z",
+        "parent_pid": 3596
+      },
+      {
+        "path": "C:\\Windows\\system32\\conhost.exe",
+        "pid": 1444,
+        "name": "conhost.exe",
+        "created": "2026-10-17T06:10:09.4185600Z",
+        "parent_pid": 3724
+      }
+    ]
+  },
+  "runtime": {
+    "processes": [
+      {
+        "path": "C:\\PartyOps QA\\中文 程序\\PartyOps.exe",
+        "pid": 3724,
+        "created": "2026-10-17T06:10:09.2734400Z"
+      }
+    ],
+    "http_owners": [],
+    "wizard_sha256": "6806ec965293c44fcf8473459b480b9cbf5219ca1f0171b9f60bfd1263b8025d",
+    "guest_uuid": "f47cf265-72a2-4d51-9cf1-b1f5ae960cb2",
+    "boot_id": "2026-10-17T05:05:48.5000000Z",
+    "manifest_sha256": "adce91340993c4ab4f202dd3a926165ab2fd129236c90442ae4eae046c73204e",
+    "purpose": "disposable-qa",
+    "executable_sha256": "dbe0ee796d718d7c3cefa3b05550076399e7cd3544cc37964b21c795bde34ce1"
+  }
+}

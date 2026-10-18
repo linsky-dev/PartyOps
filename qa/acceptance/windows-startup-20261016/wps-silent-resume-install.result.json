@@ -1,0 +1,8 @@
+{
+  "installed": [],
+  "exit_code": 0,
+  "license_approved": true,
+  "installer_sha256": "089eeb02fb7da42a683a4d9c7fcecf155b7b326fcd8b8281cbd0b7acd3d9783a",
+  "status": "installer-exited",
+  "argument": "/S"
+}

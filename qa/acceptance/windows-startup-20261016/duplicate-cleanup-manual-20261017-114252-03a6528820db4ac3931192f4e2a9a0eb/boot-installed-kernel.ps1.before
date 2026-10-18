@@ -1,0 +1,125 @@
+#requires -Version 7.0
+param([ValidateSet('sdl','gtk')][string]$DisplayBackend = 'gtk', [switch]$HighResolution, [switch]$FullScreen, [switch]$DisableEdid, [switch]$RenderProbeClone)
+# 默认沿用本任务已成功验收的 GTK；SDL 仅保留显式诊断入口，避免省略参数回到未验证组合。
+# 使用本次安装盘只读提取的匹配内核/initrd启动，保留kysec及根UUID；不创建或替换磁盘。
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+$vmRoot = [IO.Path]::GetFullPath($PSScriptRoot)
+if ($vmRoot -ne 'C:\PartyOps-VM-Lab\vms\kylin-v10-sp1-arm64') { throw 'VM_ROOT_MISMATCH' }
+$utf8 = [Text.UTF8Encoding]::new($false)
+$statePath = Join-Path $vmRoot 'vm.json'
+$disk = Join-Path $vmRoot 'system.qcow2'
+$qemuImg = 'D:\PartyOps-VM-Lab\tools\qemu-11.1.0\qemu-img.exe'
+$qemu = 'D:\PartyOps-VM-Lab\tools\qemu-11.1.0\qemu-system-aarch64.exe'
+$tokens = $null; $errors = $null
+$ast = [Management.Automation.Language.Parser]::ParseFile((Join-Path $vmRoot 'launch.ps1'), [ref]$tokens, [ref]$errors)
+if ($errors.Count) { throw 'SHARED_SCRIPT_SYNTAX_ERROR' }
+foreach ($name in @('Assert-RegularFile','Assert-PortAvailable','Assert-HostCapacity','Assert-NoActiveVm','Set-PrivateDirectory','Assert-Disk','Get-QmpIdentity')) {
+    $definition = $ast.Find({ param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq $name }, $true)
+    if (-not $definition) { throw "SHARED_FUNCTION_MISSING: $name" }
+    . ([scriptblock]::Create($definition.Extent.Text))
+}
+Assert-RegularFile $statePath
+$source = Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json
+if ($source.uuid -ne 'a9dbc36c-5d8e-4198-9f80-efd9fd64d6ba' -or $source.disk -ne $disk -or
+    $source.action -ne 'StartInstalled' -or $source.cpu -ne 'cortex-a72' -or $source.memory_mib -ne 6144 -or
+    $source.arguments -contains '-kernel' -or $source.arguments -notcontains '-bios') { throw 'SOURCE_IDENTITY_MISMATCH' }
+$capacity = Assert-HostCapacity
+# 物理空闲不能替代Windows提交余量；实测6GiB Guest的QEMU私有提交约7.5GiB，另留宿主余量。
+$hostMemory = Get-CimInstance Win32_PerfFormattedData_PerfOS_Memory
+$commitHeadroom = [long]$hostMemory.CommitLimit - [long]$hostMemory.CommittedBytes
+if ($commitHeadroom -lt 10GB) { throw 'HOST_COMMIT_HEADROOM_INSUFFICIENT: requires 10 GiB; build and Guest must run serially' }
+Assert-NoActiveVm
+Assert-PortAvailable 23242; Assert-PortAvailable 24442
+Assert-Disk $disk
+# 显式实验开关只接受本任务固定的独立克隆，原盘和身份记录保持不变。
+$bootDisk = $disk
+if ($RenderProbeClone) {
+    $bootDisk = Join-Path $vmRoot 'render-probe.qcow2'
+    Assert-Disk $bootDisk
+}
+$lock = [IO.File]::Open((Join-Path $vmRoot '.launch.lock'), 'OpenOrCreate', 'ReadWrite', 'None')
+try {
+    Assert-NoActiveVm
+    $runRoot = Join-Path $vmRoot ('runs\installed-kernel-' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '-' + [guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Path $runRoot | Out-Null
+    Set-PrivateDirectory $runRoot
+    $arguments = @($source.arguments)
+    if ($RenderProbeClone) {
+        $driveIndex = [Array]::IndexOf($arguments, 'file=' + $disk + ',if=virtio,format=qcow2')
+        if ($driveIndex -lt 1 -or $arguments[$driveIndex-1] -ne '-drive') { throw 'CLONE_DRIVE_BINDING_FAILED' }
+        $arguments[$driveIndex] = 'file=' + $bootDisk + ',if=virtio,format=qcow2'
+    }
+    $displayIndex = [Array]::IndexOf($arguments, '-display')
+    if ($displayIndex -lt 0 -or $arguments[$displayIndex+1] -ne 'sdl') { throw 'DISPLAY_BINDING_FAILED' }
+    # 仅对照宿主显示前端，不改Guest图形驱动、安全设置和磁盘。
+    $arguments[$displayIndex+1] = $DisplayBackend
+    if ($FullScreen) { $arguments[$displayIndex+1] = $DisplayBackend + ',full-screen=on' }
+    if ($HighResolution) {
+        $gpuIndex = [Array]::IndexOf($arguments, 'virtio-gpu-pci')
+        if ($gpuIndex -lt 1 -or $arguments[$gpuIndex-1] -ne '-device') { throw 'GPU_BINDING_FAILED' }
+        # 官方首次设置布局被1280x800裁剪；仅改变虚拟屏幕EDID，不换驱动。
+        $arguments[$gpuIndex] = 'virtio-gpu-pci,xres=1920,yres=1200'
+    }
+    if ($DisableEdid) {
+        # 仅本QA虚拟显示单变量诊断，默认不变；关闭EDID不等于尺寸已固定。
+        $gpuIndex = -1
+        for ($i=0; $i -lt $arguments.Count; $i++) {
+            if ($arguments[$i] -like 'virtio-gpu-pci*') { $gpuIndex=$i; break }
+        }
+        if ($gpuIndex -lt 1 -or $arguments[$gpuIndex-1] -ne '-device') { throw 'GPU_BINDING_FAILED' }
+        $arguments[$gpuIndex] += ',edid=off'
+    }
+    $memoryIndex = [Array]::IndexOf($arguments, '-m')
+    $serialIndex = [Array]::IndexOf($arguments, '-serial')
+    if ($memoryIndex -lt 0 -or $serialIndex -lt 0 -or $arguments[$memoryIndex+1] -ne '6144') { throw 'ARGUMENT_BINDING_FAILED' }
+    $bootRoot = 'C:\PartyOps-VM-Lab\media\kylin\installed-boot\run-66532b7e621c42b79e8bc24df9bfad62'
+    $kernel = Join-Path $bootRoot 'installed-Image-5.4.18-142-generic'
+    $initrd = Join-Path $bootRoot 'volume-2-initrd.img-5.4.18-142-generic'
+    $grub = Join-Path $bootRoot 'volume-2-grub__grub.cfg'
+    $fstab = Join-Path $bootRoot 'volume-3-etc__fstab'
+    foreach ($file in @($kernel,$initrd,$grub,$fstab)) { Assert-RegularFile $file }
+    $kernelSha = (Get-FileHash -LiteralPath $kernel -Algorithm SHA256).Hash.ToLowerInvariant()
+    $initrdSha = (Get-FileHash -LiteralPath $initrd -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($kernelSha -ne 'd0b2a715941b52ed44eefc6cb173718e9eea331d2aa413aa360981d3da017324' -or $initrdSha -ne 'eaad7c022feaf85e96c14090bf2b167f4fda5728f6d63c1b6fe62203a253fe7a') { throw 'INSTALLED_BOOT_INPUT_MISMATCH' }
+    $linux = @(Get-Content -LiteralPath $grub | Where-Object { $_ -match '^\s*linux\s+/uImage-5\.4\.18-142-generic\s+' })[0].Trim()
+    $officialAppend = $linux -replace '^linux\s+\S+\s+', ''
+    $expected = 'root=UUID=05a9c042-7dcc-4d74-84f8-78a96b28eff9 ro  quiet splash loglevel=0   resume=UUID=828a0562-4ac1-42d3-a208-631e7e377580 security=kysec'
+    if ($officialAppend -ne $expected -or -not ([IO.File]::ReadAllText($fstab) -match 'UUID=05a9c042-7dcc-4d74-84f8-78a96b28eff9\s+/\s+ext4')) { throw 'INSTALLED_ROOT_ARGUMENTS_CHANGED' }
+    # 仅增加串口诊断；保留安装系统的kysec、root、resume和ro语义。
+    $append = (@($officialAppend -split '\s+' | Where-Object { $_ -and $_ -notin @('quiet','splash','loglevel=0') }) + @('console=ttyAMA0','earlycon=pl011,0x9000000','loglevel=7')) -join ' '
+    $kept = [Collections.Generic.List[string]]::new()
+    for ($i=0; $i -lt $arguments.Count; $i++) { if ($arguments[$i] -eq '-bios') { $i++; continue }; $kept.Add($arguments[$i]) }
+    $arguments = @($kept) + @('-kernel',$kernel,'-initrd',$initrd,'-append',$append,
+        '-object','rng-builtin,id=partyops_qa_rng0','-device','virtio-rng-pci,rng=partyops_qa_rng0,id=partyops_qa_rng_device0')
+    $serialIndex = [Array]::IndexOf($arguments, '-serial')
+    $arguments[$serialIndex+1] = 'file:' + (Join-Path $runRoot 'serial.log')
+    $record = [ordered]@{ schema_version=1; uuid=$source.uuid; mode='installed-system-direct-kernel';
+        disk=$bootDisk; original_disk=$disk; render_probe_clone=[bool]$RenderProbeClone; disk_created_or_replaced=$false; source_vm_json_modified=$false;
+        source_vm_json_sha256=(Get-FileHash -LiteralPath $statePath -Algorithm SHA256).Hash.ToLowerInvariant();
+        source_memory_mib=6144; memory_mib=6144; cpu=$source.cpu; capacity=$capacity; rng='rng-builtin/virtio-rng-pci';
+        arguments=$arguments; started_at=[DateTime]::UtcNow.ToString('o'); pid_observed=$null;
+        status='launch_requested'; kernel=$kernel; kernel_sha256=$kernelSha; initrd=$initrd; initrd_sha256=$initrdSha; official_grub_append=$officialAppend; diagnostic_append=$append; product_acceptance='not_run' }
+    $recordPath = Join-Path $runRoot 'installed-kernel.json'
+    [IO.File]::WriteAllText($recordPath,($record|ConvertTo-Json -Depth 8),$utf8)
+    $quoted = @($arguments | ForEach-Object { '"' + $_.Replace('"','\"') + '"' })
+    $process = Start-Process -FilePath $qemu -ArgumentList $quoted -WorkingDirectory $vmRoot -WindowStyle Normal -RedirectStandardOutput (Join-Path $runRoot 'qemu.stdout.log') -RedirectStandardError (Join-Path $runRoot 'qemu.stderr.log') -PassThru
+    $record.pid_observed = $process.Id
+    $record.status='qemu_started_guest_not_verified'
+    [IO.File]::WriteAllText($recordPath,($record|ConvertTo-Json -Depth 8),$utf8)
+    $identity = $null
+    for ($attempt=0; $attempt -lt 10; $attempt++) {
+        $process.Refresh()
+        if ($process.HasExited) {
+            $record.status='qemu_launch_failed'
+            $record['exit_code']=$process.ExitCode
+            $record['stderr_path']=Join-Path $runRoot 'qemu.stderr.log'
+            [IO.File]::WriteAllText($recordPath,($record|ConvertTo-Json -Depth 8),$utf8)
+            throw "QEMU_EXITED_BEFORE_IDENTITY_CHECK: see $runRoot\qemu.stderr.log"
+        }
+        try { $identity = Get-QmpIdentity 24442 (Join-Path $runRoot 'qmp-bootstrap.jsonl'); break }
+        catch { if ($attempt -eq 9) { throw }; Start-Sleep -Milliseconds 500 }
+    }
+    if ($identity -isnot [string] -or $identity -ne $source.uuid) { throw 'QMP_UUID_MISMATCH' }
+    Write-Host "安装盘原内核启动已交给QEMU；证据目录：$runRoot"
+} finally { $lock.Dispose() }

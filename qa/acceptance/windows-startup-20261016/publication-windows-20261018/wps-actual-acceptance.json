@@ -1,0 +1,15 @@
+{
+  "summary": {
+    "path": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\qa\\acceptance\\windows-startup-20261016\\win10-formatter-7de930093bcc\\summary.json",
+    "sha256": "d53af8634c217045060c6ceaa5df3366e6911b604c952c7d45010b4323f06599",
+    "bytes": 24379
+  },
+  "validation": {
+    "summary_sha256": "d53af8634c217045060c6ceaa5df3366e6911b604c952c7d45010b4323f06599",
+    "feature_evidence_sha256": "840c9909d22dd9f145f68bff90efaf511e93ac5662c7f6ac1b89bd54ead7768b",
+    "output_count": 17
+  },
+  "scope": "new-candidate-full-installed-wps-acceptance",
+  "new_package_wps_live_tested": true,
+  "historical_evidence_reused": false
+}

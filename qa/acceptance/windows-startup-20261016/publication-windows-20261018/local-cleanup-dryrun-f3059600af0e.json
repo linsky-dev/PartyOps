@@ -1,0 +1,159 @@
+{
+    "results":  [
+
+                ],
+    "inventory_sha256":  "e5da848acc06469fd219e741de48488b0f2dae16dfc2a14de516b19b49f813f4",
+    "time_utc":  "2026-10-18T11:25:00.5531612Z",
+    "proof_status":  "not-requested-dryrun-only",
+    "final_sha256":  "e3e2ea45ccd38acff059b5713826a78f998a56ccef75341633f67bd4e17e57da",
+    "before_space":  {
+                         "total_bytes":  308572966912,
+                         "drive":  "C:",
+                         "available_bytes":  29591564288,
+                         "total_free_bytes":  29591564288
+                     },
+    "plan":  [
+                 {
+                     "path":  "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\artifacts\\PartyOps-1.4.5-rc.6-windows-amd64",
+                     "logical_bytes":  1371949697,
+                     "files":  16019,
+                     "directories":  1275,
+                     "present":  true
+                 },
+                 {
+                     "path":  "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\artifacts\\windows-runtime",
+                     "logical_bytes":  1758282978,
+                     "files":  13198,
+                     "directories":  1016,
+                     "present":  true
+                 },
+                 {
+                     "path":  "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.build-windows\\alembic-data",
+                     "logical_bytes":  128613,
+                     "files":  27,
+                     "directories":  2,
+                     "present":  true
+                 },
+                 {
+                     "path":  "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.build-windows\\sitecustomize",
+                     "logical_bytes":  593,
+                     "files":  2,
+                     "directories":  2,
+                     "present":  true
+                 },
+                 {
+                     "path":  "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.build-windows\\spec",
+                     "logical_bytes":  13033,
+                     "files":  9,
+                     "directories":  1,
+                     "present":  true
+                 },
+                 {
+                     "path":  "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.build-windows\\work",
+                     "logical_bytes":  538561110,
+                     "files":  144,
+                     "directories":  19,
+                     "present":  true
+                 },
+                 {
+                     "path":  "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.build-kit\\downloads",
+                     "logical_bytes":  18399802,
+                     "files":  1,
+                     "directories":  1,
+                     "present":  true
+                 },
+                 {
+                     "path":  "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.build-kit\\vs2022",
+                     "logical_bytes":  1062091095,
+                     "files":  8169,
+                     "directories":  1892,
+                     "present":  true
+                 },
+                 {
+                     "path":  "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.build-kit\\vs_BuildTools.exe",
+                     "logical_bytes":  4474800,
+                     "files":  1,
+                     "directories":  0,
+                     "present":  true
+                 },
+                 {
+                     "path":  "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.qa\\deferred-cache\\VMware-workstation-full-17.6.4-24832109.exe",
+                     "logical_bytes":  425426160,
+                     "files":  1,
+                     "directories":  0,
+                     "present":  true
+                 },
+                 {
+                     "path":  "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\.qa\\deferred-cache\\wps-office-runtime.tar.gz",
+                     "logical_bytes":  861071098,
+                     "files":  1,
+                     "directories":  0,
+                     "present":  true
+                 },
+                 {
+                     "path":  "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\qa\\acceptance\\windows-startup-20261016\\publication-windows-20261017\\prepared\\PartyOps_1.4.5-rc.6_windows_amd64.exe",
+                     "logical_bytes":  449978846,
+                     "files":  1,
+                     "directories":  0,
+                     "present":  true
+                 },
+                 {
+                     "path":  "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\qa\\acceptance\\windows-startup-20261016\\publication-windows-20261017\\draft\\PartyOps_1.4.5-rc.6_windows_amd64_startup-20261017.exe",
+                     "logical_bytes":  449978846,
+                     "files":  1,
+                     "directories":  0,
+                     "present":  true
+                 },
+                 {
+                     "path":  "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\qa\\acceptance\\windows-startup-20261016\\publication-windows-20261017\\batch\\PartyOps_1.4.5-rc.6_windows_amd64_startup-20261017.exe",
+                     "logical_bytes":  449978846,
+                     "files":  1,
+                     "directories":  0,
+                     "present":  true
+                 },
+                 {
+                     "path":  "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\artifacts\\candidate-history\\3c81fdba89781722f94e82d31c7ff99b4357a1374fc6454ad47d3cfa464d1e27\\PartyOps_1.4.5-rc.6_windows_amd64.exe",
+                     "logical_bytes":  449978846,
+                     "files":  1,
+                     "directories":  0,
+                     "present":  true
+                 },
+                 {
+                     "path":  "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\qa\\acceptance\\windows-startup-20261016\\publication-windows-20261017\\prepared\\PartyOps_1.4.5-rc.6_windows_amd64.exe.sha256",
+                     "logical_bytes":  104,
+                     "files":  1,
+                     "directories":  0,
+                     "present":  true
+                 },
+                 {
+                     "path":  "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\qa\\acceptance\\windows-startup-20261016\\publication-windows-20261017\\draft\\PartyOps_1.4.5-rc.6_windows_amd64_startup-20261017.exe.sha256",
+                     "logical_bytes":  121,
+                     "files":  1,
+                     "directories":  0,
+                     "present":  true
+                 },
+                 {
+                     "path":  "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\qa\\acceptance\\windows-startup-20261016\\publication-windows-20261017\\batch\\PartyOps_1.4.5-rc.6_windows_amd64_startup-20261017.exe.sha256",
+                     "logical_bytes":  121,
+                     "files":  1,
+                     "directories":  0,
+                     "present":  true
+                 },
+                 {
+                     "path":  "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\artifacts\\candidate-history\\3c81fdba89781722f94e82d31c7ff99b4357a1374fc6454ad47d3cfa464d1e27\\PartyOps_1.4.5-rc.6_windows_amd64.exe.sha256",
+                     "logical_bytes":  0,
+                     "files":  0,
+                     "directories":  0,
+                     "present":  false
+                 }
+             ],
+    "workspace":  "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016",
+    "status":  "dryrun-no-deletion",
+    "after_space":  {
+                        "total_bytes":  308572966912,
+                        "drive":  "C:",
+                        "available_bytes":  29591564288,
+                        "total_free_bytes":  29591564288
+                    },
+    "preserved":  "final package and sidecars; evidence; WPS outputs; source; backups; VM; rejected test temp directories"
+}

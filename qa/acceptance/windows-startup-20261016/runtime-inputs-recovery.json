@@ -1,0 +1,8 @@
+{
+  "source": "既有 Win10 QA 安装目录，仅第三方 office-runtime",
+  "manifest_sha256": "1c5842c8bd7ba8cfe9b76d2d87e6d0554f7cb8d627cebc89a3f0fcc333a4ce8d",
+  "files": 13836,
+  "bytes": 697296997,
+  "file_hashes_verified": true,
+  "destination": "C:\\PartyOps-VM-Lab\\windows-startup-repair-20261016\\vendor\\windows\\libreoffice-headless-amd64"
+}

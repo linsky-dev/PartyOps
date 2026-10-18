@@ -1,0 +1,12 @@
+{
+  "date": "2026-10-18",
+  "source": "C:/PartyOps-VM-Lab/records/kylin-20261012/acceptance/publication-recovery-20261016/workbuddy-cloudstudio-bridge.py",
+  "operation": "discover-only",
+  "status": "blocked",
+  "error_code": "OFFICIAL_WORKBUDDY_IDENTITY_CHANGED",
+  "deploy_called": false,
+  "note": "旧桥的官方程序身份匹配未通过，不能声称本轮后台接口可用；待安装版验收齐备后再按原流程核对。",
+  "current_official_version": "5.8.2.0",
+  "signature_status": "Valid: Tencent Technology (Shenzhen) Company Limited",
+  "reason": "旧桥仅接受5.6.2.0、5.7.6.0、5.7.7.0；当前官方程序已升级，尚未核对新版连接器契约，未放宽白名单或执行部署。"
+}
