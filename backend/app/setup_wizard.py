@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import base64
 import errno
 import getpass
 import hashlib
@@ -33,7 +32,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import webbrowser
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -60,6 +60,7 @@ from .startup_diagnostics import (
     public_startup_message,
 )
 from .time_utils import beijing_iso
+from .windows_elevation import run_elevated
 from .windows_host_status import (
     CHILD_EXITED,
     HEALTH_TIMEOUT,
@@ -77,11 +78,13 @@ from .windows_host_status import (
     TERMINAL_CODES,
     classify_runtime_failure,
     health_payload_ready,
+    local_health_probe_host,
     read_service_status,
     service_log_path,
     tail_service_log,
     write_service_status,
 )
+from .windows_public_files import host_ca_for_desktop, write_public_control_file
 
 
 class HostStartupError(ConnectionError, ValueError):
@@ -95,6 +98,7 @@ class HostStartupError(ConnectionError, ValueError):
 
 
 ADMIN_POLICY_BLOCKED = "ADMIN_POLICY_BLOCKED"
+PERSONAL_HOST_REJECTED_EXIT = 41
 
 
 # Linux 桌面入口只能导入这些明确受支持的运行参数。rc.4 直接 ``source``
@@ -135,16 +139,48 @@ def _windows_policy_blocked(detail: str, returncode: int = 0) -> bool:
     """识别 SRP/AppLocker/WDAC 拒绝执行，不能把组织策略误报成用户取消。"""
 
     normalized = detail.casefold()
-    return returncode == 786 or any(
+    return returncode in {786, 1260} or any(
         marker in normalized
         for marker in (
             "winerror 786",
+            "winerror 1260",
+            "blocked by group policy",
+            "被组策略阻止",
             "error 786",
             "policy rule",
             "策略规则",
             "已被管理员用策略",
             "管理员用策略规则",
         )
+    )
+
+
+def _check_windows_elevation_result(result: subprocess.CompletedProcess[str], action: str) -> None:
+    """仅启动失败的 1223 表示取消；子进程错误保留业务诊断。"""
+    if result.returncode == 0:
+        return
+    detail = (result.stdout + "\n" + result.stderr).strip()[-2000:]
+    if "PARTYOPS_ELEVATION_CHILD_EXIT" in result.stdout:
+        if result.returncode == PERSONAL_HOST_REJECTED_EXIT or "[PERSONAL_DATA_HOST_IN_PLACE_UNSUPPORTED]" in detail:
+            raise HostStartupError(
+                "PERSONAL_DATA_HOST_IN_PLACE_UNSUPPORTED",
+                "非空个人数据目录不能原地改为主机。请选择独立的主机数据目录；原个人数据、权限和运行进程均保留。",
+                detail=detail,
+            )
+        raise HostStartupError(
+            "ADMIN_CHILD_FAILED", f"Windows 管理员进程已启动，但{action}失败（退出码 {result.returncode}）。请查看主机启动日志后重试。",
+            detail=detail,
+        )
+    if _windows_policy_blocked(detail, result.returncode):
+        raise HostStartupError(
+            ADMIN_POLICY_BLOCKED,
+            f"单位策略阻止 PartyOps 完成{action}。请联系管理员允许 PartyOpsWizard.exe、PartyOpsService.exe 和 PartyOpsUpdater.exe 后在原数据目录重试；只在本机使用可选择“个人使用”。",
+            detail=detail,
+        )
+    if result.returncode == 1223 and "PARTYOPS_ELEVATION_START_FAILED" in detail:
+        raise HostStartupError("ADMIN_CANCELLED", f"已取消 Windows 管理员授权，{action}未完成。", detail=detail)
+    raise HostStartupError(
+        "ADMIN_START_FAILED", f"Windows 管理员助手无法启动，{action}未完成（退出码 {result.returncode}）。请查看诊断详情后重试。", detail=detail,
     )
 
 
@@ -535,7 +571,7 @@ def _assert_windows_service_data_root_adoptable(data_dir: Path) -> bool:
     return False
 
 
-def _validate_windows_data_dir(data_dir: Path) -> Path:
+def _validate_windows_data_dir(data_dir: Path, *, check_access: bool = True) -> Path:
     """Windows 正式模式：允许用户自定义数据目录，但拒绝系统关键目录。
 
     数据目录承载业务数据库、备份与证书。Windows 主机服务以 SYSTEM 运行，
@@ -597,6 +633,8 @@ def _validate_windows_data_dir(data_dir: Path) -> Path:
             raise ValueError(
                 "主机数据目录不能放在用户主目录下，请选择独立数据盘目录或系统默认目录"
             )
+    if not check_access:
+        return resolved
     try:
         resolved.mkdir(parents=True, exist_ok=True)
     except OSError as exc:
@@ -1085,6 +1123,7 @@ def _write_windows_host_switch_snapshot(
     previous_mode: str | None,
     start_configs: dict[str, tuple[int, bool] | None],
     running_states: dict[str, bool],
+    configuration: dict[str, object] | None = None,
 ) -> None:
     """在停用主机前持久化最小、可验证的特权回滚状态。"""
 
@@ -1101,20 +1140,20 @@ def _write_windows_host_switch_snapshot(
             for service, config in start_configs.items()
         },
     }
+    if configuration is not None:
+        payload["kind"] = "configure_host"
+        payload["configuration"] = configuration
     snapshot_path = _windows_host_switch_snapshot_path()
-    _write_private(
-        snapshot_path,
-        json.dumps(payload, ensure_ascii=False, indent=2),
-    )
+    if snapshot_path.exists() or _windows_host_switch_pending_path().exists():
+        raise ValueError("[MODE_SWITCH_PENDING] 检测到待恢复的模式事务，请重新打开配置向导完成恢复")
+    snapshot_path.parent.mkdir(parents=True, exist_ok=True)
+    # 独占创建防止两个管理员助手覆盖彼此的回滚原文；pending 只在写完后发布。
+    with snapshot_path.open("x", encoding="utf-8") as stream:
+        json.dump(payload, stream, ensure_ascii=False, indent=2)
     try:
-        _write_private(
+        write_public_control_file(
             _windows_host_switch_pending_path(),
-            json.dumps(
-                {"format_version": 1, "transaction_id": transaction_id},
-                ensure_ascii=False,
-                separators=(",", ":"),
-            ),
-            0o644,
+            json.dumps({"format_version": 1, "transaction_id": transaction_id}, ensure_ascii=False).encode("utf-8"),
         )
     except Exception:
         snapshot_path.unlink(missing_ok=True)
@@ -1153,6 +1192,11 @@ def _validated_windows_host_switch_snapshot(
     previous_mode = payload.get("previous_mode")
     if previous_mode is not None and not isinstance(previous_mode, str):
         raise ValueError("[MODE_SWITCH_SNAPSHOT_INVALID] 主机模式回滚内容无效")
+    kind = payload.get("kind", "disable_host")
+    if kind not in {"disable_host", "configure_host"}:
+        raise ValueError("[MODE_SWITCH_SNAPSHOT_INVALID] 模式事务类型无效")
+    if kind == "configure_host":
+        _validated_host_configuration_files(payload)
     if previous_mode is not None:
         try:
             parsed_mode = json.loads(previous_mode)
@@ -1160,7 +1204,8 @@ def _validated_windows_host_switch_snapshot(
             raise ValueError(
                 "[MODE_SWITCH_SNAPSHOT_INVALID] 回滚记录不是有效主机模式"
             ) from exc
-        if not isinstance(parsed_mode, dict) or parsed_mode.get("mode") != "host":
+        allowed_modes = {"host", "personal", "client"} if kind == "configure_host" else {"host"}
+        if not isinstance(parsed_mode, dict) or parsed_mode.get("mode") not in allowed_modes:
             raise ValueError("[MODE_SWITCH_SNAPSHOT_INVALID] 回滚记录不是主机模式")
     for service in ("PartyOpsHost", "PartyOpsUpdateService"):
         state = services[service]
@@ -1180,19 +1225,269 @@ def _validated_windows_host_switch_snapshot(
     return snapshot_path, previous_mode, services
 
 
+def _host_configuration_paths(data_dir: Path) -> dict[str, Path]:
+    control_root = Path(os.getenv("PROGRAMDATA", "C:/ProgramData")) / "PartyOps"
+    return {
+        "host_env": control_root / "partyops.env",
+        "system_mode": control_root / "mode.json",
+        "data_marker": data_dir / ".partyops-data-root.json",
+        "network": data_dir / "network-settings.json",
+    }
+
+
+def _validated_host_configuration_files(payload: dict[str, Any]) -> dict[Path, str | None]:
+    """恢复目标只能由固定文件清单与已校验数据根推导，不能接受任意文件路径。"""
+    configuration = payload.get("configuration")
+    if not isinstance(configuration, dict):
+        raise ValueError("[MODE_SWITCH_SNAPSHOT_INVALID] 主机配置事务内容无效")
+    raw_dir, files = configuration.get("data_dir"), configuration.get("files")
+    if not isinstance(raw_dir, str) or not Path(raw_dir).is_absolute():
+        raise ValueError("[MODE_SWITCH_SNAPSHOT_INVALID] 主机配置事务数据目录无效")
+    data_dir = _validate_windows_data_dir(Path(raw_dir), check_access=False)
+    paths = _host_configuration_paths(data_dir)
+    if not isinstance(files, dict) or set(files) != set(paths):
+        raise ValueError("[MODE_SWITCH_SNAPSHOT_INVALID] 主机配置事务文件清单无效")
+    if any(value is not None and not isinstance(value, str) for value in files.values()):
+        raise ValueError("[MODE_SWITCH_SNAPSHOT_INVALID] 主机配置事务原文无效")
+    if files["system_mode"] != payload.get("previous_mode"):
+        raise ValueError("[MODE_SWITCH_SNAPSHOT_INVALID] 主机配置事务模式不一致")
+    for path in paths.values():
+        _assert_path_components_have_no_reparse_points(path)
+    return {path: files[key] for key, path in paths.items()}
+
+
+def _reject_nonempty_personal_host_directory(data_dir: Path, *, current_personal: bool = False) -> None:
+    """个人目录 ACL 不可逆收敛前拒绝原地转主机，保留原数据和进程。"""
+    if not data_dir.is_dir():
+        return
+    marker_path = data_dir / ".partyops-data-root.json"
+    if marker_path.is_file():
+        marker = json.loads(marker_path.read_text(encoding="utf-8"))
+        if isinstance(marker, dict) and marker.get("product") == "PartyOps" and marker.get("app_id") == "1C8EFC63-CAFC-46EF-A5E3-D3D119B5BB3A":
+            scopes = marker.get("scopes", [marker.get("scope")])
+            if isinstance(scopes, list) and "personal" in scopes and "host" not in scopes:
+                current_personal = True
+    if current_personal and any(data_dir.iterdir()):
+        raise ValueError("[PERSONAL_DATA_HOST_IN_PLACE_UNSUPPORTED] 非空个人数据目录不能原地改为主机。请选择独立的主机数据目录；原个人数据、权限和运行进程均保留。")
+
+
+@contextmanager
+def _host_configuration_mutex() -> Iterator[None]:
+    import ctypes
+    from ctypes import wintypes
+    if os.name != "nt" or not windows_is_admin():
+        raise ValueError("主机配置事务锁需要管理员权限")
+    class SecurityAttributes(ctypes.Structure):
+        _fields_ = [("length", wintypes.DWORD), ("descriptor", wintypes.LPVOID), ("inherit", wintypes.BOOL)]
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    advapi = ctypes.WinDLL("advapi32", use_last_error=True)
+    kernel.CreateMutexW.argtypes = [ctypes.POINTER(SecurityAttributes), wintypes.BOOL, wintypes.LPCWSTR]
+    kernel.CreateMutexW.restype = wintypes.HANDLE
+    kernel.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+    kernel.WaitForSingleObject.restype = wintypes.DWORD
+    kernel.ReleaseMutex.argtypes = [wintypes.HANDLE]
+    kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel.LocalFree.argtypes = [wintypes.HLOCAL]
+    advapi.ConvertStringSecurityDescriptorToSecurityDescriptorW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, ctypes.POINTER(wintypes.LPVOID), wintypes.LPVOID]
+    descriptor = wintypes.LPVOID()
+    if not advapi.ConvertStringSecurityDescriptorToSecurityDescriptorW("D:P(A;;GA;;;SY)(A;;GA;;;BA)", 1, ctypes.byref(descriptor), None):
+        raise ctypes.WinError(ctypes.get_last_error())
+    attributes = SecurityAttributes(ctypes.sizeof(SecurityAttributes), descriptor, False)
+    try:
+        handle = kernel.CreateMutexW(ctypes.byref(attributes), False, "Global\\PartyOps.HostConfiguration")
+    finally:
+        kernel.LocalFree(descriptor)
+    if not handle:
+        raise ctypes.WinError(ctypes.get_last_error())
+    acquired = False
+    try:
+        result = kernel.WaitForSingleObject(handle, 30000)
+        if result == 0xFFFFFFFF:
+            raise ctypes.WinError(ctypes.get_last_error())
+        if result not in {0, 0x80}:  # WAIT_ABANDONED 表示旧助手崩溃，内核已交出所有权。
+            raise ValueError("[MODE_SWITCH_BUSY] 主机配置事务锁等待超时，请等待管理员助手结束后重试")
+        acquired = True
+        yield
+    finally:
+        if acquired:
+            kernel.ReleaseMutex(handle)
+        kernel.CloseHandle(handle)
+
+
+def _configure_windows_host_privileged(host: str, port: int, data_dir: Path, transaction_id: str, personal_data_dir: Path | None = None) -> Path:
+    with _host_configuration_mutex():
+        return _configure_windows_host_privileged_locked(host, port, data_dir, transaction_id, personal_data_dir)
+
+
 def _restore_windows_host_switch_privileged(expected_transaction_id: str = "") -> None:
+    with _host_configuration_mutex():
+        _restore_windows_host_switch_privileged_locked(expected_transaction_id)
+
+
+def _finalize_windows_host_switch_privileged(transaction_id: str) -> None:
+    with _host_configuration_mutex():
+        _finalize_windows_host_switch_privileged_locked(transaction_id)
+
+
+def _deactivate_windows_host_services_privileged(transaction_id: str = "") -> None:
+    with _host_configuration_mutex():
+        _deactivate_windows_host_services_privileged_locked(transaction_id)
+
+
+def _abort_unprepared_host_configuration_privileged(transaction_id: str) -> None:
+    with _host_configuration_mutex():
+        _host_configuration_outcome_path(transaction_id)  # 先验证ID，绝不根据用户journal选择路径。
+        if _read_host_configuration_outcome(transaction_id):
+            return
+        for path in (_windows_host_switch_snapshot_path(), _windows_host_switch_pending_path()):
+            if path.is_file():
+                payload = json.loads(path.read_text(encoding="utf-8"))
+                if not isinstance(payload, dict) or not isinstance(payload.get("transaction_id"), str):
+                    raise ValueError("[MODE_SWITCH_SNAPSHOT_INVALID] 无法确认旧特权事务状态")
+                if payload["transaction_id"] == transaction_id:
+                    _restore_windows_host_switch_privileged(transaction_id)
+                    return
+        # 与prepare共用内核锁；晚到旧助手必须检查此结果后拒绝创建快照。
+        _write_host_configuration_outcome(transaction_id, "rollback")
+
+
+def _configure_windows_host_privileged_locked(host: str, port: int, data_dir: Path, transaction_id: str, personal_data_dir: Path | None = None) -> Path:
+    """管理员助手持有完整事务，普通父进程从不读写受保护数据配置。"""
+    if os.name != "nt" or not windows_is_admin():
+        raise ValueError("Windows 主机配置助手需要管理员权限")
+    if not re.fullmatch(r"[A-Za-z0-9_-]{32,128}", transaction_id):
+        raise ValueError("模式切换事务编号无效")
+    if _read_host_configuration_outcome(transaction_id):
+        raise ValueError("[MODE_SWITCH_TRANSACTION_FINISHED] 此主机配置事务已结束，旧管理员助手不得继续写入")
+    if _windows_host_switch_pending_path().exists() or _windows_host_switch_snapshot_path().exists():
+        raise ValueError("[MODE_SWITCH_PENDING] 检测到待恢复的模式事务，请先恢复")
+    validate_host_config_selection(host, port)
+    raw_data_dir = data_dir.expanduser().resolve()
+    _assert_path_components_have_no_reparse_points(raw_data_dir)
+    current_personal = personal_data_dir is not None and personal_data_dir.expanduser().resolve() == raw_data_dir
+    _reject_nonempty_personal_host_directory(raw_data_dir, current_personal=current_personal)
+    resolved = _validate_windows_data_dir(raw_data_dir)
+    paths = _host_configuration_paths(resolved)
+    files = {key: path.read_text(encoding="utf-8") if path.is_file() else None for key, path in paths.items()}
+    services = ("PartyOpsHost", "PartyOpsUpdateService")
+    _write_windows_host_switch_snapshot(
+        transaction_id=transaction_id,
+        previous_mode=files["system_mode"],
+        start_configs={service: _windows_service_start_config(service) for service in services},
+        running_states={service: _windows_service_running(service) for service in services},
+        configuration={"data_dir": str(resolved), "files": files},
+    )
+    try:
+        _stop_windows_service_for_data_migration()
+        path = write_host_config(host, port, resolved, write_user_mode=False)
+        _enable_windows_host_service_autostart()
+        return path
+    except Exception as original_error:
+        try:
+            _restore_windows_host_switch_privileged(transaction_id)
+        except Exception as rollback_error:
+            raise ValueError(f"[MODE_SWITCH_ROLLBACK_FAILED] 主机配置失败且特权恢复未完成：{rollback_error}") from original_error
+        raise
+
+
+def _host_configuration_outcome_path(transaction_id: str) -> Path:
+    if not re.fullmatch(r"[A-Za-z0-9_-]{32,128}", transaction_id):
+        raise ValueError("模式切换事务编号无效")
+    return _windows_host_switch_pending_path().parent / f"host-config-outcome-{transaction_id}.json"
+
+
+def _read_host_configuration_outcome(transaction_id: str) -> str:
+    path = _host_configuration_outcome_path(transaction_id)
+    if not path.is_file():
+        return ""
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict) or payload.get("format_version") != 1 or payload.get("transaction_id") != transaction_id or payload.get("outcome") not in {"commit", "rollback"}:
+        raise ValueError("[MODE_SWITCH_RECEIPT_INVALID] 主机配置事务结果凭据无效")
+    return str(payload["outcome"])
+
+
+def _write_host_configuration_outcome(transaction_id: str, outcome: str) -> None:
+    if os.name != "nt" or not windows_is_admin() or outcome not in {"commit", "rollback"}:
+        raise ValueError("写入主机配置结果需要管理员权限")
+    previous = _read_host_configuration_outcome(transaction_id)
+    if previous and previous != outcome:
+        raise ValueError("[MODE_SWITCH_ALREADY_COMMITTED] 主机配置事务已有相反结果，拒绝覆盖")
+    write_public_control_file(_host_configuration_outcome_path(transaction_id), json.dumps({
+        "format_version": 1, "transaction_id": transaction_id, "outcome": outcome,
+    }, ensure_ascii=False).encode("utf-8"))
+
+
+def _cleanup_completed_host_configuration(transaction_id: str) -> None:
+    """凭据写入就是提交点；清理失败保留记录供幂等恢复，不能反向回滚。"""
+    try:
+        for path in (_windows_host_switch_snapshot_path(), _windows_host_switch_pending_path()):
+            if path.is_file():
+                payload = json.loads(path.read_text(encoding="utf-8"))
+                if payload.get("transaction_id") != transaction_id:
+                    raise ValueError("模式切换事务已变化，拒绝清理")
+                path.unlink()
+    except (OSError, ValueError) as exc:
+        _record_windows_autostart_warning(f"[HOST_CONFIG_CLEANUP_DEFERRED] 主机事务已完成，清理稍后重试：{exc}")
+
+
+def _host_configuration_journal_path() -> Path:
+    return config_root() / "host-config-journal.json"
+
+
+def _recover_user_host_configuration_journal() -> None:
+    journal_path = _host_configuration_journal_path()
+    if not journal_path.is_file():
+        return
+    journal = json.loads(journal_path.read_text(encoding="utf-8"))
+    if not isinstance(journal, dict) or journal.get("format_version") != 1:
+        raise ValueError("[MODE_SWITCH_JOURNAL_INVALID] 当前用户配置事务记录无效")
+    transaction_id, previous_mode = journal.get("transaction_id"), journal.get("previous_mode")
+    if not isinstance(transaction_id, str) or (previous_mode is not None and not isinstance(previous_mode, str)):
+        raise ValueError("[MODE_SWITCH_JOURNAL_INVALID] 当前用户配置事务内容无效")
+    outcome = _read_host_configuration_outcome(transaction_id)
+    if not outcome:
+        raise ValueError("[MODE_SWITCH_RECOVERY_REQUIRED] 主机配置事务尚无明确结果，请完成管理员恢复后重试")
+    if outcome == "rollback":
+        user_mode = config_root() / "mode.json"
+        if previous_mode is None:
+            user_mode.unlink(missing_ok=True)
+        else:
+            _write_private(user_mode, previous_mode)
+    journal_path.unlink()
+
+
+def _restore_windows_host_switch_privileged_locked(expected_transaction_id: str = "") -> None:
     """在用户角色写入失败或上次断电后恢复主机服务与模式。"""
 
     if os.name != "nt" or not windows_is_admin():
         raise ValueError("恢复 Windows 主机角色需要管理员权限")
+    recovery_id = expected_transaction_id
+    if not recovery_id and _windows_host_switch_pending_path().is_file():
+        pending = json.loads(_windows_host_switch_pending_path().read_text(encoding="utf-8"))
+        recovery_id = str(pending.get("transaction_id", ""))
+    if recovery_id and _read_host_configuration_outcome(recovery_id):
+        _cleanup_completed_host_configuration(recovery_id)
+        return
     snapshot_path, previous_mode, services = _validated_windows_host_switch_snapshot(
         expected_transaction_id
+    )
+    payload = json.loads(snapshot_path.read_text(encoding="utf-8"))
+    configuration_files = (
+        _validated_host_configuration_files(payload)
+        if payload.get("kind") == "configure_host" else None
     )
     mode_path = (
         Path(os.getenv("PROGRAMDATA", "C:/ProgramData")) / "PartyOps" / "mode.json"
     )
     try:
-        if previous_mode is None:
+        if configuration_files is not None:
+            _stop_windows_service_for_data_migration()
+            for target, content in configuration_files.items():
+                if content is None:
+                    target.unlink(missing_ok=True)
+                else:
+                    _write_private(target, content)
+        elif previous_mode is None:
             mode_path.unlink(missing_ok=True)
         else:
             _write_private(mode_path, previous_mode)
@@ -1222,18 +1517,30 @@ def _restore_windows_host_switch_privileged(expected_transaction_id: str = "") -
         raise ValueError(
             f"[MODE_SWITCH_ROLLBACK_FAILED] 原主机模式未能完整恢复：{exc}"
         ) from exc
+    if configuration_files is not None:
+        _write_host_configuration_outcome(str(payload["transaction_id"]), "rollback")
+        _cleanup_completed_host_configuration(str(payload["transaction_id"]))
+        return
     _windows_host_switch_pending_path().unlink(missing_ok=True)
     snapshot_path.unlink(missing_ok=True)
 
 
-def _finalize_windows_host_switch_privileged(transaction_id: str) -> None:
+def _finalize_windows_host_switch_privileged_locked(transaction_id: str) -> None:
     """目标角色配置全部落盘后，提交并清除受保护的回滚记录。"""
 
     if os.name != "nt" or not windows_is_admin():
         raise ValueError("提交 Windows 模式切换需要管理员权限")
+    if transaction_id and _read_host_configuration_outcome(transaction_id) == "commit":
+        _cleanup_completed_host_configuration(transaction_id)
+        return
     snapshot_path, _previous_mode, _services = _validated_windows_host_switch_snapshot(
         transaction_id
     )
+    payload = json.loads(snapshot_path.read_text(encoding="utf-8"))
+    if payload.get("kind") == "configure_host":
+        _write_host_configuration_outcome(transaction_id, "commit")
+        _cleanup_completed_host_configuration(transaction_id)
+        return
     _windows_host_switch_pending_path().unlink(missing_ok=True)
     snapshot_path.unlink(missing_ok=False)
 
@@ -1254,51 +1561,20 @@ def _run_windows_host_switch_helper(argument: str, transaction_id: str = "") -> 
                 _restore_windows_host_switch_privileged()
         elif argument == "--privileged-finalize-host-switch":
             _finalize_windows_host_switch_privileged(transaction_id)
+        elif argument == "--privileged-abort-host-config":
+            _abort_unprepared_host_configuration_privileged(transaction_id)
         else:
             raise ValueError("模式切换管理员动作无效")
         return
     wizard = _executable("PartyOpsWizard")
-    script = (
-        "$ErrorActionPreference='Stop'; try { "
-        "$a=@($args[1]); if($args[2]){$a += '--mode-switch-transaction'; $a += $args[2]}; "
-        "$p=Start-Process -FilePath $args[0] -ArgumentList $a "
-        "-Verb RunAs -Wait -PassThru; "
-        "if($null -eq $p){throw '管理员进程未创建'}; exit $p.ExitCode "
-        "} catch { $native=$_.Exception.NativeErrorCode; "
-        "if(-not $native){$native=$_.Exception.HResult -band 0xffff}; "
-        "[Console]::Error.WriteLine($_.Exception.Message); exit $native }"
-    )
-    result = subprocess.run(
-        [
-            "powershell.exe",
-            "-NoProfile",
-            "-NonInteractive",
-            "-Command",
-            script,
-            str(wizard),
-            argument,
-            transaction_id,
-        ],
-        check=False,
-        capture_output=True,
-        text=True,
-        timeout=180,
-        creationflags=subprocess.CREATE_NO_WINDOW,
-    )
-    if result.returncode == 0:
-        return
-    detail = (result.stdout + "\n" + result.stderr).strip()[-2000:]
-    if _windows_policy_blocked(detail, result.returncode):
-        raise HostStartupError(
-            ADMIN_POLICY_BLOCKED,
-            "单位策略阻止 PartyOps 完成模式切换。程序不会绕过安全策略；"
-            "请联系管理员允许 PartyOpsWizard.exe 后重试。",
-            detail=detail,
-        )
-    raise ValueError("Windows 管理员确认未完成，系统已保留原模式。")
+    arguments = [argument]
+    if transaction_id:
+        arguments += ["--mode-switch-transaction", transaction_id]
+    result = run_elevated(str(wizard), arguments)
+    _check_windows_elevation_result(result, "模式切换")
 
 
-def _deactivate_windows_host_services_privileged(transaction_id: str = "") -> None:
+def _deactivate_windows_host_services_privileged_locked(transaction_id: str = "") -> None:
     """切到个人/协同时停止 LAN 主机并撤销自启动与防火墙。"""
 
     if os.name != "nt" or not windows_is_admin():
@@ -1401,15 +1677,20 @@ def _deactivate_windows_host_services_privileged(transaction_id: str = "") -> No
 
 
 def recover_pending_windows_host_switch() -> None:
-    """向导重新打开时先恢复未提交事务，不能把断电后的半切换当作成功。"""
-
-    if (
-        os.name != "nt"
-        or os.getenv("PARTYOPS_ENVIRONMENT") == "test"
-        or not _windows_host_switch_pending_path().exists()
-    ):
+    """先恢复特权事务，再依据持久化结果恢复当前账号；没有凭据不猜测。"""
+    if os.name != "nt" or os.getenv("PARTYOPS_ENVIRONMENT") == "test":
         return
-    _run_windows_host_switch_helper("--privileged-restore-host")
+    if _windows_host_switch_pending_path().exists():
+        _run_windows_host_switch_helper("--privileged-restore-host")
+    journal_path = _host_configuration_journal_path()
+    if journal_path.is_file():
+        journal = json.loads(journal_path.read_text(encoding="utf-8"))
+        if not isinstance(journal, dict) or not isinstance(journal.get("transaction_id"), str):
+            raise ValueError("[MODE_SWITCH_JOURNAL_INVALID] 当前用户配置事务编号无效")
+        transaction_id = journal["transaction_id"]
+        if not _read_host_configuration_outcome(transaction_id):
+            _run_windows_host_switch_helper("--privileged-abort-host-config", transaction_id)
+    _recover_user_host_configuration_journal()
 
 
 def deactivate_windows_host_for_user_mode() -> str | None:
@@ -2058,7 +2339,8 @@ def write_host_config(
     system_mode_path = path.parent / "mode.json"
     user_mode_path = config_root() / "mode.json"
     marker_path = resolved_data_dir / ".partyops-data-root.json"
-    transaction_paths = {path, marker_path}
+    network_path = resolved_data_dir / "network-settings.json"
+    transaction_paths = {path, marker_path, network_path}
     if write_user_mode:
         transaction_paths.add(user_mode_path)
     if windows_system_mode:
@@ -2128,10 +2410,24 @@ def write_host_config(
         values["PARTYOPS_UPDATE_PUBLIC_KEY"] = public_key_path.read_text(
             encoding="utf-8"
         ).strip()
-    content = (
-        "\n".join(f"{key}={shlex.quote(value)}" for key, value in values.items()) + "\n"
-    )
     try:
+        previous_bind = previous.get("PARTYOPS_BIND_HOST", "").strip()
+        network = None
+        # 显式确认的新配置需同步既有覆盖文件，保留其他管理字段与事务回滚。
+        if network_path.is_file():
+            network = json.loads(network_path.read_text(encoding="utf-8"))
+            if not isinstance(network, dict):
+                raise ValueError("已有网络配置不是对象，无法安全同步主机配置")
+            previous_bind = str(network.get("bind_host", previous_bind)).strip()
+        # 旧配置显式限定某张网卡时，重新确认地址仍限定到该地址，不拓宽监听。
+        if previous_bind and previous_bind not in {"0.0.0.0", "::"}:  # nosec B104 - 仅比较旧绑定策略，不创建监听或扩大地址。
+            values["PARTYOPS_BIND_HOST"] = host
+        elif previous_bind == "::" and host != "127.0.0.1":
+            values["PARTYOPS_BIND_HOST"] = previous_bind
+        if network is not None:
+            network.update(bind_host=values["PARTYOPS_BIND_HOST"], advertise_host=host, port=port)
+            _write_private(network_path, json.dumps(network, ensure_ascii=False, indent=2) + "\n")
+        content = "\n".join(f"{key}={shlex.quote(value)}" for key, value in values.items()) + "\n"
         _write_private(path, content)
         _write_data_root_marker(resolved_data_dir, "host")
         if write_user_mode:
@@ -2462,140 +2758,124 @@ def _enable_windows_host_service_autostart() -> None:
             )
 
 
-def configure_host_config(host: str, port: int, data_dir: Path) -> Path:
-    """Windows 仅为主机角色申请一次 UAC，并让日常账号保留正确 mode.json。"""
+@contextmanager
+def host_configuration_transaction(host: str, port: int, data_dir: Path) -> Iterator[Path]:
+    """父进程仅提交用户模式；系统文件由同 ID 的管理员事务负责。
 
+    提权等待超时不代表管理员助手已停止：结果未知须同ID中止并确认rollback凭据，
+    才能清理用户journal；中止失败保留恢复入口，不能让迟到助手继续写主机。
+    """
     validate_host_config_selection(host, port)
-    windows_system_mode = (
-        os.name == "nt" and os.getenv("PARTYOPS_ENVIRONMENT") != "test"
-    )
-    resolved_data_dir = (
-        _validate_windows_data_dir(data_dir)
-        if windows_system_mode
-        else data_dir.expanduser().resolve()
-    )
-    personal_environment: dict[str, str] = {}
-    personal_stopped = False
-    host_configured = False
+    windows_system_mode = os.name == "nt" and os.getenv("PARTYOPS_ENVIRONMENT") != "test"
+    if not windows_system_mode:
+        yield write_host_config(host, port, data_dir.expanduser().resolve())
+        return
+    # 不在普通账号中校验受保护业务目录的读写权限，也不读取其中的网络文件。
+    resolved_data_dir = data_dir.expanduser().resolve()
     personal_config = config_root() / "personal.env"
-    if windows_system_mode and personal_config.is_file():
-        personal_environment = load_host_environment(personal_config)
-        personal_data_raw = personal_environment.get("PARTYOPS_DATA_DIR", "").strip()
-        if personal_data_raw:
-            personal_data = Path(personal_data_raw)
-            personal_stopped = _stop_personal_process_for_data_migration(
-                personal_data,
-                int(personal_environment.get("PARTYOPS_PORT", "18775")),
-            )
+    user_mode_path = config_root() / "mode.json"
+    previous_user_mode = user_mode_path.read_text(encoding="utf-8") if user_mode_path.is_file() else None
+    personal_environment = load_host_environment(personal_config) if personal_config.is_file() else {}
+    personal_raw = personal_environment.get("PARTYOPS_DATA_DIR", "").strip()
+    current_mode = json.loads(previous_user_mode).get("mode") if previous_user_mode else "personal"
+    current_personal_dir = Path(personal_raw) if personal_raw and current_mode == "personal" else None
+    journal_path = _host_configuration_journal_path()
+    if journal_path.exists():
+        raise ValueError("[MODE_SWITCH_RECOVERY_REQUIRED] 当前用户仍有待恢复的主机配置事务，请重新打开向导")
+    transaction_id = secrets.token_urlsafe(32)
+    _write_private(journal_path, json.dumps({"format_version": 1, "transaction_id": transaction_id,
+        "previous_mode": previous_user_mode, "previous_role": current_mode}, ensure_ascii=False))
+    personal_stopped = False
+    helper_attempted = False
+    helper_confirmed_no_prepare = False
+    host_prepared = False
     try:
-        if not windows_system_mode or windows_is_admin():
-            path = write_host_config(host, port, resolved_data_dir)
-            host_configured = windows_system_mode
-            if windows_system_mode:
-                _enable_windows_host_service_autostart()
-                clear_windows_client_autostart()
-                clear_windows_personal_autostart()
-            return path
-
-        wizard = _executable("PartyOpsWizard")
-        encoded_data_dir = base64.b64encode(
-            str(resolved_data_dir).encode("utf-8")
-        ).decode("ascii")
-        script = (
-            "$ErrorActionPreference='Stop'; try { "
-            "$data = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($args[3])); "
-            "$quotedData = '\"' + $data.Replace('\"', '\\\"') + '\"'; "
-            "$process = Start-Process -FilePath $args[0] "
-            "-ArgumentList '--privileged-host-config','--host',$args[1],'--port',$args[2],"
-            "'--data-dir',$quotedData -Verb RunAs -Wait -PassThru; "
-            "if ($null -eq $process) { throw '管理员进程未创建' }; exit $process.ExitCode "
-            "} catch { $native=$_.Exception.NativeErrorCode; "
-            "if (-not $native) { $native=$_.Exception.HResult -band 0xffff }; "
-            "[Console]::Error.WriteLine($_.Exception.Message); exit $native }"
-        )
-        result = subprocess.run(
-            [
-                "powershell.exe",
-                "-NoProfile",
-                "-NonInteractive",
-                "-Command",
-                script,
-                str(wizard),
-                host,
-                str(port),
-                encoded_data_dir,
-            ],
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=180,
-            creationflags=subprocess.CREATE_NO_WINDOW,
-        )
-        if result.returncode != 0:
-            detail = (result.stdout + "\n" + result.stderr).strip()[-2000:]
-            if _windows_policy_blocked(detail, result.returncode):
-                raise HostStartupError(
-                    ADMIN_POLICY_BLOCKED,
-                    (
-                        "Windows 组织策略阻止了 PartyOps 主机配置助手运行。"
-                        "只在本机使用时请返回选择“个人使用”，无需管理员授权；"
-                        "需要局域网协同时，请让单位电脑管理员允许安装目录中的 "
-                        "PartyOpsWizard.exe、PartyOpsService.exe 和 PartyOpsUpdater.exe，"
-                        "然后在原数据目录上重试。PartyOps 不会尝试绕过单位安全策略。"
-                    ),
-                    detail=detail,
-                )
-            raise ValueError(
-                "主机配置需要一次 Windows 管理员授权；授权未完成，系统尚未切换为主机。"
-                "如只给自己使用，请返回选择“个人使用”，日常运行不需要管理员权限。"
+        helper_attempted = True
+        if windows_is_admin():
+            path = _configure_windows_host_privileged(host, port, resolved_data_dir, transaction_id, current_personal_dir)
+        else:
+            arguments = [
+                "--privileged-host-config", "--host", host, "--port", str(port),
+                "--data-dir", str(resolved_data_dir), "--mode-switch-transaction", transaction_id,
+            ]
+            if current_personal_dir is not None:
+                arguments += ["--personal-data-dir", str(current_personal_dir)]
+            result = run_elevated(str(_executable("PartyOpsWizard")), arguments)
+            # 只豁免明确未启动，或固定的个人原地转换前置拒绝；普通错误/超时均不能猜测。
+            detail = result.stdout + "\n" + result.stderr
+            helper_confirmed_no_prepare = (
+                result.returncode in {1223, 786, 1260}
+                and "PARTYOPS_ELEVATION_START_FAILED" in detail
+                and "PARTYOPS_ELEVATION_CHILD_EXIT" not in detail
+            ) or (
+                result.returncode == PERSONAL_HOST_REJECTED_EXIT
+                and "PARTYOPS_ELEVATION_CHILD_EXIT" in result.stdout
             )
-        path = (
-            Path(os.getenv("PROGRAMDATA", "C:/ProgramData"))
-            / "PartyOps"
-            / "partyops.env"
-        )
-        if not path.is_file():
-            raise ValueError("Windows 已返回授权结果，但主机配置文件未生成，请重试")
-        host_configured = True
+            _check_windows_elevation_result(result, "主机配置")
+            path = Path(os.getenv("PROGRAMDATA", "C:/ProgramData")) / "PartyOps" / "partyops.env"
+            if not path.is_file():
+                raise ValueError("Windows 已返回授权结果，但主机配置文件未生成，请重试")
+        host_prepared = True
+        # 助手已拒绝个人原地转换；只有独立主机目录准备成功才停止旧个人进程。
+        if personal_raw:
+            personal_stopped = _stop_personal_process_for_data_migration(
+                Path(personal_raw), int(personal_environment.get("PARTYOPS_PORT", "18775")),
+            )
+        yield path
         write_mode_config("host", config_path=path)
-        clear_windows_client_autostart()
-        clear_windows_personal_autostart()
-        return path
-    except Exception as original_error:
-        rollback_errors: list[str] = []
-        host_deactivation: str | None = None
-        if host_configured:
+        finalize_windows_host_switch(transaction_id)
+        # commit receipt 已落盘，之后的清理失败不得把健康主机回滚。
+        _recover_user_host_configuration_journal()
+        for cleanup in (clear_windows_client_autostart, clear_windows_personal_autostart):
             try:
-                host_deactivation = deactivate_windows_host_for_user_mode()
-            except Exception as exc:  # noqa: BLE001 - 汇总事务回滚诊断。
-                rollback_errors.append(f"主机服务：{exc}")
-        if personal_stopped and personal_environment:
+                cleanup()
+            except Exception as exc:  # noqa: BLE001 - 已提交主机的自启动清理只能延后。
+                _record_windows_autostart_warning(f"[AUTOSTART_CLEANUP_DEFERRED] 主机已提交，旧入口稍后清理：{exc}")
+        return
+    except Exception as original_error:
+        if _read_host_configuration_outcome(transaction_id) == "commit":
+            _record_windows_autostart_warning(f"[HOST_CONFIG_USER_CLEANUP_DEFERRED] 主机已提交，用户事务清理稍后重试：{original_error}")
+            return
+        rollback_errors: list[str] = []
+        confirmed_unprepared = helper_confirmed_no_prepare and not host_prepared and not (
+            _windows_host_switch_pending_path().exists() or _windows_host_switch_snapshot_path().exists()
+        ) and not _read_host_configuration_outcome(transaction_id)
+        # pending尚未出现时助手仍可能在等待UAC/内核锁；abort共用Global mutex并持久化同ID tombstone。
+        if helper_attempted and not confirmed_unprepared and _read_host_configuration_outcome(transaction_id) != "rollback":
+            try:
+                _run_windows_host_switch_helper("--privileged-restore-host" if host_prepared else "--privileged-abort-host-config", transaction_id)
+            except Exception as exc:  # noqa: BLE001 - 恢复失败保留 pending，不启动个人进程。
+                rollback_errors.append(f"主机事务：{exc}")
+        if _read_host_configuration_outcome(transaction_id) == "commit":
+            _record_windows_autostart_warning(f"[HOST_CONFIG_USER_CLEANUP_DEFERRED] 主机已提交，用户事务清理稍后重试：{original_error}")
+            return
+        try:
+            if not rollback_errors:
+                if _read_host_configuration_outcome(transaction_id) == "rollback":
+                    _recover_user_host_configuration_journal()
+                elif confirmed_unprepared:
+                    # 已确认无管理员写入者且无特权记录，用户模式从未改写，无需二次UAC。
+                    journal_path.unlink(missing_ok=True)
+                else:
+                    rollback_errors.append("特权事务结果尚未确认，已保留当前用户恢复记录")
+        except Exception as exc:  # noqa: BLE001 - journal 保留到用户模式确实恢复。
+            rollback_errors.append(f"用户模式：{exc}")
+        if not rollback_errors and personal_stopped and personal_environment:
             try:
                 _restart_previous_personal_process(personal_environment)
-                if os.name == "nt":
-                    _restore_previous_windows_autostart("personal", personal_config)
-                write_mode_config("personal", config_path=personal_config)
-            except Exception as exc:  # noqa: BLE001 - 汇总事务回滚诊断。
+            except Exception as exc:  # noqa: BLE001 - 汇总原个人进程恢复错误。
                 rollback_errors.append(f"个人模式：{exc}")
-        if host_deactivation and not rollback_errors:
-            try:
-                # failed host 的停用事务已经由上面的个人模式恢复接管，必须提交；
-                # 否则下次向导会把 pending 快照误当成断电中断并重新启用旧主机。
-                finalize_windows_host_switch(host_deactivation)
-            except Exception as exc:  # noqa: BLE001 - pending 事务不能静默遗留。
-                rollback_errors.append(f"模式事务：{exc}")
         if rollback_errors:
-            raise ValueError(
-                "[MODE_SWITCH_ROLLBACK_FAILED] 主机配置失败且原个人模式未能完整恢复："
-                + "；".join(rollback_errors)
-            ) from original_error
+            raise ValueError("[MODE_SWITCH_ROLLBACK_FAILED] 主机配置失败且原状态未能完整恢复：" + "；".join(rollback_errors)) from original_error
         if isinstance(original_error, FileNotFoundError):
-            raise HostStartupError(
-                RUNTIME_EXECUTABLE_MISSING,
-                "桌面启动程序缺失，主机模式尚未切换。请执行同版本修复安装；业务数据不会删除。",
-                detail=str(original_error)[:800],
-            ) from original_error
+            raise HostStartupError(RUNTIME_EXECUTABLE_MISSING, "桌面启动程序缺失，请执行同版本修复安装；业务数据不会删除。", detail=str(original_error)[:800]) from original_error
         raise
+
+
+def configure_host_config(host: str, port: int, data_dir: Path) -> Path:
+    """兼容配置调用；生产向导须使用事务上下文包含启动及就绪校验。"""
+    with host_configuration_transaction(host, port, data_dir) as path:
+        return path
 
 
 def write_client_config(
@@ -3594,6 +3874,7 @@ def wait_for_host_health(
     progress: Callable[[str], None] | None = None,
     service_managed: bool = True,
     process: subprocess.Popen | None = None,
+    bind_host: str | None = None,
 ) -> str:
     """通过本机回环轮询健康检查，就绪后返回可共享的展示 URL。
 
@@ -3605,10 +3886,11 @@ def wait_for_host_health(
     """
     scheme = "https" if tls else "http"
     advertised_url = f"{scheme}://{host}:{port}"
-    probe_url = f"{scheme}://127.0.0.1:{port}"
+    probe_host = local_health_probe_host(bind_host or "127.0.0.1")
+    probe_url = f"{scheme}://{probe_host}:{port}"
     deadline = time.monotonic() + max(5.0, timeout)
     ca_file = (
-        data_dir / "secrets" / "pki" / "ca.pem"
+        host_ca_for_desktop(data_dir, service_managed=service_managed)
         if tls and data_dir is not None
         else None
     )
@@ -3902,10 +4184,11 @@ def launch_host(config_path: Path) -> str:
         tls=tls,
         timeout=180.0,
         data_dir=Path(env["PARTYOPS_DATA_DIR"]),
+        bind_host=env.get("PARTYOPS_BIND_HOST") or env["PARTYOPS_HOST"],
     )
     # 证书由主机进程首次启动时生成；在打开浏览器前完成一次图形授权，
     # 避免用户首先看到“不受信任证书”警告。
-    _wait_and_install_ca(Path(env["PARTYOPS_DATA_DIR"]) / "secrets" / "pki" / "ca.pem")
+    _wait_and_install_ca(host_ca_for_desktop(Path(env["PARTYOPS_DATA_DIR"])))
     return url
 
 
@@ -4535,6 +4818,7 @@ def configured_runtime_status(
     service_url: str,
     *,
     ca_file: Path | None = None,
+    bind_host: str = "127.0.0.1",
 ) -> bool:
     """通过固定回环地址判断旧业务库是否已有账号，避免切换角色后重复创建管理员。"""
 
@@ -4544,7 +4828,7 @@ def configured_runtime_status(
     local_url = urllib.parse.urlunparse(
         (
             parsed.scheme,
-            f"127.0.0.1:{parsed.port}",
+            f"{local_health_probe_host(bind_host)}:{parsed.port}",
             "/api/v1/bootstrap/status",
             "",
             "",
@@ -4603,6 +4887,7 @@ def ensure_configured_runtime_ready(config_path: Path, mode: str) -> str:
             timeout=5.0,
             data_dir=data_dir,
             service_managed=mode == "host",
+            bind_host=environment.get("PARTYOPS_BIND_HOST") or environment["PARTYOPS_HOST"],
         )
     except HostStartupError:
         return launch_host(config_path)
@@ -5041,23 +5326,25 @@ def run_wizard(
                 url = launch_personal(path)
                 ready = configured_runtime_status(url)
             elif mode == "host":
-                path = configure_host_config(
+                with host_configuration_transaction(
                     values["host"],
                     int(values["port"]),
                     Path(values["data_dir"]),
-                )
-                url = launch_host(path)
-                environment = load_host_environment(path) if path.exists() else {}
-                ca_file: Path | None = None
-                if environment.get("PARTYOPS_TLS_ENABLED", "").lower() == "true":
-                    parsed = urllib.parse.urlparse(url)
-                    url = urllib.parse.urlunparse(parsed._replace(scheme="https"))
-                    data_dir = Path(
-                        environment.get("PARTYOPS_DATA_DIR")
-                        or Path(values["data_dir"]).expanduser().resolve()
-                    )
-                    ca_file = data_dir / "secrets" / "pki" / "ca.pem"
-                ready = configured_runtime_status(url, ca_file=ca_file)
+                ) as path:
+                    url = launch_host(path)
+                    environment = load_host_environment(path) if path.exists() else {}
+                    ca_file: Path | None = None
+                    if environment.get("PARTYOPS_TLS_ENABLED", "").lower() == "true":
+                        parsed = urllib.parse.urlparse(url)
+                        url = urllib.parse.urlunparse(parsed._replace(scheme="https"))
+                        data_dir = Path(
+                            environment.get("PARTYOPS_DATA_DIR")
+                            or Path(values["data_dir"]).expanduser().resolve()
+                        )
+                        ca_file = host_ca_for_desktop(data_dir)
+                    ready = configured_runtime_status(url, ca_file=ca_file, bind_host=environment.get("PARTYOPS_BIND_HOST") or environment.get("PARTYOPS_HOST", "127.0.0.1"))
+                    if not ready:
+                        raise HostStartupError("RUNTIME_HEALTH_MISMATCH", "新运行身份已经启动，但健康信息与当前版本或模式不一致。")
             else:
                 raise ValueError("运行身份事务只接受个人模式或主机模式")
             if not ready:
@@ -5307,36 +5594,30 @@ def run_wizard(
                     self._send(render_admin_setup_page(csrf, url))
                     return
                 if mode == "host":
-                    path = configure_host_config(
+                    with host_configuration_transaction(
                         value("host"),
                         int(value("port")),
                         Path(value("data_dir")),
-                    )
-                    url = launch_host(path)
-                    environment = load_host_environment(path) if path.exists() else {}
-                    if environment.get("PARTYOPS_TLS_ENABLED", "").lower() == "true":
-                        parsed = urllib.parse.urlparse(url)
-                        url = urllib.parse.urlunparse(parsed._replace(scheme="https"))
-                    host_setup["service_url"] = url
-                    host_setup["mode"] = "host"
-                    host_setup["config_path"] = str(path)
-                    configured_data_dir = environment.get("PARTYOPS_DATA_DIR") or str(
-                        Path(value("data_dir")).expanduser().resolve()
-                    )
-                    host_setup["ca_file"] = str(
-                        Path(configured_data_dir) / "secrets" / "pki" / "ca.pem"
-                    )
-                    host_setup["bootstrap_token"] = environment.get(
-                        "PARTYOPS_BOOTSTRAP_TOKEN", ""
-                    )
-                    if reconfiguration and configured_runtime_status(
-                        url,
-                        ca_file=(
-                            Path(host_setup["ca_file"])
-                            if host_setup.get("ca_file")
-                            else None
-                        ),
-                    ):
+                    ) as path:
+                        url = launch_host(path)
+                        environment = load_host_environment(path) if path.exists() else {}
+                        if environment.get("PARTYOPS_TLS_ENABLED", "").lower() == "true":
+                            parsed = urllib.parse.urlparse(url)
+                            url = urllib.parse.urlunparse(parsed._replace(scheme="https"))
+                        configured_data_dir = environment.get("PARTYOPS_DATA_DIR") or str(
+                            Path(value("data_dir")).expanduser().resolve()
+                        )
+                        ca_path = str(
+                            host_ca_for_desktop(Path(configured_data_dir))
+                        )
+                        bootstrap_token = environment.get(
+                            "PARTYOPS_BOOTSTRAP_TOKEN", ""
+                        )
+                        configured = configured_runtime_status(url, ca_file=Path(ca_path), bind_host=environment.get("PARTYOPS_BIND_HOST") or environment.get("PARTYOPS_HOST", "127.0.0.1")) if reconfiguration else False
+                        if reconfiguration and not configured:
+                            raise HostStartupError("RUNTIME_HEALTH_MISMATCH", "新主机的账号状态尚未确认，请重试。")
+                    host_setup.update(service_url=url, mode="host", config_path=str(path), ca_file=ca_path, bootstrap_token=bootstrap_token)
+                    if reconfiguration and configured:
                         self._redirect(url)
                         threading.Thread(
                             target=delayed_shutdown,
@@ -5497,6 +5778,7 @@ def main() -> None:
         "--initial-role", choices=("personal", "host", "client"), default=""
     )
     parser.add_argument("--privileged-host-config", action="store_true")
+    parser.add_argument("--privileged-abort-host-config", action="store_true")
     parser.add_argument("--privileged-disable-host", action="store_true")
     parser.add_argument("--privileged-restore-host", action="store_true")
     parser.add_argument("--privileged-finalize-host-switch", action="store_true")
@@ -5504,6 +5786,7 @@ def main() -> None:
     parser.add_argument("--host", default="")
     parser.add_argument("--port", type=int, default=18765)
     parser.add_argument("--data-dir", default="")
+    parser.add_argument("--personal-data-dir", default="")
     args = parser.parse_args()
     if args.prepare_launch_environment:
         if not args.config_file or not args.output_file:
@@ -5532,18 +5815,23 @@ def main() -> None:
             raise SystemExit("提交 Windows 模式切换需要管理员权限")
         _finalize_windows_host_switch_privileged(args.mode_switch_transaction)
         raise SystemExit(0)
+    if args.privileged_abort_host_config:
+        _abort_unprepared_host_configuration_privileged(args.mode_switch_transaction)
+        raise SystemExit(0)
     if args.privileged_host_config:
         if os.name != "nt" or not windows_is_admin():
             raise SystemExit("Windows 主机配置助手需要管理员权限")
         if not args.data_dir.strip():
             raise SystemExit("Windows 主机配置助手缺少 --data-dir，拒绝回退到 C 盘")
-        write_host_config(
-            args.host,
-            args.port,
-            Path(args.data_dir),
-            write_user_mode=False,
-        )
-        _enable_windows_host_service_autostart()
+        try:
+            _configure_windows_host_privileged(
+                args.host, args.port, Path(args.data_dir), args.mode_switch_transaction,
+                Path(args.personal_data_dir) if args.personal_data_dir else None,
+            )
+        except ValueError as exc:
+            if "[PERSONAL_DATA_HOST_IN_PLACE_UNSUPPORTED]" in str(exc):
+                raise SystemExit(PERSONAL_HOST_REJECTED_EXIT) from exc
+            raise
         raise SystemExit(0)
     if args.manage_shared_roots:
         action_token = ""

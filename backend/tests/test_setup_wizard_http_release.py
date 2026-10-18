@@ -176,8 +176,8 @@ def test_first_run_host_http_flow_keeps_admin_creation_in_wizard(
     monkeypatch.setattr(setup_wizard, "discover_lan_addresses", lambda: ["192.168.8.20"])
     monkeypatch.setattr(
         setup_wizard,
-        "configure_host_config",
-        lambda host, port, data: configured.append((host, port, data)) or config,
+        "host_configuration_transaction",
+        lambda host, port, data: __import__("contextlib").nullcontext(configured.append((host, port, data)) or config),
     )
     monkeypatch.setattr(setup_wizard, "launch_host", lambda _path: "http://192.168.8.20:18765")
     monkeypatch.setattr(

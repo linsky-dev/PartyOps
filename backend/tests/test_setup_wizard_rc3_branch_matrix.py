@@ -285,6 +285,7 @@ def test_privileged_host_deactivation_is_transactional(
     monkeypatch.setenv("PARTYOPS_ENVIRONMENT", "production")
     monkeypatch.setenv("PROGRAMDATA", str(tmp_path / "ProgramData"))
     monkeypatch.setattr(setup_wizard, "windows_is_admin", lambda: True)
+    monkeypatch.setattr(setup_wizard, "write_public_control_file", lambda path, data: setup_wizard._write_private(path, data.decode("utf-8")))
     monkeypatch.setattr(
         setup_wizard,
         "_windows_service_start_config",
@@ -307,6 +308,7 @@ def test_privileged_host_deactivation_is_transactional(
     mode_path = tmp_path / "ProgramData" / "PartyOps" / "mode.json"
     assert json.loads(mode_path.read_text(encoding="utf-8"))["mode"] == "personal"
     assert any(command[0] == "netsh.exe" for command in commands)
+    setup_wizard._finalize_windows_host_switch_privileged("")
 
     mode_path.write_text('{"format_version":1,"mode":"host"}', encoding="utf-8")
     restored_configs: list[tuple[str, tuple[int, bool] | None]] = []
@@ -1052,7 +1054,7 @@ def test_windows_host_role_detection_and_uac_result_mapping(
         setup_wizard.deactivate_windows_host_for_user_mode()
     assert policy.value.code == setup_wizard.ADMIN_POLICY_BLOCKED
     monkeypatch.setattr(setup_wizard.subprocess, "run", lambda *_a, **_k: completed(5))
-    with pytest.raises(ValueError, match="管理员确认"):
+    with pytest.raises(ValueError, match="管理员助手无法启动"):
         setup_wizard.deactivate_windows_host_for_user_mode()
 
 
@@ -1780,7 +1782,7 @@ def test_configure_host_direct_and_elevation_failure_matrix(
     monkeypatch.setenv("PARTYOPS_ENVIRONMENT", "production")
     monkeypatch.setenv("PROGRAMDATA", str(program_data))
     monkeypatch.setattr(setup_wizard, "discover_lan_addresses", lambda: [])
-    monkeypatch.setattr(setup_wizard, "_validate_windows_data_dir", lambda path: path)
+    monkeypatch.setattr(setup_wizard, "_validate_windows_data_dir", lambda path, **_kwargs: path)
     monkeypatch.setattr(
         setup_wizard, "_executable", lambda _name: tmp_path / "PartyOpsWizard.exe"
     )
@@ -1795,27 +1797,33 @@ def test_configure_host_direct_and_elevation_failure_matrix(
             or subprocess.CompletedProcess([], 1, "", "")
         ),
     )
-    with pytest.raises(ValueError, match="授权未完成"):
+    with pytest.raises(ValueError, match="管理员助手无法启动") as unknown_error:
         setup_wizard.configure_host_config("127.0.0.1", 18765, tmp_path / "数据")
-    elevation_script = powershell_calls[0][4]
+    # 未知退出且同ID abort也失败，必须保留恢复记录，不能影响后续独立场景。
+    assert "MODE_SWITCH_ROLLBACK_FAILED" in str(unknown_error.value)
+    unknown_journal = setup_wizard._host_configuration_journal_path()
+    assert unknown_journal.is_file()
+    assert len(powershell_calls) == 2
+    import base64
+    assert powershell_calls[0][3] == "-EncodedCommand"
+    elevation_script = base64.b64decode(powershell_calls[0][4]).decode("utf-16-le")
     assert "$ErrorActionPreference='Stop'" in elevation_script
     assert "NativeErrorCode" in elevation_script
     assert "$null -eq $process" in elevation_script
 
-    monkeypatch.setattr(
-        setup_wizard.subprocess,
-        "run",
-        lambda *_a, **_k: subprocess.CompletedProcess(
-            [],
-            786,
-            "",
-            "管理员用策略规则限制了对 PartyOpsWizard.exe 的访问",
-        ),
-    )
+    monkeypatch.setattr(setup_wizard, "config_root", lambda: tmp_path / "policy-config")
+    policy_calls: list[list[str]] = []
+    def policy_blocked(command, **_kwargs):
+        policy_calls.append(command)
+        return subprocess.CompletedProcess(command, 786, "",
+            "PARTYOPS_ELEVATION_START_FAILED|管理员用策略规则限制了对 PartyOpsWizard.exe 的访问")
+    monkeypatch.setattr(setup_wizard.subprocess, "run", policy_blocked)
     with pytest.raises(setup_wizard.HostStartupError) as policy_error:
         setup_wizard.configure_host_config("127.0.0.1", 18765, tmp_path / "数据")
     assert policy_error.value.code == "ADMIN_POLICY_BLOCKED"
     assert "个人使用" in str(policy_error.value)
+    assert len(policy_calls) == 1  # 已确认助手未启动，不请求第二次UAC。
+    assert not setup_wizard._host_configuration_journal_path().exists()
     assert setup_wizard._windows_policy_blocked("[WinError 786] policy rule")
     assert not setup_wizard._windows_policy_blocked("用户取消了授权")
 
@@ -1824,11 +1832,28 @@ def test_configure_host_direct_and_elevation_failure_matrix(
         "run",
         lambda *_a, **_k: subprocess.CompletedProcess([], 0, "", ""),
     )
+    monkeypatch.setattr(setup_wizard, "config_root", lambda: tmp_path / "missing-config")
+    aborted: list[str] = []
+    def abort_receipt(action, transaction):
+        # 配置未生成仍属结果未知；模拟同ID中止成功的受保护回执才能清journal。
+        assert action == "--privileged-abort-host-config"
+        journal = json.loads(setup_wizard._host_configuration_journal_path().read_text(encoding="utf-8"))
+        assert transaction == journal["transaction_id"]
+        aborted.append(transaction)
+        setup_wizard._write_private(setup_wizard._host_configuration_outcome_path(transaction),
+            json.dumps({"format_version": 1, "transaction_id": transaction, "outcome": "rollback"}))
+    monkeypatch.setattr(setup_wizard, "_run_windows_host_switch_helper", abort_receipt)
     with pytest.raises(ValueError, match="配置文件未生成"):
         setup_wizard.configure_host_config("127.0.0.1", 18765, tmp_path / "数据")
+    assert len(aborted) == 1
+    assert setup_wizard._read_host_configuration_outcome(aborted[0]) == "rollback"
+    assert not setup_wizard._host_configuration_journal_path().exists()
 
+    def commit_receipt(transaction):
+        setup_wizard._write_private(setup_wizard._host_configuration_outcome_path(transaction), json.dumps({"format_version": 1, "transaction_id": transaction, "outcome": "commit"}))
+    monkeypatch.setattr(setup_wizard, "finalize_windows_host_switch", commit_receipt)
     expected = program_data / "PartyOps" / "partyops.env"
-    expected.parent.mkdir(parents=True)
+    expected.parent.mkdir(parents=True, exist_ok=True)
     expected.write_text("PARTYOPS_MODE=host\n", encoding="utf-8")
     monkeypatch.setattr(setup_wizard, "config_root", lambda: tmp_path / "Local")
     monkeypatch.setattr(setup_wizard, "clear_windows_client_autostart", lambda: None)
@@ -1839,7 +1864,7 @@ def test_configure_host_direct_and_elevation_failure_matrix(
 
     direct = tmp_path / "direct.env"
     monkeypatch.setattr(setup_wizard, "windows_is_admin", lambda: True)
-    monkeypatch.setattr(setup_wizard, "write_host_config", lambda *_a, **_k: direct)
+    monkeypatch.setattr(setup_wizard, "_configure_windows_host_privileged", lambda *_a: direct)
     monkeypatch.setattr(
         setup_wizard, "_enable_windows_host_service_autostart", lambda: None
     )
@@ -1847,12 +1872,13 @@ def test_configure_host_direct_and_elevation_failure_matrix(
         setup_wizard.configure_host_config("127.0.0.1", 18765, tmp_path / "数据")
         == direct
     )
+    assert unknown_journal.is_file()  # 后续独立场景不得清掉未知事务的恢复入口。
 
 
-def test_configure_host_failure_restores_personal_after_firewall_policy_denial(
+def test_configure_host_service_failure_restores_personal_without_deactivation(
     monkeypatch, tmp_path: Path
 ) -> None:
-    """完整覆盖 personal→host→失败→个人恢复，防火墙拒绝不能制造二次回滚失败。"""
+    """助手启用服务失败先恢复系统事务，父进程保持原个人进程运行。"""
 
     config = tmp_path / "Local" / "PartyOps"
     config.mkdir(parents=True)
@@ -1871,13 +1897,13 @@ def test_configure_host_failure_restores_personal_after_firewall_policy_denial(
     monkeypatch.setattr(setup_wizard, "os", _os_proxy("nt"))
     monkeypatch.setattr(setup_wizard, "config_root", lambda: config)
     monkeypatch.setattr(setup_wizard, "windows_is_admin", lambda: True)
-    monkeypatch.setattr(setup_wizard, "_validate_windows_data_dir", lambda path: path)
+    monkeypatch.setattr(setup_wizard, "_validate_windows_data_dir", lambda path, **_kwargs: path)
     monkeypatch.setattr(
         setup_wizard, "_stop_personal_process_for_data_migration", lambda *_a: True
     )
     host_config = program_data / "PartyOps" / "partyops.env"
 
-    def write_host(*_args):
+    def write_host(*_args, **_kwargs):
         host_config.parent.mkdir(parents=True, exist_ok=True)
         host_config.write_text("PARTYOPS_MODE=host\n", encoding="utf-8")
         (host_config.parent / "mode.json").write_text(
@@ -1957,10 +1983,10 @@ def test_configure_host_failure_restores_personal_after_firewall_policy_denial(
         setup_wizard.configure_host_config("127.0.0.1", 18765, tmp_path / "主机数据")
 
     assert "MODE_SWITCH_ROLLBACK_FAILED" not in str(failure.value)
-    assert restarted and autostarts == ["personal"] and user_modes == ["personal"]
-    assert committed == ["A" * 32]
-    warning = program_data / "PartyOps" / "mode-switch-warning.log"
-    assert "FIREWALL_RULE_CLEANUP_DEFERRED" in warning.read_text(encoding="utf-8")
+    assert not restarted and autostarts == [] and user_modes == []
+    assert committed == []
+    assert not setup_wizard._windows_host_switch_pending_path().exists()
+    assert not (program_data / "PartyOps" / "mode-switch-warning.log").exists()
 
 
 def test_device_config_credentials_paths_and_pki(monkeypatch, tmp_path: Path) -> None:

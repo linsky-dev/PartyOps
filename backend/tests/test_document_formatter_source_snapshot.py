@@ -20,11 +20,16 @@ def _module() -> ModuleType:
     return module
 
 
-def test_vendored_formatter_source_matches_locked_upstream_snapshot() -> None:
-    result = _module().verify(ROOT / "vendor" / "document-formatter-source")
+def test_vendored_formatter_source_matches_explicit_mac_quote_snapshot() -> None:
+    # 当前公开树包含已授权的 Mac 引号修订；不能冒充 Windows 上游快照。
+    module = _module()
+    source = ROOT / "vendor" / "document-formatter-source"
+    result = module.verify(source, "mac-quotes-tnr")
     assert result["passed"] is True
     assert result["file_count"] == 898
-    assert result["aggregate_sha256"] == "15c21b886f6a958fb61a3b106266b446a2b959b0085510015eeb790efaa770d3"
+    assert result["aggregate_sha256"] == "ac8466edf2513ea8e3fe9e61d3b86fb8d7a72ceb6cce366f2d19b59d9c9be171"
+    with pytest.raises(RuntimeError, match="FORMATTER_SOURCE_DIVERGED"):
+        module.verify(source)
 
 
 def test_snapshot_verifier_rejects_changed_function_source(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -23,7 +23,10 @@ def _mac_home(tmp_path, monkeypatch, user):
 
 @pytest.mark.parametrize("user", ["用户甲", "第二用户 空格"])
 @pytest.mark.parametrize("feature", ["format", "replace", "redheader", "rename", "convert", "pdf-to-word"])
-def test_api_source_work_output_and_cleanup_share_current_user_downloads(tmp_path, monkeypatch, user, feature):
+def test_api_source_work_output_and_cleanup_share_current_user_downloads(tmp_path_factory, monkeypatch, user, feature):
+    # Windows 上模拟 Mac 协议时，长用例名叠加确认回执 UUID 会触及 MAX_PATH；
+    # 仅缩短测试根目录，仍完整验证中文/空格用户目录与真实清理回执。
+    tmp_path = tmp_path_factory.mktemp("mw")
     downloads = _mac_home(tmp_path, monkeypatch, user)
     retained = downloads / "真实文档.docx"
     retained.write_bytes(b"real user document must remain")
@@ -68,7 +71,8 @@ def test_api_source_work_output_and_cleanup_share_current_user_downloads(tmp_pat
         session.documents["doc"] = LocalDocument(source, "原始中文名", False)
         job = instance.create_job(session, feature_id=feature, document_ids=["doc"], options={})
         instance.executor.shutdown(wait=True)
-        assert job.state == "completed" and len(seen) == len(job.outputs) == 1
+        assert job.state == "completed", [(item.error_code, item.message) for item in job.items]
+        assert len(seen) == len(job.outputs) == 1
         assert hashlib.sha256(source.read_bytes()).digest() == hashlib.sha256(payload).digest()
         output = next(iter(job.outputs.values()))
         assert output.filename == "原始中文名_结果.docx"

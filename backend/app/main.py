@@ -770,6 +770,13 @@ class _UvicornOptions(TypedDict, total=False):
 def run() -> None:
     import uvicorn
 
+    from .windows_host_status import preflight_bind
+
+    if os.name == "nt":
+        preflight_bind(settings.network_bind_host, settings.port)
+        if settings.tls_enabled and settings.agent_port != settings.port:
+            preflight_bind(settings.network_bind_host, settings.agent_port)
+
     uvicorn_options: _UvicornOptions = {
         "host": settings.network_bind_host,
         "port": settings.port,
@@ -813,8 +820,16 @@ def run() -> None:
                 "lifespan": "off",
             }
             agent_server = uvicorn.Server(uvicorn.Config("app.main:app", **agent_options))
+            agent_failures: list[BaseException] = []
+
+            def run_agent() -> None:
+                try:
+                    agent_server.run()
+                except BaseException as exc:  # 线程中的 SystemExit 也必须传回主启动流程。
+                    agent_failures.append(exc)
+
             agent_thread = threading.Thread(
-                target=agent_server.run,
+                target=run_agent,
                 name="partyops-agent-tls",
                 daemon=True,
             )
@@ -824,9 +839,13 @@ def run() -> None:
                 if agent_server.started:
                     break
                 if not agent_thread.is_alive():
+                    if agent_failures:
+                        raise RuntimeError(
+                            f"设备安全通道启动失败：{settings.network_bind_host}:{settings.agent_port}；{agent_failures[0]!r}"
+                        ) from agent_failures[0]
                     raise RuntimeError(
                         f"设备安全端口启动失败：{settings.agent_port}。"
-                        "请检查主机启动日志、端口占用和内部 CA 文件权限。"
+                        "请检查主机启动日志中的具体错误。"
                     )
                 time.sleep(0.1)
             else:

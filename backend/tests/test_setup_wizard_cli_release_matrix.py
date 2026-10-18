@@ -223,7 +223,7 @@ def test_main_dispatches_privileged_shared_root_and_normal_wizard(monkeypatch, t
     monkeypatch.setattr(setup_wizard, "os", SimpleNamespace(name="nt", getenv=original_os.getenv))
     monkeypatch.setattr(setup_wizard, "windows_is_admin", lambda: True)
     written: list[tuple] = []
-    monkeypatch.setattr(setup_wizard, "write_host_config", lambda *args, **kwargs: written.append((args, kwargs)))
+    monkeypatch.setattr(setup_wizard, "_configure_windows_host_privileged", lambda *args: written.append(args))
     data_dir = tmp_path / "业务数据"
     privileged = _run_main(
         monkeypatch,
@@ -235,11 +235,13 @@ def test_main_dispatches_privileged_shared_root_and_normal_wizard(monkeypatch, t
             "18765",
             "--data-dir",
             str(data_dir),
+            "--mode-switch-transaction",
+            "A" * 32,
         ],
     )
-    assert privileged.code == 0 and written[0][0][0] == "192.168.8.20"
-    assert written[0][0][2] == data_dir
-    assert written[0][1]["write_user_mode"] is False
+    assert privileged.code == 0 and written[0][0] == "192.168.8.20"
+    assert written[0][2] == data_dir
+    assert written[0][3] == "A" * 32
 
     invalid_uri = _run_main(monkeypatch, ["--manage-shared-roots", "--action-uri", "https://example.test/token"])
     assert "无效的本机共享操作地址" in str(invalid_uri)

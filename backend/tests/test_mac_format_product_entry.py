@@ -1,12 +1,13 @@
 """Mac正式任务协议及未知清理留存；仅本地模拟，不代替WPS验收。"""
 import json
 import threading
-from types import SimpleNamespace
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
-from app import official_format_host as host, official_format_service as service
+from app import official_format_host as host
+from app import official_format_service as service
 from app.official_format import OfficialFormatError
 
 

@@ -8,8 +8,9 @@
 - [v1.4.5-rc.6 支持矩阵](support-matrix-1.4.5-rc.6.json)
 - [v1.4.5-rc.6 本地验收记录](acceptance-1.4.5-rc.6.md)
 - [v1.4.5-rc.6 模型验收记录](model-validation-1.4.5-rc.6.md)
-- RC.6 当前提供十个安装包；本批更新麒麟 ARM64 完整候选，其余九包保持不变。各包验证环境与范围见发布说明，未宣称完整生命周期全部通过。
-- [本批签名发布清单](release-manifest-kylin-arm64-20261016.json)与[逐包实际验证环境](release-validation-environments-1.4.5-rc.6.json)为当前公开制品依据；下方旧验收日期只代表对应历史代码和制品。
+- [Windows x64 启动修复候选安装说明](windows-installation-20261018.zh-CN.md)
+- RC.6 当前提供十个安装包；本批更新 Windows x64 启动修复候选与麒麟 ARM64 完整候选；其他平台包与既有验收范围保持原记录；Windows x64 候选在 Windows 10 专业版 22H2（10.0.19045）/ x86_64 / QEMU / WPS 12.1.0.28488 环境下，覆盖/重启恢复、主机配置、恢复个人及原数据保留，以及六项排版、五字体、三页金样和保存重开验收通过。安装版真实 UAC 超时未实测；各包验证环境与范围见发布说明，未宣称完整生命周期全部通过。
+- [麒麟 ARM64 签名发布清单](release-manifest-kylin-arm64-20261016.json)、Windows x64 独立签名清单 `release-manifest-windows-startup-20261018.json` 与[逐包实际验证环境](release-validation-environments-1.4.5-rc.6.json)分别对应各自候选；Windows 验收更新日期为 2026-10-18，旧日期只代表对应历史代码和制品。
 
 ## 通用操作文档与历史 1.4.4 记录
 

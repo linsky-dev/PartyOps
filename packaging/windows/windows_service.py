@@ -13,26 +13,23 @@ import servicemanager
 import win32event
 import win32service
 import win32serviceutil
-
+from app import __version__
 from app.setup_wizard import (
     assert_windows_service_data_path_security,
     load_host_environment,
     normalize_windows_service_data_path_security,
 )
-from app import __version__
 from app.windows_host_status import (
     CHILD_EXITED,
     DATA_DIR_DENIED,
     HEALTH_TIMEOUT,
-    PORT_IN_USE,
-    TLS_INIT_FAILED,
     TERMINAL_CODES,
+    classify_runtime_failure,
     probe_loopback_health,
     read_service_status,
     service_log_path,
     tail_service_log,
     write_service_status,
-    classify_runtime_failure,
 )
 
 
@@ -163,7 +160,7 @@ class PartyOpsHostService(win32serviceutil.ServiceFramework):
         self.ready_pid: int | None = None
         self.health_timeout_pid: int | None = None
 
-    def SvcStop(self):  # noqa: N802 - Windows 服务协议固定命名。
+    def SvcStop(self):
         self.ReportServiceStatus(win32service.SERVICE_STOP_PENDING)
         win32event.SetEvent(self.stop_event)
         self._stop_child_process()
@@ -186,7 +183,7 @@ class PartyOpsHostService(win32serviceutil.ServiceFramework):
             self.output_stream.close()
             self.output_stream = None
 
-    def SvcDoRun(self):  # noqa: N802
+    def SvcDoRun(self):
         servicemanager.LogInfoMsg("PartyOpsHost 服务已启动，等待显式 host 配置。")
         program_data = Path(os.getenv("PROGRAMDATA", "C:/ProgramData")) / "PartyOps"
         config_path = program_data / "partyops.env"
@@ -210,6 +207,7 @@ class PartyOpsHostService(win32serviceutil.ServiceFramework):
                         )
                         healthy, detail = probe_loopback_health(
                             port,
+                            bind_host=self.child_environment.get("PARTYOPS_BIND_HOST") or self.child_environment.get("PARTYOPS_HOST", "127.0.0.1"),
                             tls=tls,
                             expected_version=__version__,
                             ca_file=(

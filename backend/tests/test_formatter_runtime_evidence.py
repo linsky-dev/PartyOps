@@ -54,7 +54,7 @@ def _fixture(tmp_path: Path) -> tuple[Path, Path, Path, Path, Path]:
             {
                 "host_sha256": _sha256(host),
                 "adapter": "wps-native-source-adapter",
-                "source_snapshot_sha256": "15c21b886f6a958fb61a3b106266b446a2b959b0085510015eeb790efaa770d3",
+                "source_snapshot_sha256": "7ae0eb67a0cb6a2d4a332cde74adf8977d93ae73541f864f01df214d39fefdf2",
                 "source_snapshot_files": 898,
                 "word_vtable_map_sha256": _sha256(runtime / "word-vtable-map.json"),
             }

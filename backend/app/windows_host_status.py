@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import errno
+import ipaddress
 import json
 import os
 import re
+import socket
 import ssl
 import urllib.error
 import urllib.request
@@ -28,6 +31,8 @@ SERVICE_MISSING = "SERVICE_MISSING"
 SERVICE_STOPPED = "SERVICE_STOPPED"
 CHILD_EXITED = "CHILD_EXITED"
 PORT_IN_USE = "PORT_IN_USE"
+BIND_ADDRESS_UNAVAILABLE = "BIND_ADDRESS_UNAVAILABLE"
+BIND_PERMISSION_DENIED = "BIND_PERMISSION_DENIED"
 DATA_DIR_DENIED = "DATA_DIR_DENIED"
 TLS_INIT_FAILED = "TLS_INIT_FAILED"
 HEALTH_TIMEOUT = "HEALTH_TIMEOUT"
@@ -47,6 +52,8 @@ TERMINAL_CODES = {
     "LOCAL_FORMAT_SECRET_INVALID",
     CHILD_EXITED,
     PORT_IN_USE,
+    BIND_ADDRESS_UNAVAILABLE,
+    BIND_PERMISSION_DENIED,
     DATA_DIR_DENIED,
     TLS_INIT_FAILED,
     DATABASE_LOCKED,
@@ -90,6 +97,10 @@ def classify_runtime_failure(
     }
     native_errors = {2: RUNTIME_EXECUTABLE_MISSING, 5: RUNTIME_PERMISSION_DENIED,
                      126: RUNTIME_DEPENDENCY_MISSING, 193: RUNTIME_BINARY_INCOMPATIBLE}
+    bind_errors = {10048: PORT_IN_USE, 10049: BIND_ADDRESS_UNAVAILABLE,
+                   10013: BIND_PERMISSION_DENIED}
+    if winerror in bind_errors:
+        return bind_errors[winerror]
     if winerror in native_errors:
         return native_errors[winerror]
     if unsigned in native_exits:
@@ -147,13 +158,39 @@ def classify_runtime_failure(
         return SQLITE_RUNTIME_FAILED
     if any(marker in lowered for marker in ("alembic", "migration", "迁移", "schema upgrade")):
         return CONFIG_MIGRATION_FAILED
-    if any(marker in lowered for marker in ("address already in use", "winerror 10048", "端口", "占用")):
+    if any(marker in lowered for marker in ("winerror 10049", "cannot assign requested address", "requested address is not valid")):
+        return BIND_ADDRESS_UNAVAILABLE
+    if "winerror 10013" in lowered:
+        return BIND_PERMISSION_DENIED
+    if any(marker in lowered for marker in ("address already in use", "winerror 10048")):
         return PORT_IN_USE
     if any(marker in lowered for marker in ("permission denied", "access is denied", "拒绝访问", "权限")):
         return RUNTIME_PERMISSION_DENIED
     if any(marker in lowered for marker in ("ssl", "tls", "certificate", "证书", "内部 ca")):
         return TLS_INIT_FAILED
     return CHILD_EXITED
+
+
+def preflight_bind(host: str, port: int) -> None:
+    """仅探测已配置地址；关闭探测套接字，不替换用户地址或放宽监听。"""
+    try:
+        with socket.socket(socket.AF_INET6 if ":" in host else socket.AF_INET, socket.SOCK_STREAM) as probe:
+            if os.name == "nt":
+                probe.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+            probe.bind((host, port))
+    except OSError as exc:
+        number = getattr(exc, "winerror", None) or exc.errno
+        code = {
+            10048: PORT_IN_USE, errno.EADDRINUSE: PORT_IN_USE,
+            10049: BIND_ADDRESS_UNAVAILABLE, errno.EADDRNOTAVAIL: BIND_ADDRESS_UNAVAILABLE,
+            10013: BIND_PERMISSION_DENIED, errno.EACCES: BIND_PERMISSION_DENIED,
+        }.get(number if isinstance(number, int) else 0, CHILD_EXITED)
+        message = {
+            PORT_IN_USE: "监听地址和端口已被占用",
+            BIND_ADDRESS_UNAVAILABLE: "配置的监听地址不属于本机当前可用地址，请从开始菜单“重新配置运行模式”重新确认主机网络配置",
+            BIND_PERMISSION_DENIED: "Windows 拒绝绑定监听地址和端口，请检查端口保留或组织策略",
+        }.get(code, "监听地址检查失败")
+        raise RuntimeError(f"[{code}] {message}：{host}:{port}；{exc}") from exc
 
 
 def service_log_path(data_dir: Path) -> Path:
@@ -229,6 +266,22 @@ def tail_service_log(data_dir: Path, *, max_bytes: int = 8192) -> str:
         return ""
 
 
+def local_health_probe_host(bind_host: str) -> str:
+    """由已确认的本机监听配置推导探测地址，不修改监听范围。"""
+    if bind_host in {"0.0.0.0", "::", "localhost"}:  # nosec B104 - 通配监听仅映射到本机回环探测。
+        return "127.0.0.1"
+    try:
+        address = ipaddress.ip_address(bind_host)
+    except ValueError:
+        local_addresses = {str(info[4][0]) for info in socket.getaddrinfo(socket.gethostname(), None)}
+        for info in socket.getaddrinfo(bind_host, None):
+            candidate = ipaddress.ip_address(str(info[4][0]))
+            if candidate.is_loopback or str(candidate) in local_addresses:
+                return f"[{candidate}]" if candidate.version == 6 else str(candidate)
+        raise ValueError("健康探测主机名未解析到本机监听地址") from None
+    return f"[{address}]" if address.version == 6 else str(address)
+
+
 def probe_loopback_health(
     port: int,
     *,
@@ -236,10 +289,11 @@ def probe_loopback_health(
     timeout: float = 3.0,
     ca_file: Path | None = None,
     expected_version: str | None = None,
+    bind_host: str = "127.0.0.1",
 ) -> tuple[bool, str]:
     """探测本机 PartyOps 健康接口，供 Windows 监督服务持续上报阶段。
 
-    这里只访问固定的 127.0.0.1 地址；TLS 证书由 PartyOps 内部 CA 签发，
+    通配监听探测回环，显式本机监听探测该地址；TLS 由 PartyOps 内部 CA 校验，
     服务进程尚未把 CA 安装到系统信任区时也必须能够完成本机就绪探测。
     """
 
@@ -259,7 +313,7 @@ def probe_loopback_health(
         return False, "TLS 健康检查缺少 PartyOps 内部 CA"
     else:
         context = None
-    request = urllib.request.Request(f"{scheme}://127.0.0.1:{port}/api/v1/health")
+    request = urllib.request.Request(f"{scheme}://{local_health_probe_host(bind_host)}:{port}/api/v1/health")
     try:
         with urllib.request.urlopen(  # nosec B310 - URL 固定为本机回环地址与健康路径。
             request,

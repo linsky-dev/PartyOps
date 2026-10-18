@@ -43,7 +43,7 @@ def _runtime(tmp_path: Path) -> Path:
                 "architecture": "amd64",
                 "adapter": "wps-native-source-adapter",
                 "source_project": "PartyOps.DocumentFormatter.AddIn",
-                "source_snapshot_sha256": "15c21b886f6a958fb61a3b106266b446a2b959b0085510015eeb790efaa770d3",
+                "source_snapshot_sha256": "7ae0eb67a0cb6a2d4a332cde74adf8977d93ae73541f864f01df214d39fefdf2",
                 "source_snapshot_files": 898,
                 "timezone": "Asia/Shanghai",
                 "built_at": "2026-09-01T18:00:00+08:00",
@@ -195,8 +195,10 @@ def test_native_source_formatter_builder_and_packages_keep_complete_runtime() ->
     assert '"$MONO_FRAMEWORK_ROOT"/Facades/*.dll' in builder
     assert 'bundle_inputs+=("$framework")' in builder
     assert "mscorlib.dll" in builder and "I18N.CJK.dll" in builder
-    assert '"libmono-native.$library_extension"' in builder
-    assert '"libMonoPosixHelper.$library_extension"' in builder
+    assert 'for name in libmono-native.so libMonoPosixHelper.so; do' in builder
+    assert 'names = ("libmono-native-compat.dylib", "libMonoPosixHelper.dylib")' in builder
+    assert '"bundle_dllmap_target": "@executable_path/libmono-native-compat.dylib"' in builder
+    assert '"bundle_posix_target": "@executable_path/libMonoPosixHelper.dylib"' in builder
     assert '"${native_libraries[@]}"' in builder
     assert "32/64" in builder and "32bits-preferred" in builder
     assert "MACOSX_DEPLOYMENT_TARGET='11.0'" in builder

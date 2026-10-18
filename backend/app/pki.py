@@ -15,6 +15,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
 
 from .config import Settings
+from .windows_public_files import public_host_ca_path, write_public_control_file
 
 
 def _write_private(path, data: bytes, mode: int = 0o600) -> None:
@@ -199,6 +200,9 @@ def ensure_tls_material(settings: Settings) -> TLSMaterial:
             server_cert.public_bytes(serialization.Encoding.PEM),
             0o644,
         )
+    if os.name == "nt" and settings.mode == "host" and settings.environment == "production" and os.getenv("PARTYOPS_ENVIRONMENT") != "test":
+        # SYSTEM 只发布已验证根证书；私钥和业务数据继续留在受保护目录。
+        write_public_control_file(public_host_ca_path(), ca_cert.public_bytes(serialization.Encoding.PEM))
     settings.tls_cert_file = server_cert_path
     settings.tls_key_file = server_key_path
     settings.tls_client_ca_file = ca_cert_path

@@ -85,6 +85,144 @@ def test_http_close_does_not_discard_unread_guest_response(driver):
     assert closed == [True]
 
 
+@pytest.mark.parametrize("version", ["HTTP/1.0", "HTTP/1.1"])
+@pytest.mark.parametrize("truncate", [False, True])
+def test_paramiko_file_fragmented_response_survives_connection_close(driver, version, truncate):
+    """真实ChannelFile读取延后分段body；真正截断仍须抛IncompleteRead。"""
+    import gc
+    import http.client
+    import socket
+    import threading
+    import urllib.request
+    import paramiko
+
+    reader, writer = socket.socketpair()
+    release = threading.Event()
+    errors = []
+    body = b'{"synthetic":"' + b"x" * 10000 + b'"}'
+
+    class Channel:
+        closed = False
+
+        def recv(self, size):
+            return reader.recv(min(size, 37))
+
+        def sendall(self, data):
+            reader.sendall(data)
+
+        def settimeout(self, value):
+            reader.settimeout(value)
+
+        def makefile(self, *args, **kwargs):
+            return paramiko.ChannelFile(self, *args, **kwargs)
+
+        def close(self):
+            self.closed = True
+            reader.close()
+
+    channel = Channel()
+
+    def serve():
+        try:
+            writer.settimeout(5)
+            request = b""
+            while b"\r\n\r\n" not in request:
+                request += writer.recv(4096)
+            writer.sendall((version + " 201 Created\r\nContent-Type: application/json\r\nContent-Length: "
+                            + str(len(body)) + "\r\nConnection: close\r\n\r\n").encode("ascii"))
+            assert release.wait(5)
+            actual = body[:-11] if truncate else body
+            for index in range(0, len(actual), 19):
+                writer.sendall(actual[index:index + 19])
+        except Exception as error:
+            errors.append(type(error).__name__)
+        finally:
+            writer.close()
+
+    thread = threading.Thread(target=serve)
+    thread.start()
+    transport = SimpleNamespace(open_channel=lambda *args, **kwargs: channel)
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), driver.GuestHTTPHandler(transport))
+    try:
+        with opener.open("http://127.0.0.1:18768/v1/sessions", timeout=5) as response:
+            assert response.status == 201
+            gc.collect()  # HTTPConnection已脱离socket，剩余寿命由TunnelFile持有。
+            assert not channel.closed
+            release.set()
+            if truncate:
+                with pytest.raises(http.client.IncompleteRead) as failure:
+                    response.read()
+                assert failure.value.partial == body[:-11]
+            else:
+                assert response.read() == body
+        assert channel.closed
+    finally:
+        release.set()
+        thread.join(6)
+        channel.close()
+        writer.close()
+    assert not thread.is_alive() and not errors
+
+
+def test_real_paramiko_transport_retains_fragmented_body_after_peer_eof(driver):
+    """本机内存socket对建立完整SSH通道，不连接Guest或读凭据。"""
+    import gc
+    import socket
+    import threading
+    import urllib.request
+    import paramiko
+
+    first, second = socket.socketpair()
+    server, client = paramiko.Transport(first), paramiko.Transport(second)
+    server.add_server_key(paramiko.RSAKey.generate(1024))
+    release = threading.Event()
+    errors = []
+    body = b'{"synthetic":"' + b"q" * 10000 + b'"}'
+
+    class Auth(paramiko.ServerInterface):
+        def check_auth_none(self, username):
+            return paramiko.AUTH_SUCCESSFUL
+
+        def check_channel_direct_tcpip_request(self, chanid, origin, destination):
+            return paramiko.OPEN_SUCCEEDED
+
+    def serve():
+        try:
+            server.start_server(server=Auth())
+            channel = server.accept(5)
+            assert channel is not None
+            request = b""
+            while b"\r\n\r\n" not in request:
+                request += channel.recv(4096)
+            channel.sendall(b"HTTP/1.0 201 Created\r\nContent-Type: application/json\r\nContent-Length: "
+                            + str(len(body)).encode("ascii") + b"\r\nConnection: close\r\n\r\n")
+            assert release.wait(5)
+            for index in range(0, len(body), 19):
+                channel.sendall(body[index:index + 19])
+            channel.shutdown_write()
+            channel.close()
+        except Exception as error:
+            errors.append(type(error).__name__)
+
+    thread = threading.Thread(target=serve)
+    thread.start()
+    try:
+        client.start_client(timeout=5)
+        client.auth_none("synthetic-local-test")
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), driver.GuestHTTPHandler(client))
+        with opener.open("http://127.0.0.1:18768/v1/sessions", timeout=5) as response:
+            assert response.status == 201
+            gc.collect()
+            release.set()
+            assert response.read() == body
+    finally:
+        release.set()
+        thread.join(6)
+        client.close()
+        server.close()
+    assert not thread.is_alive() and not errors
+
+
 @pytest.mark.parametrize("owner,session", [("Administrator", 1), ("partyopsuser", 0)])
 def test_partial_configuration_rejects_other_process_owner(driver, owner, session):
     info = {"administrator": False, "username": "partyopsuser", "desktop": [{"session_id": 1}],

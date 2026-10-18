@@ -78,7 +78,12 @@ $required = @(
   "UglyToad.PdfPig.Tokenization.dll",
   "UglyToad.PdfPig.Tokens.dll"
 )
-$sourceOutput = Join-Path $DocumentFormatterSource "src\PartyOps.DocumentFormatter.AddIn\bin\Release"
+# 与当前项目的按架构 OutputPath 一致，避免干净构建误取 AnyCPU 或旧产物。
+$sourceOutput = if ($Platform -in @("x64", "x86")) {
+  Join-Path $DocumentFormatterSource "src\PartyOps.DocumentFormatter.AddIn\bin\$Platform\Release"
+} else {
+  Join-Path $DocumentFormatterSource "src\PartyOps.DocumentFormatter.AddIn\bin\Release"
+}
 foreach ($name in $required) {
   $path = Join-Path $output $name
   # PdfPig 的部分模块由反射路径加载，旧 csproj 不会把它们全部复制到

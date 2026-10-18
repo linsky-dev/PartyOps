@@ -17,7 +17,16 @@ SPEC = importlib.util.spec_from_file_location(
 assert SPEC is not None and SPEC.loader is not None
 ocr = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(ocr)
-FIXTURE = ROOT / "qa/vm-lab/release-preparation/loong64/ocr-chinese-page-20260923.png"
+PRODUCTION_FIXTURE_SHA256 = "fa6214516c340d208f134f0ef935bcef7c97da0da23ff224aba3d4a8db24b074"
+
+
+def _synthetic_fixture(tmp_path: Path, monkeypatch: pytest.MonkeyPatch | None = None) -> Path:
+    """提供单测专用字节输入；不代表 Loong64 设备上的中文 OCR 实测。"""
+    fixture = tmp_path / "synthetic-ocr-input.dat"
+    fixture.write_bytes(b"synthetic OCR contract input\n")
+    if monkeypatch is not None:
+        monkeypatch.setattr(ocr, "FIXTURE_SHA256", hashlib.sha256(fixture.read_bytes()).hexdigest())
+    return fixture
 
 
 def _elf(machine: int = 258, abi: int = 3) -> bytes:
@@ -90,7 +99,25 @@ def _runtime(monkeypatch: pytest.MonkeyPatch, root: Path, *, missing: bool = Fal
 def test_valid_source_and_runtime_contract(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     root = _candidate(tmp_path)
     _runtime(monkeypatch, root)
-    assert ocr.validate(root, FIXTURE)["version"] == "5.5.0"
+    fixture = _synthetic_fixture(tmp_path, monkeypatch)
+    assert ocr.validate(root, fixture)["version"] == "5.5.0"
+
+
+def test_tampered_synthetic_fixture_rejected(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    root = _candidate(tmp_path)
+    fixture = _synthetic_fixture(tmp_path, monkeypatch)
+    fixture.write_bytes(b"tampered synthetic OCR input\n")
+    with pytest.raises(ValueError, match="OCR_CHINESE_FIXTURE_INVALID"):
+        ocr.validate(root, fixture, check_runtime=False)
+
+
+def test_production_hash_rejects_synthetic_fixture(tmp_path: Path) -> None:
+    root = _candidate(tmp_path)
+    fixture = _synthetic_fixture(tmp_path)
+    assert ocr.FIXTURE_SHA256 == PRODUCTION_FIXTURE_SHA256
+    assert hashlib.sha256(fixture.read_bytes()).hexdigest() != PRODUCTION_FIXTURE_SHA256
+    with pytest.raises(ValueError, match="OCR_CHINESE_FIXTURE_INVALID"):
+        ocr.validate(root, fixture, check_runtime=False)
 
 
 @pytest.mark.parametrize("change,error", [
@@ -101,8 +128,10 @@ def test_valid_source_and_runtime_contract(tmp_path: Path, monkeypatch: pytest.M
     ("missing_data", "OCR_PRIVATE_CLOSURE_INCOMPLETE"),
     ("wrong_origin", "OCR_SOURCE_PACKAGE_INVALID"),
 ])
-def test_invalid_candidate_rejected(tmp_path: Path, change: str, error: str) -> None:
+def test_invalid_candidate_rejected(tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+                                   change: str, error: str) -> None:
     root = _candidate(tmp_path)
+    fixture = _synthetic_fixture(tmp_path, monkeypatch)
     if change == "tamper":
         (root / "tessdata/eng.traineddata").write_bytes(b"tampered")
     elif change == "wrong_arch":
@@ -124,18 +153,20 @@ def test_invalid_candidate_rejected(tmp_path: Path, change: str, error: str) -> 
         ).hexdigest()
         (root / "SOURCE.json").write_text(json.dumps(source), encoding="utf-8")
     with pytest.raises(ValueError, match=error):
-        ocr.validate(root, FIXTURE, check_runtime=False)
+        ocr.validate(root, fixture, check_runtime=False)
 
 
 def test_missing_dynamic_dependency_rejected(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     root = _candidate(tmp_path)
+    fixture = _synthetic_fixture(tmp_path, monkeypatch)
     _runtime(monkeypatch, root, missing=True)
     with pytest.raises(ValueError, match="OCR_RUNTIME_DEPENDENCY_MISSING"):
-        ocr.validate(root, FIXTURE)
+        ocr.validate(root, fixture)
 
 
 def test_missing_loaded_language_rejected(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     root = _candidate(tmp_path)
+    fixture = _synthetic_fixture(tmp_path, monkeypatch)
     _runtime(monkeypatch, root, languages="eng\n")
     with pytest.raises(ValueError, match="OCR_LANGUAGES_UNAVAILABLE"):
-        ocr.validate(root, FIXTURE)
+        ocr.validate(root, fixture)

@@ -215,7 +215,7 @@ def test_wizard_host_tls_transaction_and_status_tools(
         f"PARTYOPS_TLS_ENABLED=true\nPARTYOPS_DATA_DIR={tmp_path / 'host-data'}\n",
         encoding="utf-8",
     )
-    monkeypatch.setattr(setup_wizard, "configure_host_config", lambda *_args: host_config)
+    monkeypatch.setattr(setup_wizard, "host_configuration_transaction", lambda *_args: __import__("contextlib").nullcontext(host_config))
     monkeypatch.setattr(
         setup_wizard, "launch_host", lambda _path: "http://192.168.10.2:18765"
     )
@@ -342,3 +342,45 @@ def test_setup_wizard_main_privilege_and_protocol_validation(
         "--action-uri",
         "partyops-client://manage-shares/short",
     )
+
+
+@pytest.mark.parametrize("failure", ["launch", "ready"])
+def test_host_reconfiguration_http_failure_rolls_back_before_error_status(monkeypatch, tmp_path, failure):
+    from contextlib import contextmanager
+    config = tmp_path / "host.env"
+    config.write_text("PARTYOPS_TLS_ENABLED=false\n", encoding="utf-8")
+    events = []
+    @contextmanager
+    def transaction(*_args):
+        events.append("prepare")
+        try:
+            yield config
+        except Exception:
+            events.append("rollback")
+            raise
+        else:
+            events.append("commit")
+    def launch(*_args):
+        events.append("launch")
+        if failure == "launch":
+            raise ValueError("synthetic launch failure")
+        return "http://127.0.0.1:18765"
+    monkeypatch.setattr(setup_wizard, "host_configuration_transaction", transaction)
+    monkeypatch.setattr(setup_wizard, "configure_host_config", lambda *_a: pytest.fail("生产不得提前提交配置"))
+    monkeypatch.setattr(setup_wizard, "launch_host", launch)
+    monkeypatch.setattr(setup_wizard, "configured_runtime_status", lambda *_a, **_k: False)
+    url, thread, results = _start_wizard(monkeypatch, tmp_path / "config", reconfiguration=True)
+    status, body = _request(url, form={"csrf": "csrf-token", "mode": "host", "host": "127.0.0.1", "port": "18765", "data_dir": str(tmp_path / "data")})
+    assert status == 202
+    poll_url = json.loads(body)["poll_url"]
+    deadline = time.monotonic() + 3
+    payload = {}
+    while time.monotonic() < deadline:
+        _, body = _request(url, path=poll_url)
+        payload = json.loads(body)
+        if payload.get("status") == "failed":
+            break
+        time.sleep(0.01)
+    assert payload.get("status") == "failed"
+    assert events == ["prepare", "launch", "rollback"]
+    _stop_with_client(monkeypatch, url, thread, results, tmp_path)

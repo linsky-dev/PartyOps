@@ -502,8 +502,8 @@ def main() -> int:
         / "PartyOps"
         / "host-switch-pending.json"
     )
-    if pending_switch.is_file():
-        # 上次停主机后若断电，任何角色都不得绕过恢复事务直接启动。
+    if pending_switch.is_file() or (local / "host-config-journal.json").is_file():
+        # 特权结果已写入但用户模式尚未恢复时，journal 也必须阻止混合状态启动。
         if not background:
             launch_wizard_and_wait(runtime, local, [])
         return 1
@@ -639,6 +639,7 @@ def main() -> int:
                 tls=tls,
                 timeout=180.0,
                 data_dir=data_dir,
+                bind_host=values.get("PARTYOPS_BIND_HOST") or host,
             )
         except (HostStartupError, OSError, subprocess.TimeoutExpired) as exc:
             # 严禁打开一个尚未就绪的地址；回到向导展示重试与诊断入口。

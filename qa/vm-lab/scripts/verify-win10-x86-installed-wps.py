@@ -166,6 +166,12 @@ def validate_wps_detection(row: dict, expected_sha256: str) -> None:
 def guest_json(client, script: str, *, timeout: int = 120) -> dict:
     """远程 PowerShell 失败只暴露固定错误码，不把系统输出写进公开报告。"""
     try:
+        if len(installer.encoded_powershell(script)) > 8192:
+            # 原x86入口也复用已验证的短读取传输，不能只依赖x64调用方覆盖。
+            acceptance = REPO / "qa/acceptance/windows-startup-20261016"
+            sys.path.insert(0, str(acceptance))
+            staged = load(acceptance / "win10-installed-formatter.py", "shared_wps_staged_probe")
+            return staged.staged_readonly_probe(client, installer.execute, script, "win10-formatter-" + uuid.uuid4().hex[:12])
         return json.loads(installer.execute(client, script, timeout=timeout))
     except RuntimeError as exc:
         detail = str(exc)
@@ -177,6 +183,8 @@ def guest_json(client, script: str, *, timeout: int = 120) -> dict:
                      "WPS_GUEST_NOT_PE32_X86", "WPS_EXECUTABLE_VERSION_MISMATCH",
                      "WPS_STANDARD_USER_COM_NOT_REGISTERED", "WPS_CURRENT_HOST_PROOF_MISSING_OR_AMBIGUOUS",
                      "WPS_CURRENT_HOST_REQUEST_MISMATCH", "WPS_CURRENT_HOST_INPUT_CHANGED",
+                     "WPS_CURRENT_HOST_OUTPUT_ROOT_INVALID", "WPS_CURRENT_HOST_OUTPUT_PATH_INVALID",
+                     "WPS_CURRENT_HOST_OUTPUT_EMPTY", "WPS_CURRENT_HOST_OUTPUT_REQUIRED",
                      "WPS_ACTUAL_ENGINE_NOT_PROVEN"):
             if code in detail:
                 raise RuntimeError(code) from None
@@ -192,7 +200,8 @@ def session(run):
     require(parsed.scheme == "http" and parsed.hostname == "127.0.0.1" and parsed.port
             and not parsed.username and not parsed.password and not parsed.path.strip("/")
             and not parsed.query and not parsed.fragment, "WPS_FORMATTER_NOT_GUEST_LOOPBACK")
-    session_info = run.request("/v1/sessions", "POST", {}, base=base,
+    # 与正式前端一致：会话创建接口不消费请求体，不能发送多余的{}。
+    session_info = run.request("/v1/sessions", "POST", base=base,
                                extra_headers={"Authorization": "Bearer " + ticket["ticket"]})
     require(re.fullmatch(r"[a-f0-9]{32}", str(session_info.get("session_id", ""))) is not None
             and isinstance(session_info.get("session_token"), str) and session_info["session_token"],
@@ -241,6 +250,13 @@ def job(run, base, prefix, headers, feature: str, documents: dict, options: dict
         target.write_bytes(run.request(prefix + "/jobs/" + job_id + "/outputs/" + matches[0]["id"],
                                        base=base, extra_headers=headers))
         require(target.stat().st_size > 0, "WPS_OUTPUT_EMPTY")
+        native_outputs = evidence.get("outputs", [])
+        require(isinstance(native_outputs, list) and len(native_outputs) == 1,
+                "WPS_SINGLE_NATIVE_OUTPUT_REQUIRED")
+        native_output = native_outputs[0]
+        require(isinstance(native_output, dict) and native_output.get("bytes") == target.stat().st_size
+                and native_output.get("extension") == target.suffix.lower()
+                and native_output.get("sha256") == sha256(target), "WPS_NATIVE_AND_HTTP_OUTPUT_DIFFER")
         paths.append(target)
         proofs.append(evidence)
     write_json(output / ("job-" + job_id + ".json"), {"id": job_id, "feature": feature,
@@ -249,23 +265,25 @@ def job(run, base, prefix, headers, feature: str, documents: dict, options: dict
     return paths, proofs
 
 
-def host_proof(client, temp: str, job_id: str, document_id: str, feature: str,
+def host_proof(client, temp: str, job_id: str, document_id: str | None, feature: str,
                input_hash: str, index: int) -> dict:
-    require(all(re.fullmatch(r"[a-f0-9]{32}", value) for value in (job_id, document_id))
+    require(re.fullmatch(r"[a-f0-9]{32}", job_id)
+            and (document_id is None or re.fullmatch(r"[a-f0-9]{32}", document_id))
             and re.fullmatch(r"[a-f0-9]{64}", input_hash)
             and feature in {"format", "convert"} and 0 <= index < 50,
             "WPS_HOST_PROOF_ARGUMENT_INVALID")
     require(re.fullmatch(r"[A-Za-z]:\\Users\\[^\\'\r\n]+\\AppData\\Local\\Temp", temp) is not None,
             "WPS_USER_TEMP_PATH_INVALID")
     # 主机只接收当前随机作业的脱敏字段，不读取其他用户或旧作业。
-    script = (f"$temp='{temp}'\n$job='{job_id}'\n$document='{document_id}'\n"
+    document_expression = "$null" if document_id is None else "'" + document_id + "'"
+    script = (f"$temp='{temp}'\n$job='{job_id}'\n$document={document_expression}\n"
               f"$feature='{feature}'\n$expected='{input_hash}'\n$index={index}\n") + r"""
 $ErrorActionPreference='Stop'
 if(-not(Test-Path -LiteralPath $temp -PathType Container)) {throw 'WPS_USER_TEMP_MISSING'}
 $root=[IO.Path]::GetFullPath($temp).TrimEnd('\')+'\'
 $matches=@(foreach($folder in @(Get-ChildItem -LiteralPath $temp -Directory)) {
   if($folder.Attributes -band [IO.FileAttributes]::ReparsePoint) {continue}
-  $pieces=if($folder.Name -like 'partyops-official-format-*') {@('jobs',$job,$document)}
+  $pieces=if($document -and $folder.Name -like 'partyops-official-format-*') {@('jobs',$job,$document)}
     elseif($folder.Name -like 'pf-*') {@('j',$job,[string]$index)} else {continue}
   $parent=$folder.FullName
   foreach($piece in $pieces) {$parent=Join-Path $parent $piece}
@@ -275,9 +293,11 @@ $matches=@(foreach($folder in @(Get-ChildItem -LiteralPath $temp -Directory)) {
   }
 })
 if($matches.Count -ne 1) {throw 'WPS_CURRENT_HOST_PROOF_MISSING_OR_AMBIGUOUS'}
-$requestPath=Join-Path $matches[0] 'request.json';$responsePath=Join-Path $matches[0] 'response.json'
-$request=Get-Content -LiteralPath $requestPath -Raw | ConvertFrom-Json
-$response=Get-Content -LiteralPath $responsePath -Raw | ConvertFrom-Json
+$control=$matches[0]
+$requestPath=Join-Path $control 'request.json';$responsePath=Join-Path $control 'response.json'
+# 原生请求/响应是UTF-8；PS5必须显式指定编码，保留无BOM中文路径。
+$request=Get-Content -LiteralPath $requestPath -Raw -Encoding UTF8 | ConvertFrom-Json
+$response=Get-Content -LiteralPath $responsePath -Raw -Encoding UTF8 | ConvertFrom-Json
 if($request.feature_id -ne $feature -or $request.host_preference -ne 'wps' -or @($request.source_paths).Count -ne 1) {
   throw 'WPS_CURRENT_HOST_REQUEST_MISMATCH'
 }
@@ -291,9 +311,24 @@ $jobs=@($response.jobs)
 if($response.fatal -or $jobs.Count -ne 1 -or $jobs[0].success -ne $true -or [string]$jobs[0].host_display_name -notmatch 'WPS') {
   throw 'WPS_ACTUAL_ENGINE_NOT_PROVEN'
 }
-[ordered]@{feature=$feature;input_sha256=$actual;host_display_name=[string]$jobs[0].host_display_name;
+# 输出根必须属于当前匹配job/index宿主的工作目录，逐个文件再核边界与真实摘要。
+$outputRoot=[IO.Path]::GetFullPath([string]$request.output_directory).TrimEnd('\')+'\'
+$expectedOutput=[IO.Path]::GetFullPath((Join-Path (Split-Path $control -Parent) 'o')).TrimEnd('\')+'\'
+if(-not $outputRoot.StartsWith($root,[StringComparison]::OrdinalIgnoreCase) -or $outputRoot -ine $expectedOutput) {
+  throw 'WPS_CURRENT_HOST_OUTPUT_ROOT_INVALID'
+}
+$nativeOutputs=@(foreach($path in @($jobs[0].output_paths)) {
+  $full=[IO.Path]::GetFullPath([string]$path)
+  if(-not $full.StartsWith($outputRoot,[StringComparison]::OrdinalIgnoreCase)) {throw 'WPS_CURRENT_HOST_OUTPUT_PATH_INVALID'}
+  $file=Get-Item -LiteralPath $full
+  if($file.PSIsContainer -or $file.Length -le 0) {throw 'WPS_CURRENT_HOST_OUTPUT_EMPTY'}
+  @{extension=$file.Extension.ToLowerInvariant();bytes=[long]$file.Length;
+    sha256=(Get-FileHash -LiteralPath $full -Algorithm SHA256).Hash.ToLowerInvariant()}
+})
+if($nativeOutputs.Count -lt 1) {throw 'WPS_CURRENT_HOST_OUTPUT_REQUIRED'}
+[ordered]@{job=$job;document=$document;index=$index;feature=$feature;input_sha256=$actual;host_display_name=[string]$jobs[0].host_display_name;outputs=$nativeOutputs;
   request_sha256=(Get-FileHash -LiteralPath $requestPath -Algorithm SHA256).Hash.ToLowerInvariant();
-  response_sha256=(Get-FileHash -LiteralPath $responsePath -Algorithm SHA256).Hash.ToLowerInvariant()}|ConvertTo-Json -Compress
+  response_sha256=(Get-FileHash -LiteralPath $responsePath -Algorithm SHA256).Hash.ToLowerInvariant()}|ConvertTo-Json -Depth 5 -Compress
 """
     return guest_json(client, script)
 

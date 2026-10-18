@@ -29,12 +29,20 @@ function Expand-VerifiedPartyOpsOcrRuntime {
     $engineEvidenceValue = "bee9e3434bd94fd65387d9be28cd467a41f61b1275383b55b0f59a1331270ae4"
     $engineLicense = "licenses\LICENSE-tesseract.txt"
   }
-  if (-not (Test-Path -LiteralPath $archive)) {
+  $recoveredRuntime = $null
+  if (-not (Test-Path -LiteralPath $archive) -and -not $isWin7X86 -and -not $isWin7Amd64) {
+    # 原 ZIP 缺失时，仅接受固定公开安装包中逐文件锁定的同版 OCR。
+    . (Join-Path $RepoRoot "packaging\windows\recover-ocr-from-public-installer.ps1") -RepoRoot $RepoRoot
+    $recoveredRuntime = Join-Path $RepoRoot "vendor\windows\ocr\tesseract-5.5.3-windows-amd64-recovered"
+    Assert-PartyOpsOcrRecoveryTree -Root $recoveredRuntime -RepoRoot $RepoRoot
+  } elseif (-not (Test-Path -LiteralPath $archive)) {
     throw "缺少固定版本的 Windows 中文 OCR 运行时：$archive"
   }
-  $actualArchiveSha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $archive).Hash
-  if ($actualArchiveSha256 -ne $expectedArchiveSha256) {
-    throw "Windows 中文 OCR 运行时 SHA-256 不匹配，拒绝封装来源不明的文件。"
+  if ($null -eq $recoveredRuntime) {
+    $actualArchiveSha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $archive).Hash
+    if ($actualArchiveSha256 -ne $expectedArchiveSha256) {
+      throw "Windows 中文 OCR 运行时 SHA-256 不匹配，拒绝封装来源不明的文件。"
+    }
   }
 
   $artifactsRoot = [System.IO.Path]::GetFullPath((Join-Path $RepoRoot "artifacts"))
@@ -45,10 +53,31 @@ function Expand-VerifiedPartyOpsOcrRuntime {
     ) -or [System.IO.Path]::GetFileName($destinationPath) -ne "ocr") {
     throw "拒绝向未经验证的目录展开 OCR 运行时：$destinationPath"
   }
+  # 删除或写入前拒绝目标及其到工作区根目录的任何重解析点。
+  $repoBoundary = [System.IO.Path]::GetFullPath($RepoRoot).TrimEnd('\')
+  $destinationAncestor = $destinationPath
+  while ($destinationAncestor.Length -ge $repoBoundary.Length) {
+    try {
+      $ancestorItem = Get-Item -LiteralPath $destinationAncestor -Force -ErrorAction Stop
+    } catch [System.Management.Automation.ItemNotFoundException] {
+      $ancestorItem = $null
+    }
+    if ($null -ne $ancestorItem -and
+        ($ancestorItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint)) {
+      throw "[OCR_TARGET_REPARSE_POINT] OCR 目标路径含重解析点，拒绝删除或写入：$destinationAncestor"
+    }
+    if ($destinationAncestor -eq $repoBoundary) { break }
+    $destinationAncestor = [System.IO.Path]::GetDirectoryName($destinationAncestor)
+  }
   if (Test-Path -LiteralPath $destinationPath) {
     Remove-Item -LiteralPath $destinationPath -Recurse -Force
   }
-  Expand-Archive -LiteralPath $archive -DestinationPath $destinationPath -Force
+  if ($null -ne $recoveredRuntime) {
+    Copy-Item -LiteralPath $recoveredRuntime -Destination $destinationPath -Recurse
+    Assert-PartyOpsOcrRecoveryTree -Root $destinationPath -RepoRoot $RepoRoot
+  } else {
+    Expand-Archive -LiteralPath $archive -DestinationPath $destinationPath -Force
+  }
 
   $tesseract = Join-Path $destinationPath "bin\tesseract.exe"
   $tessdata = Join-Path $destinationPath "tessdata"

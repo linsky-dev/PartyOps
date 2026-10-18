@@ -95,6 +95,7 @@ Source: "{#BuildRoot}\prerequisites\ndp48-x86-x64-allos-enu.exe"; Flags: dontcop
 
 [Icons]
 Name: "{group}\党建智办"; Filename: "{app}\PartyOpsLauncher.exe"; IconFilename: "{app}\partyops.ico"
+Name: "{group}\重新配置运行模式"; Filename: "{app}\PartyOpsWizard.exe"; Parameters: "--reconfigure"; IconFilename: "{app}\partyops.ico"
 Name: "{group}\管理本机共享文件夹"; Filename: "{app}\PartyOpsWizard.exe"; Parameters: "--manage-shared-roots"; IconFilename: "{app}\partyops.ico"
 Name: "{commondesktop}\党建智办"; Filename: "{app}\PartyOpsLauncher.exe"; IconFilename: "{app}\partyops.ico"
 

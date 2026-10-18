@@ -317,7 +317,14 @@ def test_windows_host_role_uses_uac_helper_for_protected_config(
         config = program_data / "PartyOps" / "partyops.env"
         config.parent.mkdir(parents=True, exist_ok=True)
         config.write_text("PARTYOPS_MODE=host\n", encoding="utf-8")
-        return SimpleNamespace(returncode=0)
+        script = base64.b64decode(command[-1]).decode("utf-16-le")
+        import re
+        payload = json.loads(base64.b64decode(re.search(r"FromBase64String\('([^']+)'\)", script).group(1)).decode("utf-8"))
+        if "--privileged-finalize-host-switch" in payload["arguments"]:
+            transaction = payload["arguments"].split()[-1]
+            setup_wizard._write_private(setup_wizard._host_configuration_outcome_path(transaction), json.dumps({"format_version": 1, "transaction_id": transaction, "outcome": "commit"}))
+        # run_elevated返回文本CompletedProcess契约，成功结果也包含两个输出字段。
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
 
     monkeypatch.setattr(setup_wizard.subprocess, "run", run_elevated)
     config_path = setup_wizard.configure_host_config(
@@ -327,9 +334,14 @@ def test_windows_host_role_uses_uac_helper_for_protected_config(
     )
 
     assert config_path == program_data / "PartyOps" / "partyops.env"
-    assert "-Verb RunAs" in elevated_calls[0][4]
-    encoded_data_dir = elevated_calls[0][-1]
-    assert base64.b64decode(encoded_data_dir).decode("utf-8").endswith("业务 数据")
+    import re
+    script = base64.b64decode(elevated_calls[0][-1]).decode("utf-16-le")
+    assert "-Verb RunAs" in script
+    encoded_payload = re.search(r"FromBase64String\('([^']+)'\)", script).group(1)
+    payload = json.loads(base64.b64decode(encoded_payload).decode("utf-8"))
+    assert "业务 数据" in payload["arguments"]
+    assert "--mode-switch-transaction" in payload["arguments"]
+    assert len(elevated_calls) == 2
     assert json.loads((local_config / "mode.json").read_text(encoding="utf-8"))[
         "mode"
     ] == "host"

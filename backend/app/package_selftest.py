@@ -184,7 +184,8 @@ def _validate_mac_object_record(host: Path, record: dict[str, object]) -> dict[s
     if not license_path.is_file() or license_path.stat().st_size <= 0 or "Mono JIT compiler version" not in str(record.get("native_bundle_runtime", "")):
         raise RuntimeError("Mac 内嵌 Mono 来源与许可不完整")
     for key in ("managed_host_sha256", "resource_catalog_source_sha256"):
-        if not isinstance(record.get(key), str) or not SHA256_PATTERN.fullmatch(record[key]):
+        digest_value = record.get(key)
+        if not isinstance(digest_value, str) or not SHA256_PATTERN.fullmatch(digest_value):
             raise RuntimeError("Mac 托管载荷构建绑定无效")
     try:
         if datetime.fromisoformat(str(record.get("built_at", ""))).utcoffset() != timedelta(hours=8):

@@ -180,8 +180,11 @@ def test_guidance_network_readiness_matrix(monkeypatch) -> None:
 
 def test_pki_generates_dns_certificate_and_device_certificate(monkeypatch, tmp_path) -> None:
     secrets_dir = tmp_path / "secrets"
+    # 替身补齐真实 Settings 的角色与环境；证书单测不向系统目录发布 CA。
     settings = SimpleNamespace(
         secrets_dir=secrets_dir,
+        mode="host",
+        environment="test",
         host="partyops.local",
         tls_cert_file=None,
         tls_key_file=None,
@@ -278,6 +281,8 @@ def test_pki_rejects_invalid_ca_and_regenerates_expired_server(tmp_path) -> None
     _write_ca_fixture(invalid_root, invalid_key, _ca_certificate(invalid_key, ca=False))
     invalid_settings = SimpleNamespace(
         secrets_dir=invalid_root,
+        mode="host",
+        environment="test",
         host="partyops.local",
         tls_cert_file=None,
         tls_key_file=None,
@@ -294,6 +299,8 @@ def test_pki_rejects_invalid_ca_and_regenerates_expired_server(tmp_path) -> None
     _write_ca_fixture(mismatch_root, stored_key, mismatch_cert)
     mismatch_settings = SimpleNamespace(
         secrets_dir=mismatch_root,
+        mode="host",
+        environment="test",
         host="partyops.local",
         tls_cert_file=None,
         tls_key_file=None,
@@ -305,6 +312,8 @@ def test_pki_rejects_invalid_ca_and_regenerates_expired_server(tmp_path) -> None
     expired_root = tmp_path / "expired-server"
     settings = SimpleNamespace(
         secrets_dir=expired_root,
+        mode="host",
+        environment="test",
         host="partyops.local",
         tls_cert_file=None,
         tls_key_file=None,
@@ -340,6 +349,8 @@ def test_pki_rejects_invalid_ca_and_regenerates_expired_server(tmp_path) -> None
 
     empty_host_settings = SimpleNamespace(
         secrets_dir=tmp_path / "empty-host",
+        mode="host",
+        environment="test",
         host="",
         tls_cert_file=None,
         tls_key_file=None,

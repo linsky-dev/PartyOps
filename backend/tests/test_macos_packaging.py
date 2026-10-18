@@ -83,8 +83,12 @@ def test_macos_build_is_native_strict_signed_and_notarized() -> None:
     assert "MACOS_ARCH_MISMATCH" in validation
     assert 'bundle_identifier="cn.partyops.desktop"' in spec
     assert '"CFBundleExecutable": "partyops-desktop"' in spec
-    assert '"CFBundleVersion": "1.4.5.3"' in spec
-    assert '"LSMinimumSystemVersion": "11.0"' in spec
+    assert '"CFBundleVersion": "1.4.5.6"' in spec
+    # ARM 候选与 Intel 使用各自固定基线，不能由调用环境任意提高。
+    assert 'deployment_targets = {"arm64": "15.0", "x86_64": "11.0"}' in spec
+    assert 'minimum_system_version = deployment_targets[target_arch]' in spec
+    assert '"LSMinimumSystemVersion": minimum_system_version' in spec
+    assert 'os.environ.get("MACOSX_DEPLOYMENT_TARGET") != minimum_system_version' in spec
     assert "target_arch=target_arch" in spec
     assert 'name="partyops-updater"' in spec
     assert 'name="partyops-desktop"' in spec
@@ -132,7 +136,8 @@ def test_macos_build_is_native_strict_signed_and_notarized() -> None:
         'codesign --force --options runtime --sign - "$BUNDLE_EXECUTABLE"'
     )
     assert 'PAYLOAD_ROOT="$BUILD_ROOT/pkg-root"' in build
-    assert "export MACOSX_DEPLOYMENT_TARGET='11.0'" in build
+    assert "arm64) export MACOSX_DEPLOYMENT_TARGET='15.0'" in build
+    assert "x86_64) export MACOSX_DEPLOYMENT_TARGET='11.0'" in build
     assert 'PAYLOAD_ARCHIVE="$PAYLOAD_INSTALLER_DIR/PartyOps.app.zip"' in build
     assert '/usr/bin/ditto -c -k --sequesterRsrc --keepParent' in build
     assert '/usr/bin/ditto -x -k "$PAYLOAD_ARCHIVE" "$roundtrip"' in build
@@ -388,7 +393,9 @@ def test_macos_unsigned_candidate_and_remote_native_builder_are_explicit() -> No
     assert "PYTHONHOME='/tmp/forged-python-home'" in workflow
     assert "MACOSX_DEPLOYMENT_TARGET: '11.0'" in workflow
     assert "MACOS_DEPLOYMENT_TARGET_TOO_NEW" in validation
-    assert '${deployment_target} (发布基线为 11.0)' in validation
+    assert "arm64) EXPECTED_MINIMUM_SYSTEM='15.0'; EXPECTED_MINIMUM_MAJOR=15" in validation
+    assert "x86_64) EXPECTED_MINIMUM_SYSTEM='11.0'; EXPECTED_MINIMUM_MAJOR=11" in validation
+    assert '${deployment_target} (架构基线为 ${EXPECTED_MINIMUM_SYSTEM})' in validation
     assert "$deployment_target（" not in validation
     runtime_lock = (MACOS / "requirements-runtime.txt").read_text(encoding="utf-8")
     assert "numpy==1.26.4" in runtime_lock

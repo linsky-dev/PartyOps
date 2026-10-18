@@ -18,9 +18,16 @@
 </div>
 
 > [!IMPORTANT]
-> 最新公开候选为 **1.4.5-rc.6**，原候选发布于 **2026-10-03 01:38（北京时间）**。RC6 现列十个可下载安装包，包含 Apple Silicon arm64 候选；该包已完成国内全文件回读及 GitHub 附件大小、SHA-256 核验。Apple Silicon 仍为有限验证候选；本批另更新麒麟 ARM64 完整候选，实测范围与限制见[发布说明](docs/release-notes-v1.4.5-rc.6.md)。
+> 最新公开候选为 **1.4.5-rc.6**，原候选发布于 **2026-10-03 01:38（北京时间）**。RC6 现列十个可下载安装包，包含 Apple Silicon arm64 候选；该包已完成国内全文件回读及 GitHub 附件大小、SHA-256 核验。Apple Silicon 仍为有限验证候选；本次更新 Windows x64 完整安装包；麒麟 ARM64 保持 2026-10-16 完整候选，实测范围与限制见[发布说明](docs/release-notes-v1.4.5-rc.6.md)。
 
 ## 当前公开发布
+
+### Windows x64 完整安装包（2026-10-18）
+
+- 修复主机启动端口检查、管理员确认和操作超时后的模式恢复；覆盖安装保留原业务数据。
+- 验证环境：Windows 10 专业版 22H2（10.0.19045）x64 / QEMU / WPS 12.1.0.28488。覆盖安装、重启、主机配置、恢复个人模式及原账号、事项、日历、附件保留通过；六项排版、字体和三页金样通过。
+- [下载完整安装包](https://partyops-rc6-win7-x86.app.workbuddy.host/downloads/PartyOps_1.4.5-rc.6_windows_amd64_startup-20261018.exe) · [安装说明](docs/windows-installation-20261018.zh-CN.md)。先备份，再覆盖安装，不要先卸载或删库。
+- 安装版真实管理员超时场景及完整生命周期未全部实测，其他平台沿用各自验证范围。
 
 ### 麒麟 ARM64 完整候选（2026-10-16）
 
@@ -36,7 +43,7 @@
 | --- | --- |
 | 公开版本 | [v1.4.5-rc.6](https://github.com/linsky-dev/PartyOps/releases/tag/v1.4.5-rc.6)，GitHub Pre-release |
 | 官方网站 | [https://partyops.cn/](https://partyops.cn/) |
-| 制品校验 | 十个当前安装包；本批仅更新麒麟 ARM64 DEB，大小、摘要与范围见本批签名清单及实际回读记录 |
+| 制品校验 | 十个当前安装包；本次更新 Windows x64 完整包，大小、摘要与范围见本批签名清单及实际回读记录 |
 | 验证边界 | 各包仅按公开的实际验收范围准入，未宣称完整生命周期或全部映射系统通过 |
 | 源码位置 | [当前公开源码](https://github.com/linsky-dev/PartyOps/tree/main)；Apple Silicon arm64 候选来自源码提交 `9de8b721225cf6913727614540d431e1c48811e3`；源码文件清单包含 1972 个文件，SHA-256 为 `c48933169424f5e9dc81b06eec7ba92c94dc563cc5ffeea62470ab5906fedea0`；冻结制品来源以新增 manifest 为准 |
 | 回滚与延期 | RC.4 历史发布保留；Apple Silicon RC.6 为 macOS 15.0+ 有限验证候选，未完成 GUI、业务功能和完整生命周期验收 |
@@ -52,7 +59,7 @@ PartyOps 不是一套把表单搬到浏览器里的系统。它解决的是基�
 ### 1.4.5-rc.6：功能更新与问题修复
 
 - 新增本机智能编排与步骤确认，支持模型规划、权限校验和规则回退。
-- 修复 Windows 启动诊断误读历史日志的问题，准确区分本次启动的权限、依赖和运行错误。
+- 修复 Windows 启动诊断误读历史日志及管理员启动错误反馈问题；启动修复候选的安装版验收范围见专用说明。
 - 修复个人模式配置读取和数据目录处理，保留已保存的个人数据目录。
 - 修复同一电脑不同账号的公文排版实例互相干扰，分别绑定排版端口和访问票据。
 - 缩短公文排版临时路径，保留原始中文文件名，并提示超长路径问题。
@@ -238,13 +245,15 @@ flowchart LR
 - [PartyOps_1.4.5-rc.6_linux_loong64.deb](https://partyops-rc6-win7-x86.app.workbuddy.host/downloads/PartyOps_1.4.5-rc.6_linux_loong64.deb)
 - [PartyOps_1.4.5-rc.6_windows7_amd64.exe](https://partyops-rc6-win7-x86.app.workbuddy.host/downloads/PartyOps_1.4.5-rc.6_windows7_amd64.exe)
 - [PartyOps_1.4.5-rc.6_windows7_x86.exe](https://partyops-rc6-win7-x86.app.workbuddy.host/downloads/PartyOps_1.4.5-rc.6_windows7_x86.exe)
-- [PartyOps_1.4.5-rc.6_windows_amd64.exe](https://partyops-rc6-win7-x86.app.workbuddy.host/downloads/PartyOps_1.4.5-rc.6_windows_amd64.exe)
+- [PartyOps_1.4.5-rc.6_windows_amd64_startup-20261018.exe](https://partyops-rc6-win7-x86.app.workbuddy.host/downloads/PartyOps_1.4.5-rc.6_windows_amd64_startup-20261018.exe)
+
+Windows x64 启动修复候选（验收更新：2026-10-18）：`PartyOps_1.4.5-rc.6_windows_amd64_startup-20261018.exe`，449988807 字节，SHA-256 `e3e2ea45ccd38acff059b5713826a78f998a56ccef75341633f67bd4e17e57da`；独立签名清单：`release-manifest-windows-startup-20261018.json`。覆盖安装、正常关机后的开机恢复、真实 UAC 主机配置、恢复个人模式及原账号/事项/日历/附件最终保留已通过；WPS 六项排版功能、9 个用例、五字体、三页金样及保存重开已通过，详见[安装说明](docs/windows-installation-20261018.zh-CN.md)。本包修复向导超时后过早删除事务 journal 的问题；安装版真实 UAC 超时未实测，该修复由正式源码测试、构建与安装载荷绑定验证。
 
 ### 安装包验证环境
 
 | 安装包 | 实际验证环境 |
 | --- | --- |
-| PartyOps_1.4.5-rc.6_windows_amd64.exe | Windows 10 22H2（10.0.19045） / x86_64 / QEMU / WPS 版本未记录 |
+| PartyOps_1.4.5-rc.6_windows_amd64_startup-20261018.exe | Windows 10 专业版 22H2（10.0.19045） / x86_64 / QEMU / WPS 12.1.0.28488；六项排版、五字体、三页金样及保存重开通过 |
 | PartyOps_1.4.5-rc.6_windows7_amd64.exe | Windows 7 SP1（6.1.7601） / x86_64 / QEMU / WPS 版本未记录 |
 | PartyOps_1.4.5-rc.6_linux_amd64.deb | UOS 桌面专业版 20（1070） / x86_64 / QEMU / WPS 版本未记录 |
 | PartyOps_1.4.5-rc.6_linux_arm64_kylin-full-20261016.deb | 官方银河麒麟桌面 V10 SP1 2503 / aarch64 / QEMU / WPS 12.8.2.1119.AK.preload.sw |
@@ -280,8 +289,8 @@ Apple Silicon RC.6 来源基线提交：`9de8b721225cf6913727614540d431e1c48811e
 Windows PowerShell：
 
 ```powershell
-Get-FileHash .\PartyOps_1.4.5-rc.6_windows_amd64.exe -Algorithm SHA256
-Get-AuthenticodeSignature .\PartyOps_1.4.5-rc.6_windows_amd64.exe
+Get-FileHash .\PartyOps_1.4.5-rc.6_windows_amd64_startup-20261018.exe -Algorithm SHA256
+Get-AuthenticodeSignature .\PartyOps_1.4.5-rc.6_windows_amd64_startup-20261018.exe
 ```
 
 Linux：
@@ -300,7 +309,7 @@ shasum -a 256 PartyOps_1.4.5-rc.6_macos_x86_64-UNSIGNED-UNNOTARIZED-CANDIDATE.pk
 
 ### Windows 10/11 x64
 
-1. 双击 `PartyOps_1.4.5-rc.6_windows_amd64.exe`。未签名候选出现 SmartScreen 时，先核对 SHA-256，再选择“更多信息 → 仍要运行”。
+1. 双击 `PartyOps_1.4.5-rc.6_windows_amd64_startup-20261018.exe`。未签名候选出现 SmartScreen 时，先核对 SHA-256，再选择“更多信息 → 仍要运行”。
 2. PartyOps 中文安装向导会分别询问程序安装目录和业务数据目录；两者都可自定义，升级时会保留原选择。数据目录建议使用 `D:\PartyOps-数据` 等本机固定磁盘目录，支持中文和空格，不支持磁盘根目录、系统目录、网络盘或移动盘。
 3. 首次打开“党建智办”，明确选择角色：
    - **个人使用（新手推荐）**：无需管理员授权，只在本机使用，不安装服务、不开放局域网。

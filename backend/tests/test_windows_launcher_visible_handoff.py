@@ -431,3 +431,51 @@ def test_client_handoff_adds_runtime_fingerprint(monkeypatch, tmp_path: Path) ->
     assert launcher.prepare_client_page(runtime, config, local)
     assert opened and "page=inbox" in opened[0]
     assert f"partyops_runtime={launcher.__version__}" in opened[0]
+
+
+@pytest.mark.parametrize("background", [False, True])
+def test_user_host_journal_blocks_startup_even_after_privileged_pending_cleared(monkeypatch, tmp_path, background):
+    launcher = load_launcher()
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local"))
+    monkeypatch.setenv("PROGRAMDATA", str(tmp_path / "program"))
+    local = tmp_path / "local" / "PartyOps"
+    local.mkdir(parents=True)
+    journal = local / "host-config-journal.json"
+    journal.write_text("普通入口不得读取或解释此内容", encoding="utf-8")
+    (local / "mode.json").write_text('{"mode":"host"}', encoding="utf-8")
+    monkeypatch.setattr(launcher.sys, "argv", ["PartyOpsLauncher", *(["--background"] if background else [])])
+    monkeypatch.setattr(launcher, "_persist_user_runtime_root", lambda *_a: None)
+    monkeypatch.setattr(launcher, "_preflight_windows_runtime_dependencies", lambda *_a: None)
+    monkeypatch.setattr(launcher, "ensure_user_protocols", lambda *_a: None)
+    monkeypatch.setattr(launcher, "detached", lambda *_a, **_k: pytest.fail("恢复前不能启动运行时"))
+    calls = []
+    monkeypatch.setattr(launcher, "launch_wizard_and_wait", lambda *_a: calls.append("wizard"))
+    original_read = Path.read_text
+    def read(path, *args, **kwargs):
+        if path == journal:
+            pytest.fail("launcher 只检查固定 journal 是否存在")
+        return original_read(path, *args, **kwargs)
+    monkeypatch.setattr(Path, "read_text", read)
+    assert launcher.main() == 1
+    assert calls == ([] if background else ["wizard"])
+
+
+def test_host_launcher_preserves_explicit_lan_health_probe(monkeypatch, tmp_path):
+    launcher = load_launcher()
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local"))
+    monkeypatch.setenv("PROGRAMDATA", str(tmp_path / "program"))
+    local = tmp_path / "local" / "PartyOps"
+    local.mkdir(parents=True)
+    config = tmp_path / "host.env"
+    config.write_text(f"PARTYOPS_MODE=host\nPARTYOPS_HOST=192.168.1.8\nPARTYOPS_BIND_HOST=192.168.1.8\nPARTYOPS_PORT=18765\nPARTYOPS_DATA_DIR={tmp_path / 'data'}\nPARTYOPS_TLS_ENABLED=true\n", encoding="utf-8")
+    (local / "mode.json").write_text(__import__("json").dumps({"mode": "host", "config_path": str(config)}), encoding="utf-8")
+    monkeypatch.setattr(launcher.sys, "argv", ["PartyOpsLauncher", "--background"])
+    monkeypatch.setattr(launcher, "_persist_user_runtime_root", lambda *_a: None)
+    monkeypatch.setattr(launcher, "_preflight_windows_runtime_dependencies", lambda *_a: None)
+    monkeypatch.setattr(launcher, "ensure_user_protocols", lambda *_a: None)
+    monkeypatch.setattr(launcher, "_start_windows_host_service", lambda: None)
+    probes = []
+    monkeypatch.setattr(launcher, "wait_for_host_health", lambda *_a, **options: probes.append(options) or "https://192.168.1.8:18765")
+    assert launcher.main() == 0
+    assert probes[0]["bind_host"] == "192.168.1.8"
+    assert probes[0]["tls"] is True
