@@ -12,7 +12,8 @@ $OldHash = '3c81fdba89781722f94e82d31c7ff99b4357a1374fc6454ad47d3cfa464d1e27'
 $OldPublication = Join-Path $Workspace 'qa\acceptance\windows-startup-20261016\publication-windows-20261017'
 $FinalFiles = @((Join-Path $Workspace 'artifacts\PartyOps_1.4.5-rc.6_windows_amd64.exe'), (Join-Path $Publication 'batch\PartyOps_1.4.5-rc.6_windows_amd64_startup-20261018.exe'))
 $CachePaths = @(
-    'artifacts\PartyOps-1.4.5-rc.6-windows-amd64', 'artifacts\windows-runtime',
+    # 正式验收复核仍读取冻结程序目录，必须保留；只清理可再生成的构建运行库。
+    'artifacts\windows-runtime',
     '.build-windows\alembic-data', '.build-windows\sitecustomize', '.build-windows\spec', '.build-windows\work',
     '.build-kit\downloads', '.build-kit\vs2022', '.build-kit\vs_BuildTools.exe',
     '.qa\deferred-cache\VMware-workstation-full-17.6.4-24832109.exe', '.qa\deferred-cache\wps-office-runtime.tar.gz'
@@ -119,8 +120,8 @@ function Assert-ProductionProof {
     Assert-Path $GithubReadback
     $python = Join-Path $Workspace 'backend\.venv\Scripts\python.exe'
     # 这里只复用既有只读凭证核验；所有文件删除始终由当前PowerShell执行。
-    $probe = 'import sys;from pathlib import Path;sys.path.insert(0,sys.argv[1]);import post_switch_common as c;c.proofs(Path(sys.argv[2]),Path(sys.argv[3]));print("CURRENT_PRODUCTION_AND_GITHUB_PROOFS_VALID")'
-    $output = & $python -X utf8 -B -c $probe $Publication (Join-Path $Publication 'production-website-readback.json') $GithubReadback 2>&1
+    $probe = Join-Path $Publication 'verify-local-cleanup-proofs.py'
+    $output = & $python -X utf8 -B $probe (Join-Path $Publication 'production-website-readback.json') $GithubReadback 2>&1
     if ($LASTEXITCODE -ne 0 -or ($output -join "`n").Trim() -cne 'CURRENT_PRODUCTION_AND_GITHUB_PROOFS_VALID') { throw 'CURRENT_PRODUCTION_AND_GITHUB_PROOFS_REQUIRED' }
 }
 
