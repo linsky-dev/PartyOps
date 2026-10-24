@@ -24,7 +24,7 @@ openpyxl==3.1.5
 # 上游0.3.2的CPython3.8轮子包含Win8+接口，不能直接用于Win7。
 # 使用相同源码、Rust官方Win7目标与build-std重建，哈希见对应架构锁文件。
 python-calamine==0.3.2+partyops.1
-Pillow==12.3.0+partyops.1
+Pillow==13.0.0
 pytesseract==0.3.13
 # 上游安全版本已停止支持 Python 3.8；正式 wheel 必须由
 # security-backports.json 指定的 PartyOps 回移版本覆盖。

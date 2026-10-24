@@ -24,7 +24,7 @@ dependencies = [
   "PyMuPDF==1.26.0",
   "openpyxl==3.1.5",
   "python-calamine==0.8.2",
-  "Pillow==12.3.0",
+  "Pillow==13.0.0",
   "pytesseract==0.3.13",
   "cryptography==50.0.0",
   "defusedxml==0.7.1",
