@@ -1,5 +1,5 @@
 schema_version: 1
-version: 1.4.5-rc.6
+version: 1.4.6-rc.1
 local_only: true
 retain_obsolete_packages: false
 run_order: [uos-deb-x64, uos-deb-arm64, deepin-deb-loong64, openeuler-iso-x64, openeuler-iso-arm64, win10-x64, win10-x86, win10-arm64, win11-x64-native, win11-arm64, win7-x64, win7-x86, macos-x64, macos-arm64]
@@ -47,10 +47,10 @@ packages:
     pattern: 'PartyOps_{version}_linux_loong64.deb'
     required_targets: [deepin-deb-loong64]
   rpm_x86_64:
-    pattern: 'PartyOps-1.4.5-0.rc.6.*.x86_64.rpm'
+    pattern: 'PartyOps-1.4.6-0.rc.1.*.x86_64.rpm'
     required_targets: [openeuler-iso-x64]
   rpm_aarch64:
-    pattern: 'PartyOps-1.4.5-0.rc.6.*.aarch64.rpm'
+    pattern: 'PartyOps-1.4.6-0.rc.1.*.aarch64.rpm'
     required_targets: [openeuler-iso-arm64]
   macos_x86_64:
     pattern: 'PartyOps_{version}_macos_x86_64.pkg'

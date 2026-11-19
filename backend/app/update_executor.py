@@ -2269,6 +2269,7 @@ def _restore_personal_database_as_user(backup_path: Path, desktop_uid: int) -> N
 
     settings = get_settings()
     database = settings.database_path
+    ensure_native_rollback_safe(database)
     try:
         original = database.stat()
         database_gid = int(original.st_gid)
@@ -2406,6 +2407,7 @@ def execute_linux_personal_root_transaction(
             and target_version
         ):
             try:
+                ensure_native_rollback_safe(get_settings().database_path)
                 if _linux_native_version(
                     platform_name
                 ) == target_version and _rollback_linux_personal_package_locked(run_id):

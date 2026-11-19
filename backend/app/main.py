@@ -25,8 +25,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import func, select
+from starlette.concurrency import run_in_threadpool
 
 from . import __version__
+from .agent_tls import ClientCertificateH11Protocol, check_device_tls
 from .config import get_settings
 from .database import db_runtime, get_session
 from .device_versions import (
@@ -69,6 +71,7 @@ from .routers import (
 )
 from .scheduler import scheduler_loop
 from .schemas import serialize_api_datetime
+from .security import SESSION_COOKIE
 from .seed import seed_templates
 from .startup_diagnostics import (
     DATABASE_SCHEMA_FAILED,
@@ -544,6 +547,12 @@ def _loopback_client(request: Request) -> bool:
         )
 
 
+def _authenticate_agent_transport(request: Request, token: str) -> None:
+    """在工作线程核对设备身份，数据库会话只在本次验证中使用。"""
+    with db_runtime.session_factory() as db:
+        check_device_tls(request, db, token)
+
+
 @app.middleware("http")
 async def trace_requests(request: Request, call_next):
     request.state.trace_id = normalize_trace_id(request.headers.get("X-Trace-Id"))
@@ -563,7 +572,7 @@ async def trace_requests(request: Request, call_next):
             request,
         )
     authorization = request.headers.get("Authorization", "").strip().lower()
-    has_session_cookie = bool(request.cookies.get("partyops_session"))
+    has_session_cookie = bool(request.cookies.get(SESSION_COOKIE))
     bearer = authorization == "bearer" or authorization.startswith("bearer ")
     if has_session_cookie and bearer:
         return _apply_security_headers(
@@ -616,25 +625,12 @@ async def trace_requests(request: Request, call_next):
         )
     # 设备令牌只允许走独立的双向 TLS Agent 端口；浏览器主端口即使在同一
     # 局域网内也不能用复制的令牌冒充终端。
-    if (
-        settings.environment == "production"
-        and request.headers.get("X-PartyOps-Device-Token")
-        and (not settings.tls_enabled or request.url.port != settings.agent_port)
-    ):
-        return _apply_security_headers(
-            JSONResponse(
-                status_code=403,
-                content={
-                    "type": "https://partyops.local/problems/AGENT_MTLS_REQUIRED",
-                    "title": "需要设备双向 TLS 通道",
-                    "detail": "终端接口必须通过 Agent 双向 TLS 安全端口访问。",
-                    "code": "AGENT_MTLS_REQUIRED",
-                    "trace_id": request.state.trace_id,
-                },
-                media_type="application/problem+json",
-            ),
-            request,
-        )
+    device_token = request.headers.get("X-PartyOps-Device-Token")
+    if settings.environment == "production" and device_token:
+        try:
+            await run_in_threadpool(_authenticate_agent_transport, request, device_token)
+        except ProblemException as exc:
+            return _apply_security_headers(problem_response(request, exc), request)
     if request.url.path.startswith("/api/v1/") and not request.url.path.startswith(
         (
             "/api/v1/health",
@@ -766,7 +762,7 @@ class _UvicornOptions(TypedDict, total=False):
     host: str
     port: int
     loop: Literal["asyncio"]
-    http: Literal["h11"]
+    http: Literal["h11"] | type[ClientCertificateH11Protocol]
     ws: Literal["none"]
     workers: int
     reload: bool
@@ -826,6 +822,7 @@ def run() -> None:
             agent_options: _UvicornOptions = {
                 **uvicorn_options,
                 "port": settings.agent_port,
+                "http": ClientCertificateH11Protocol,
                 "ssl_cert_reqs": 2,
                 # 主端口负责数据库、调度器和后台任务初始化；Agent 端口只复用
                 # 已初始化的 ASGI 应用，避免同一进程重复启动两个调度器。
