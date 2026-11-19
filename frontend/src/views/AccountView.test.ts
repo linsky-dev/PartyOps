@@ -72,4 +72,26 @@ describe("账号设置", () => {
     expect(wrapper.find("code").exists()).toBe(false);
     wrapper.unmount();
   });
+
+  it("管理员明确撤销恢复码并在生成失败后清除密码输入", async () => {
+    session.user.role = "admin";
+    deleteBody.mockResolvedValue(undefined);
+    post.mockRejectedValueOnce("合成失败");
+    const wrapper = mount(AccountView, { global: { plugins: [ArcoVue] } });
+    const offlineForm = wrapper.findAll("form")[1];
+    const revoke = offlineForm.findAll("button").find((button) => button.text() === "撤销现有恢复码");
+    expect(revoke?.element.disabled).toBe(true);
+    await offlineForm.get("input").setValue("合成管理员密码");
+    await revoke?.trigger("click");
+    await flushPromises();
+    expect(deleteBody).toHaveBeenCalledWith("/auth/recovery/offline", { current_password: "合成管理员密码" });
+    expect(offlineForm.get("input").element.value).toBe("");
+    await offlineForm.get("input").setValue("合成管理员密码");
+    await offlineForm.trigger("submit");
+    await flushPromises();
+    expect(post).toHaveBeenCalledOnce();
+    expect(wrapper.find("code").exists()).toBe(false);
+    expect(offlineForm.get("input").element.value).toBe("");
+    wrapper.unmount();
+  });
 });

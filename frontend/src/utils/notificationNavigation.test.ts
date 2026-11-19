@@ -61,6 +61,14 @@ describe("通知进入业务对象", () => {
     expect(noticeDialog.value?.item.body).toBe(notice.body);
   });
 
+  it("归档目标仅在用户查看关联对象时提供入口", async () => {
+    get.mockResolvedValue({ status: "archived", target: { ...child, child_id: null, archived: true } });
+    await openNotification(router, { ...notice, read_at: notice.created_at });
+    expect(push).not.toHaveBeenCalled();
+    expect(noticeDialog.value?.message).toContain("已归档");
+    expect(noticeDialog.value?.destination).toMatchObject({ path: "/tasks/task-1" });
+  });
+
   it("定位请求失败后可重试，不重复写入已读", async () => {
     post.mockResolvedValue({ read_at: notice.created_at });
     get.mockRejectedValueOnce(new TypeError("离线")).mockResolvedValueOnce({ status: "ready", target: child });

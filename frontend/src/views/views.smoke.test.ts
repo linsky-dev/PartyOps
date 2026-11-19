@@ -3527,6 +3527,108 @@ describe("核心页面真实挂载", () => {
     wrapper.unmount();
   });
 
+  it("共享文件通知打开父级目录、选中文件并可返回关联根目录", async () => {
+    const folder = { ...workspaceFile, id: "folder-1", name: "通知子目录", is_directory: true };
+    const nested = { ...workspaceFile, parent_id: folder.id, tags: ["来自通知"] };
+    apiMocks.get.mockImplementation(async (path) => {
+      if (path === "/workspace/roots") return [workspaceRoot];
+      if (path === `/workspace/files/${folder.id}`) return folder;
+      if (path === `/workspace/files/${nested.id}`) return nested;
+      if (path.startsWith("/workspace/files?")) return [folder, nested];
+      return responseFor(path);
+    });
+    const wrapper = await mountView(WorkspaceView, "/workspace?noticeRoot=root-1&noticeTarget=file-1", true);
+    const state = setupState(wrapper);
+    expect(state.pathStack).toEqual([folder]);
+    expect(state.selectedFile).toEqual(nested);
+    expect(state.tagsText).toBe("来自通知");
+    expect(apiMocks.get).toHaveBeenCalledWith("/workspace/files?root_id=root-1&parent_id=folder-1");
+
+    state.rootLifecycle = "disabled";
+    await wrapper.vm.$router.push("/workspace?noticeRoot=root-1&noticeTarget=root-1");
+    await flushPromises();
+    expect(state.rootLifecycle).toBe("active");
+    expect(state.selectedRootId).toBe(workspaceRoot.id);
+    expect(state.selectedFile).toBeNull();
+    expect(state.pathStack).toEqual([]);
+
+    await wrapper.vm.$router.push("/workspace?noticeRoot=root-1&noticeTarget=folder-1");
+    await flushPromises();
+    expect(state.selectedFile).toBeNull();
+    expect(state.tagsText).toBe("");
+    wrapper.unmount();
+  });
+
+  it.each([
+    ["inbox", "inboxPage", "transfer-11"],
+    ["transfers", "transfersPage", "transfer-9"],
+    ["grants", "remoteRootsPage", "remote-9"],
+  ])("设备协同从通知定位到 %s 的第二页", async (section, pageProperty, id) => {
+    const records = Array.from({ length: 11 }, (_, index) => ({
+      ...transfer, id: `transfer-${index + 1}`, direction: "device_to_host",
+    }));
+    const approvals = Array.from({ length: 9 }, (_, index) => ({
+      ...workspaceRoot, id: `remote-${index + 1}`, source: "device", approval_status: "pending",
+    }));
+    apiMocks.get.mockImplementation(async (path) => {
+      if (path === "/transfers") return records;
+      if (path === "/admin/workspace/remote-roots") return approvals;
+      return responseFor(path);
+    });
+    const wrapper = await mountView(FleetView, `/fleet/${section}?noticeTarget=${id}`, true);
+    const state = setupState(wrapper);
+    state.activeSection = section;
+    await flushPromises();
+    expect(state[pageProperty]).toBe(2);
+    await wrapper.vm.$router.push(`/fleet/${section}?noticeTarget=missing`);
+    await flushPromises();
+    expect(state[pageProperty]).toBe(2);
+    wrapper.unmount();
+  });
+
+  it.each<[string, {
+    rootBrowse?: boolean;
+    fileRoot?: string;
+    parent?: string;
+    parentDirectory?: boolean;
+    parentRoot?: string;
+    unavailable?: boolean;
+  }]>([
+    ["目录不可访问", { rootBrowse: false }],
+    ["目标属于另一个根目录", { fileRoot: "root-other" }],
+    ["父目录关系循环", { parent: "file-1" }],
+    ["父对象并非目录", { parentDirectory: false }],
+    ["父目录属于另一个根目录", { parentRoot: "root-other" }],
+    ["文件索引不可用", { unavailable: true }],
+  ])("共享文件通知在%s时不会选中目标", async (_label, scenario) => {
+    const folder = {
+      ...workspaceFile, id: "folder-1", root_id: scenario.parentRoot || workspaceRoot.id,
+      is_directory: scenario.parentDirectory ?? true,
+    };
+    const file = {
+      ...workspaceFile, root_id: scenario.fileRoot || workspaceRoot.id,
+      parent_id: scenario.parent || folder.id,
+    };
+    apiMocks.get.mockImplementation(async (path) => {
+      if (path === "/workspace/roots") {
+        return [{ ...workspaceRoot, permissions: { ...workspaceRoot.permissions, browse: scenario.rootBrowse ?? true } }];
+      }
+      if (path === `/workspace/files/${folder.id}`) return folder;
+      if (path === `/workspace/files/${file.id}`) {
+        if (scenario.unavailable) throw new Error("文件索引不可用");
+        return file;
+      }
+      if (path.startsWith("/workspace/files?")) return [];
+      return responseFor(path);
+    });
+    const wrapper = await mountView(WorkspaceView, "/workspace?noticeRoot=root-1&noticeTarget=file-1", true);
+    const state = setupState(wrapper);
+    expect(state.selectedFile).toBeNull();
+    expect(state.pathStack).toEqual([]);
+    if (scenario.rootBrowse === false) expect(apiMocks.get).not.toHaveBeenCalledWith("/workspace/files/file-1");
+    wrapper.unmount();
+  });
+
   it("文件中心覆盖目录层级、扫描终态、下载组合和共享权限边界", async () => {
     const directory = { ...workspaceFile, id: "folder-1", name: "子目录", relative_path: "子目录", is_directory: true, size_bytes: 0 };
     const remoteRoot = { ...workspaceRoot, id: "remote-root", source: "device", device_id: "device-1", included_paths: [] };
@@ -3817,6 +3919,79 @@ describe("核心页面真实挂载", () => {
     state.participantUserId = "user-2";
     apiMocks.post.mockRejectedValueOnce(new Error("协办人添加异常"));
     await runAction(state, "addParticipant");
+    wrapper.unmount();
+  });
+
+  it("登录恢复操作仅在成功时回填用户名并清除一次性凭据", async () => {
+    const wrapper = await mountView(LoginView, "/login");
+    const state = setupState(wrapper);
+    const recovery = state.recoveryForm as { credential: string; username: string; newPassword: string };
+    const login = state.form as { username: string; password: string };
+    apiMocks.post.mockClear();
+    await runAction(state, "recoverAccount");
+    expect(apiMocks.post).not.toHaveBeenCalled();
+
+    state.showRecovery = true;
+    state.recoveryBusy = true;
+    await runAction(state, "closeRecovery");
+    expect(state.showRecovery).toBe(true);
+    state.recoveryBusy = false;
+    recovery.credential = "  synthetic-credential  ";
+    apiMocks.post.mockRejectedValueOnce("合成网络错误");
+    await runAction(state, "recoverAccount");
+    expect(state.recoveryResult).toBe("");
+    expect(login.username).toBe("");
+    expect(recovery.credential.trim()).toBe("synthetic-credential");
+    apiMocks.post.mockRejectedValueOnce(new Error("凭据无效"));
+    await runAction(state, "recoverAccount");
+    expect(state.recoveryResult).toBe("");
+    expect(state.recoveryBusy).toBe(false);
+
+    recovery.username = "  recovered-user  ";
+    recovery.newPassword = "合成新密码";
+    apiMocks.post.mockResolvedValueOnce({ username: "recovered-user" });
+    await runAction(state, "recoverAccount");
+    expect(apiMocks.post).toHaveBeenLastCalledWith("/auth/recovery/redeem", {
+      credential: "synthetic-credential", username: "recovered-user", new_password: "合成新密码",
+    });
+    expect(login).toMatchObject({ username: "recovered-user", password: "" });
+    expect(recovery).toEqual({ credential: "", username: "", newPassword: "" });
+    expect(state.recoveryResult).toBe("recovered-user");
+    await runAction(state, "closeRecovery");
+    expect(state.showRecovery).toBe(false);
+    expect(state.recoveryResult).toBe("");
+    wrapper.unmount();
+  });
+
+  it("管理员签发与撤销普通用户恢复凭据只保留瞬时结果", async () => {
+    const wrapper = await mountView(SettingsView, "/settings/diagnostics", true);
+    const state = setupState(wrapper);
+    apiMocks.post.mockClear();
+    apiMocks.delete.mockClear();
+    await runAction(state, "manageUserRecovery", "issue");
+    expect(apiMocks.post).not.toHaveBeenCalled();
+
+    state.recoveryUser = { id: "member-recovery", display_name: "合成成员", role: "staff" };
+    const created = { credential: "synthetic-issued-code", expires_at: now };
+    apiMocks.post.mockResolvedValueOnce(created);
+    await runAction(state, "manageUserRecovery", "issue");
+    expect(apiMocks.post).toHaveBeenCalledWith("/admin/users/member-recovery/recovery");
+    expect(state.issuedRecovery).toEqual(created);
+    apiMocks.post.mockRejectedValueOnce(new Error("合成签发失败"));
+    await runAction(state, "manageUserRecovery", "issue");
+    expect(state.issuedRecovery).toBeNull();
+    apiMocks.delete.mockRejectedValueOnce("合成撤销异常");
+    await runAction(state, "manageUserRecovery", "revoke");
+    apiMocks.delete.mockResolvedValueOnce(undefined);
+    await runAction(state, "manageUserRecovery", "revoke");
+    expect(apiMocks.delete).toHaveBeenLastCalledWith("/admin/users/member-recovery/recovery");
+    expect(state.recoveryBusy).toBe(false);
+    state.recoveryBusy = true;
+    await runAction(state, "closeUserRecovery");
+    expect(state.recoveryUser).not.toBeNull();
+    state.recoveryBusy = false;
+    await runAction(state, "closeUserRecovery");
+    expect(state.recoveryUser).toBeNull();
     wrapper.unmount();
   });
 
