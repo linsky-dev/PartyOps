@@ -40,8 +40,8 @@ function past(value: string | null) {
         <div v-if="entry.legalDeadline"><dt>法规截止</dt><dd>{{ showDate(entry.legalDeadline) }}</dd></div>
       </dl>
       <p v-else class="muted">等待组织确认日期。</p>
-      <p v-if="!entry.actual && past(entry.legalDeadline)" class="legal-risk">已过法规截止日期，待核实实际办理情况。</p>
-      <p v-else-if="!entry.actual && past(entry.referenceEnd || entry.reference)" class="plan-risk">已过参考计划日期。</p>
+      <p v-if="!entry.actual && !entry.satisfied && past(entry.legalDeadline)" class="legal-risk">已过法规截止日期，待核实实际办理情况。</p>
+      <p v-else-if="!entry.actual && !entry.satisfied && past(entry.referenceEnd || entry.reference)" class="plan-risk">已过参考计划日期。</p>
       <p v-if="entry.evidence">{{ entry.evidence }}</p>
       <p v-if="entry.legalBasis">{{ entry.legalBasis }}</p>
       <p v-if="entry.planningBasis">测算依据 {{ entry.planningBasis }}</p>

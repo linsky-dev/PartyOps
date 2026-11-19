@@ -1,6 +1,6 @@
 import { flushPromises, mount } from "@vue/test-utils";
 import ArcoVue from "@arco-design/web-vue";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import AccountView from "./AccountView.vue";
 
 const { patch, post, deleteBody, replace, clearSession, session } = vi.hoisted(() => ({
@@ -18,7 +18,13 @@ vi.mock("vue-router", () => ({ useRouter: () => ({ replace }) }));
 beforeEach(() => {
   vi.resetAllMocks();
   session.user.role = "staff";
+  vi.stubGlobal("matchMedia", (query: string) => ({
+    matches: false, media: query, onchange: null,
+    addEventListener: vi.fn(), removeEventListener: vi.fn(), dispatchEvent: vi.fn(),
+  }));
 });
+
+afterEach(() => vi.unstubAllGlobals());
 
 describe("账号设置", () => {
   it("用户名更新成功后清除浏览器会话并回到登录页", async () => {

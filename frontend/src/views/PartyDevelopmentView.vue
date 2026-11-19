@@ -74,6 +74,7 @@ function timelineEntry(node: PartyDevelopmentResult["nodes"][number]): Developme
     planningBasis: node.reference_basis,
     ruleVersion: node.rule_version || result.value?.rule_version,
     provisional: node.provisional,
+    satisfied: node.status === "completed",
   };
 }
 

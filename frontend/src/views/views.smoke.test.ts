@@ -383,7 +383,7 @@ async function mountView(component: Component, path = "/", admin = false) {
   const wrapper = shallowMount(component, {
     global: {
       plugins: [pinia, router, ArcoVue],
-      stubs: { RouterLink: { props: ["to"], template: "<a><slot /></a>" } },
+      stubs: { DevelopmentTimeline: false, RouterLink: { props: ["to"], template: "<a><slot /></a>" } },
     },
   });
   await flushPromises();
@@ -1359,20 +1359,15 @@ describe("核心页面真实挂载", () => {
     const state = setupState(wrapper);
     await flushPromises();
 
-    const targetDate = state.targetDate as (item: Record<string, unknown>) => string | null;
-    const milestone = {
-      actual_at: null,
-      adjusted_at: null,
-      legal_deadline_at: null,
-      legal_earliest_at: null,
-      planned_at: null,
-    };
-    expect(targetDate({ ...milestone, adjusted_at: "2026-01-01" })).toBe("2026-01-01");
-    expect(targetDate({ ...milestone, legal_deadline_at: "2026-01-02" })).toBe("2026-01-02");
-    expect(targetDate({ ...milestone, legal_earliest_at: "2026-01-03" })).toBe("2026-01-03");
-    expect(targetDate({ ...milestone, planned_at: "2026-01-04" })).toBe("2026-01-04");
-    expect(targetDate({ ...milestone, actual_at: "2026-01-05" })).toBe("2026-01-05");
-    expect(targetDate(milestone)).toBeNull();
+    state.timeline = [{
+      id: "all-dates", milestone_type: "conversation",
+      actual_at: "2026-01-05", adjusted_at: "2026-01-01",
+      legal_deadline_at: "2026-01-02", legal_earliest_at: "2026-01-03", planned_at: "2026-01-04",
+    }];
+    await flushPromises();
+    expect(state.entries).toEqual([expect.objectContaining({
+      actual: "2026-01-05", reference: "2026-01-01", legalEarliest: "2026-01-03", legalDeadline: "2026-01-02",
+    })]);
     const originalSelectedId = String(state.selectedId);
     state.selectedId = "";
     await flushPromises();
@@ -1488,9 +1483,9 @@ describe("核心页面真实挂载", () => {
       { ...baseMilestone, id: "legal", milestone_type: "unknown", planned_at: null, legal_deadline_at: "2026-09-01", planning_basis: "", reminder_days: [], visual_state: "overdue", is_reference: false, progress_event: null },
     ];
     await flushPromises();
-    expect(wrapper.text()).toContain("实际事实");
-    expect(wrapper.text()).toContain("参考计划");
-    expect(wrapper.text()).toContain("法规边界");
+    expect(wrapper.get('[aria-label="实际进度"]').text()).toContain("实际发生");
+    expect(wrapper.get('[aria-label="参考计划"]').text()).toContain("建议计划");
+    expect(wrapper.get('[aria-label="参考计划"]').text()).toContain("法规截止");
     expect(wrapper.text()).toContain("待确认节点");
     expect(wrapper.text()).not.toContain("unknown");
     expect(wrapper.text()).toContain("纠正");

@@ -1150,6 +1150,7 @@ export interface DevelopmentTimelineEntry {
   ruleVersion?: string;
   evidence?: string;
   provisional?: boolean;
+  satisfied?: boolean;
 }
 
 export interface PartyDevelopmentResult {
