@@ -8,7 +8,13 @@ from fastapi import Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from .enums import FileIndexStatus, TaskStatus, TransferDirection, TransferStatus, UserRole
+from .enums import (
+    FileIndexStatus,
+    TaskStatus,
+    TransferDirection,
+    TransferStatus,
+    UserRole,
+)
 from .models import (
     Notification,
     PartyDevelopmentCase,

@@ -14,5 +14,6 @@ def verify_private_path(path: Path, *, directory: bool = False) -> None:
         getattr(info, "st_file_attributes", 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT
     ):
         raise PermissionError("密钥必须位于普通本机路径")
-    if os.name != "nt" and (info.st_uid != os.geteuid() or stat.S_IMODE(info.st_mode) & 0o077):
+    geteuid = getattr(os, "geteuid", None)
+    if os.name != "nt" and (geteuid is None or info.st_uid != geteuid() or stat.S_IMODE(info.st_mode) & 0o077):
         raise PermissionError("密钥路径的权限必须仅授予主机服务账号")

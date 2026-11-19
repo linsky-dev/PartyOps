@@ -6,6 +6,7 @@ import asyncio
 import hashlib
 import secrets
 from datetime import datetime, timedelta
+from typing import cast
 
 from fastapi import Request
 from sqlalchemy import select
@@ -24,7 +25,7 @@ class ClientCertificateH11Protocol(H11Protocol):
     """将传输层证书指纹保留在当前连接的 ASGI 状态中。"""
 
     def connection_made(self, transport: asyncio.BaseTransport) -> None:
-        super().connection_made(transport)
+        super().connection_made(cast(asyncio.Transport, transport))
         tls = transport.get_extra_info("ssl_object")
         cert = tls.getpeercert(binary_form=True) if tls is not None else None
         if cert:
