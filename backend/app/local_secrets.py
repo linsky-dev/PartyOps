@@ -65,7 +65,8 @@ def _verify_key_path(path: Path) -> None:
         getattr(info, "st_file_attributes", 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT
     ):
         raise PermissionError("入网密钥目录和文件必须使用普通本机路径")
-    if os.name != "nt" and (info.st_uid != os.geteuid() or stat.S_IMODE(info.st_mode) & 0o077):
+    geteuid = getattr(os, "geteuid", None)
+    if os.name != "nt" and (geteuid is None or info.st_uid != geteuid() or stat.S_IMODE(info.st_mode) & 0o077):
         raise PermissionError("入网密钥目录和文件的权限必须仅授予服务账号")
 
 
@@ -84,9 +85,9 @@ def _load_sm4_key(key_id: str) -> bytes:
     except OSError:
         raise LocalRecoveryError("ENROLLMENT_KEY_MISSING", "入网恢复密钥不可读，请检查主机备份。") from None
     if os.name == "nt":
-        import win32crypt  # type: ignore[import-untyped]
-
         try:
+            import win32crypt  # type: ignore[import-untyped]
+
             _, envelope = win32crypt.CryptUnprotectData(envelope, None, None, None, 1)
         except Exception:
             raise LocalRecoveryError("ENROLLMENT_KEY_INVALID", "当前主机服务账号无法解封入网恢复密钥。") from None
@@ -100,9 +101,9 @@ def _create_sm4_key() -> tuple[str, bytes]:
     key = secrets.token_bytes(16)
     path = _sm4_key_path(key_id)
     if os.name == "nt":
-        import win32crypt  # type: ignore[import-untyped]
-
         try:
+            import win32crypt  # type: ignore[import-untyped]
+
             sealed = win32crypt.CryptProtectData(key, "PartyOps device enrollment", None, None, None, 1)
         except Exception:
             raise LocalRecoveryError("ENROLLMENT_KEY_WRITE_FAILED", "无法保护入网恢复密钥。") from None
@@ -118,7 +119,7 @@ def _create_sm4_key() -> tuple[str, bytes]:
             os.fsync(handle.fileno())
         if os.name != "nt":
             for directory in (path.parent, path.parent.parent):
-                descriptor = os.open(directory, os.O_RDONLY | os.O_DIRECTORY)
+                descriptor = os.open(directory, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
                 try:
                     os.fsync(descriptor)
                 finally:

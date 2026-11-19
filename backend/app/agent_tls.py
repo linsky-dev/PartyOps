@@ -23,7 +23,7 @@ from .security import hash_token
 class ClientCertificateH11Protocol(H11Protocol):
     """将传输层证书指纹保留在当前连接的 ASGI 状态中。"""
 
-    def connection_made(self, transport: asyncio.Transport) -> None:
+    def connection_made(self, transport: asyncio.BaseTransport) -> None:
         super().connection_made(transport)
         tls = transport.get_extra_info("ssl_object")
         cert = tls.getpeercert(binary_form=True) if tls is not None else None

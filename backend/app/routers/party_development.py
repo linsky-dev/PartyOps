@@ -1119,7 +1119,7 @@ def development_statistics(
     case_ids = [item.id for item in cases]
     milestones = db.scalars(select(PartyDevelopmentMilestone).where(PartyDevelopmentMilestone.case_id.in_(case_ids))).all() if case_ids else []
     today = beijing_now().date()
-    completed = {item.id: set() for item in cases}
+    completed: dict[str, set[str]] = {item.id: set() for item in cases}
     if case_ids:
         facts = db.execute(
             select(PartyDevelopmentProgressEvent.case_id, PartyDevelopmentProgressEvent.milestone_type)

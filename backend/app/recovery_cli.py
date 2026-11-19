@@ -21,7 +21,8 @@ def is_os_administrator() -> bool:
         from ctypes import windll
 
         return bool(windll.shell32.IsUserAnAdmin())
-    return os.geteuid() == 0
+    geteuid = getattr(os, "geteuid", None)
+    return geteuid is not None and geteuid() == 0
 
 
 def trusted_data_directory(path: Path) -> Path:

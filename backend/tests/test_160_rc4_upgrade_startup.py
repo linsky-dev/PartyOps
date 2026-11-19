@@ -107,6 +107,28 @@ def test_native_rollback_preserves_committed_recovery_schema(tmp_path: Path) -> 
     assert _revision(runtime) == backups.SCHEMA_VERSION
 
 
+def test_upgrade_from_rc6_creates_verified_backup_and_preserves_identity(monkeypatch, tmp_path: Path) -> None:
+    runtime, settings = _runtime_at_0023(tmp_path)
+    config = runtime._alembic_config()
+    with runtime.engine.begin() as connection:
+        config.attributes["connection"] = connection
+        command.upgrade(config, "0026")
+    assert _revision(runtime) == "0026"
+    _bind_runtime(monkeypatch, runtime, settings)
+
+    app_main._initialize_runtime()
+
+    assert _revision(runtime) == backups.SCHEMA_VERSION
+    assert "recovery_credentials" in inspect(runtime.engine).get_table_names()
+    with runtime.session_factory() as db:
+        user = db.get(User, "rc4-upgrade-admin")
+        assert user is not None
+        assert (user.username, user.password_hash, user.role) == ("rc4-admin", "test-only", UserRole.ADMIN)
+    backup, = settings.backups_dir.glob("PartyOps-pre-upgrade-*.partyops-backup")
+    assert backups.verify_backup(backup)["schema_version"] == "0026"
+    assert upgrades.read_upgrade_transaction_state()["state"] == "completed"
+
+
 def test_full_initialize_runtime_upgrades_real_0023_database(monkeypatch, tmp_path: Path) -> None:
     """精确复现 rc.3 的 backup_runs 缺列故障，并要求完整启动事务成功。"""
 
