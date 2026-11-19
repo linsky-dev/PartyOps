@@ -61,7 +61,7 @@ def test_advertise_dns_public_ip_and_ipv6_service_url() -> None:
 
 def test_relation_rejects_self_missing_and_foreign_links(monkeypatch) -> None:
     user = SimpleNamespace(id="user-1", role=UserRole.STAFF)
-    request = SimpleNamespace(client=None)
+    request = SimpleNamespace(client=None, cookies={}, headers={})
     monkeypatch.setattr(relations, "describe_object", lambda *_args: SimpleNamespace())
     monkeypatch.setattr(relations, "write_audit", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(relations, "emit_event", lambda *_args, **_kwargs: None)
@@ -105,7 +105,7 @@ def test_relation_rejects_self_missing_and_foreign_links(monkeypatch) -> None:
 
 def test_relation_without_idempotency_reuses_existing_link(monkeypatch) -> None:
     user = SimpleNamespace(id="user-1", role=UserRole.STAFF)
-    request = SimpleNamespace(client=None)
+    request = SimpleNamespace(client=None, cookies={}, headers={})
     link = SimpleNamespace(id="link-1")
     payload = ObjectLinkCreate(
         target_type=ObjectType.PERIOD_REPORT,

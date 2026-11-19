@@ -28,6 +28,7 @@ from .models import (
 from .problems import ProblemException
 from .task_service import can_view_task, visible_tasks
 from .workspace import search_workspace_files
+from .workspace_access import workspace_root_permissions
 
 
 def _machine_key_path() -> Path:
@@ -294,15 +295,22 @@ def _task_source(
 
 
 def _file_source(
-    db: Session, item: WorkspaceFile, policy: AIPolicy
+    db: Session,
+    item: WorkspaceFile,
+    policy: AIPolicy,
+    user: User,
+    device_id: str | None = None,
 ) -> tuple[dict[str, str], str]:
     root = db.get(WorkspaceRoot, item.root_id)
     if (
         not root
-        or not root.enabled
+        or not item.in_scope
         or item.status == FileIndexStatus.MISSING
-        or item.root_id not in policy.allowed_root_ids
+        or not workspace_root_permissions(db, root, user, device_id)["download"]
     ):
+        raise ProblemException(404, "WORKSPACE_FILE_NOT_FOUND", "文件不存在", "未找到可使用的所选文件。")
+    # AI 策略只收窄用户可导出的范围。已授权根目录也必须逐请求核对文件权限。
+    if item.root_id not in policy.allowed_root_ids:
         raise ProblemException(
             403,
             "AI_FILE_SCOPE_DENIED",
@@ -344,6 +352,7 @@ def collect_sources(
     task_ids: list[str],
     file_ids: list[str],
     *,
+    device_id: str | None = None,
     allow_sensitive_party_work: bool = False,
 ) -> tuple[list[dict[str, str]], list[str]]:
     sources: list[dict[str, str]] = []
@@ -365,7 +374,7 @@ def collect_sources(
         item = db.get(WorkspaceFile, file_id)
         if not item:
             raise ProblemException(404, "WORKSPACE_FILE_NOT_FOUND", "文件不存在", "未找到所选文件。")
-        source, excerpt = _file_source(db, item, policy)
+        source, excerpt = _file_source(db, item, policy, user, device_id)
         sources.append(source)
         excerpts.append(excerpt)
     if not sources:
@@ -393,7 +402,7 @@ def collect_sources(
                 if item.root_id not in policy.allowed_root_ids:
                     continue
                 try:
-                    source, excerpt = _file_source(db, item, policy)
+                    source, excerpt = _file_source(db, item, policy, user, device_id)
                 except ProblemException:
                     continue
                 sources.append(source)

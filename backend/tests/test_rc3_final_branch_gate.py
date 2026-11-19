@@ -47,6 +47,7 @@ from app.enums import (
     Sensitivity,
     UpdateStatus,
     UserRole,
+    WorkspaceRootSource,
 )
 from app.models import (
     Device,
@@ -223,7 +224,7 @@ def _ai_task(identity: str) -> SimpleNamespace:
 def test_ai_source_scope_and_automatic_collection_limits(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    user = SimpleNamespace(id="user")
+    user = SimpleNamespace(id="user", role=UserRole.STAFF)
     policy = SimpleNamespace(
         allowed_task_categories=["发布"],
         allowed_root_ids=["root-1"],
@@ -243,12 +244,13 @@ def test_ai_source_scope_and_automatic_collection_limits(
     assert scoped.value.code == "AI_TASK_SCOPE_DENIED"
 
     tasks = [_ai_task(f"task-{index}") for index in range(6)]
-    root = SimpleNamespace(id="root-1", enabled=True, name="资料")
+    root = SimpleNamespace(id="root-1", enabled=True, name="资料", source=WorkspaceRootSource.HOST)
     files = [
         SimpleNamespace(
             id=f"file-{index}",
             root_id="other" if index == 0 else "root-1",
             status=FileIndexStatus.INDEXED,
+            in_scope=True,
             extension=".txt",
             extracted_text="正文",
             ocr_text="",

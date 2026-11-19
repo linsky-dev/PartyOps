@@ -37,6 +37,7 @@ from ..ai_service import (
 from ..audit import emit_event, write_audit
 from ..config import get_settings
 from ..database import get_session
+from ..device_versions import request_device
 from ..enums import RecommendationStatus
 from ..hardware_profile import collect_hardware_profile, run_light_benchmark
 from ..local_ai import (
@@ -99,6 +100,7 @@ from ..schemas import (
     ModelRecommendationOut,
 )
 from ..security import get_current_user, require_admin
+from ..workspace_access import workspace_request_device_id
 
 router = APIRouter(tags=["ai"])
 
@@ -1024,6 +1026,7 @@ def query_ai(
         payload.instruction,
         payload.task_ids,
         payload.file_ids,
+        device_id=workspace_request_device_id(request, request_device(request, db)),
         allow_sensitive_party_work=(
             user.role.value == "admin" and payload.confirm_sensitive
         ),
