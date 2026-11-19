@@ -1,0 +1,61 @@
+name: Cloud runner smoke
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloud-runner-smoke-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  runner-smoke:
+    name: ${{ matrix.label }}
+    runs-on: ${{ matrix.label }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        label:
+          - windows-2025
+          - windows-11-arm
+          - ubuntu-24.04
+          - ubuntu-24.04-arm
+          - macos-15-intel
+          - macos-15
+    steps:
+      - name: Check out the triggering commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Report runner and available disk space
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $os = [System.Runtime.InteropServices.RuntimeInformation]::OSDescription
+          $architecture = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture
+          $availableBytes = (Get-Item $env:GITHUB_WORKSPACE).PSDrive.Free
+          if ($availableBytes -lt 2GB) {
+            throw "Less than 2 GiB remains after checkout: $availableBytes bytes"
+          }
+          [pscustomobject]@{
+            Commit = $env:GITHUB_SHA
+            Runner = $env:RUNNER_NAME
+            OperatingSystem = $os
+            Architecture = $architecture
+            FreeBytesAfterCheckout = $availableBytes
+          } | ConvertTo-Json | Write-Output
+
+      - name: Verify runtime availability
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python --version
+          node --version
+          git --version
