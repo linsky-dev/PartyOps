@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import secrets
 import socket
 import sqlite3
@@ -282,6 +283,7 @@ def test_rc1_sm4_nonce_authentication_legacy_and_missing_key(isolated_crypto_sto
     key_path = local_secrets._key_path()
     legacy_key = Fernet.generate_key()
     key_path.write_bytes(legacy_key)
+    key_path.chmod(0o600)
     ciphertext = Fernet(legacy_key).encrypt(json.dumps(value).encode()).decode()
     assert local_secrets.decrypt_local_json(ciphertext, device_id=value["device_id"]) == value
     with pytest.raises(local_secrets.LocalRecoveryError, match="设备身份"):
@@ -317,6 +319,26 @@ def test_rc1_partial_ca_is_not_rebuilt(tmp_path):
         ensure_tls_material(settings)
     assert material["ca_path"].read_bytes() == before
     assert not (root / "ca.key").exists()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX 密钥文件读权限")
+def test_rc1_legacy_key_permissions_are_checked_without_replacing_existing_keys(isolated_crypto_store):
+    key_path = local_secrets._key_path()
+    original = Fernet.generate_key()
+    key_path.write_bytes(original)
+    key_path.chmod(0o644)
+    with pytest.raises(local_secrets.LocalRecoveryError) as error:
+        local_secrets._fernet()
+    assert error.value.code == "ENROLLMENT_KEY_PERMISSION_INVALID"
+    assert key_path.read_bytes() == original
+    settings = isolated_crypto_store.settings
+    material = ensure_tls_material(settings)
+    ca_file = material["ca_path"].with_name("ca.key")
+    ca_file.chmod(0o644)
+    original_ca = ca_file.read_bytes()
+    with pytest.raises(ValueError, match="完整性校验失败"):
+        ensure_tls_material(settings)
+    assert ca_file.read_bytes() == original_ca
 
 
 def test_rc1_legacy_issued_devices_prevent_ca_regeneration_after_entire_directory_loss(tmp_path: Path):

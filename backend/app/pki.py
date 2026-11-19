@@ -19,6 +19,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
 
 from .config import Settings
+from .private_files import verify_private_path
 from .windows_public_files import public_host_ca_path, write_public_control_file
 
 
@@ -39,6 +40,7 @@ def _write_private(path, data: bytes, mode: int = 0o600) -> None:
 
 
 def _load_key(path):
+    verify_private_path(path)
     return serialization.load_pem_private_key(path.read_bytes(), password=None)
 
 

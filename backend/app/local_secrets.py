@@ -7,7 +7,6 @@ import json
 import os
 import re
 import secrets
-import stat
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -24,6 +23,7 @@ from sqlalchemy.orm import Session
 
 from .config import get_settings
 from .models import Device, SystemSetting
+from .private_files import verify_private_path
 
 VERSION = "v1"
 ALGORITHM = "sm4-gcm"
@@ -49,25 +49,18 @@ def _key_path() -> Path:
 
 def _fernet() -> Fernet:
     """既有 Fernet 记录只读，缺钥时保留现场。"""
+    path = _key_path()
     try:
-        key = _key_path().read_bytes().strip()
+        verify_private_path(path)
+        key = path.read_bytes().strip()
+    except PermissionError:
+        raise LocalRecoveryError("ENROLLMENT_KEY_PERMISSION_INVALID", "旧版入网恢复密钥权限无效。") from None
     except OSError:
         raise LocalRecoveryError("ENROLLMENT_KEY_MISSING", "旧版入网恢复密钥不可读，请检查主机备份。") from None
     try:
         return Fernet(key)
     except ValueError:
         raise LocalRecoveryError("ENROLLMENT_KEY_INVALID", "旧版入网恢复密钥格式无效。") from None
-
-
-def _verify_key_path(path: Path) -> None:
-    info = path.lstat()
-    if stat.S_ISLNK(info.st_mode) or (
-        getattr(info, "st_file_attributes", 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT
-    ):
-        raise PermissionError("入网密钥目录和文件必须使用普通本机路径")
-    geteuid = getattr(os, "geteuid", None)
-    if os.name != "nt" and (geteuid is None or info.st_uid != geteuid() or stat.S_IMODE(info.st_mode) & 0o077):
-        raise PermissionError("入网密钥目录和文件的权限必须仅授予服务账号")
 
 
 def _sm4_key_path(key_id: str) -> Path:
@@ -79,8 +72,8 @@ def _sm4_key_path(key_id: str) -> Path:
 def _load_sm4_key(key_id: str) -> bytes:
     path = _sm4_key_path(key_id)
     try:
-        _verify_key_path(path.parent)
-        _verify_key_path(path)
+        verify_private_path(path.parent, directory=True)
+        verify_private_path(path)
         envelope = path.read_bytes()
     except OSError:
         raise LocalRecoveryError("ENROLLMENT_KEY_MISSING", "入网恢复密钥不可读，请检查主机备份。") from None
@@ -111,7 +104,7 @@ def _create_sm4_key() -> tuple[str, bytes]:
         sealed = key
     try:
         path.parent.mkdir(mode=0o700, exist_ok=True)
-        _verify_key_path(path.parent)
+        verify_private_path(path.parent, directory=True)
         descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         with os.fdopen(descriptor, "wb") as handle:
             handle.write(sealed)

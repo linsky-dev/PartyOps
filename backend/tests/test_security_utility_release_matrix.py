@@ -253,6 +253,7 @@ def _write_ca_fixture(root, key, certificate) -> None:
             serialization.NoEncryption(),
         )
     )
+    (pki_root / "ca.key").chmod(0o600)
     (pki_root / "ca.pem").write_bytes(certificate.public_bytes(serialization.Encoding.PEM))
 
 
