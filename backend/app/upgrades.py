@@ -189,6 +189,11 @@ def restore_database_from_upgrade_backup(path: Path) -> None:
             ) as destination_stream:
                 while chunk := source_stream.read(1024 * 1024):
                     destination_stream.write(chunk)
+        if (
+            extracted.stat().st_size != int(expected_database["size"])
+            or sha256_file(extracted) != str(expected_database["sha256"])
+        ):
+            raise RuntimeError("提取的数据库长度或哈希与已验证快照不一致")
         with closing(sqlite3_connect(extracted)) as restored:
             if restored.execute("PRAGMA quick_check").fetchone()[0] != "ok":
                 raise RuntimeError("升级前备份数据库完整性检查失败，拒绝覆盖当前数据")

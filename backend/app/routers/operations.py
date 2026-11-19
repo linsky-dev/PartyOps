@@ -963,11 +963,11 @@ def work_journal_history(
 @router.get("/notifications", response_model=typing.List[NotificationOut])
 def list_notifications(
     unread_only: bool = False,
-    include_revoked: bool = False,
     notification_type: str | None = Query(default=None, max_length=48),
     limit: int = Query(default=100, ge=1, le=500),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_session),
+    include_revoked: bool = False,
 ) -> list[Notification]:
     statement = select(Notification).where(Notification.user_id == user.id)
     if not include_revoked or unread_only:
