@@ -17,17 +17,23 @@ jobs:
   runner-smoke:
     name: ${{ matrix.label }}
     runs-on: ${{ matrix.label }}
-    timeout-minutes: 10
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        label:
-          - windows-2025
-          - windows-11-arm
-          - ubuntu-24.04
-          - ubuntu-24.04-arm
-          - macos-15-intel
-          - macos-15
+        include:
+          - label: windows-2025
+            python_architecture: x64
+          - label: windows-11-arm
+            python_architecture: arm64
+          - label: ubuntu-24.04
+            python_architecture: x64
+          - label: ubuntu-24.04-arm
+            python_architecture: arm64
+          - label: macos-15-intel
+            python_architecture: x64
+          - label: macos-15
+            python_architecture: arm64
     steps:
       - name: Check out the triggering commit
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -60,3 +66,59 @@ jobs:
           python --version
           node --version
           git --version
+
+      - name: Set up native Python
+        id: native-python
+        continue-on-error: true
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+          architecture: ${{ matrix.python_architecture }}
+
+      - name: Install the pinned native cryptography wheel
+        id: crypto-install
+        if: ${{ steps.native-python.outcome == 'success' }}
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python -m pip install --disable-pip-version-check --only-binary=:all: 'cryptography==50.0.0' 2>&1 |
+            Tee-Object -FilePath "$env:GITHUB_WORKSPACE/cryptography-install.log"
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
+
+      - name: Probe SM3 and SM4-GCM runtime support
+        if: always()
+        shell: pwsh
+        env:
+          CRYPTO_INSTALL_OUTCOME: ${{ steps.crypto-install.outcome }}
+          NATIVE_PYTHON_OUTCOME: ${{ steps.native-python.outcome }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $output = Join-Path $env:GITHUB_WORKSPACE 'crypto-runtime.json'
+          if ($env:NATIVE_PYTHON_OUTCOME -ne 'success') {
+            python scripts/probe-sm-crypto-runtime.py --output $output `
+              --installation-error 'Native Python 3.12 was unavailable'
+            exit 1
+          }
+          if ($env:CRYPTO_INSTALL_OUTCOME -ne 'success') {
+            python scripts/probe-sm-crypto-runtime.py --output $output `
+              --installation-error 'cryptography 50.0.0 native wheel installation failed'
+            exit 1
+          }
+          python scripts/probe-sm-crypto-runtime.py --output $output
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
+
+      - name: Upload crypto runtime evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: crypto-runtime-${{ matrix.label }}-${{ github.sha }}
+          path: |
+            crypto-runtime.json
+            cryptography-install.log
+          if-no-files-found: warn
+          retention-days: 30

@@ -34,7 +34,7 @@ jobs:
 
   source-candidate:
     name: Build source archive and release evidence
-    needs: [tests, hosted-runner-matrix]
+    needs: [tests]
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -78,8 +78,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python -m pip install --disable-pip-version-check 'cyclonedx-bom==7.3.1'
-          cyclonedx-py requirements backend/requirements-release.txt \
+          python -m pip install --disable-pip-version-check 'cyclonedx-bom==7.3.1' 'uv==0.11.7'
+          uv export --project backend --frozen --no-dev --no-emit-project --no-hashes \
+            --output-file artifacts/locked-runtime.txt --quiet
+          cyclonedx-py requirements artifacts/locked-runtime.txt \
             --spec-version 1.6 --output-format JSON --output-reproducible \
             --output-file artifacts/sbom-python.cdx.json
 
