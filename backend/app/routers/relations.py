@@ -283,11 +283,12 @@ def _activity_target_visible(
         return False
     if "target_type" not in detail and "target_id" not in detail:
         return True
+    raw_target_type = detail.get("target_type")
+    target_id = detail.get("target_id")
+    if not isinstance(raw_target_type, str) or not isinstance(target_id, str):
+        return False
     try:
-        target_type = ObjectType(detail.get("target_type"))
-        target_id = detail.get("target_id")
-        if not isinstance(target_id, str):
-            return False
+        target_type = ObjectType(raw_target_type)
         describe_object(db, target_type, target_id, user, device_id)
     except (ProblemException, ValueError):
         return False
