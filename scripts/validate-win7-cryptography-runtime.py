@@ -51,7 +51,14 @@ def main() -> int:
     if fernet.decrypt(fernet.encrypt(payload)) != payload:
         raise RuntimeError("Fernet 往返校验失败")
 
-    print("Windows 7 cryptography 运行时门禁通过。")
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
+    from app.startup_selftest import verify_sm_runtime
+
+    sm = verify_sm_runtime()
+    print(f"Windows 7 cryptography 运行时门禁通过。{sm}")
     return 0
 
 

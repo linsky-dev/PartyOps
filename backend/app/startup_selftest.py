@@ -52,6 +52,44 @@ def _critical_crypto_roundtrip() -> None:
         raise RuntimeError("Fernet 目标机往返校验失败")
 
 
+def verify_sm_runtime() -> dict[str, str]:
+    """在安装包的实际密码库运行 RFC 8998 的 SM4-GCM 向量及 SM3 向量。"""
+    from cryptography import __version__
+    from cryptography.exceptions import UnsupportedAlgorithm
+    from cryptography.hazmat.backends.openssl.backend import backend
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+
+    key = bytes.fromhex("0123456789ABCDEFFEDCBA9876543210")
+    nonce = bytes.fromhex("00001234567800000000ABCD")
+    plaintext = bytes.fromhex(
+        "AAAAAAAAAAAAAAAABBBBBBBBBBBBBBBBCCCCCCCCCCCCCCCCDDDDDDDDDDDDDDDD"
+        "EEEEEEEEEEEEEEEEFFFFFFFFFFFFFFFFEEEEEEEEEEEEEEEEAAAAAAAAAAAAAAAA"
+    )
+    aad = bytes.fromhex("FEEDFACEDEADBEEFFEEDFACEDEADBEEFABADDAD2")
+    expected = bytes.fromhex(
+        "17F399F08C67D5EE19D0DC9969C4BB7D5FD46FD3756489069157B282BB200735"
+        "D82710CA5C22F0CCFA7CBF93D496AC15A56834CBCF98C397B4024A2691233B8D"
+    )
+    expected_tag = bytes.fromhex("83DE3541E4C2B58177E065A9BF7B62EC")
+    try:
+        digest = hashes.Hash(hashes.SM3())
+        digest.update(b"abc")
+        if digest.finalize().hex() != "66c7f0f462eeedd9d1f2d46bdc10e4e24167c4875cf2f7a2297da02b8f4ba8e0":
+            raise RuntimeError("SM3 已知答案检查失败")
+        encryptor = Cipher(algorithms.SM4(key), modes.GCM(nonce)).encryptor()
+        encryptor.authenticate_additional_data(aad)
+        if encryptor.update(plaintext) + encryptor.finalize() != expected or encryptor.tag != expected_tag:
+            raise RuntimeError("SM4-GCM 加密已知答案检查失败")
+        decryptor = Cipher(algorithms.SM4(key), modes.GCM(nonce, expected_tag)).decryptor()
+        decryptor.authenticate_additional_data(aad)
+        if decryptor.update(expected) + decryptor.finalize() != plaintext:
+            raise RuntimeError("SM4-GCM 解密已知答案检查失败")
+    except UnsupportedAlgorithm:
+        raise RuntimeError(f"安装运行时不支持 SM3/SM4-GCM：{backend.openssl_version_text()}") from None
+    return {"cryptography": __version__, "openssl": backend.openssl_version_text()}
+
+
 def _tail(path: Path, limit: int = 4000) -> str:
     try:
         size = path.stat().st_size
@@ -201,12 +239,14 @@ def run_selftest(runtime: Path, timeout: float = 180.0) -> dict[str, object]:
     """执行无持久副作用的目标机加密与完整启动探针。"""
 
     _critical_crypto_roundtrip()
+    sm_runtime = verify_sm_runtime()
     health = _probe_frozen_server(runtime.resolve(), timeout)
     return {
         "passed": True,
         "version": health.get("app_version"),
         "mode": health.get("mode"),
-        "crypto": "rsa+fernet",
+        "crypto": "rsa+fernet+sm3+sm4-gcm",
+        "crypto_runtime": sm_runtime,
         "database": "sqlite+fts5",
         "frontend": "ready",
         "official_formatter": "owned-instance-ready",

@@ -59,7 +59,7 @@ from ..enums import (
     TransferStatus,
     UpdateStatus,
 )
-from ..local_secrets import decrypt_local_json, encrypt_local_json
+from ..local_secrets import LocalRecoveryError, decrypt_local_json, encrypt_local_json
 from ..models import (
     ArchiveAttachment,
     ArchiveRecord,
@@ -808,9 +808,14 @@ def enroll_device(
             ):
                 try:
                     recovered = decrypt_local_json(
-                        str(metadata["enrollment_recovery"])
+                        str(metadata["enrollment_recovery"]), device_id=existing_device.id,
                     )
                     return DeviceEnrollOut(**recovered)
+                except LocalRecoveryError as exc:
+                    status_code = 503 if exc.code.startswith(("ENROLLMENT_KEY_", "ENROLLMENT_CRYPTO_")) else 409
+                    raise ProblemException(
+                        status_code, exc.code, "无法恢复设备入网响应", str(exc),
+                    ) from None
                 except (TypeError, ValueError):
                     pass
             raise ProblemException(
@@ -919,11 +924,18 @@ def enroll_device(
             **certificate_bundle,
             agent_url=response_agent_url,
         )
+        try:
+            recovery = encrypt_local_json(
+                response.model_dump(mode="json"), device_id=device.id, db=db,
+            )
+        except LocalRecoveryError as exc:
+            db.rollback()
+            raise ProblemException(
+                503, exc.code, "无法保存设备入网响应", str(exc),
+            ) from None
         device.device_metadata = {
             **dict(device.device_metadata or {}),
-            "enrollment_recovery": encrypt_local_json(
-                response.model_dump(mode="json")
-            ),
+            "enrollment_recovery": recovery,
         }
         enrollment.used_at = utcnow()
         write_audit(
