@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { useRouter } from "vue-router";
 import {
   IconArrowRight,
   IconCalendar,
@@ -10,14 +11,17 @@ import {
 import { api } from "../api";
 import PageHelp from "../components/PageHelp.vue";
 import TaskStatusTag from "../components/TaskStatusTag.vue";
-import type { AIRecommendation, TodayData, TodayTask } from "../types";
+import type { AIRecommendation, NotificationItem, TodayData, TodayTask } from "../types";
 import { formatServerTime } from "../utils/datetime";
 import { orientalDateLabel } from "../utils/lunar";
+import { openNotification } from "../utils/notificationNavigation";
 
 const data = ref<TodayData | null>(null);
+const router = useRouter();
 const loading = ref(false);
 const loadError = ref("");
 const recommendations = ref<AIRecommendation[]>([]);
+const notices = ref<NotificationItem[]>([]);
 const todayLabel = orientalDateLabel();
 
 const alertCount = computed(() => {
@@ -65,7 +69,10 @@ async function load() {
   loadError.value = "";
   try {
     data.value = await api.get<TodayData>("/today");
-    recommendations.value = await api.get<AIRecommendation[]>("/ai/recommendations?limit=3").catch(() => []);
+    [recommendations.value, notices.value] = await Promise.all([
+      api.get<AIRecommendation[]>("/ai/recommendations?limit=3").catch(() => []),
+      api.get<NotificationItem[]>("/notifications?unread_only=true&limit=3").catch(() => []),
+    ]);
   } catch (error) {
     loadError.value = error instanceof Error ? error.message : "今日工作台加载失败";
   } finally {
@@ -181,6 +188,12 @@ onBeforeUnmount(() => window.removeEventListener("partyops:refresh", load));
           <RouterLink to="/fleet/devices"><strong>{{ data.risks.device_alerts.length }}</strong><span>设备异常</span></RouterLink>
         </section>
 
+        <section v-if="notices.length" class="today-notices" aria-label="最新通知">
+          <h2>最新通知</h2>
+          <button v-for="item in notices" :key="item.id" type="button" @click="openNotification(router, item)">
+            {{ item.title }} <IconArrowRight />
+          </button>
+        </section>
         <section class="party-work-strip" aria-label="党务工作提醒">
           <RouterLink to="/party-life">
             <span>本季度应安排</span>
@@ -439,6 +452,10 @@ onBeforeUnmount(() => window.removeEventListener("partyops:refresh", load));
   display: block;
 }
 
+.today-notices { margin-block: 16px; padding: 12px 16px; border: 1px solid var(--line); background: var(--paper); }
+.today-notices h2 { margin: 0 0 6px; font-size: 16px; }
+.today-notices button { display: flex; width: 100%; justify-content: space-between; gap: 8px; padding: 8px 0; color: var(--ink); background: none; border: 0; text-align: left; cursor: pointer; }
+.today-notices button:hover { color: var(--cinnabar); }
 .party-work-strip {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));

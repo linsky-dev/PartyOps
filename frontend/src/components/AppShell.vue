@@ -26,6 +26,7 @@ import {
 import { Message } from "@arco-design/web-vue";
 import { useSessionStore } from "../stores/session";
 import QuickCreateDrawer from "./QuickCreateDrawer.vue";
+import NotificationDestinationDialog from "./NotificationDestinationDialog.vue";
 import OrientalArtLayer from "./OrientalArtLayer.vue";
 import { api } from "../api";
 import type { NotificationItem, ReminderPreference } from "../types";
@@ -39,6 +40,7 @@ import {
 } from "../navigation";
 import { sceneConfigForPath, shouldShowOrientalArt } from "../theme/oriental";
 import { beijingNow, beijingNowIso } from "../utils/datetime";
+import { openNotification as navigateNotification } from "../utils/notificationNavigation";
 
 const route = useRoute();
 const router = useRouter();
@@ -282,15 +284,8 @@ async function prepareProfessionalUpdate() {
   }
 }
 
-async function openNotification(item: NotificationItem) {
-  if (!item.read_at) {
-    await api.post(`/notifications/${item.id}/read`);
-    item.read_at = beijingNowIso();
-  }
-  if (item.entity_type === "task" && item.entity_id) await router.push(`/tasks/${item.entity_id}`);
-  else if (item.entity_type === "transfer") await router.push("/fleet/inbox");
-  else if (item.entity_type === "workspace_root") await router.push("/fleet/grants");
-  else await router.push("/notifications");
+function openNotification(item: NotificationItem) {
+  return navigateNotification(router, item);
 }
 
 function connectEvents() {
@@ -500,6 +495,7 @@ onBeforeUnmount(() => {
             <strong>{{ session.user?.display_name }}</strong>
             <small>{{ session.user?.role === "admin" ? "管理员" : "协同人员" }}</small>
           </div>
+          <a-button type="text" size="small" @click="router.push('/account')">账号设置</a-button>
           <a-button type="text" size="small" aria-label="退出登录" @click="logout">
             <template #icon><IconPoweroff /></template>
           </a-button>
@@ -585,6 +581,7 @@ onBeforeUnmount(() => {
         </a-spin>
       </div>
     </a-modal>
+    <NotificationDestinationDialog />
   </div>
 </template>
 

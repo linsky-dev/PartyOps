@@ -61,6 +61,9 @@ export const useSessionStore = defineStore("session", {
     },
     async logout() {
       await api.post<void>("/auth/logout");
+      this.clearSession();
+    },
+    clearSession() {
       this.user = null;
       this.runtimeContext = null;
       this.ready = true;

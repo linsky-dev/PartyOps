@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
+import { useRoute } from "vue-router";
+import { focusNotificationTarget } from "../utils/notificationNavigation";
 import { IconCloudDownload, IconDelete, IconPlus, IconRefresh, IconSafe } from "@arco-design/web-vue/es/icon";
 import { Message } from "@arco-design/web-vue";
 import { api, downloadUrl } from "../api";
@@ -27,6 +29,10 @@ const props = withDefaults(defineProps<{ initialSection?: FleetSection }>(), {
 });
 const session = useSessionStore();
 const activeSection = ref<FleetSection>(props.initialSection);
+const route = useRoute();
+const inboxPage = ref(1);
+const transfersPage = ref(1);
+const remoteRootsPage = ref(1);
 const devices = ref<Device[]>([]);
 const grants = ref<DeviceGrant[]>([]);
 const transfers = ref<Transfer[]>([]);
@@ -114,6 +120,20 @@ const sectionMeta = computed(() => ({
 
 const receivedTransfers = computed(() =>
   transfers.value.filter((item) => item.direction === "device_to_host"),
+);
+watch(
+  [() => route?.query.noticeTarget, activeSection, receivedTransfers, transfers, remoteRoots],
+  ([id, section]) => {
+    if (typeof id !== "string") return;
+    const rows = section === "inbox" ? receivedTransfers.value : section === "transfers" ? transfers.value : remoteRoots.value;
+    const rowIndex = rows.findIndex((row) => row.id === id);
+    if (rowIndex === -1) return;
+    if (section === "inbox") inboxPage.value = Math.floor(rowIndex / 10) + 1;
+    else if (section === "transfers") transfersPage.value = Math.floor(rowIndex / 8) + 1;
+    else if (section === "grants") remoteRootsPage.value = Math.floor(rowIndex / 8) + 1;
+    else return;
+    void focusNotificationTarget(`notice-fleet-${id}`);
+  },
 );
 const approvedRoots = computed(() => roots.value.filter((item) => item.enabled && item.approval_status === "approved"));
 const ownRoots = computed(() => roots.value.filter((item) => item.permissions.manage_root));
@@ -651,9 +671,9 @@ onBeforeUnmount(() => {
           <p>文件不会覆盖同名原件；完成 SHA-256 校验后才允许打开或关联事项。</p>
         </div>
       </div>
-      <a-table :data="receivedTransfers" row-key="id" :pagination="{ pageSize: 10 }">
+      <a-table :data="receivedTransfers" row-key="id" :pagination="{ pageSize: 10, current: inboxPage }" @page-change="inboxPage = $event">
         <template #columns>
-          <a-table-column title="接收文件" data-index="original_name" />
+          <a-table-column title="接收文件"><template #cell="{ record }"><span :id="`notice-fleet-${record.id}`" tabindex="-1">{{ record.original_name }}</span></template></a-table-column>
           <a-table-column title="来源设备">
             <template #cell="{ record }">{{ devices.find((item) => item.id === record.source_device_id)?.name || "协同电脑" }}</template>
           </a-table-column>
@@ -678,9 +698,9 @@ onBeforeUnmount(() => {
 
     <section v-if="activeSection === 'transfers'" class="panel">
       <div class="panel-heading"><div><h2>{{ isAdmin ? "传输审批与队列" : "我的传输任务" }}</h2><p>终端之间始终经过主机中转；撤销授权后下一分块立即停止。</p></div></div>
-      <a-table :data="transfers" row-key="id" :pagination="{ pageSize: 8 }">
+      <a-table :data="transfers" row-key="id" :pagination="{ pageSize: 8, current: transfersPage }" @page-change="transfersPage = $event">
         <template #columns>
-          <a-table-column title="文件" data-index="original_name" />
+          <a-table-column title="文件"><template #cell="{ record }"><span :id="`notice-fleet-${record.id}`" tabindex="-1">{{ record.original_name }}</span></template></a-table-column>
           <a-table-column title="方向"><template #cell="{ record }">{{ transferDirectionLabel(record) }}</template></a-table-column>
           <a-table-column title="状态"><template #cell="{ record }">{{ zhLabel(record.status) }}</template></a-table-column>
           <a-table-column title="进度"><template #cell="{ record }">{{ transferProgress(record) }}%</template></a-table-column>
@@ -692,9 +712,9 @@ onBeforeUnmount(() => {
 
     <section v-if="isAdmin && activeSection === 'grants'" class="panel remote-root-panel">
       <div class="panel-heading"><div><h2>协同电脑共享目录审批</h2><p>只有批准并启用的共享根才能被浏览、搜索、传输或关联业务对象。</p></div></div>
-      <a-table :data="remoteRoots" row-key="id" :pagination="{ pageSize: 8 }">
+      <a-table :data="remoteRoots" row-key="id" :pagination="{ pageSize: 8, current: remoteRootsPage }" @page-change="remoteRootsPage = $event">
         <template #columns>
-          <a-table-column title="共享目录"><template #cell="{ record }"><strong>{{ record.name }}</strong><small class="subline">{{ devices.find((item) => item.id === record.device_id)?.name || '协同电脑' }} · {{ record.file_count }} 个文件</small></template></a-table-column>
+          <a-table-column title="共享目录"><template #cell="{ record }"><strong :id="`notice-fleet-${record.id}`" tabindex="-1">{{ record.name }}</strong><small class="subline">{{ devices.find((item) => item.id === record.device_id)?.name || '协同电脑' }} · {{ record.file_count }} 个文件</small></template></a-table-column>
           <a-table-column title="状态"><template #cell="{ record }">{{ zhLabel(record.approval_status) }}</template></a-table-column>
           <a-table-column title="审批说明"><template #cell="{ record }"><a-input v-model="approvalNotes[record.id]" allow-clear placeholder="填写批准范围或拒绝原因" /></template></a-table-column>
           <a-table-column title="操作" :width="150"><template #cell="{ record }"><a-space><a-button size="mini" type="primary" @click="approveRoot(record, 'approved')">批准</a-button><a-button size="mini" status="danger" @click="approveRoot(record, 'rejected')">拒绝</a-button></a-space></template></a-table-column>

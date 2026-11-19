@@ -867,3 +867,8 @@ button:focus-visible {
     justify-content: flex-start;
   }
 }
+.notification-focus {
+  outline: 2px solid var(--cinnabar);
+  outline-offset: 3px;
+  scroll-margin-block: 82px;
+}
