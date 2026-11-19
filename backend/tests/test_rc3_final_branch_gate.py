@@ -21,6 +21,8 @@ import pytest
 from pydantic import ValidationError
 from sqlalchemy.exc import OperationalError
 
+from starlette.datastructures import Headers
+
 from app import (
     ai_service,
     appearance,
@@ -1334,7 +1336,7 @@ def test_security_bearer_expired_revoked_disabled_and_optional_paths() -> None:
     now = datetime.now(timezone.utc)
     bearer_request = SimpleNamespace(
         cookies={},
-        headers={"authorization": "Bearer bearer-token"},
+        headers=Headers({"authorization": "Bearer bearer-token"}),
     )
 
     class SecurityDb:
@@ -1345,7 +1347,7 @@ def test_security_bearer_expired_revoked_disabled_and_optional_paths() -> None:
         def scalar(self, _statement):
             return self.record
 
-        def get(self, _model, _identity):
+        def get(self, _model, _identity, *, populate_existing=False):
             return self.user
 
     with pytest.raises(ProblemException) as missing:
@@ -1379,7 +1381,7 @@ def test_security_bearer_expired_revoked_disabled_and_optional_paths() -> None:
         security.get_current_user(bearer_request, SecurityDb(valid_record, disabled))
     assert denied.value.code == "USER_DISABLED"
 
-    cookie_request = SimpleNamespace(cookies={security.SESSION_COOKIE: "token"})
+    cookie_request = SimpleNamespace(cookies={security.SESSION_COOKIE: "token"}, headers=Headers())
     assert (
         security.get_current_user_optional(cookie_request, SecurityDb(revoked)) is None
     )

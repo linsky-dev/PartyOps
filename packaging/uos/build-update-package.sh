@@ -55,7 +55,7 @@ manifest = {
     "format_version": 3,
     "version": version,
     "min_version": version,
-    "schema_revision": "0028_notification_targets",
+    "schema_revision": "0028",
     "release_title": "多系统适配与专业级应用内升级",
     "platform_artifacts": {
         "windows": {"amd64": "PartyOps_1.4.6-rc.1_windows_amd64.exe"},

@@ -3,8 +3,8 @@
 import sqlalchemy as sa
 from alembic import op
 
-revision = "0028_notification_targets"
-down_revision = "0027_account_recovery"
+revision = "0028"
+down_revision = "0027"
 branch_labels = None
 depends_on = None
 

@@ -23,7 +23,7 @@ from .problems import ProblemException
 from .time_utils import beijing_iso, beijing_now
 
 FORMAT_VERSION = 1
-SCHEMA_VERSION = "0028_notification_targets"
+SCHEMA_VERSION = "0028"
 MAX_BACKUP_MANIFEST_BYTES = 1024 * 1024
 _WINDOWS_RESERVED_NAMES = {
     "con",

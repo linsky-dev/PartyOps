@@ -77,7 +77,7 @@ try {
   }
   $revision = & $Python -c "import sqlite3,sys; db=sqlite3.connect(sys.argv[1]); print(db.execute('select version_num from alembic_version').fetchone()[0])" (Join-Path $DataRoot "partyops.db")
   if ($LASTEXITCODE -ne 0) { throw "无法读取冒烟数据库迁移版本。" }
-  if ($revision -ne "0028_notification_targets") { throw "冻结主程序数据库版本为 $revision，不是 0028_notification_targets。" }
+  if ($revision -ne "0028") { throw "冻结主程序数据库版本为 $revision，不是 0028。" }
   if ($UpgradeFrom0023) {
     $fixture = & $Python -c "import sqlite3,sys; db=sqlite3.connect(sys.argv[1]); print(db.execute('select display_name from users where id=?', ('rc4-native-upgrade-admin',)).fetchone()[0])" (Join-Path $DataRoot "partyops.db")
     if ($LASTEXITCODE -ne 0 -or $fixture -ne "原生覆盖升级管理员") {

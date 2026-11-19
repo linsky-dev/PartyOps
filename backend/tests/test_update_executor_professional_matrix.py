@@ -522,6 +522,7 @@ def test_linux_personal_root_transaction_holds_lock_through_health_and_rollback(
             data_dir=data,
             updates_dir=updates,
             backups_dir=backups,
+            database_path=data / "partyops.db",
         ),
     )
     monkeypatch.setattr(update_executor, "_update_lock_path", lambda _path: lock)

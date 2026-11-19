@@ -108,7 +108,7 @@ def _signed_manifest(
         "version": VERSION,
         # 跨认证模式升级需停写覆盖安装，旧更新器无法保护提交后的新数据。
         "min_version": VERSION,
-        "schema_revision": "0028_notification_targets",
+        "schema_revision": "0028",
         "release_title": "台账导入、真实进度与全链路可靠性升级",
         "target_platform": platform_name,
         "target_architecture": architecture,
