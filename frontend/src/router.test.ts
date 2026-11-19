@@ -56,7 +56,12 @@ describe("统一路由权限守卫", () => {
     expect(loaders.length).toBeGreaterThan(10);
     for (const load of loaders) await load();
     const scrollBehavior = router.options.scrollBehavior;
-    expect(await scrollBehavior?.({} as never, {} as never, null)).toEqual({ top: 0 });
+    const current = router.currentRoute.value;
+    expect(await scrollBehavior?.(current, current, null)).toEqual({ top: 0 });
+    expect(await scrollBehavior?.({
+      ...current,
+      query: { noticeTarget: "comment-1", noticeSection: "comments" },
+    }, current, null)).toBe(false);
   });
 
   it("强制更新页始终可达，过期协同机被引导到更新页", async () => {

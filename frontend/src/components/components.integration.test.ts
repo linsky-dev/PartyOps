@@ -213,7 +213,9 @@ describe("应用壳与快捷操作", () => {
     expect(apiMocks.get.mock.calls.length).toBe(callsDuringBackoff);
     window.localStorage.removeItem("partyops.online-update-retry-after");
     const notification = { id: "notice-2", notification_type: "comment", title: "业务提醒", body: "请处理", entity_type: "task", entity_id: "task-1", read_at: null, created_at: now };
+    state.notificationsVisible = true;
     await invoke("openNotification", { ...notification });
+    expect(state.notificationsVisible).toBe(false);
     await invoke("openNotification", { ...notification, id: "notice-3", entity_type: "transfer" });
     await invoke("openNotification", { ...notification, id: "notice-4", entity_type: "workspace_root" });
     await invoke("openNotification", { ...notification, id: "notice-5", entity_type: "other" });

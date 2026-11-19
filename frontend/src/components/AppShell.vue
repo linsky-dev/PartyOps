@@ -59,6 +59,7 @@ const commandLoading = ref(false);
 const connectionState = ref<"live" | "polling" | "offline">("live");
 const reminderPreference = ref<ReminderPreference | null>(null);
 const recentNotifications = ref<NotificationItem[]>([]);
+const notificationsVisible = ref(false);
 const pendingUpdateVersion = ref("");
 const unreadNotifications = computed(() => recentNotifications.value.filter((item) => !item.read_at).length);
 const visibleNavigationDomains = computed(() => {
@@ -285,6 +286,7 @@ async function prepareProfessionalUpdate() {
 }
 
 function openNotification(item: NotificationItem) {
+  notificationsVisible.value = false;
   return navigateNotification(router, item);
 }
 
@@ -528,13 +530,13 @@ onBeforeUnmount(() => {
             <template #icon><IconCloudDownload /></template>
             {{ pendingUpdateVersion }} 更新准备中
           </a-button>
-          <a-popover trigger="click" position="br">
+          <a-popover v-model:popup-visible="notificationsVisible" trigger="click" position="br">
             <a-badge :count="unreadNotifications" :max-count="99" :dot="false">
               <a-button aria-label="打开最近通知"><template #icon><IconNotification /></template>通知</a-button>
             </a-badge>
             <template #content>
               <div class="recent-notifications">
-                <header><b>最近通知</b><RouterLink to="/notifications">查看全部</RouterLink></header>
+                <header><b>最近通知</b><RouterLink to="/notifications" @click="notificationsVisible = false">查看全部</RouterLink></header>
                 <button v-for="item in recentNotifications" :key="item.id" type="button" :class="{ unread: !item.read_at }" @click="openNotification(item)">
                   <span>{{ item.title }}</span><small>{{ item.body || zhLabel(item.notification_type, '协同通知') }}</small>
                 </button>

@@ -5,7 +5,8 @@ import type { DeviceUpdateGate } from "./types";
 
 const router = createRouter({
   history: createWebHistory(),
-  scrollBehavior: () => ({ top: 0 }),
+  // 通知页面在数据加载后展开并聚焦具体目标，包括同一页面内的再次定位。
+  scrollBehavior: (to) => typeof to.query.noticeTarget === "string" ? false : { top: 0 },
   routes: [
     {
       path: "/login",
