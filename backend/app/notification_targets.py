@@ -8,7 +8,7 @@ from fastapi import Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from .enums import TaskStatus, TransferDirection, TransferStatus, UserRole
+from .enums import FileIndexStatus, TaskStatus, TransferDirection, TransferStatus, UserRole
 from .models import (
     Notification,
     PartyDevelopmentCase,
@@ -17,6 +17,7 @@ from .models import (
     TaskComment,
     Transfer,
     User,
+    WorkspaceFile,
     WorkspaceRoot,
 )
 from .problems import ProblemException
@@ -56,12 +57,20 @@ def notification_target(
     return {"kind": entity_type, "id": entity_id, "section": section, "child_id": child_id}
 
 
-def _child_id(item: Notification) -> str | None:
+def _stored_id(item: Notification, key: str) -> str | None:
+    """历史 JSON 仅提供定位线索，要求主对象一致且字段为有界字符串。"""
+
     stored = item.target
-    if stored and stored.get("kind") == item.entity_type and stored.get("id") == item.entity_id:
-        child = stored.get("child_id")
-        if isinstance(child, str) and 0 < len(child) <= 36:
-            return child
+    if not isinstance(stored, dict) or stored.get("kind") != item.entity_type or stored.get("id") != item.entity_id:
+        return None
+    value = stored.get(key)
+    return value if isinstance(value, str) and 0 < len(value) <= 36 else None
+
+
+def _child_id(item: Notification) -> str | None:
+    child = _stored_id(item, "child_id")
+    if child:
+        return child
     # 旧版通知去重键已携带评论或节点 ID。解析后仍要验证实际父子关系。
     parts = item.dedupe_key.split(":")
     if item.notification_type in {"comment", "mention"} and len(parts) == 3:
@@ -129,19 +138,22 @@ def resolve_notification_target(
                 target = NotificationTarget(kind="workspace", id=root.id, section="files")
                 status = "ready"
     elif item.entity_type == "workspace_file":
+        device_id = current_device_id(request, db)
         try:
-            file, root = get_file(db, entity_id, user, current_device_id(request, db))
+            file, root = get_file(db, entity_id, user, device_id)
         except ProblemException as error:
             if error.status not in {403, 404, 410}:
                 raise
-            stored = item.target or {}
-            parent = stored.get("parent_id") if stored.get("id") == entity_id else None
-            root = db.get(WorkspaceRoot, parent) if isinstance(parent, str) else None
-            if root and workspace_root_permissions(db, root, user, current_device_id(request, db))["browse"]:
+            indexed_file = db.get(WorkspaceFile, entity_id)
+            parent = indexed_file.root_id if indexed_file else _stored_id(item, "parent_id")
+            root = db.get(WorkspaceRoot, parent) if parent else None
+            if root and workspace_root_permissions(db, root, user, device_id)["browse"]:
                 target = NotificationTarget(kind="workspace", id=root.id, section="files")
         else:
-            target = NotificationTarget(kind="workspace", id=root.id, section="files", child_id=file.id)
-            status = "ready"
+            target = NotificationTarget(kind="workspace", id=root.id, section="files")
+            if file.status != FileIndexStatus.MISSING:
+                target.child_id = file.id
+                status = "ready"
     if item.revoked_at:
         status = "revoked"
     return NotificationDestination(status=status, target=target)
