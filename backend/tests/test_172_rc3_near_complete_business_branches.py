@@ -364,17 +364,22 @@ def test_private_write_fallback_and_loopback_invalid_json(
     tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     target = tmp_path / "private" / "secret.pem"
-    monkeypatch.setattr(pki.os, "name", "posix")
+    monkeypatch.setattr(
+        pki, "os",
+        SimpleNamespace(name="posix", fdopen=pki.os.fdopen, fsync=pki.os.fsync),
+    )
     original_chmod = Path.chmod
 
     def denied_chmod(self, mode, **kwargs):
-        if self.suffix == ".tmp":
+        if self.parent == target.parent and self != target:
             raise OSError("chmod unavailable")
         return original_chmod(self, mode, **kwargs)
 
     monkeypatch.setattr(Path, "chmod", denied_chmod)
     with pytest.raises(OSError, match="chmod unavailable"):
         pki._write_private(target, b"secret")
+    assert not target.exists()
+    assert not list(target.parent.iterdir())
 
     class Response:
         def __enter__(self):
