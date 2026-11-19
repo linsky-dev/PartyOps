@@ -10,7 +10,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from app import startup_selftest
+from app import __version__, startup_selftest
 
 
 @pytest.mark.parametrize('argument,function,code', [
@@ -76,7 +76,7 @@ def test_validate_probe_requires_version_mode_and_frontend() -> None:
     startup_selftest._validate_probe(
         {
             "status": "ok",
-            "app_version": startup_selftest.__version__,
+            "app_version": __version__,
             "mode": "personal",
             "sqlite": {"safe_version": True, "fts5": True},
         },
@@ -96,7 +96,7 @@ def test_validate_probe_requires_version_mode_and_frontend() -> None:
         startup_selftest._validate_probe(
             {
                 "status": "ok",
-                "app_version": startup_selftest.__version__,
+                "app_version": __version__,
                 "mode": "host",
                 "sqlite": {"safe_version": True, "fts5": True},
             },
@@ -106,7 +106,7 @@ def test_validate_probe_requires_version_mode_and_frontend() -> None:
         startup_selftest._validate_probe(
             {
                 "status": "ok",
-                "app_version": startup_selftest.__version__,
+                "app_version": __version__,
                 "mode": "personal",
                 "sqlite": {"safe_version": True, "fts5": False},
             },
@@ -116,7 +116,7 @@ def test_validate_probe_requires_version_mode_and_frontend() -> None:
         startup_selftest._validate_probe(
             {
                 "status": "ok",
-                "app_version": startup_selftest.__version__,
+                "app_version": __version__,
                 "mode": "personal",
                 "sqlite": {"safe_version": True, "fts5": True},
             },
@@ -126,7 +126,7 @@ def test_validate_probe_requires_version_mode_and_frontend() -> None:
         startup_selftest._validate_probe(
             {
                 "status": "failed",
-                "app_version": startup_selftest.__version__,
+                "app_version": __version__,
                 "mode": "personal",
                 "sqlite": {},
             },
@@ -136,7 +136,7 @@ def test_validate_probe_requires_version_mode_and_frontend() -> None:
         startup_selftest._validate_probe(
             {
                 "status": "ok",
-                "app_version": startup_selftest.__version__,
+                "app_version": __version__,
                 "mode": "personal",
                 "sqlite": "invalid",
             },
@@ -231,7 +231,7 @@ def test_frozen_probe_success_exit_and_timeout(
         "_read_json",
         lambda _url: {
             "status": "ok",
-            "app_version": startup_selftest.__version__,
+            "app_version": __version__,
             "mode": "personal",
             "sqlite": {"safe_version": True, "fts5": True},
         },
@@ -313,7 +313,7 @@ def test_main_reports_success_and_bounded_failure(
         "run_selftest",
         lambda _runtime: {
             "passed": True,
-                "version": startup_selftest.__version__,
+                "version": __version__,
             "mode": "personal",
         },
     )
@@ -367,7 +367,7 @@ def test_desktop_user_selftest_combines_permission_and_real_server_probe(
         lambda _runtime, timeout: calls.append(f"startup:{timeout}")
         or {
             "passed": True,
-            "version": startup_selftest.__version__,
+            "version": __version__,
             "mode": "personal",
             "database": "sqlite+fts5",
         },

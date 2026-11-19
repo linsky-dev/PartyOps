@@ -244,7 +244,6 @@ def _case_out(db: Session, item: PartyDevelopmentCase) -> dict[str, typing.Any]:
                 "rule_version": row.rule_version,
                 "legal_basis": row.legal_basis,
                 "planning_basis": row.planning_basis,
-                "rule_version": row.rule_version,
                 "plan_kind": row.plan_kind,
                 "reminder_days": row.reminder_days,
                 "version": row.version,
