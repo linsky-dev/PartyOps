@@ -26,7 +26,7 @@
 ## 二、冻结源码与制品
 
 ```powershell
-Set-Location E:\codex\PartyOps\.publish-github
+# 从 GitHub 仓库检出根目录执行。
 git status --short
 git rev-parse HEAD
 git tag --points-at HEAD
@@ -110,7 +110,7 @@ Cloud Studio 只承载冻结二进制制品，官网源码仍从本地构建后�
 本地硬门禁：
 
 ```powershell
-Set-Location E:\codex\PartyOps\.publish-github\website
+# 从已核实的官网源码根目录执行。
 npm ci
 npm test
 npm run build:edgeone
@@ -120,11 +120,10 @@ npm run test:sites
 预览和生产部署：
 
 ```powershell
-Set-Location E:\codex\PartyOps\.publish-github
 npx -y edgeone@1.6.28 whoami
-npx -y edgeone@1.6.28 makers deploy website/dist/edgeone -n partyops-cn-overseas -e preview
+npx -y edgeone@1.6.28 makers deploy dist/edgeone -n partyops-cn-overseas -e preview
 # 预览验收通过后才能执行：
-npx -y edgeone@1.6.28 makers deploy website/dist/edgeone -n partyops-cn-overseas -e production
+npx -y edgeone@1.6.28 makers deploy dist/edgeone -n partyops-cn-overseas -e production
 ```
 
 固定项目：
@@ -132,7 +131,7 @@ npx -y edgeone@1.6.28 makers deploy website/dist/edgeone -n partyops-cn-overseas
 ```text
 项目名称：partyops-cn-overseas
 项目 ID：makers-gjuf8qcecmi3
-输出目录：website/dist/edgeone
+输出目录：官网源码根目录下的 dist/edgeone
 ```
 
 预览至少检查 HTTPS、下载助手、FAQ、更新日志、移动端布局、控制台、发布清单和全部可用下载链接。生产部署失败或线上回归失败时，在 EdgeOne Makers 恢复上一条已核验生产部署。

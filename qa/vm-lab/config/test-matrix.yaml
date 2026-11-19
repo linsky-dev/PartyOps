@@ -5,7 +5,7 @@ retain_obsolete_packages: false
 run_order: [uos-deb-x64, uos-deb-arm64, deepin-deb-loong64, openeuler-iso-x64, openeuler-iso-arm64, win10-x64, win10-x86, win10-arm64, win11-x64-native, win11-arm64, win7-x64, win7-x86, macos-x64, macos-arm64]
 defaults:
   primary_root: 'D:/PartyOps-VM-Lab'
-  fallback_root: 'E:/codex/PartyOps/.partyops-vm-lab'
+  fallback_root: 'D:/PartyOps-VM-Lab/fallback'
   qemu_home: 'D:/PartyOps-VM-Lab/tools/qemu-11.1.0'
   memory_mib: 8192
   cpus: 4

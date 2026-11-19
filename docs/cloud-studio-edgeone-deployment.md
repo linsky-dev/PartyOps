@@ -1,7 +1,7 @@
 # PartyOps Cloud Studio 安装包与 EdgeOne 官网部署
 
 最后核对：2026-08-21（北京时间，UTC+8）
-工作目录：`E:\codex\PartyOps\.publish-github`
+下文 1.4.4 记录使用历史工作目录 `E:\codex\PartyOps\.publish-github`。当前产品源码从 GitHub 检出，官网构建输入从 EdgeOne 恢复后单独验证。
 
 ## 当前结论
 
@@ -26,17 +26,16 @@
 ## EdgeOne 摘要
 
 ```powershell
-Set-Location E:\codex\PartyOps\.publish-github\website
+# 从已核实的官网源码根目录执行，输出为 dist/edgeone。
 npm ci
 npm test
 npm run build:edgeone
 npm run test:sites
 
-Set-Location E:\codex\PartyOps\.publish-github
 npx -y edgeone@1.6.28 whoami
-npx -y edgeone@1.6.28 makers deploy website/dist/edgeone -n partyops-cn-overseas -e preview
+npx -y edgeone@1.6.28 makers deploy dist/edgeone -n partyops-cn-overseas -e preview
 # preview 验收通过后：
-npx -y edgeone@1.6.28 makers deploy website/dist/edgeone -n partyops-cn-overseas -e production
+npx -y edgeone@1.6.28 makers deploy dist/edgeone -n partyops-cn-overseas -e production
 ```
 
 官网上线后检查 `partyops.cn`、`www.partyops.cn`、`/changelog`、`/resume/`、`/release-manifest.json`、移动端、FAQ、控制台和所有下载入口。异常时恢复上一条已核验的 EdgeOne production 部署。

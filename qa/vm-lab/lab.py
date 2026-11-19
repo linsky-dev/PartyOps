@@ -23,6 +23,14 @@ REPO = HERE.parent.parent
 
 def load_configuration() -> tuple[dict, dict]:
     matrix = yaml.safe_load((HERE / "config/test-matrix.yaml").read_text(encoding="utf-8"))
+    # 远程验收环境按实际存储和已装工具配置，历史盘符不参与自动探测。
+    for key, variable in (
+        ("primary_root", "PARTYOPS_LAB_ROOT"),
+        ("fallback_root", "PARTYOPS_LAB_FALLBACK_ROOT"),
+        ("qemu_home", "PARTYOPS_LAB_QEMU_HOME"),
+    ):
+        if value := os.environ.get(variable):
+            matrix["defaults"][key] = value
     media = yaml.safe_load((HERE / "config/media.yaml").read_text(encoding="utf-8"))["media"]
     local = HERE / ".local/media.yaml"
     if local.exists():
