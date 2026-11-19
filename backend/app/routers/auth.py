@@ -9,7 +9,6 @@ from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, Request, Response
 from sqlalchemy import func, select
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ..account_recovery import (
@@ -20,6 +19,7 @@ from ..account_recovery import (
     RedeemCredential,
     UpdateCredentials,
     apply_credential_changes,
+    credential_transaction,
     ensure_authoritative_host,
     issue_credential,
     recovery_error,
@@ -217,7 +217,7 @@ def login(
             headers={"Retry-After": str(retry_after)},
         )
     # 与凭据修改共用写临界区，旧密码验证不能在撤销后签出新会话。
-    with db_runtime.write_lock:
+    with credential_transaction(db):
         user = db.scalar(select(User).where(User.username == payload.username.lower()))
         if not user or not user.active or not verify_password(payload.password, user.password_hash):
             retry_after = login_throttle.record_failure(
@@ -240,7 +240,6 @@ def login(
         write_audit(
             db, user, "auth.login", "session", session.id, {}, address,
         )
-        db.commit()
     response.set_cookie(
         SESSION_COOKIE,
         token,
@@ -290,17 +289,6 @@ def clear_login_cookies(response: Response) -> None:
     response.delete_cookie(CSRF_COOKIE, path="/")
 
 
-def _commit_credentials(db: Session) -> None:
-    try:
-        db.commit()
-    except IntegrityError:
-        db.rollback()
-        raise ProblemException(
-            409, "CREDENTIALS_CONFLICT", "登录信息发生冲突",
-            "请确认用户名可用并重试。", headers=NO_STORE,
-        ) from None
-
-
 @router.patch("/auth/credentials", response_model=UserOut)
 def change_credentials(
     payload: UpdateCredentials,
@@ -309,14 +297,13 @@ def change_credentials(
     db: Session = Depends(get_session),
 ) -> User:
     ensure_authoritative_host()
-    with db_runtime.write_lock:
+    with credential_transaction(db):
         user = get_current_user(request, db)
         address = client_ip(request)
         verify_current_password(db, user, payload.current_password, address)
         apply_credential_changes(
             db, user, payload, actor=user, address=address, action="auth.credentials_changed"
         )
-        _commit_credentials(db)
     clear_login_cookies(response)
     response.headers.update(NO_STORE)
     return user
@@ -330,9 +317,8 @@ def recover_account(
     db: Session = Depends(get_session),
 ) -> RecoveredUsername:
     ensure_authoritative_host()
-    with db_runtime.write_lock:
+    with credential_transaction(db):
         user = redeem_credential(db, payload, client_ip(request))
-        _commit_credentials(db)
     if payload.has_changes:
         clear_login_cookies(response)
     response.headers.update(NO_STORE)
@@ -344,13 +330,12 @@ def issue_user_recovery(
     user_id: str, request: Request, response: Response, db: Session = Depends(get_session)
 ) -> IssuedCredential:
     ensure_authoritative_host()
-    with db_runtime.write_lock:
+    with credential_transaction(db):
         admin = require_admin(get_current_user(request, db))
         target = db.get(User, user_id)
         if target is None:
             raise recovery_error()
         issued = issue_credential(db, target, "staff", admin, client_ip(request))
-        _commit_credentials(db)
     response.headers.update(NO_STORE)
     return issued
 
@@ -360,7 +345,7 @@ def revoke_user_recovery(
     user_id: str, request: Request, db: Session = Depends(get_session)
 ) -> Response:
     ensure_authoritative_host()
-    with db_runtime.write_lock:
+    with credential_transaction(db):
         admin = require_admin(get_current_user(request, db))
         target = db.get(User, user_id)
         if target is None or target.role == UserRole.ADMIN:
@@ -368,7 +353,6 @@ def revoke_user_recovery(
         revoke_recovery_credentials(db, target.id, "staff")
         write_audit(db, admin, "auth.recovery_revoke", "user", target.id,
                     {"purpose": "staff"}, client_ip(request))
-        _commit_credentials(db)
     return Response(status_code=204, headers=NO_STORE)
 
 
@@ -378,12 +362,11 @@ def issue_admin_offline_recovery(
     db: Session = Depends(get_session),
 ) -> IssuedCredential:
     ensure_authoritative_host()
-    with db_runtime.write_lock:
+    with credential_transaction(db):
         admin = require_admin(get_current_user(request, db))
         address = client_ip(request)
         verify_current_password(db, admin, payload.current_password, address)
         issued = issue_credential(db, admin, "admin_offline", admin, address)
-        _commit_credentials(db)
     response.headers.update(NO_STORE)
     return issued
 
@@ -393,14 +376,13 @@ def revoke_admin_offline_recovery(
     payload: CurrentPassword, request: Request, db: Session = Depends(get_session)
 ) -> Response:
     ensure_authoritative_host()
-    with db_runtime.write_lock:
+    with credential_transaction(db):
         admin = require_admin(get_current_user(request, db))
         address = client_ip(request)
         verify_current_password(db, admin, payload.current_password, address)
         revoke_recovery_credentials(db, admin.id, "admin_offline")
         write_audit(db, admin, "auth.recovery_revoke", "user", admin.id,
                     {"purpose": "admin_offline"}, address)
-        _commit_credentials(db)
     return Response(status_code=204, headers=NO_STORE)
 
 

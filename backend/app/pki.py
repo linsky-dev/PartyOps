@@ -5,7 +5,9 @@ from __future__ import annotations
 import ipaddress
 import os
 import socket
+import sqlite3
 import tempfile
+from contextlib import closing
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import TypedDict
@@ -46,6 +48,23 @@ def _public_key_bytes(key) -> bytes:
     )
 
 
+def _previously_issued_devices(settings: Settings) -> bool:
+    """旧安装尚无 CA 锚点时，在只读连接核对已签发设备。"""
+    database = getattr(settings, "database_path", None)
+    if database is None or not database.exists():
+        return False
+    try:
+        with closing(sqlite3.connect(f"{database.resolve().as_uri()}?mode=ro", uri=True)) as conn:
+            has_devices = conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='devices'"
+            ).fetchone()
+            return bool(has_devices and conn.execute(
+                "SELECT 1 FROM devices WHERE certificate_fingerprint <> '' LIMIT 1"
+            ).fetchone())
+    except sqlite3.Error:
+        raise ValueError("无法核实旧主机证书登记，已停止 CA 初始化。") from None
+
+
 class TLSMaterial(TypedDict):
     """已生成证书的公共元数据；不包含私钥。"""
 
@@ -59,13 +78,16 @@ def ensure_tls_material(settings: Settings) -> TLSMaterial:
 
     advertised_host = getattr(settings, "network_advertise_host", settings.host)
     root = settings.secrets_dir / "pki"
+    trust_anchor = settings.secrets_dir / "pki-root-sha256"
     ca_key_path = root / "ca.key"
     ca_cert_path = root / "ca.pem"
     server_key_path = root / "server.key"
     server_cert_path = root / "server.pem"
     now = datetime.now(timezone.utc)
     if not ca_key_path.is_file() or not ca_cert_path.is_file():
-        if root.exists() or root.is_symlink():
+        if root.exists() or root.is_symlink() or trust_anchor.exists() or (
+            trust_anchor.is_symlink() or _previously_issued_devices(settings)
+        ):
             raise ValueError("PartyOps 内部 CA 材料缺失，请核查主机备份后恢复。")
         ca_key = rsa.generate_private_key(public_exponent=65537, key_size=3072)
         ca_subject = x509.Name(
@@ -122,9 +144,19 @@ def ensure_tls_material(settings: Settings) -> TLSMaterial:
         ).value
         if not constraints.ca:
             raise ValueError("PartyOps 内部 CA 证书缺少 CA 约束")
+        if not ca_cert.not_valid_before_utc <= now < ca_cert.not_valid_after_utc:
+            raise ValueError("PartyOps 内部 CA 证书当前不在有效期内")
         if _public_key_bytes(ca_key.public_key()) != _public_key_bytes(ca_cert.public_key()):
             raise ValueError("PartyOps 内部 CA 私钥与证书不匹配")
         ca_cert.verify_directly_issued_by(ca_cert)
+        fingerprint = ca_cert.fingerprint(hashes.SHA256()).hex()
+        if trust_anchor.is_symlink():
+            raise ValueError("PartyOps 内部 CA 锚点必须使用普通本机文件")
+        if trust_anchor.exists():
+            if trust_anchor.read_bytes().strip() != fingerprint.encode("ascii"):
+                raise ValueError("PartyOps 内部 CA 与已登记锚点不匹配")
+        else:
+            _write_private(trust_anchor, fingerprint.encode("ascii") + b"\n")
     except (ValueError, TypeError, OSError, InvalidSignature, x509.ExtensionNotFound) as exc:
         # 不能静默重建根 CA；那会让所有已入网设备失去信任。保留原文件并
         # 给监督服务一个可分类的 TLS 诊断，由管理员决定恢复备份或重置。
@@ -142,7 +174,7 @@ def ensure_tls_material(settings: Settings) -> TLSMaterial:
             expiry = getattr(current, "not_valid_after_utc", None)
             if expiry is None:
                 expiry = current.not_valid_after.replace(tzinfo=timezone.utc)
-            regenerate_server = expiry <= now + timedelta(days=30)
+            regenerate_server = current.not_valid_before_utc > now or expiry <= now + timedelta(days=30)
             if not regenerate_server:
                 san = current.extensions.get_extension_for_class(
                     x509.SubjectAlternativeName
@@ -224,7 +256,7 @@ def ensure_tls_material(settings: Settings) -> TLSMaterial:
     return {
         "ca_path": ca_cert_path,
         "server_cert_path": server_cert_path,
-        "fingerprint": ca_cert.fingerprint(hashes.SHA256()).hex(),
+        "fingerprint": fingerprint,
     }
 
 

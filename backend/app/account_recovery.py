@@ -4,21 +4,24 @@ from __future__ import annotations
 
 import re
 import secrets
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import datetime, timedelta
 from typing import Literal
 
 from cryptography.exceptions import UnsupportedAlgorithm
 from cryptography.hazmat.primitives import hashes
-from fastapi import Request
 from pydantic import BaseModel, Field, SecretStr
-from sqlalchemy import or_, select, update
+from sqlalchemy import delete, or_, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .audit import write_audit
 from .config import get_settings
+from .database import db_runtime
 from .enums import UserRole
 from .login_throttle import LoginThrottle
-from .models import LoginSession, RecoveryCredential, User, utcnow
+from .models import LoginSession, RecoveryCredential, SystemSetting, User, utcnow
 from .problems import ProblemException
 from .security import hash_password, verify_password
 
@@ -27,8 +30,9 @@ USERNAME_PATTERN = r"^[A-Za-z0-9_.-]+$"
 TOKEN_PATTERN = re.compile(r"[A-Za-z0-9_-]{43}\Z", re.ASCII)
 RECOVERY_TTL = timedelta(minutes=30)
 NO_STORE = {"Cache-Control": "no-store"}
-recovery_throttle = LoginThrottle()
-credential_change_throttle = LoginThrottle()
+HOST_RECOVERY_PREFIX = "host_recovery:"
+recovery_throttle = LoginThrottle(log_failures=False)
+credential_change_throttle = LoginThrottle(log_failures=False)
 
 
 class CredentialChanges(BaseModel):
@@ -53,12 +57,30 @@ class RedeemCredential(CredentialChanges):
 
 
 class IssuedCredential(BaseModel):
-    credential: str
+    credential: str = Field(repr=False)
     expires_at: datetime | None
 
 
 class RecoveredUsername(BaseModel):
     username: str
+
+
+@contextmanager
+def credential_transaction(db: Session) -> Iterator[None]:
+    """在处理线程回滚失败写入并释放 SQLite 锁。"""
+    with db_runtime.write_lock:
+        try:
+            yield
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            raise ProblemException(
+                409, "CREDENTIALS_CONFLICT", "登录信息发生冲突",
+                "请确认用户名可用并重试。", headers=NO_STORE,
+            ) from None
+        except BaseException:
+            db.rollback()
+            raise
 
 
 def ensure_authoritative_host() -> None:
@@ -115,8 +137,10 @@ def _check_throttle(throttle: LoginThrottle, key: str, address: str, *, failed: 
         )
 
 
-def recovery_address(request: Request) -> str:
-    return request.client.host if request.client else ""
+def _purpose_matches_user(user: User, purpose: str) -> bool:
+    if purpose == "staff":
+        return user.role != UserRole.ADMIN
+    return purpose in {"admin_offline", "admin_host"} and user.role == UserRole.ADMIN
 
 
 def revoke_recovery_credentials(
@@ -129,6 +153,8 @@ def revoke_recovery_credentials(
     )
     if purpose is not None:
         query = query.where(RecoveryCredential.purpose == purpose)
+    else:
+        db.execute(delete(SystemSetting).where(SystemSetting.key == f"{HOST_RECOVERY_PREFIX}{user_id}"))
     db.execute(query.values(revoked_at=utcnow()))
 
 
@@ -136,9 +162,7 @@ def issue_credential(
     db: Session, target: User, purpose: Purpose, actor: User | None, address: str
 ) -> IssuedCredential:
     """在调用方的写事务内替换凭据，只把原始凭据交给签发者一次。"""
-    if not target.active or target.archived_at is not None or (
-        (purpose == "staff") == (target.role == UserRole.ADMIN)
-    ):
+    if not target.active or target.archived_at is not None or not _purpose_matches_user(target, purpose):
         raise recovery_error()
     credential = secrets.token_urlsafe(32)
     digest = sm3_digest(credential.encode("ascii"))
@@ -185,7 +209,12 @@ def apply_credential_changes(
         )
     user.username = username
     if changes.new_password is not None:
-        user.password_hash = hash_password(changes.new_password.get_secret_value())
+        new_password = changes.new_password.get_secret_value()
+        if verify_password(new_password, user.password_hash):
+            raise ProblemException(
+                422, "PASSWORD_UNCHANGED", "新密码未改变", "请填写不同的新密码。", headers=NO_STORE,
+            )
+        user.password_hash = hash_password(new_password)
     user.version += 1
     revoke_account_sessions(db, user.id)
     revoke_recovery_credentials(db, user.id)
@@ -217,9 +246,7 @@ def redeem_credential(db: Session, payload: RedeemCredential, address: str) -> U
         raise recovery_error()
     user_id, purpose = result
     user = db.get(User, user_id, populate_existing=True)
-    if not user or not user.active or user.archived_at is not None or (
-        (purpose == "staff") == (user.role == UserRole.ADMIN)
-    ):
+    if not user or not user.active or user.archived_at is not None or not _purpose_matches_user(user, purpose):
         _check_throttle(recovery_throttle, key, address, failed=True)
         raise recovery_error()
     if payload.has_changes:

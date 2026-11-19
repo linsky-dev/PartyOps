@@ -8,6 +8,7 @@ import os
 import re
 import secrets
 import stat
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -179,9 +180,16 @@ def _decryption_context(key: bytes, nonce: bytes, tag: bytes) -> AEADCipherConte
         raise LocalRecoveryError("ENROLLMENT_CRYPTO_UNAVAILABLE", "当前安装运行时不支持 SM4-GCM。") from None
 
 
+@lru_cache(maxsize=1)
+def _require_enrollment_crypto() -> None:
+    # 在创建密钥文件之前验证 provider，可以避免不支持的包留下废弃密钥。
+    _encryption_context(bytes(16), bytes(NONCE_BYTES))
+
+
 def encrypt_local_json(value: dict[str, Any], *, device_id: str, db: Session) -> str:
     if not device_id or value.get("device_id") != device_id:
         raise LocalRecoveryError("ENROLLMENT_RECOVERY_CONTEXT_INVALID", "入网恢复设备身份不匹配。")
+    _require_enrollment_crypto()
     key_id, key = _active_key(db)
     nonce = secrets.token_bytes(NONCE_BYTES)
     payload = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")

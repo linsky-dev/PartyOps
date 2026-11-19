@@ -34,7 +34,9 @@ def session_token(request: Request, *, allow_bearer: bool = True) -> str | None:
         )
     if cookie:
         return cookie
-    return value.strip() or None if allow_bearer and scheme.lower() == "bearer" else None
+    if allow_bearer and scheme.lower() == "bearer":
+        return value.strip() or None
+    return None
 
 
 def hash_password(password: str) -> str:
@@ -72,7 +74,8 @@ def validate_session_csrf(request: Request, record: LoginSession) -> None:
 
     if request.method.upper() in {"GET", "HEAD", "OPTIONS"}:
         return
-    if not request.cookies.get(SESSION_COOKIE):
+    if (not request.cookies.get(SESSION_COOKIE)
+            and request.headers.get("Authorization", "").strip().lower().startswith("bearer ")):
         return
     expected_hash = (record.csrf_token_hash or "").strip()
     if not expected_hash:
