@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import os
 import subprocess
 import sys
 import tarfile
@@ -41,10 +42,12 @@ def tar_bytes(
 
 
 def run_validator(payload: bytes, *arguments: str) -> subprocess.CompletedProcess[bytes]:
+    env = {**os.environ, "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8"}
     return subprocess.run(
         [sys.executable, str(VALIDATOR), *arguments],
         input=payload,
         capture_output=True,
+        env=env,
         check=False,
     )
 

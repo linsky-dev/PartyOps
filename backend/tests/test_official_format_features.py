@@ -14,6 +14,7 @@ from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml.ns import qn
 
+from app import official_format
 from app import official_format_features as features
 from app.official_format import OfficialFormatError
 from app.official_format_features import capabilities_payload, execute_feature
@@ -46,6 +47,12 @@ def _source_pdf(path: Path, pages: int = 2) -> None:
 
 def _hash(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _require_system_official_fonts() -> None:
+    issues = official_format._font_issues()
+    if issues:
+        pytest.skip(f"BLOCKED_ENV: 本机缺少原生公文字体，验收未执行：{issues[0].detail}")
 
 
 @pytest.mark.parametrize("feature_id", ["format", "redheader"])
@@ -147,7 +154,10 @@ def test_replace_text_regex_wildcard_format_and_batch_rules(tmp_path: Path) -> N
         )
 
 
-def test_redheader_three_document_types_and_top_marks(tmp_path: Path) -> None:
+def test_redheader_three_document_types_and_top_marks(
+    tmp_path: Path,
+) -> None:
+    _require_system_official_fonts()
     source = tmp_path / "redheader.docx"
     _source_docx(source)
     common = {
@@ -256,7 +266,13 @@ def test_pdf_to_word_local_reconstruction_and_verification(tmp_path: Path) -> No
     assert result.outputs[0].path.read_bytes().startswith(b"PK")
 
 
-def test_cancel_and_unknown_feature_are_deterministic(tmp_path: Path) -> None:
+def test_cancel_and_unknown_feature_are_deterministic(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "app.official_format._font_inventory",
+        lambda: "方正小标宋简体 仿宋_GB2312 楷体_GB2312 黑体",
+    )
     source = tmp_path / "cancel.docx"
     _source_docx(source)
     with pytest.raises(OfficialFormatError, match="源文件未改变"):
@@ -371,8 +387,11 @@ def test_feature_validation_and_pdf_conversion_alternatives(tmp_path: Path) -> N
     assert len(Document(docx_result.outputs[0].path).sections) == 2
 
 
-def test_redheader_empty_document_and_existing_border(tmp_path: Path) -> None:
+def test_redheader_empty_document_and_existing_border(
+    tmp_path: Path,
+) -> None:
     """空文档仍能套红，重复写红线时复用已有边框容器。"""
+    _require_system_official_fonts()
 
     source = tmp_path / "empty.docx"
     Document().save(source)
