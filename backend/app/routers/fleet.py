@@ -128,6 +128,7 @@ from ..workspace import resolve_workspace_path, store_managed_path
 from ..workspace_access import (
     DEVICE_GRANT_CAPABILITIES,
     grant_allows,
+    workspace_request_device_id,
     workspace_root_permissions,
 )
 from .router_utils import aware_utc
@@ -1974,10 +1975,11 @@ def collaboration_options(
     allowed_device_ids: set[str] = set()
     current = request_device(request, db)
     current_device_id = current.id if current else None
+    workspace_device_id = workspace_request_device_id(request, current)
     if current_device_id:
         allowed_device_ids.add(current_device_id)
     for root in all_roots:
-        permissions = workspace_root_permissions(db, root, user, current_device_id)
+        permissions = workspace_root_permissions(db, root, user, workspace_device_id)
         if not permissions["browse"] and not permissions["manage_root"]:
             continue
         if root.device_id:
@@ -2037,7 +2039,9 @@ def _authorized_transfer(db: Session, transfer_id: str, user: User) -> Transfer:
     return transfer
 
 
-def _require_current_transfer_source_access(db: Session, transfer: Transfer) -> None:
+def _require_current_transfer_source_access(
+    db: Session, transfer: Transfer, user: User, request: Request
+) -> None:
     """最终读取受管副本前再次校验源共享权限。
 
     旧传输和管理员手工创建的接收文件可能没有源索引，此时只能沿用传输所有权
@@ -2050,7 +2054,15 @@ def _require_current_transfer_source_access(db: Session, transfer: Transfer) -> 
     )
     if not item_ids and not transfer.source_device_id:
         return
-    if not transfer_sources_still_allowed(db, transfer):
+    workspace_device_id = workspace_request_device_id(request, request_device(request, db))
+    accessible = transfer_sources_still_allowed(db, transfer)
+    for item_id in item_ids:
+        item = db.get(WorkspaceFile, item_id)
+        root = db.get(WorkspaceRoot, item.root_id) if item else None
+        if root and root.source.value == "host" and not workspace_root_permissions(db, root, user, workspace_device_id)["download"]:
+            accessible = False
+            break
+    if not accessible:
         raise ProblemException(
             403,
             "GRANT_DENIED",
@@ -2091,7 +2103,7 @@ def download_transfer_content(
     db: Session = Depends(get_session),
 ) -> FileResponse:
     transfer = _authorized_transfer(db, transfer_id, user)
-    _require_current_transfer_source_access(db, transfer)
+    _require_current_transfer_source_access(db, transfer, user, request)
     path = _completed_inbox_path(transfer)
     media_type = mimetypes.guess_type(transfer.original_name)[0] or "application/octet-stream"
     actual_inline = inline and may_render_inline(media_type)
@@ -2116,7 +2128,7 @@ def freeze_transfer_content(
     db: Session = Depends(get_session),
 ) -> Transfer:
     transfer = _authorized_transfer(db, transfer_id, user)
-    _require_current_transfer_source_access(db, transfer)
+    _require_current_transfer_source_access(db, transfer, user, request)
     path = _completed_inbox_path(transfer)
     mime_type = mimetypes.guess_type(transfer.original_name)[0] or "application/octet-stream"
     blob = store_managed_path(db, path, transfer.original_name, mime_type, transfer.sha256)
@@ -2141,7 +2153,7 @@ def attach_transfer_content(
     db: Session = Depends(get_session),
 ) -> Transfer:
     transfer = _authorized_transfer(db, transfer_id, user)
-    _require_current_transfer_source_access(db, transfer)
+    _require_current_transfer_source_access(db, transfer, user, request)
     path = _completed_inbox_path(transfer)
     mime_type = mimetypes.guess_type(transfer.original_name)[0] or "application/octet-stream"
     linked_id: str
@@ -2355,7 +2367,7 @@ def create_workspace_download(
     current = request_device(request, db)
     if payload.delivery == "current_device" and not current:
         raise ProblemException(409, "CLIENT_DEVICE_REQUIRED", "请在协同电脑上操作", "当前协同机下载需要有效设备上下文。")
-    selected = _workspace_download_items(db, payload.item_ids, user, current.id if current else None)
+    selected = _workspace_download_items(db, payload.item_ids, user, workspace_request_device_id(request, current))
     if payload.bundle_mode == "single" and (len(selected) != 1 or selected[0][0].is_directory):
         raise ProblemException(422, "SINGLE_FILE_REQUIRED", "请选择一个文件", "单文件下载不能包含文件夹或多个项目。")
     if payload.bundle_mode == "folder_zip" and (len(selected) != 1 or not selected[0][0].is_directory):
@@ -2535,6 +2547,10 @@ def create_transfer(
         raise ProblemException(413, "TRANSFER_FILE_TOO_LARGE", "文件超过20GB限制", "请拆分文件后重试。")
     source_file = db.get(WorkspaceFile, payload.source_file_id) if payload.source_file_id else None
     root = db.get(WorkspaceRoot, source_file.root_id) if source_file else None
+    if source_file and root and root.source.value == "host":
+        workspace_device_id = workspace_request_device_id(request, request_device(request, db))
+        if not source_file.in_scope or not workspace_root_permissions(db, root, user, workspace_device_id)["send"]:
+            raise ProblemException(403, "GRANT_DENIED", "没有主机源文件发送权限", "请使用已授权的协同设备。")
     source_device_id = payload.source_device_id or (root.device_id if root and root.source.value == "device" else None)
     if source_file and root and root.source.value == "device" and source_device_id:
         if not grant_allows(db, user, source_device_id, root.id, "download"):

@@ -73,7 +73,7 @@ from ..workspace import (
     validate_root_path,
     validate_selection_paths,
 )
-from ..workspace_access import workspace_root_permissions
+from ..workspace_access import workspace_request_device_id, workspace_root_permissions
 
 router = APIRouter(tags=["workspace-files"])
 
@@ -119,8 +119,7 @@ def parse_version(value: str | None) -> int:
 
 
 def current_device_id(request: Request, db: Session) -> str | None:
-    device = request_device(request, db)
-    return device.id if device else None
+    return workspace_request_device_id(request, request_device(request, db))
 
 
 def root_to_out(

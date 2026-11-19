@@ -2,12 +2,37 @@
 
 from __future__ import annotations
 
+import ipaddress
+
+from fastapi import Request
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
+from .config import get_settings
 from .models import Device, DeviceGrant, User, WorkspaceRoot, WorkspaceRootMember
 
 DEVICE_GRANT_CAPABILITIES = frozenset({"download", "share", "upload"})
+UNIDENTIFIED_REMOTE_DEVICE = "unidentified-remote-device"
+
+
+def workspace_request_device_id(request: Request, device: Device | None) -> str | None:
+    """仅直连本机传输可使用主机本地上下文；远程请求须识别设备。"""
+
+    if device is not None:
+        return device.id
+    if any(header in request.headers for header in ("Forwarded", "X-Forwarded-For", "X-Real-IP")):
+        return UNIDENTIFIED_REMOTE_DEVICE
+    peer = request.client.host.split("%", 1)[0] if request.client else ""
+    try:
+        address = ipaddress.ip_address(peer)
+        if isinstance(address, ipaddress.IPv6Address) and address.ipv4_mapped is not None:
+            address = address.ipv4_mapped
+        if address.is_loopback:
+            return None
+    except ValueError:
+        if peer == "testclient" and get_settings().environment == "test":
+            return None
+    return UNIDENTIFIED_REMOTE_DEVICE
 
 
 def _active_device(db: Session, device_id: str) -> Device | None:
@@ -99,6 +124,8 @@ def workspace_root_permissions(
         return denied
     if root.source.value == "host":
         if current_device_id and user.role.value != "admin":
+            if current_device_id == UNIDENTIFIED_REMOTE_DEVICE:
+                return denied
             current = _active_device(db, current_device_id)
             if not current or not current.allow_host_access:
                 return denied
