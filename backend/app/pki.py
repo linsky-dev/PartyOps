@@ -262,6 +262,10 @@ def ensure_tls_material(settings: Settings) -> TLSMaterial:
     }
 
 
+class DeviceCSRInvalid(ValueError):
+    """设备提交的证书请求无效，与主机 CA 材料故障区分。"""
+
+
 def issue_device_certificate(
     settings: Settings,
     device_id: str,
@@ -282,12 +286,15 @@ def issue_device_certificate(
             ),
             "certificate_fingerprint": "",
         }
-    csr = x509.load_pem_x509_csr(csr_pem.encode("utf-8"))
+    try:
+        csr = x509.load_pem_x509_csr(csr_pem.encode("utf-8"))
+    except ValueError as exc:
+        raise DeviceCSRInvalid("设备证书请求格式无效") from exc
     if not csr.is_signature_valid:
-        raise ValueError("设备证书请求签名无效")
+        raise DeviceCSRInvalid("设备证书请求签名无效")
     public_key = csr.public_key()
     if not isinstance(public_key, rsa.RSAPublicKey) or public_key.key_size < 2048:
-        raise ValueError("设备证书请求必须使用至少 2048 位 RSA 密钥")
+        raise DeviceCSRInvalid("设备证书请求必须使用至少 2048 位 RSA 密钥")
     cert = (
         x509.CertificateBuilder()
         .subject_name(

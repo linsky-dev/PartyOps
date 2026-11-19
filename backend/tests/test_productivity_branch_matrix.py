@@ -56,9 +56,12 @@ def test_parse_transition_and_workbench_empty_value_branches(monkeypatch) -> Non
         SimpleNamespace(id="d2", name="二号", status=value("offline"), last_seen_at=now),
     ]
     files = [SimpleNamespace(id="f1", name="材料", relative_path="材料", status=value("indexed"), availability=value("online"))]
-    db = Db([transfers, devices, files])
+    db = Db([transfers, devices])
     monkeypatch.setattr("app.task_service.dashboard", lambda *_a: SimpleNamespace(model_dump=lambda **_k: {"ok": True}))
-    result = productivity.workbench(SimpleNamespace(id="user"), db)
+    monkeypatch.setattr(productivity, "request_device", lambda *_a: None)
+    monkeypatch.setattr(productivity, "recent_workspace_files", lambda *_a, **_k: files)
+    request = SimpleNamespace(client=SimpleNamespace(host="127.0.0.1"), headers={})
+    result = productivity.workbench(request, SimpleNamespace(id="user"), db)
     assert [item["progress"] for item in result["pending_transfers"]] == [0, 50]
     assert result["devices"][0]["last_seen_at"] is None and result["devices"][1]["last_seen_at"]
 
@@ -74,6 +77,8 @@ def test_global_search_all_business_types_and_permission_filters(monkeypatch, ft
         SimpleNamespace(id="file-good", root_id="root-good", is_directory=False, name="党建文件", extension="", availability=value("online"), modified_at=None, last_seen_at=None),
         SimpleNamespace(id="file-time", root_id="root-good", is_directory=False, name="党建时间文件", extension="pdf", availability=value("online"), modified_at=now, last_seen_at=None),
     ]
+    for file in files:
+        file.in_scope = True
     records = [
         SimpleNamespace(id="archive-no-category", category_id="missing", status=value("active")),
         SimpleNamespace(id="archive-inactive", category_id="inactive", status=value("active")),

@@ -90,7 +90,7 @@ from ..networking import (
     validate_advertise_host,
 )
 from ..notification_targets import notification_target
-from ..pki import issue_device_certificate
+from ..pki import DeviceCSRInvalid, issue_device_certificate
 from ..problems import ProblemException
 from ..schemas import (
     DeviceBrowserTokenOut,
@@ -892,11 +892,17 @@ def enroll_device(
         )
         try:
             certificate_bundle = issue_device_certificate(get_settings(), device.id, payload.csr_pem)
-        except ValueError:
+        except DeviceCSRInvalid:
             db.rollback()
             raise ProblemException(
                 422, "ENROLLMENT_CSR_INVALID", "设备证书请求无效",
                 "请重新生成设备证书请求后再使用当前入网码。",
+            ) from None
+        except (OSError, ValueError):
+            db.rollback()
+            raise ProblemException(
+                503, "DEVICE_CA_UNAVAILABLE", "主机设备证书服务不可用",
+                "请由主机管理员检查已经登记的 CA 与密钥材料，修复后可重试当前入网码。",
             ) from None
         device.certificate_fingerprint = str(
             certificate_bundle.get("certificate_fingerprint", "")

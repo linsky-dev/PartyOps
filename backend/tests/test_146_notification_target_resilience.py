@@ -5,8 +5,24 @@ from types import SimpleNamespace
 import pytest
 from starlette.requests import Request
 
-from app.enums import FileIndexStatus, Sensitivity, TaskStatus, UserRole
-from app.models import Notification, Task, TaskComment, WorkspaceFile, WorkspaceRoot
+from app.enums import (
+    FileIndexStatus,
+    Sensitivity,
+    TaskStatus,
+    TransferDirection,
+    TransferStatus,
+    UserRole,
+)
+from app.models import (
+    Notification,
+    PartyDevelopmentCase,
+    PartyDevelopmentMilestone,
+    Task,
+    TaskComment,
+    Transfer,
+    WorkspaceFile,
+    WorkspaceRoot,
+)
 from app.notification_targets import resolve_notification_target
 
 USER = SimpleNamespace(id="notice-user", role=UserRole.STAFF)
@@ -78,3 +94,65 @@ def test_historical_comment_recovers_verified_child_even_with_malformed_json():
     destination = resolve_notification_target(db, item, USER, _request())
     assert destination.status == "ready"
     assert destination.target and destination.target.child_id == comment.id
+
+
+@pytest.mark.parametrize(("notice_type", "section"), [
+    ("deadline", "overview"),
+    ("overdue", "overview"),
+    ("assignment", "overview"),
+    ("automation", "overview"),
+    ("review", "review"),
+    ("feedback", "review"),
+    ("materials", "materials"),
+    ("comment", "comments"),
+    ("mention", "comments"),
+])
+def test_task_notice_type_resolves_current_task_and_section(notice_type, section):
+    task = SimpleNamespace(id="sample-task", deleted_at=None, sensitivity=Sensitivity.NORMAL, status=TaskStatus.IN_PROGRESS)
+    comment = SimpleNamespace(id="sample-comment", task_id=task.id)
+    child = comment.id if section == "comments" else None
+    db = _Objects((Task, task), (TaskComment, comment))
+    item = Notification(
+        user_id=USER.id, notification_type=notice_type, entity_type="task", entity_id=task.id,
+        target={"kind": "task", "id": task.id, "child_id": child}, dedupe_key=f"notice-{notice_type}",
+    )
+    destination = resolve_notification_target(db, item, USER, _request())
+    assert destination.status == "ready"
+    assert destination.target and destination.target.id == task.id
+    assert destination.target.section == section
+    assert destination.target.child_id == child
+
+
+@pytest.mark.parametrize(
+    ("notice_type", "entity_type", "kind", "section"),
+    [
+        ("party_development", "party_development_case", "development", "timeline"),
+        ("root_approval", "workspace_root", "root_approval", "grants"),
+        ("transfer", "transfer", "transfer", "inbox"),
+        ("archive_suggestion", "workspace_file", "workspace", "files"),
+    ],
+)
+def test_notices_resolve_real_non_task_relationships(notice_type, entity_type, kind, section):
+    case = SimpleNamespace(id="case", status="active")
+    milestone = SimpleNamespace(id="node", case_id=case.id)
+    root = SimpleNamespace(id="root", enabled=True, approval_status="pending", source=SimpleNamespace(value="host"))
+    file = SimpleNamespace(id="file", root_id=root.id, in_scope=True, status=FileIndexStatus.INDEXED)
+    transfer = SimpleNamespace(
+        id="transfer", direction=TransferDirection.DEVICE_TO_HOST,
+        status=TransferStatus.COMPLETED, requested_by=USER.id,
+    )
+    db = _Objects(
+        (PartyDevelopmentCase, case), (PartyDevelopmentMilestone, milestone),
+        (WorkspaceRoot, root), (WorkspaceFile, file), (Transfer, transfer),
+    )
+    entity = {"party_development_case": case, "workspace_root": root, "workspace_file": file, "transfer": transfer}[entity_type]
+    user = SimpleNamespace(id=USER.id, role=UserRole.ADMIN) if kind == "root_approval" else USER
+    item = Notification(
+        user_id=user.id, notification_type=notice_type, entity_type=entity_type, entity_id=entity.id,
+        target={"kind": entity_type, "id": entity.id, "child_id": milestone.id}, dedupe_key=f"notice-{notice_type}",
+    )
+    destination = resolve_notification_target(db, item, user, _request())
+    assert destination.status == "ready"
+    assert destination.target and destination.target.kind == kind
+    assert destination.target.section == section
+    assert destination.target.id == (root.id if kind == "workspace" else entity.id)

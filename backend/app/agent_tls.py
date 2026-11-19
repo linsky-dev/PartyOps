@@ -16,7 +16,7 @@ from uvicorn.protocols.http.h11_impl import H11Protocol
 from .config import get_settings
 from .database import db_runtime
 from .models import Device, SystemSetting, utcnow
-from .pki import issue_device_certificate
+from .pki import DeviceCSRInvalid, issue_device_certificate
 from .problems import ProblemException
 from .security import hash_token
 
@@ -61,9 +61,14 @@ def stage_device_certificate(db: Session, device: Device, csr: str) -> dict:
         return previous
     try:
         bundle = issue_device_certificate(get_settings(), device.id, csr)
-    except ValueError:
+    except DeviceCSRInvalid:
         raise ProblemException(
             422, "DEVICE_CSR_INVALID", "设备证书请求无效", "请重新生成证书请求。"
+        ) from None
+    except (OSError, ValueError):
+        raise ProblemException(
+            503, "DEVICE_CA_UNAVAILABLE", "主机设备证书服务不可用",
+            "请由主机管理员检查已经登记的 CA 与密钥材料。",
         ) from None
     pending = {
         **bundle,

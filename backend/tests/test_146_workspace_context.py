@@ -1,11 +1,17 @@
 """主机共享范围使用明确的本机或已验证设备上下文。"""
 
+import json
+import zipfile
 from types import SimpleNamespace
 
 import pytest
 from starlette.requests import Request
 
+from app.config import get_settings
+from app.database import db_runtime
 from app.enums import UserRole
+from app.models import Task, User, WorkspaceFile, WorkspaceLink, WorkspaceRoot
+from app.routers import productivity, today
 from app.workspace_access import (
     UNIDENTIFIED_REMOTE_DEVICE,
     workspace_request_device_id,
@@ -59,3 +65,33 @@ def test_verified_remote_device_uses_its_host_access_setting():
     assert workspace_root_permissions(_Devices(device), root, member, scope)["download"] is False
     device.allow_host_access = True
     assert workspace_root_permissions(_Devices(device), root, member, scope)["download"] is True
+
+
+def test_global_search_obeys_context_for_host_files(client, admin, staff, tmp_path, monkeypatch):
+    with db_runtime.session_factory() as db:
+        user = db.get(User, staff["id"])
+        root = WorkspaceRoot(name="合成主机文件夹", absolute_path=str(tmp_path), created_by=admin["id"])
+        db.add(root)
+        db.flush()
+        file = WorkspaceFile(root_id=root.id, relative_path="synthetic-only.txt", name="synthetic-only.txt")
+        db.add(file)
+        db.flush()
+        task = Task(title="合成交接事项", owner_id=user.id, created_by=admin["id"], updated_by=admin["id"])
+        db.add(task)
+        db.flush()
+        db.add(WorkspaceLink(file_id=file.id, entity_type="task", entity_id=task.id, created_by=admin["id"]))
+        db.commit()
+        monkeypatch.setattr(productivity, "search_workspace_files", lambda *_a, **_k: [file])
+        monkeypatch.setattr(productivity, "request_device", lambda *_a, **_k: None)
+        monkeypatch.setattr(today, "request_device", lambda *_a, **_k: None)
+        for host, visible in (("127.0.0.1", True), ("192.0.2.5", False)):
+            request = _request(host)
+            result = productivity.global_search(request, "synthetic-only", 10, user, db)
+            assert any(item["id"] == file.id for item in result["items"]) is visible
+            for dashboard in (productivity.workbench(request, user, db), today.today(request, user, db)):
+                assert any(item["id"] == file.id for item in dashboard["recent_files"]) is visible
+            handover = productivity.create_handover(request, user, db)
+            with zipfile.ZipFile(get_settings().exports_dir / handover["filename"]) as archive:
+                result = json.loads(archive.read("manifest.json"))
+            exported_task = next(item for item in result["tasks"] if item["id"] == task.id)
+            assert any(item["name"] == file.name for item in exported_task["linked_files"]) is visible

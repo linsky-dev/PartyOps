@@ -9,7 +9,14 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from .config import get_settings
-from .models import Device, DeviceGrant, User, WorkspaceRoot, WorkspaceRootMember
+from .models import (
+    Device,
+    DeviceGrant,
+    User,
+    WorkspaceFile,
+    WorkspaceRoot,
+    WorkspaceRootMember,
+)
 
 DEVICE_GRANT_CAPABILITIES = frozenset({"download", "share", "upload"})
 UNIDENTIFIED_REMOTE_DEVICE = "unidentified-remote-device"
@@ -33,6 +40,26 @@ def workspace_request_device_id(request: Request, device: Device | None) -> str 
         if peer == "testclient" and get_settings().environment == "test":
             return None
     return UNIDENTIFIED_REMOTE_DEVICE
+
+
+def browsable_workspace_root_ids(db: Session, user: User, device_id: str | None) -> list[str]:
+    roots = db.scalars(select(WorkspaceRoot).where(WorkspaceRoot.enabled.is_(True))).all()
+    return [root.id for root in roots if workspace_root_permissions(db, root, user, device_id)["browse"]]
+
+
+def recent_workspace_files(
+    db: Session, user: User, device_id: str | None, *, limit: int
+) -> list[WorkspaceFile]:
+    """按当前权限先过滤，再选择最近展示的文件。"""
+    root_ids = browsable_workspace_root_ids(db, user, device_id)
+    if not root_ids:
+        return []
+    return list(db.scalars(
+        select(WorkspaceFile)
+        .where(WorkspaceFile.in_scope.is_(True), WorkspaceFile.root_id.in_(root_ids))
+        .order_by(WorkspaceFile.last_seen_at.desc())
+        .limit(limit)
+    ).all())
 
 
 def _active_device(db: Session, device_id: str) -> Device | None:
