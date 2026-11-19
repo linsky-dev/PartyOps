@@ -497,7 +497,7 @@ def test_native_linux_packages_embed_upgrade_and_selftest_lifecycle() -> None:
     assert "post-install-transaction.sh %s deb" in build
     assert "sed 's/\\r$//'" in build
     assert "桌面入口换行规范化失败" in build
-    assert 'DEB_VERSION="1.4.5~rc.6"' in build
+    assert 'DEB_VERSION="1.4.6~rc.1"' in build
     assert "Version: $DEB_VERSION" in build
     assert "systemd, util-linux, coreutils, iproute2" in build
     assert "systemd, util-linux, coreutils, iproute" in build
@@ -838,7 +838,7 @@ def test_windows_installer_is_chinese_branded_and_preserves_custom_paths() -> No
     assert "INSTALL_DIR_TREE_ACL_VERIFY_FAILED" in installer
     assert "INSTALL_DIR_INTEGRITY_DENIED" in installer
     assert " /setintegritylevel (OI)(CI)H /T /C /Q" in installer
-    assert "VersionInfoVersion=1.4.5.3" in installer
+    assert "VersionInfoVersion=1.4.6.1" in installer
     assert "MinVersion=10.0" in installer
     assert "MinVersion=6.1sp1" in installer
     assert "此安装包仅支持 Windows 10/11" in installer
@@ -1149,7 +1149,7 @@ def test_linux_rpm_rollback_seed_keeps_current_release_generation() -> None:
         encoding="utf-8"
     )
 
-    assert 'RPM_RELEASE="0.rc.6.1"' in script
+    assert 'RPM_RELEASE="0.rc.1.1"' in script
     assert 'SEED_RELEASE="0.rc.2.0"' in script
 
 

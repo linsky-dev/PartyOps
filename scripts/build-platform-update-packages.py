@@ -106,9 +106,8 @@ def _signed_manifest(
         "format_version": 4,
         "package_role": "platform-update",
         "version": VERSION,
-        # rc.2 已显式轮换客户端信任根。rc.1 及更早客户端不能直接验证
-        # rc.3 更新包，必须先使用 rc.2 或 rc.3 完整安装器原位升级。
-        "min_version": "1.4.5-rc.2",
+        # 跨认证模式升级需停写覆盖安装，旧更新器无法保护提交后的新数据。
+        "min_version": VERSION,
         "schema_revision": "0028_notification_targets",
         "release_title": "台账导入、真实进度与全链路可靠性升级",
         "target_platform": platform_name,

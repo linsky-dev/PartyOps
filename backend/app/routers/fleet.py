@@ -13,7 +13,7 @@ import secrets
 import shutil
 import typing
 import zipfile
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path, PurePosixPath
 
 from fastapi import (
@@ -29,6 +29,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy import delete, func, or_, select
 from sqlalchemy.orm import Session
 
+from ..agent_tls import stage_device_certificate
 from ..archive_service import (
     can_contribute_category,
     category_for_record,
@@ -783,6 +784,11 @@ def enroll_device(
                 "入网安全令牌不匹配",
                 "请从主机重新复制完整入网码后重试。",
             )
+        if not payload.csr_pem or not get_settings().tls_enabled:
+            raise ProblemException(
+                422, "ENROLLMENT_CERTIFICATE_REQUIRED", "需要设备证书请求",
+                "请开启主机 HTTPS，并使用当前版本配置向导提交设备证书请求。",
+            )
     with db_runtime.write_lock:
         enrollment = db.scalar(
             select(DeviceEnrollment).where(
@@ -883,11 +889,14 @@ def enroll_device(
                 protocol_version=device.protocol_version,
             )
         )
-        certificate_bundle = issue_device_certificate(
-            get_settings(),
-            device.id,
-            payload.csr_pem,
-        )
+        try:
+            certificate_bundle = issue_device_certificate(get_settings(), device.id, payload.csr_pem)
+        except ValueError:
+            db.rollback()
+            raise ProblemException(
+                422, "ENROLLMENT_CSR_INVALID", "设备证书请求无效",
+                "请重新生成设备证书请求后再使用当前入网码。",
+            ) from None
         device.certificate_fingerprint = str(
             certificate_bundle.get("certificate_fingerprint", "")
         )
@@ -1667,12 +1676,6 @@ def rotate_certificate(
     token: str | None = Header(default=None, alias="X-PartyOps-Device-Token"),
     db: Session = Depends(get_session),
 ) -> DeviceCertificateOut:
-    device = authenticated_device(token, db)
-    bundle = issue_device_certificate(get_settings(), device.id, payload.csr_pem)
-    device.certificate_fingerprint = str(bundle.get("certificate_fingerprint", ""))
-    device.certificate_expires_at = utcnow() + timedelta(days=365)
-    device.version += 1
-    db.commit()
     settings = get_settings()
     if settings.environment == "test":
         response_agent_url = f"{request.base_url.scheme}://{request.base_url.hostname}:{settings.agent_port}"
@@ -1686,12 +1689,16 @@ def rotate_certificate(
             settings.agent_port,
             tls_enabled=settings.tls_enabled,
         )
+    with db_runtime.write_lock:
+        device = authenticated_device(token, db)
+        bundle = stage_device_certificate(db, device, payload.csr_pem)
+        db.commit()
     return DeviceCertificateOut(
         certificate_pem=str(bundle.get("certificate_pem", "")),
         ca_certificate_pem=str(bundle.get("ca_certificate_pem", "")),
-        certificate_fingerprint=device.certificate_fingerprint,
+        certificate_fingerprint=str(bundle.get("certificate_fingerprint", "")),
         agent_url=response_agent_url,
-        expires_at=device.certificate_expires_at,
+        expires_at=datetime.fromisoformat(bundle["expires_at"]),
     )
 
 

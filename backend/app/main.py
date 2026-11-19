@@ -377,6 +377,9 @@ def _initialize_runtime() -> dict[str, object]:
     return capabilities
 
 
+_runtime_ready = threading.Event()
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     instance_lock = DataDirectoryInstanceLock(settings.data_dir)
@@ -418,8 +421,10 @@ async def lifespan(_app: FastAPI):
         instance_lock.release()
         raise
     try:
+        _runtime_ready.set()
         yield
     finally:
+        _runtime_ready.clear()
         assert stop_event is not None and scheduler is not None
         stop_event.set()
         try:
@@ -556,6 +561,22 @@ def _authenticate_agent_transport(request: Request, token: str) -> None:
 @app.middleware("http")
 async def trace_requests(request: Request, call_next):
     request.state.trace_id = normalize_trace_id(request.headers.get("X-Trace-Id"))
+    server = request.scope.get("server")
+    if (
+        settings.tls_enabled
+        and settings.agent_port != settings.port
+        and server
+        and server[1] == settings.agent_port
+        and not _runtime_ready.is_set()
+    ):
+        return _apply_security_headers(
+            problem_response(
+                request, ProblemException(
+                    503, "HOST_STARTING", "主机尚未就绪", "请稍后重试设备操作。"
+                )
+            ),
+            request,
+        )
     if not _host_allowed(request):
         return _apply_security_headers(
             JSONResponse(
@@ -767,6 +788,7 @@ class _UvicornOptions(TypedDict, total=False):
     workers: int
     reload: bool
     access_log: bool
+    proxy_headers: bool
     timeout_graceful_shutdown: int
     ssl_certfile: str
     ssl_keyfile: str
@@ -796,6 +818,7 @@ def run() -> None:
         # 业务请求已经进入按日轮转的 partyops.log；关闭 Uvicorn 每请求
         # access log，避免个人模式的 launcher.log 随访问量无上限增长。
         "access_log": False,
+        "proxy_headers": False,
         # SSE、下载或旧浏览器连接不能无限阻塞软件升级。收到 SIGTERM 后
         # 最多等待 15 秒完成请求，随后由 Uvicorn 取消残留连接并执行 lifespan
         # 清理；安装器仍会在覆盖程序前复核进程身份和退出状态。
