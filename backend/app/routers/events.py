@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import asyncio
 
-from fastapi import APIRouter, Depends, Header
+from fastapi import APIRouter, Depends, Header, Request
 from sqlalchemy import select
 from sse_starlette.sse import EventSourceResponse
 
 from ..database import db_runtime
-from ..models import EventOutbox, User
-from ..security import get_current_user
+from ..models import EventOutbox, LoginSession, User, utcnow
+from ..problems import ProblemException
+from ..security import get_current_user, hash_token, session_token
 
 router = APIRouter(tags=["events"])
 _active_streams = 0
@@ -22,9 +23,15 @@ def active_stream_count() -> int:
 
 @router.get("/events/stream")
 async def event_stream(
+    request: Request,
     last_event_id: str | None = Header(default=None, alias="Last-Event-ID"),
-    _user: User = Depends(get_current_user),
+    user: User = Depends(get_current_user),
 ) -> EventSourceResponse:
+    token = session_token(request)
+    if not token:
+        raise ProblemException(401, "AUTH_REQUIRED", "需要登录", "请先登录系统。")
+    token_digest = hash_token(token)
+    user_id = user.id
     try:
         cursor = int(last_event_id or 0)
     except ValueError:
@@ -38,6 +45,19 @@ async def event_stream(
         try:
             while True:
                 with db_runtime.session_factory() as db:
+                    # 流可能跨过改密、注销或禁用。出队前重新核对权威会话。
+                    active_session = db.scalar(
+                        select(LoginSession.id).join(User, LoginSession.user_id == User.id).where(
+                            LoginSession.token_hash == token_digest,
+                            LoginSession.user_id == user_id,
+                            LoginSession.revoked_at.is_(None),
+                            LoginSession.expires_at > utcnow(),
+                            User.active.is_(True),
+                            User.archived_at.is_(None),
+                        )
+                    )
+                    if active_session is None:
+                        return
                     events = db.scalars(
                         select(EventOutbox)
                         .where(EventOutbox.id > cursor)
