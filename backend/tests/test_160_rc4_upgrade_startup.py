@@ -89,6 +89,24 @@ def _revision(runtime: DatabaseRuntime) -> str:
         )
 
 
+def test_native_rollback_preserves_committed_recovery_schema(tmp_path: Path) -> None:
+    runtime, settings = _runtime_at_0023(tmp_path)
+    upgrades.ensure_native_rollback_safe(settings.database_path)
+    runtime.create_schema()
+    with runtime.session_factory() as db:
+        user = db.get(User, "rc4-upgrade-admin")
+        assert user is not None
+        user.username = "renamed-after-upgrade"
+        db.commit()
+    with pytest.raises(RuntimeError, match="前向修复"):
+        upgrades.ensure_native_rollback_safe(settings.database_path)
+    with runtime.session_factory() as db:
+        user = db.get(User, "rc4-upgrade-admin")
+        assert user is not None
+        assert user.username == "renamed-after-upgrade"
+    assert _revision(runtime) == backups.SCHEMA_VERSION
+
+
 def test_full_initialize_runtime_upgrades_real_0023_database(monkeypatch, tmp_path: Path) -> None:
     """精确复现 rc.3 的 backup_runs 缺列故障，并要求完整启动事务成功。"""
 
@@ -101,7 +119,7 @@ def test_full_initialize_runtime_upgrades_real_0023_database(monkeypatch, tmp_pa
     with runtime.engine.connect() as connection:
         assert connection.execute(
             text("SELECT version_num FROM alembic_version")
-        ).scalar_one() == "0026"
+        ).scalar_one() == backups.SCHEMA_VERSION
         assert connection.execute(
             text("SELECT display_name FROM users WHERE id='rc4-upgrade-admin'")
         ).scalar_one() == "原位升级管理员"
@@ -204,7 +222,7 @@ def test_next_launch_recovers_process_interrupted_during_migration(
                 "WHERE id='rc4-upgrade-admin'"
             )
         )
-    assert _revision(runtime) == "0026"
+    assert _revision(runtime) == backups.SCHEMA_VERSION
 
     recovered = upgrades.recover_interrupted_upgrade()
 

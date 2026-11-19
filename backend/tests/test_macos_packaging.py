@@ -83,7 +83,7 @@ def test_macos_build_is_native_strict_signed_and_notarized() -> None:
     assert "MACOS_ARCH_MISMATCH" in validation
     assert 'bundle_identifier="cn.partyops.desktop"' in spec
     assert '"CFBundleExecutable": "partyops-desktop"' in spec
-    assert '"CFBundleVersion": "1.4.5.6"' in spec
+    assert '"CFBundleVersion": "1.4.6.1"' in spec
     # ARM 候选与 Intel 使用各自固定基线，不能由调用环境任意提高。
     assert 'deployment_targets = {"arm64": "15.0", "x86_64": "11.0"}' in spec
     assert 'minimum_system_version = deployment_targets[target_arch]' in spec

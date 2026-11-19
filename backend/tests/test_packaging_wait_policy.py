@@ -343,7 +343,7 @@ def test_linux_auxiliary_entrypoints_share_onedir_runtime() -> None:
     assert "partyops partyops-client partyops-wizard partyops-updater" in native_runtime
     assert "create-0023-upgrade-fixture.py" in native_runtime
     assert "NATIVE_0023_UPGRADE_FAILED" in native_runtime
-    assert '[[ "$revision" == 0026' in native_runtime
+    assert '[[ "$revision" == 0028_notification_targets' in native_runtime
     assert "runtime_root != expected_root" in wizard
     assert 'runtime_root.rglob("*.so*")' in wizard
 
@@ -541,8 +541,8 @@ def test_native_linux_packages_embed_upgrade_and_selftest_lifecycle() -> None:
     one_click = (ROOT / "packaging" / "uos" / "one-click-install.sh").read_text(
         encoding="utf-8"
     )
-    assert 'VERSION="${PARTYOPS_VERSION:-1.4.5-rc.6}"' in one_click
-    assert 'PACKAGE_VERSION="${PARTYOPS_PACKAGE_VERSION:-1.4.5~rc.6}"' in one_click
+    assert 'VERSION="${PARTYOPS_VERSION:-1.4.6-rc.1}"' in one_click
+    assert 'PACKAGE_VERSION="${PARTYOPS_PACKAGE_VERSION:-1.4.6~rc.1}"' in one_click
     assert 'DEB="$ARTIFACTS/PartyOps_${VERSION}_linux_${ARCH}.deb"' in one_click
     assert '[[ "$installed_version" == "$PACKAGE_VERSION" ]]' in one_click
     assert 'chown -R "$CURRENT_USER' not in one_click
@@ -550,7 +550,7 @@ def test_native_linux_packages_embed_upgrade_and_selftest_lifecycle() -> None:
     acceptance = (ROOT / "packaging" / "uos" / "target-acceptance.sh").read_text(
         encoding="utf-8"
     )
-    assert 'PACKAGE_VERSION="${PARTYOPS_PACKAGE_VERSION:-1.4.5~rc.6}"' in acceptance
+    assert 'PACKAGE_VERSION="${PARTYOPS_PACKAGE_VERSION:-1.4.6~rc.1}"' in acceptance
     assert 'test "$INSTALLED_VERSION" = "$PACKAGE_VERSION"' in acceptance
     assert "LD_LIBRARY_PATH=/opt/partyops/ocr/lib" in acceptance
 
@@ -1081,7 +1081,7 @@ def test_linux_bundle_only_includes_current_user_documents() -> None:
     )
 
     assert 'cp -a "$ROOT/docs" "$RUNTIME/"' not in script
-    assert '"release-notes-v1.4.5-rc.6.md"' in script
+    assert '"release-notes-v1.4.6-rc.1.md"' in script
     for document in (
         "user-guide.md",
         "deployment.md",
@@ -1184,7 +1184,7 @@ def test_arm64_native_package_is_host_wrapped_then_chroot_tested() -> None:
     assert "bash packaging/linux/build-native.sh deb" in script
     assert "rpm) bash packaging/linux/build-native.sh rpm" in script
     assert "test-native-package-runtime.sh" in script
-    assert "artifacts/PartyOps-1.4.5-0.rc.6.1.aarch64.rpm arm64" in script
+    assert "artifacts/PartyOps-1.4.6-0.rc.1.1.aarch64.rpm arm64" in script
     assert "artifacts/PartyOps-1.4.5-0.rc.1.1.aarch64.rpm" not in script
     assert "deb|rpm) bash packaging/linux/build-native.sh '$ACTION'" not in script
 

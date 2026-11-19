@@ -2,8 +2,8 @@
 set -euo pipefail
 umask 077
 
-VERSION='1.4.5-rc.6'
-PACKAGE_VERSION='1.4.5.6'
+VERSION='1.4.6-rc.1'
+PACKAGE_VERSION='1.4.6.1'
 MODE='release'
 TARGET_ARCH=''
 OUTPUT_OVERRIDE=''
@@ -892,7 +892,7 @@ Path(path).write_text(
         {
             "format_version": 1,
             "product": "PartyOps",
-            "version": "1.4.5-rc.6",
+            "version": "1.4.6-rc.1",
             "architecture": architecture,
             "source_commit": source_commit,
             "workflow_commit": workflow_commit,

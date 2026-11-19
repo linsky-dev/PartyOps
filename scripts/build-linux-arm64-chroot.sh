@@ -125,11 +125,11 @@ chroot "$ROOTFS" /bin/bash -lc "
     rpm) bash packaging/linux/build-native.sh rpm ;;
     test-deb)
       bash scripts/test-native-package-runtime.sh \
-        artifacts/PartyOps_1.4.5-rc.6_linux_arm64.deb arm64
+        artifacts/PartyOps_1.4.6-rc.1_linux_arm64.deb arm64
       ;;
     test-rpm)
       bash scripts/test-native-package-runtime.sh \
-        artifacts/PartyOps-1.4.5-0.rc.6.1.aarch64.rpm arm64
+        artifacts/PartyOps-1.4.6-0.rc.1.1.aarch64.rpm arm64
       ;;
     prepare-office) bash scripts/prepare-libreoffice-linux-arm64.sh ;;
     test-office)

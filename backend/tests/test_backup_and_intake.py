@@ -7,7 +7,7 @@ import zipfile
 
 from fastapi.testclient import TestClient
 
-from app.backups import verify_backup
+from app.backups import SCHEMA_VERSION, verify_backup
 from app.config import get_settings
 from app.problems import ProblemException
 
@@ -35,7 +35,7 @@ def test_backup_manifest_pairing_and_admin_download(
     path = get_settings().backups_dir / backup["filename"]
     manifest = verify_backup(path)
     assert manifest["format"] == "partyops-backup"
-    assert manifest["schema_version"] == "0026"
+    assert manifest["schema_version"] == SCHEMA_VERSION
 
     admin_download = client.get(f"/api/v1/backups/{backup['id']}/download")
     assert admin_download.status_code == 200

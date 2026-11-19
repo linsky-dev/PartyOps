@@ -234,6 +234,18 @@ def sqlite3_connect(path: Path):
     return sqlite3_dbapi.connect(f"file:{path.as_posix()}?mode=ro", uri=True)
 
 
+def ensure_native_rollback_safe(database: Path) -> None:
+    """启用账号恢复后的数据库只允许原位修复，避免快照回退认证或业务状态。"""
+    if not database.is_file():
+        return
+    with closing(sqlite3_connect(database)) as connection:
+        recovery_enabled = connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='recovery_credentials'"
+        ).fetchone()
+    if recovery_enabled:
+        raise RuntimeError("账号恢复模式已启用。请保留数据库和备份并使用兼容版本前向修复。")
+
+
 def record_upgrade(
     from_revision: str,
     backup_path: Path,

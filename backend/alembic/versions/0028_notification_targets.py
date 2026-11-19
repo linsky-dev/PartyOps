@@ -10,7 +10,9 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column("notifications", sa.Column("target", sa.JSON(), nullable=True))
+    columns = sa.inspect(op.get_bind()).get_columns("notifications")
+    if not any(column["name"] == "target" for column in columns):
+        op.add_column("notifications", sa.Column("target", sa.JSON(), nullable=True))
 
 
 def downgrade() -> None:

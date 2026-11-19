@@ -45,7 +45,7 @@ from .networking import (
     validate_bind_host,
     validate_transport_security,
 )
-from .problems import install_problem_handlers
+from .problems import ProblemException, install_problem_handlers, problem_response
 from .routers import (
     admin,
     ai,
@@ -563,8 +563,20 @@ async def trace_requests(request: Request, call_next):
             request,
         )
     authorization = request.headers.get("Authorization", "").strip().lower()
+    has_session_cookie = bool(request.cookies.get("partyops_session"))
+    bearer = authorization == "bearer" or authorization.startswith("bearer ")
+    if has_session_cookie and bearer:
+        return _apply_security_headers(
+            problem_response(
+                request, ProblemException(
+                    400, "AUTH_SCHEME_CONFLICT", "认证方式冲突", "请使用单一登录会话提交请求。"
+                )
+            ),
+            request,
+        )
+    browser_auth_write = request.url.path in {"/api/v1/auth/login", "/api/v1/auth/recovery/redeem"}
     non_browser_write = (
-        authorization.startswith("bearer ")
+        bearer
         or bool(request.headers.get("X-PartyOps-Device-Token"))
         # 首次入网由无会话的本机 Agent 发起。仅允许精确的入网端点携带
         # 一次性入网码头，路由仍会把请求头与正文做常量时间比对；不能把
@@ -585,7 +597,7 @@ async def trace_requests(request: Request, call_next):
     )
     if (
         request.method.upper() in {"POST", "PUT", "PATCH", "DELETE"}
-        and not non_browser_write
+        and (has_session_cookie or browser_auth_write or not non_browser_write)
         and not _origin_allowed(request)
     ):
         return _apply_security_headers(

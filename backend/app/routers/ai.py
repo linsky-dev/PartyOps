@@ -233,7 +233,7 @@ def get_ai_orchestration_capabilities(
     del user
     return AIOrchestrationCapabilitiesOut.model_validate(
         {
-            "release": "1.4.5-rc.6",
+            "release": "1.4.6-rc.1",
             "planner": active_planner_info(db),
             "components": [
                 {

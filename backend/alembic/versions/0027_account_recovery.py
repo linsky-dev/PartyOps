@@ -10,6 +10,8 @@ depends_on = None
 
 
 def upgrade() -> None:
+    if sa.inspect(op.get_bind()).has_table("recovery_credentials"):
+        return  # 0001 从当前 ORM 元数据创建的全新库已包含此表。
     op.create_table(
         "recovery_credentials",
         sa.Column("id", sa.String(length=36), primary_key=True),
@@ -28,4 +30,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    raise RuntimeError("账号恢复迁移只支持前向修复，避免回退认证和审计状态。")
+    # 未使用该能力的合成旧库可用来演练迁移，不删除已登记的恢复凭据。
+    if op.get_bind().scalar(sa.text("SELECT 1 FROM recovery_credentials LIMIT 1")):
+        raise RuntimeError("账号恢复迁移已有凭据，请保留认证状态并前向修复。")
+    op.drop_table("recovery_credentials")
