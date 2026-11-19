@@ -1190,6 +1190,7 @@ class Notification(Base):
     body: Mapped[str] = mapped_column(Text, default="")
     entity_type: Mapped[str] = mapped_column(String(40), default="")
     entity_id: Mapped[Optional[str]] = mapped_column(String(36), index=True)
+    target: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     dedupe_key: Mapped[str] = mapped_column(String(255), unique=True)
     read_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), index=True)
     revoked_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), index=True)

@@ -1240,6 +1240,7 @@ class NotificationOut(ORMModel):
     entity_type: str
     entity_id: str | None
     read_at: datetime | None
+    revoked_at: datetime | None = None
     created_at: datetime
 
 

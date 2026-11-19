@@ -33,8 +33,10 @@ from .models import (
     TransferChunk,
     User,
     WorkspaceFile,
+    WorkspaceRoot,
     utcnow,
 )
+from .notification_targets import notification_target
 from .notifications import refresh_notifications
 from .projections import process_report_projection
 from .recommendations import index_semantic_batch, refresh_rule_recommendations
@@ -42,6 +44,7 @@ from .recurrence import run_due_rules
 from .routers.business import generate_due_recurring_meetings
 from .storage import purge_expired_deleted_attachments
 from .time_utils import beijing_now
+from .workspace_access import workspace_root_permissions
 
 
 def cleanup_transfer_storage(db, settings) -> int:
@@ -280,6 +283,9 @@ def run_automation_rules(db, admin: User) -> None:
     ).all()
     for rule in rules:
         if rule.trigger == "workspace_file_indexed":
+            owner = db.get(User, rule.owner_id)
+            if not owner or not owner.active:
+                continue
             conditions = rule.conditions or {}
             actions = rule.actions or {}
             name_contains = str(conditions.get("name_contains", "")).strip().lower()
@@ -291,7 +297,7 @@ def run_automation_rules(db, admin: User) -> None:
             }
             files = db.scalars(
                 select(WorkspaceFile)
-                .where(WorkspaceFile.is_directory.is_(False))
+                .where(WorkspaceFile.is_directory.is_(False), WorkspaceFile.in_scope.is_(True))
                 .order_by(WorkspaceFile.last_seen_at.desc())
                 .limit(1_000)
             ).all()
@@ -301,6 +307,9 @@ def run_automation_rules(db, admin: User) -> None:
                 if path_contains and path_contains not in file.relative_path.lower():
                     continue
                 if extensions and file.extension.lower() not in extensions:
+                    continue
+                root = db.get(WorkspaceRoot, file.root_id)
+                if not root or not workspace_root_permissions(db, root, owner)["browse"]:
                     continue
                 dedupe = f"automation:file:{rule.id}:{file.id}:{file.version}"
                 if db.scalar(select(Notification.id).where(Notification.dedupe_key == dedupe)):
@@ -324,6 +333,7 @@ def run_automation_rules(db, admin: User) -> None:
                         + ("；" + "；".join(suggestions) if suggestions else ""),
                         entity_type="workspace_file",
                         entity_id=file.id,
+                        target={**(notification_target("workspace_file", file.id, "files") or {}), "parent_id": root.id},
                         dedupe_key=dedupe,
                     )
                 )
@@ -369,6 +379,7 @@ def run_automation_rules(db, admin: User) -> None:
                     body=body,
                     entity_type="task",
                     entity_id=task.id,
+                    target=notification_target("task", task.id, "overview"),
                     dedupe_key=dedupe,
                 )
             )

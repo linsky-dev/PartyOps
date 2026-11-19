@@ -13,11 +13,13 @@ from .models import (
     Notification,
     PartyDevelopmentCase,
     PartyDevelopmentMilestone,
+    PartyDevelopmentProgressEvent,
     ReminderPreference,
     Task,
     User,
     utcnow,
 )
+from .notification_targets import TASK_SECTIONS, notification_target
 from .task_service import required_materials_missing, visible_tasks
 
 LOCAL_TIMEZONE = timezone(timedelta(hours=8))
@@ -49,6 +51,8 @@ def add_notification(
     entity_type: str,
     entity_id: str | None,
     dedupe_key: str,
+    section: str | None = None,
+    child_id: str | None = None,
 ) -> bool:
     if db.scalar(select(Notification.id).where(Notification.dedupe_key == dedupe_key)):
         return False
@@ -59,6 +63,9 @@ def add_notification(
         body=body,
         entity_type=entity_type,
         entity_id=entity_id,
+        target=notification_target(
+            entity_type, entity_id, section or TASK_SECTIONS.get(notification_type, "overview"), child_id
+        ),
         dedupe_key=dedupe_key,
     )
     db.add(item)
@@ -382,19 +389,32 @@ def refresh_party_development_notifications(
     }
     if not cases:
         return 0
+    confirmed = set(
+        db.execute(
+            select(PartyDevelopmentProgressEvent.case_id, PartyDevelopmentProgressEvent.milestone_type)
+            .where(
+                PartyDevelopmentProgressEvent.case_id.in_(cases),
+                PartyDevelopmentProgressEvent.status == "confirmed",
+            )
+        ).tuples().all()
+    )
     for milestone in db.scalars(
         select(PartyDevelopmentMilestone).where(
             PartyDevelopmentMilestone.case_id.in_(cases),
-            PartyDevelopmentMilestone.actual_at.is_(None),
         )
     ).all():
-        target = milestone.adjusted_at or milestone.planned_at or milestone.legal_deadline_at
-        if not target:
-            continue
-        aware_target = target if target.tzinfo else target.replace(tzinfo=timezone.utc)
-        remaining = (aware_target.astimezone(LOCAL_TIMEZONE).date() - today).days
+        ref = milestone.adjusted_at or milestone.planned_at
+        legal_day = _local_date(milestone.legal_deadline_at)
+        legal = legal_day is not None and (legal_day <= today or ref is None)
+        target_day = legal_day if legal else _local_date(ref)
+        remaining = (target_day - today).days if target_day else 0
         window = "overdue" if remaining < 0 else str(remaining)
-        should_notify = remaining < 0 or remaining in (milestone.reminder_days or [60, 30, 14, 7, 1, 0])
+        completed = milestone.actual_at is not None or (milestone.case_id, milestone.milestone_type) in confirmed
+        should_notify = (
+            not completed
+            and target_day is not None
+            and (remaining < 0 or remaining in (milestone.reminder_days or [60, 30, 14, 7, 1, 0]))
+        )
         case = cases[milestone.case_id]
         for user in recipients:
             prefix = f"{user.id}:party-development:{case.id}:{milestone.id}:"
@@ -414,9 +434,10 @@ def refresh_party_development_notifications(
                     changed += 1
             if not should_notify:
                 continue
-            label = f"已逾期 {-remaining} 天" if remaining < 0 else ("今天到期" if remaining == 0 else f"还有 {remaining} 天")
-            title = f"党员发展节点{label}：{case.name}"
-            body = f"{milestone.milestone_type}，计划日期 {aware_target.astimezone(LOCAL_TIMEZONE):%Y-%m-%d}。请按组织程序核对材料和会议安排。"
+            label = f"已超过 {-remaining} 天" if remaining < 0 else ("今天到期" if remaining == 0 else f"还有 {remaining} 天")
+            date_kind = "法规截止日期" if legal else "参考计划日期"
+            title = f"党员发展{date_kind}{label}：{case.name}"
+            body = f"{milestone.milestone_type}，{date_kind} {target_day:%Y-%m-%d}。请按组织程序核对材料和会议安排。"
             existing = db.scalar(select(Notification).where(Notification.dedupe_key == desired))
             if existing and existing.revoked_at is None and existing.read_at is None:
                 if existing.title != title or existing.body != body:
@@ -434,5 +455,14 @@ def refresh_party_development_notifications(
                     entity_type="party_development_case",
                     entity_id=case.id,
                     dedupe_key=desired,
+                    section="timeline",
+                    child_id=milestone.id,
                 )
     return changed
+
+
+def _local_date(value: datetime | None):
+    if value is None:
+        return None
+    aware = value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    return aware.astimezone(LOCAL_TIMEZONE).date()

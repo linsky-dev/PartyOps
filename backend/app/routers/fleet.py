@@ -88,6 +88,7 @@ from ..networking import (
     service_url,
     validate_advertise_host,
 )
+from ..notification_targets import notification_target
 from ..pki import issue_device_certificate
 from ..problems import ProblemException
 from ..schemas import (
@@ -167,6 +168,7 @@ def notify_root_approval_needed(db: Session, root: WorkspaceRoot, device: Device
                 body=f"协同电脑“{device.name}”申请共享本机目录，请确认范围并授权。",
                 entity_type="workspace_root",
                 entity_id=root.id,
+                  target=notification_target("workspace_root", root.id, "grants"),
                 dedupe_key=dedupe,
             )
         )
@@ -1901,6 +1903,7 @@ def ack_command(
                         ),
                         entity_type="transfer",
                         entity_id=transfer.id,
+                        target=notification_target("transfer", transfer.id, "transfer"),
                         dedupe_key=dedupe,
                     )
                 )
