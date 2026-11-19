@@ -1,5 +1,6 @@
 """通知定位对历史字段、消失的文件和当前共享范围保持兼容。"""
 
+from datetime import datetime, timezone
 from types import SimpleNamespace
 
 import pytest
@@ -156,3 +157,20 @@ def test_notices_resolve_real_non_task_relationships(notice_type, entity_type, k
     assert destination.target and destination.target.kind == kind
     assert destination.target.section == section
     assert destination.target.id == (root.id if kind == "workspace" else entity.id)
+
+
+def test_development_history_keeps_verified_child_after_reissuing_notice():
+    case = SimpleNamespace(id="sample-case", status="active")
+    milestone = SimpleNamespace(id="sample-milestone", case_id=case.id)
+    db = _Objects((PartyDevelopmentCase, case), (PartyDevelopmentMilestone, milestone))
+    item = Notification(
+        user_id=USER.id,
+        notification_type="party_development",
+        entity_type="party_development_case",
+        entity_id=case.id,
+        revoked_at=datetime(2026, 8, 25, tzinfo=timezone.utc),
+        dedupe_key=f"{USER.id}:party-development:{case.id}:{milestone.id}:1:history:old-id",
+    )
+    destination = resolve_notification_target(db, item, USER, _request())
+    assert destination.status == "revoked"
+    assert destination.target and destination.target.child_id == milestone.id

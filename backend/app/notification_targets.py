@@ -82,7 +82,9 @@ def _child_id(item: Notification) -> str | None:
     if item.notification_type in {"comment", "mention"} and len(parts) == 3:
         if parts[0] == "comment" and parts[2] == item.user_id:
             return parts[1]
-    if item.notification_type == "party_development" and len(parts) == 5:
+    if item.notification_type == "party_development" and (
+        len(parts) == 5 or (len(parts) == 7 and parts[5] == "history")
+    ):
         if parts[:3] == [item.user_id, "party-development", item.entity_id]:
             return parts[3]
     return None

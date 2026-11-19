@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -20,6 +20,7 @@ from .models import (
     utcnow,
 )
 from .notification_targets import TASK_SECTIONS, notification_target
+from .party_development import completed_node_keys
 from .task_service import required_materials_missing, visible_tasks
 
 LOCAL_TIMEZONE = timezone(timedelta(hours=8))
@@ -389,15 +390,20 @@ def refresh_party_development_notifications(
     }
     if not cases:
         return 0
-    confirmed = set(
-        db.execute(
-            select(PartyDevelopmentProgressEvent.case_id, PartyDevelopmentProgressEvent.milestone_type)
-            .where(
-                PartyDevelopmentProgressEvent.case_id.in_(cases),
-                PartyDevelopmentProgressEvent.status == "confirmed",
-            )
-        ).tuples().all()
-    )
+    facts = db.execute(
+        select(
+            PartyDevelopmentProgressEvent.case_id,
+            PartyDevelopmentProgressEvent.milestone_type,
+        ).where(
+            PartyDevelopmentProgressEvent.case_id.in_(cases),
+            PartyDevelopmentProgressEvent.status == "confirmed",
+        )
+    ).tuples()
+    confirmed = {
+        (case_id, key)
+        for case_id, fact in facts
+        for key in completed_node_keys(fact)
+    }
     for milestone in db.scalars(
         select(PartyDevelopmentMilestone).where(
             PartyDevelopmentMilestone.case_id.in_(cases),
@@ -439,7 +445,12 @@ def refresh_party_development_notifications(
             title = f"党员发展{date_kind}{label}：{case.name}"
             body = f"{milestone.milestone_type}，{date_kind} {target_day:%Y-%m-%d}。请按组织程序核对材料和会议安排。"
             existing = db.scalar(select(Notification).where(Notification.dedupe_key == desired))
-            if existing and existing.revoked_at is None and existing.read_at is None:
+            if existing and existing.revoked_at is not None:
+                # 改期后可能重新进入同一个提醒窗口，历史行仍保留原有撤销记录。
+                existing.dedupe_key = f"{desired}:history:{existing.id}"
+                db.flush()
+                existing = None
+            if existing and existing.read_at is None:
                 if existing.title != title or existing.body != body:
                     existing.title = title
                     existing.body = body
@@ -461,7 +472,7 @@ def refresh_party_development_notifications(
     return changed
 
 
-def _local_date(value: datetime | None):
+def _local_date(value: datetime | None) -> date | None:
     if value is None:
         return None
     aware = value if value.tzinfo else value.replace(tzinfo=timezone.utc)

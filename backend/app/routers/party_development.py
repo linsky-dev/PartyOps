@@ -37,11 +37,13 @@ from ..models import (
     utcnow,
 )
 from ..party_development import (
+    FACT_REFERENCE_NODES,
     NATIONAL_MATERIALS,
     NODE_LABELS,
     PHASE_LABELS,
     calculate_party_development,
     calculate_reference_plan,
+    completed_node_keys,
     ensure_reference_plan_profile,
     ensure_reference_profile,
     export_result_docx,
@@ -124,27 +126,8 @@ EVENT_TO_ACTUAL_FIELD = {
     "transition_approval": "transition_approval_date",
 }
 
-FACT_REFERENCE_NODES = {
-    "conversation": ("conversation_target", "conversation_window", "conversation_deadline"),
-    "activist_date": ("activist_reference",),
-    "development_object_date": ("development_object_reference",),
-    "political_review_completed": ("political_review_target", "political_review"),
-    "training_completed": ("training",),
-    "pre_review_approved": ("pre_review_target",),
-    "branch_acceptance": ("branch_acceptance_target", "branch_acceptance_deadline"),
-    "committee_approval_actual": ("committee_approval_target", "committee_approval"),
-    "oath": ("oath_target", "oath_deadline"),
-    "transition_branch_meeting": ("transition_branch_target",),
-    "transition_approval": ("transition_approval_target", "transition_approval_deadline"),
-}
-
-
 def _completed_nodes(events: dict[str, PartyDevelopmentProgressEvent]) -> set[str]:
-    return {
-        key
-        for milestone in events
-        for key in (milestone, *FACT_REFERENCE_NODES.get(milestone, ()))
-    }
+    return {key for milestone in events for key in completed_node_keys(milestone)}
 
 
 def _current_progress_events(
@@ -307,7 +290,6 @@ def _apply_reference_plan(
     bump_case_version: bool = True,
 ) -> dict[str, typing.Any]:
     plan = _calculated_reference_plan(db, item)
-    completed = _completed_nodes(_current_progress_events(db, item.id))
     adjustment_values = adjustments or {}
     allowed = {str(node["key"]) for node in plan["nodes"]}
     unknown = sorted(set(adjustment_values) - allowed)
@@ -319,6 +301,7 @@ def _apply_reference_plan(
             "请刷新参考计划后重新调整。",
             extra={"unknown_keys": unknown},
         )
+    completed = _completed_nodes(_current_progress_events(db, item.id))
     previous = {
         row.milestone_type: row
         for row in db.scalars(
@@ -1129,7 +1112,7 @@ def development_statistics(
             )
         )
         for case_id, key in facts:
-            completed[case_id].update((key, *FACT_REFERENCE_NODES.get(key, ())))
+            completed[case_id].update(completed_node_keys(key))
     upcoming = legal_overdue = reference_overdue = 0
     for row in milestones:
         if row.actual_at or row.milestone_type in completed[row.case_id]:
