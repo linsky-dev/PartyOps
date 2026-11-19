@@ -4,27 +4,37 @@ from __future__ import annotations
 
 import json
 import secrets
+import socket
 import sqlite3
+import ssl
+import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing, contextmanager
 from datetime import timedelta
+from http.client import HTTPSConnection
 from pathlib import Path
 from uuid import uuid4
 
 import pytest
+import uvicorn
+from cryptography import x509
 from cryptography.exceptions import UnsupportedAlgorithm
 from cryptography.fernet import Fernet
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.x509.oid import NameOID
 from fastapi import Request
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 from app import account_recovery, local_secrets, recovery_cli
-from app.agent_tls import check_device_tls
+from app.agent_tls import ClientCertificateH11Protocol, check_device_tls
 from app.config import get_settings
 from app.database import Base, DatabaseRuntime, db_runtime
 from app.main import app
 from app.models import AuditLog, Device, RecoveryCredential, User, utcnow
-from app.pki import ensure_tls_material
+from app.pki import ensure_tls_material, issue_device_certificate
 from app.problems import ProblemException
 from app.security import CSRF_COOKIE, SESSION_COOKIE, hash_token
 from app.startup_selftest import verify_sm_runtime
@@ -344,3 +354,55 @@ def test_rc1_device_tls_checks_real_listener_state_and_bound_identity(isolated_c
         with pytest.raises(ProblemException) as error:
             check_device_tls(Request(scope), db, token)
         assert error.value.code == "AGENT_MTLS_REQUIRED"
+
+
+def test_rc1_agent_protocol_reads_distinct_certificates_from_real_local_tls_connections(tmp_path: Path):
+    settings = get_settings().model_copy(update={"data_dir": tmp_path, "environment": "test"})
+    material = ensure_tls_material(settings)
+    contexts = []
+    for suffix in ("one", "two"):
+        key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        csr = x509.CertificateSigningRequestBuilder().subject_name(x509.Name([
+            x509.NameAttribute(NameOID.COMMON_NAME, f"synthetic-{suffix}"),
+        ])).sign(key, hashes.SHA256())
+        bundle = issue_device_certificate(settings, f"synthetic-{suffix}",
+                                          csr.public_bytes(serialization.Encoding.PEM).decode())
+        pem = tmp_path / f"synthetic-{suffix}.pem"
+        pem.write_bytes(bundle["certificate_pem"].encode("ascii") + key.private_bytes(
+            serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption(),
+        ))
+        context = ssl.create_default_context(cafile=str(material["ca_path"]))
+        context.load_cert_chain(pem)
+        contexts.append((context, bundle["certificate_fingerprint"]))
+
+    async def probe(scope, receive, send):
+        value = scope["state"]["partyops_peer_cert_sha256"].encode("ascii")
+        await send({"type": "http.response.start", "status": 200, "headers": []})
+        await send({"type": "http.response.body", "body": value})
+
+    config = uvicorn.Config(
+        probe, http=ClientCertificateH11Protocol, interface="asgi3", ws="none", lifespan="off",
+        ssl_certfile=str(settings.tls_cert_file), ssl_keyfile=str(settings.tls_key_file),
+        ssl_ca_certs=str(material["ca_path"]), ssl_cert_reqs=ssl.CERT_REQUIRED,
+    )
+    server = uvicorn.Server(config)
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
+        listener.bind(("127.0.0.1", 0))
+        port = listener.getsockname()[1]
+        worker = threading.Thread(target=server.run, kwargs={"sockets": [listener]}, daemon=True)
+        worker.start()
+        try:
+            deadline = time.monotonic() + 5
+            while not server.started and worker.is_alive() and time.monotonic() < deadline:
+                time.sleep(0.01)
+            assert server.started
+            for context, expected in contexts:
+                with closing(HTTPSConnection("127.0.0.1", port, context=context, timeout=5)) as connection:
+                    connection.request("GET", "/")
+                    response = connection.getresponse()
+                    assert response.status == 200
+                    assert response.read().decode("ascii") == expected
+        finally:
+            server.should_exit = True
+            worker.join(timeout=6)
+        assert not worker.is_alive()
