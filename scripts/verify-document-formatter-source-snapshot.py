@@ -121,8 +121,8 @@ def stage_upstream(source: Path, destination: Path) -> dict[str, object]:
     if destination.exists() or destination.is_symlink() or destination.is_relative_to(source):
         raise RuntimeError(f"[FORMATTER_SOURCE_STAGE_INVALID] 上游源码需要独立的全新暂存目录：{destination}")
     shutil.copytree(source, destination, ignore=_ignore_build_products)
-    verify(destination, "mac-quotes-tnr")
-    (destination / PUNCTUATION_SOURCE).write_bytes(UPSTREAM_PUNCTUATION_SOURCE.read_bytes())
+    if fingerprint(destination) == (EXPECTED_FILE_COUNT, MAC_QUOTE_AGGREGATE_SHA256):
+        (destination / PUNCTUATION_SOURCE).write_bytes(UPSTREAM_PUNCTUATION_SOURCE.read_bytes())
     return verify(destination)
 
 
@@ -150,7 +150,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--source", type=Path, required=True)
     parser.add_argument("--profile", choices=("upstream", "mac-quotes-tnr"), default="upstream")
-    parser.add_argument("--stage-upstream", type=Path, help="从内嵌 Mac 快照恢复到全新的上游源码目录")
+    parser.add_argument("--stage-upstream", type=Path, help="将锁定源码暂存为上游快照")
     parser.add_argument("--managed-runtime", type=Path, help="核对 Linux 所需的 Windows AnyCPU 载荷及构建清单")
     args = parser.parse_args()
     if args.profile != "upstream" and (args.stage_upstream or args.managed_runtime):

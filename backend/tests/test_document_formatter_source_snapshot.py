@@ -63,6 +63,7 @@ def test_stage_creates_locked_upstream_without_changing_vendored_source(tmp_path
     with pytest.raises(RuntimeError, match="FORMATTER_SOURCE_STAGE_INVALID"):
         module.stage_upstream(vendor, destination)
     assert module.verify(destination) == staged
+    assert module.stage_upstream(destination, tmp_path / "explicit-upstream") == staged
 
 
 def test_linux_managed_runtime_matches_upstream_manifest_and_files(tmp_path: Path) -> None:
