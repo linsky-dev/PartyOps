@@ -114,17 +114,10 @@ jobs:
           import subprocess
           from datetime import datetime, timezone
           from pathlib import Path
+          from scripts.rc1_release_targets import INSTALLER_VALIDATION_TARGETS
 
           root = Path.cwd()
           artifacts = root / "artifacts"
-          targets = [
-              "windows-10-x64", "windows-11-x64", "windows-7-x64",
-              "windows-7-x86",
-              "uos-deb-x64", "uos-deb-arm64", "kylin-deb-arm64", "deepin-deb-loong64",
-              "openeuler-rpm-x86_64", "openeuler-rpm-aarch64",
-              "macos-intel", "macos-apple-silicon",
-          ]
-
           def sha256(path):
               digest = hashlib.sha256()
               with path.open("rb") as stream:
@@ -160,9 +153,20 @@ jobs:
               },
               "installer_targets": [
                   {"target": target, "status": "NOT_RUN", "artifacts": []}
-                  for target in targets
+                  for target in INSTALLER_VALIDATION_TARGETS
+              ],
+              "native_validation_targets": [
+                  {
+                      "target": environment,
+                      "installer_target": installer,
+                      "status": "NOT_RUN",
+                      "artifacts": [],
+                  }
+                  for installer, environments in INSTALLER_VALIDATION_TARGETS.items()
+                  for environment in environments
               ],
               "native_installation_acceptance": "NOT_RUN",
+              "wps_native_acceptance": "NOT_RUN",
               "upgrade_and_rollback_acceptance": "NOT_RUN",
               "signature_status": "NOT_RUN",
               "security_review_status": "NOT_RUN",

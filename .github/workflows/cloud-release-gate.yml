@@ -85,16 +85,11 @@ jobs:
           import json
           import os
           from pathlib import Path
+          from scripts.rc1_release_targets import INSTALLER_VALIDATION_TARGETS, expected_native_targets
 
           root = Path("artifacts/candidate")
           manifest = json.loads((root / "candidate-evidence.json").read_text(encoding="utf-8"))
-          required_targets = {
-              "windows-10-x64", "windows-11-x64", "windows-7-x64",
-              "windows-7-x86",
-              "uos-deb-x64", "uos-deb-arm64", "kylin-deb-arm64", "deepin-deb-loong64",
-              "openeuler-rpm-x86_64", "openeuler-rpm-aarch64",
-              "macos-intel", "macos-apple-silicon",
-          }
+          required_targets = set(INSTALLER_VALIDATION_TARGETS)
           actual_targets = {item.get("target"): item for item in manifest.get("installer_targets", [])}
           blockers = []
           if manifest.get("version") != "1.4.6-rc.1":
@@ -103,7 +98,8 @@ jobs:
               blockers.append("candidate source SHA does not match the requested commit")
           if manifest.get("source_commit_verified") is not True:
               blockers.append("candidate source SHA was not verified by its build")
-          if required_targets != set(actual_targets):
+          if (required_targets != set(actual_targets)
+                  or len(manifest.get("installer_targets", [])) != len(actual_targets)):
               blockers.append("installer target matrix is incomplete or contains unknown targets")
           def verify_artifact(evidence, label):
               filename = evidence.get("filename")
@@ -141,8 +137,30 @@ jobs:
                   continue
               for artifact in artifacts:
                   verify_artifact(artifact, target)
+          native_rows = manifest.get("native_validation_targets", [])
+          actual_native = {item.get("target"): item for item in native_rows}
+          required_native = expected_native_targets()
+          if (set(actual_native) != set(required_native)
+                  or len(native_rows) != len(actual_native)):
+              blockers.append("native target matrix is incomplete or contains duplicate targets")
+          for target, installer_target in required_native.items():
+              evidence = actual_native.get(target)
+              if evidence is None:
+                  continue
+              if evidence.get("installer_target") != installer_target:
+                  blockers.append(f"native target has wrong installer: {target}")
+              if evidence.get("status") != "PASS":
+                  blockers.append(f"native target is {evidence.get('status', 'MISSING')}: {target}")
+              native_artifacts = evidence.get("artifacts")
+              if not native_artifacts:
+                  blockers.append(f"native test evidence is missing: {target}")
+                  continue
+              for artifact in native_artifacts:
+                  verify_artifact(artifact, f"native:{target}")
+
           for status_field in (
               "native_installation_acceptance",
+              "wps_native_acceptance",
               "upgrade_and_rollback_acceptance",
               "signature_status",
               "security_review_status",
