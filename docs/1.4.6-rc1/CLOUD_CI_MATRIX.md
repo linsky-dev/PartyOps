@@ -24,6 +24,12 @@ Windows 7 SP1 x86/x64、Deepin 25.2.0 LoongArch64、麒麟与 UOS 桌面、openE
 候选来源：PyMuPDF Lite 2.1 的官方 PyPI 页 https://pypi.org/project/pymupdf-lite/2.1/ 及官方精简版说明 https://github.com/pymupdf/PyMuPDF/blob/main/README-lite.md 。状态以本轮原生 Actions 日志为准。
 
 - **原生 PDF API 首轮实证：** [GitHub Actions #44740939940](https://github.com/linsky-dev/PartyOps/actions/runs/44740939940) 在 Windows ARM64 通过 PyMuPDF Lite 2.1 的十项合成接口测试，包含旧 `fitz` API 兼容导入、PDF 读取、提取、渲染和异常拒绝；[临时 BUILD_ONLY 证据](https://github.com/linsky-dev/PartyOps/actions/runs/44740939940/artifacts/14631305434)。`fitz` 已提示将来弃用，仅属适配风险记录，不修改已有排版代码。
-- **业务模块专项（待实际运行）：** 新增隔离验证 `app.intake._extract_pdf` 的真实 PartyOps 源码路径，使用纯合成 PDF 测试正常识别、加密拒绝、超过 500 页上限的拒绝；不接触真实文件、OCR 引擎、WPS 或完整安装包，结果必须单独留证。
+- **业务模块专项（已通过原生云端合成测试）：** 新增隔离验证 `app.intake._extract_pdf` 的真实 PartyOps 源码路径，使用纯合成 PDF 测试正常识别、加密拒绝、超过 500 页上限的拒绝；不接触真实文件、OCR 引擎、WPS 或完整安装包，结果必须单独留证。
 
-- **原始 EmbeddingRuntime 业务代码的合成复验（待实际运行）：** 在隔离 Windows ARM64 Runner 上直接通过 AST 提取 GitHub 源码中的原始 `EmbeddingRuntime` 类，依赖项在测试命名空间中注入，而不修改 `backend/app/local_ai.py`。使用合成 WordLevel tokenizer 和只有 Cast/Unsqueeze/Concat 的微型 ONNX 图，运行原 `encode()` 路径，覆盖 CLS/Mean 池化、padding、查询前缀、模型切换、维度和不支持池化拒绝、卸载。只可认定源方法逻辑与隔离候选运行时的兼容性，不代表全应用依赖、正式 BGE 模型包或生产 AI 已验收。
+- **原始 EmbeddingRuntime 业务代码的合成复验（已通过原生云端测试）：** 在隔离 Windows ARM64 Runner 上直接通过 AST 提取 GitHub 源码中的原始 `EmbeddingRuntime` 类，依赖项在测试命名空间中注入，而不修改 `backend/app/local_ai.py`。使用合成 WordLevel tokenizer 和只有 Cast/Unsqueeze/Concat 的微型 ONNX 图，运行原 `encode()` 路径，覆盖 CLS/Mean 池化、padding、查询前缀、模型切换、维度和不支持池化拒绝、卸载。只可认定源方法逻辑与隔离候选运行时的兼容性，不代表全应用依赖、正式 BGE 模型包或生产 AI 已验收。
+
+## Windows ARM64 真 BGE 模型权重专项（独立候选，待实证）
+
+新增 `cloud-arm64-real-bge-candidate.yml` 仅在原生 Windows ARM64 上运行，使用固定提交 `onnx-community/bge-small-zh-v1.5-ONNX@18e2da99700c49ed48c0a0e3683da39348fbbb36` 的 FP32 ONNX 模型及外置权重，配合固定上游 `BAAI/bge-small-zh-v1.5@7999e1d3359715c523056ef9478215996d62a620` 的 tokenizer.json。下载过程核对预置 SHA-256 与大小上限，核验不通过立即拒绝，不把权重或任何私钥上传到 GitHub 审查附件。运行现有 `EmbeddingRuntime` 源码提取类，验证中文真实 512 维向量、CLS 归一化、相同/不同文本相似度、查询前缀和卸载。
+
+注意：ONNX Community 是**第三方导出**，并非已有 RC6 正式签名的 94,965,776 字节 `.partyops-modelpack`，也不声称与历史 `3f24c066…` ONNX 逐字节一致。通过只意味着原生 ARM64 上这组可溯源真实权重与隔离候选运行时可协同工作；正式模型包签名、PartyOps 导入启用、整包安装、资源指标、WPS 和许可证/再分发审查仍是独立门禁。来源：https://huggingface.co/onnx-community/bge-small-zh-v1.5-ONNX/commit/18e2da99700c49ed48c0a0e3683da39348fbbb36 。
