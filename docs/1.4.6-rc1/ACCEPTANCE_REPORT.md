@@ -12,9 +12,10 @@
 | Windows 云端全量后端基线 | FAIL | [运行 44527709198](https://github.com/linsky-dev/PartyOps/actions/runs/44527709198)，`f15480b` 得到 2204 通过、32 失败、13 跳过。问题包括新模式测试夹具、通知回归、Windows 路径和缺失的外部构建输入。 |
 | 回滚、升级包模式及 生产 CSR 入网 | PASS | Windows x64 定向回归 101 项通过，沿正式 RC6 模式 `0026` 升级到 `0028`。 |
 | 文件、AI、对象关联与 PKI 专项 | PASS | Windows x64 115 项通过，使用合成数据验证 HTTP 访问域和 PKI 异常路径。独立只读复核通过上轮两项权限泄露修复。 |
-| 发展时间轴与提醒收敛 | PASS | Windows x64 55 项通过，覆盖确认实际节点、保留参考日期、撤销旧提醒及重新进入提醒窗口。 |
+| 发展时间轴与提醒收敛 | PASS | Windows x64 55 项通过，覆盖确认实际节点、保留参考日期、撤销旧提醒及重新进入提醒窗口。后续 36 项专项独立验证法规和参考窗口、同日双提醒、旧通知已读状态及定位。 |
 | 前端本地候选专项 | PASS | 244 项通过，行覆盖率 96.54%，分支覆盖率 93.04%。类型检查、生产构建及 4 项 Sites 测试通过。 |
 | 六架构真实国密运行时 | PARTIAL | [运行 44527709086](https://github.com/linsky-dev/PartyOps/actions/runs/44527709086)。Windows x64、Ubuntu x64/ARM64 和 macOS Apple Silicon 通过真实 SM3/SM4-GCM 探测。Windows ARM64、macOS Intel 已安装原生 Python 3.12，缺本版锁定的 cryptography wheel，标记 BLOCKED。 |
+| Windows .NET 前置输入 | PASS | 本地调用既有封包校验，微软离线前置包的大小、固定 SHA-256 和 Authenticode 通过，8 项 PE 静态测试通过。此处未安装 .NET。 [微软官方来源](https://dotnet.microsoft.com/en-us/download/dotnet-framework/net48) |
 | 十包构建与逐包真实安装 | NOT_RUN | 尚无本次冻结制品。 |
 | 特殊目标原生安装、升级及真实 WPS | BLOCKED | 需要对应目标环境和合法可用的 WPS 输入。 |
 | 双官网预览及下载回读 | BLOCKED | EdgeOne 控制台可见内容缺少可重建的原始工程。 |
