@@ -35,3 +35,9 @@ Windows 7 SP1 x86/x64、Deepin 25.2.0 LoongArch64、麒麟与 UOS 桌面、openE
 注意：ONNX Community 是**第三方导出**，并非已有 RC6 正式签名的 94,965,776 字节 `.partyops-modelpack`，也不声称与历史 `3f24c066…` ONNX 逐字节一致。通过只意味着原生 ARM64 上这组可溯源真实权重与隔离候选运行时可协同工作；正式模型包签名、PartyOps 导入启用、整包安装、资源指标、WPS 和许可证/再分发审查仍是独立门禁。来源：https://huggingface.co/onnx-community/bge-small-zh-v1.5-ONNX/commit/18e2da99700c49ed48c0a0e3683da39348fbbb36 。
 
 - 固定 tokenizer SHA 纠正记录：2026-11-20 原生 ARM64 从 `BAAI/bge-small-zh-v1.5@7999e1d…` 下载到 439,125 字节，SHA-256 为 `48cea5d44424912a6fd1ea647bf4fe50b55ab8b1e5879c3275f80e339e8fae26`。历史 RC6 验收表中 `258135af…` 为历史封装输入，不能作为当前 BAAI 上游 tokenizer 的文件 SHA；首轮检测因此阻断且未执行真实模型推理。纠正后仍需云端实际运行才可标记 PASS。
+
+## ARM64 签名模型包 → 原始向量化连续测试
+
+增量测试 `scripts/probe_arm64_signed_embedding_chain.py` 使用原始 PartyOps 构建器、原始模型包校验函数和原始 `EmbeddingRuntime` 类。仅在原生 Windows ARM64 的固定 `cryptography==50.0.0` 源构建验证后，安装实验专用 `numpy==2.3.5`、`onnxruntime==1.24.2`、`onnx==1.23.2`、`tokenizers==0.23.3` 官方原生 wheel，生成可执行但极小的合成 ONNX/分词器，使用一次性 Ed25519 密钥打包。验签和 SHA-256 成功后才展开模型，原 `encode()` 验证批量向量、查询前缀和归一化；载荷篡改必须在执行前阻断。
+
+测试钥匙、原始 ZIP 和所有模型文件在临时目录内创建及销毁，GitHub 仅留签名包的 SHA-256、源码 SHA、候选依赖版本、脱敏结果。此测试没有正式公钥、RC6 模型包、真实用户数据或应用导入/数据库激活，不代表模型包可公开发布。WPS 核心、生产锁文件和现有 `backend/app` 均不改动。

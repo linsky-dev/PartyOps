@@ -76,6 +76,7 @@ jobs:
             tests/test_rc1_onnx_arm64_candidate_contract.py \
             tests/test_rc1_real_bge_arm64_contract.py \
             tests/test_rc1_arm64_modelpack_signature_contract.py \
+            tests/test_rc1_arm64_signed_embedding_chain_contract.py \
             tests/test_rc1_arm64_pdf_lite_contract.py \
             tests/test_document_formatter_source_snapshot.py \
             tests/test_160_rc4_upgrade_startup.py tests/test_version_consistency_gate.py \
