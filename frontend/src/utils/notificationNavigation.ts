@@ -42,12 +42,15 @@ export async function openNotification(router: Router, item: NotificationItem): 
   const attempt = ++latestAttempt;
   noticeDialog.value = null;
   try {
-    if (!item.read_at) {
-      const marked = await api.post<NotificationItem>(`/notifications/${item.id}/read`);
-      item.read_at = marked.read_at;
-    }
+    // 先确认能读取该通知的当前定位结果。网络异常或越权拒绝时
+    // 不应提前消耗“未读”状态；用户再次打开可继续重试。
     const resolution = await api.get<NotificationResolution>(`/notifications/${item.id}/target`);
     if (attempt !== latestAttempt) return;
+    if (!item.read_at) {
+      const marked = await api.post<NotificationItem>(`/notifications/${item.id}/read`);
+      if (attempt !== latestAttempt) return;
+      item.read_at = marked.read_at;
+    }
     const destination = resolution.target ? notificationLocation(resolution.target) : undefined;
     if (resolution.status === "ready" && destination) {
       await router.push(destination);

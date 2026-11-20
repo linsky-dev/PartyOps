@@ -69,14 +69,42 @@ describe("通知进入业务对象", () => {
     expect(noticeDialog.value?.destination).toMatchObject({ path: "/tasks/task-1" });
   });
 
-  it("定位请求失败后可重试，不重复写入已读", async () => {
+  it("定位请求失败时保留未读状态，重试成功才标记", async () => {
     post.mockResolvedValue({ read_at: notice.created_at });
     get.mockRejectedValueOnce(new TypeError("离线")).mockResolvedValueOnce({ status: "ready", target: child });
-    await openNotification(router, { ...notice });
+    const item = { ...notice };
+    await openNotification(router, item);
+    expect(item.read_at).toBeNull();
+    expect(post).not.toHaveBeenCalled();
     expect(noticeDialog.value?.retry).toBeTypeOf("function");
     await noticeDialog.value?.retry?.();
     expect(post).toHaveBeenCalledTimes(1);
+    expect(get).toHaveBeenCalledTimes(2);
     expect(push).toHaveBeenCalledTimes(1);
+    expect(item.read_at).toBe(notice.created_at);
+  });
+
+  it("只在完成目标校验后写入已读", async () => {
+    post.mockResolvedValue({ read_at: notice.created_at });
+    get.mockResolvedValue({ status: "ready", target: child });
+    await openNotification(router, { ...notice });
+    expect(get.mock.invocationCallOrder[0]).toBeLessThan(post.mock.invocationCallOrder[0]);
+  });
+
+  it("切换到另一条通知后不标记先前未完成的定位", async () => {
+    let releasePrevious!: (value: NotificationResolution) => void;
+    const previous = new Promise<NotificationResolution>((resolve) => { releasePrevious = resolve; });
+    get.mockReturnValueOnce(previous).mockResolvedValueOnce({ status: "ready", target: child });
+    post.mockResolvedValue({ read_at: notice.created_at });
+    const first = { ...notice };
+    const second = { ...notice, id: "notice-2" };
+    const older = openNotification(router, first);
+    await openNotification(router, second);
+    releasePrevious({ status: "ready", target: child });
+    await older;
+    expect(first.read_at).toBeNull();
+    expect(post).toHaveBeenCalledTimes(1);
+    expect(post).toHaveBeenCalledWith("/notifications/notice-2/read");
   });
 
   it("按目标类型构造归档时间轴、传输、审批和共享文件入口", () => {
