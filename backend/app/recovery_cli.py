@@ -16,6 +16,10 @@ if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
 
+class RecoveryCLIError(ValueError):
+    """可以安全显示给本机操作员的固定提示。"""
+
+
 def is_os_administrator() -> bool:
     if os.name == "nt":
         from ctypes import windll
@@ -28,17 +32,17 @@ def is_os_administrator() -> bool:
 def trusted_data_directory(path: Path) -> Path:
     """在连接现有数据库前确认实际本机路径，拒绝重解析点与过宽权限。"""
     if not path.is_absolute():
-        raise ValueError("请提供主机已配置的绝对数据目录。")
+        raise RecoveryCLIError("请提供主机已配置的绝对数据目录。")
     if os.name == "nt":
         from ctypes import windll
 
         if windll.kernel32.GetDriveTypeW(path.anchor) != 3:
-            raise ValueError("主机恢复只能使用本机固定磁盘上的数据目录。")
+            raise RecoveryCLIError("主机恢复只能使用本机固定磁盘上的数据目录。")
     if ".." in path.parts:
-        raise ValueError("恢复目录必须使用规范的绝对路径。")
+        raise RecoveryCLIError("恢复目录必须使用规范的绝对路径。")
     database = path / "partyops.db"
     if not database.is_file() or not path.is_dir():
-        raise ValueError("指定目录没有已初始化的 PartyOps 主机数据库。")
+        raise RecoveryCLIError("指定目录没有已初始化的 PartyOps 主机数据库。")
     for component in (database, path / ".partyops-instance.lock", path, *path.parents):
         try:
             info = component.lstat()
@@ -49,9 +53,9 @@ def trusted_data_directory(path: Path) -> Path:
         if stat.S_ISLNK(info.st_mode) or (
             getattr(info, "st_file_attributes", 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT
         ):
-            raise ValueError("恢复目录或数据库包含不受支持的链接路径。")
+            raise RecoveryCLIError("恢复目录或数据库包含不受支持的链接路径。")
         if os.name != "nt" and component in {path, database} and info.st_mode & 0o022:
-            raise ValueError("数据目录或数据库允许其他账号写入，请先核对主机权限。")
+            raise RecoveryCLIError("数据目录或数据库允许其他账号写入，请先核对主机权限。")
     return path
 
 
@@ -76,7 +80,7 @@ def authorize_local_maintenance(db: Session, username: str, password: str) -> st
         User.archived_at.is_(None),
     ))
     if admin is None or not verify_password(password, admin.password_hash):
-        raise ValueError("管理员授权验证未通过。")
+        raise RecoveryCLIError("管理员授权验证未通过。")
     proof = secrets.token_urlsafe(32)
     setting_key = f"{HOST_RECOVERY_PREFIX}{admin.id}"
     db.merge(SystemSetting(key=setting_key, value=sm3_digest(proof.encode("ascii"))))
@@ -111,7 +115,7 @@ def issue_local_admin_recovery(db: Session, proof: str) -> str:
                     write_audit(db, None, "auth.host_recovery_authorization_consumed", "user", admin.id)
                     return issued.credential
                 break
-    raise ValueError("本机维护授权无效、已使用或已撤销。")
+    raise RecoveryCLIError("本机维护授权无效、已使用或已撤销。")
 
 
 def _run(path: Path, action: str, identity: str, proof: str) -> str:
@@ -133,7 +137,7 @@ def _run(path: Path, action: str, identity: str, proof: str) -> str:
     lock.acquire()
     try:
         if not inspect(db_runtime.engine).has_table("recovery_credentials"):
-            raise ValueError("主机尚未完成 1.4.6 账号恢复迁移。")
+            raise RecoveryCLIError("主机尚未完成 1.4.6 账号恢复迁移。")
         with db_runtime.session_factory.begin() as db:
             if action == "authorize":
                 return authorize_local_maintenance(db, identity, proof)
@@ -158,7 +162,7 @@ def main(argv: list[str] | None = None) -> int:
             warnings.simplefilter("error", getpass.GetPassWarning)
             proof = getpass.getpass(prompt)
         result = _run(path, args.action, identity, proof)
-    except (OSError, ValueError, RuntimeError) as exc:
+    except RecoveryCLIError as exc:
         print(str(exc), file=sys.stderr)
         return 2
     except Exception:
