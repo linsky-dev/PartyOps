@@ -98,7 +98,7 @@ jobs:
           corepack prepare 'pnpm@11.9.0' --activate
           corepack pnpm --dir frontend sbom \
             --sbom-format cyclonedx --sbom-spec-version 1.6 --prod --lockfile-only \
-            --out ../artifacts/sbom-frontend.cdx.json
+            --out "$GITHUB_WORKSPACE/artifacts/sbom-frontend.cdx.json"
 
       - name: Write candidate provenance and target status
         shell: bash

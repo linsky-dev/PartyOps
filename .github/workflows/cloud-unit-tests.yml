@@ -65,6 +65,7 @@ jobs:
           .venv/bin/pytest tests/test_auth_hardening.py tests/test_rc1_account_recovery.py \
             tests/test_rc1_recovery_cli.py \
             tests/test_rc1_agent_identity.py tests/test_z_recovery_and_events.py tests/test_enrollment_codes.py \
+            tests/test_rc1_transport_enrollment_boundaries.py \
             tests/test_146_notification_target_resilience.py tests/test_146_workspace_context.py \
             tests/test_rc1_workspace_context_access.py \
             tests/test_146_development_tracks.py tests/test_party_development.py \
@@ -170,7 +171,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        architecture: [x64, x86]
+        architecture: [x64, x86, AnyCPU]
     steps:
       - name: Check out the triggering commit
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -202,6 +203,10 @@ jobs:
             Tee-Object -FilePath "$evidence/source-snapshot.json"
           & (Join-Path $source 'tools/Build-Windows.ps1') -Configuration Release -Platform $env:FORMATTER_ARCH 2>&1 |
             Tee-Object -FilePath "$evidence/build-and-regression.log"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & ./scripts/build-document-formatter-host.ps1 -Platform $env:FORMATTER_ARCH `
+            -DocumentFormatterSource $source -StageDirectory "$evidence/host" 2>&1 |
+            Tee-Object -FilePath "$evidence/relocated-host-build.log"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Upload formatter source build evidence
