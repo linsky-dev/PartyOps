@@ -65,6 +65,7 @@ jobs:
           .venv/bin/pytest tests/test_auth_hardening.py tests/test_rc1_account_recovery.py \
             tests/test_rc1_agent_identity.py tests/test_z_recovery_and_events.py tests/test_enrollment_codes.py \
             tests/test_146_notification_target_resilience.py tests/test_146_workspace_context.py \
+            tests/test_rc1_workspace_context_access.py \
             tests/test_146_development_tracks.py tests/test_party_development.py \
             tests/test_160_rc4_upgrade_startup.py tests/test_version_consistency_gate.py \
             --junitxml=../artifacts/backend/junit.xml \
@@ -88,7 +89,6 @@ jobs:
           backend/.venv/bin/bandit -r backend/app -f json -ll \
             -o artifacts/backend/bandit.json
           backend/.venv/bin/ruff check backend/app backend/tests
-          (cd backend && .venv/bin/python -m mypy app --no-incremental)
 
       - name: Upload backend test and security evidence
         if: always()
@@ -103,6 +103,8 @@ jobs:
     name: Windows full backend suite and coverage
     runs-on: windows-2025
     timeout-minutes: 60
+    env:
+      PYTHONUTF8: '1'
     steps:
       - name: Check out the triggering commit
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -115,6 +117,17 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Fetch and verify the pinned .NET Framework test input
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = (Get-Location).Path
+          $available = (Get-Item -LiteralPath $root).PSDrive.Free
+          if ($available -lt 4GB) { throw 'Windows runner has less than 4 GiB available.' }
+          . ./packaging/windows/prepare-dotnet48-runtime.ps1
+          Add-VerifiedPartyOpsDotNet48Prerequisite -RepoRoot $root `
+            -Destination (Join-Path $root 'artifacts/windows-dotnet48-input')
+
       - name: Run the full backend suite with native Windows interfaces
         shell: pwsh
         run: |
@@ -126,12 +139,17 @@ jobs:
           New-Item -ItemType Directory -Path artifacts/windows -Force | Out-Null
           Push-Location backend
           try {
-            .venv/Scripts/python.exe -m pytest tests --cov=app --cov-branch --cov-report=json:../artifacts/windows/coverage.json --junitxml=../artifacts/windows/junit.xml 2>&1 | Tee-Object -FilePath ../artifacts/windows/pytest.log
+            .venv/Scripts/python.exe -m mypy app --no-incremental 2>&1 | Tee-Object -FilePath ../artifacts/windows/mypy.log
+            .venv/Scripts/python.exe -m pytest tests -rs --cov=app --cov-branch --cov-report=json:../artifacts/windows/coverage.json --junitxml=../artifacts/windows/junit.xml 2>&1 | Tee-Object -FilePath ../artifacts/windows/pytest.log
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           } finally {
             Pop-Location
           }
-          python scripts/verify-coverage.py artifacts/windows/coverage.json
+
+      - name: Check the existing backend release coverage thresholds
+        if: ${{ !cancelled() }}
+        shell: pwsh
+        run: python scripts/verify-coverage.py artifacts/windows/coverage.json --line 95 --branch 92
 
       - name: Upload Windows evidence
         if: always()
