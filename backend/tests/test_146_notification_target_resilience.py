@@ -25,6 +25,8 @@ from app.models import (
     WorkspaceRoot,
 )
 from app.notification_targets import resolve_notification_target
+from app.problems import ProblemException
+from app.routers import workspace
 
 USER = SimpleNamespace(id="notice-user", role=UserRole.STAFF)
 ROOT = SimpleNamespace(id="file-root", enabled=True, source=SimpleNamespace(value="host"))
@@ -174,3 +176,90 @@ def test_development_history_keeps_verified_child_after_reissuing_notice():
     destination = resolve_notification_target(db, item, USER, _request())
     assert destination.status == "revoked"
     assert destination.target and destination.target.child_id == milestone.id
+
+
+@pytest.mark.parametrize(("revoked", "status"), [(False, "unavailable"), (True, "revoked")])
+def test_notice_without_entity_returns_no_navigation(revoked, status):
+    item = Notification(
+        user_id=USER.id, notification_type="assignment", entity_type="task",
+        entity_id=None, dedupe_key="detached-task",
+        revoked_at=datetime(2026, 8, 25, tzinfo=timezone.utc) if revoked else None,
+    )
+    result = resolve_notification_target(_Objects(), item, USER, _request())
+    assert result.status == status
+    assert result.target is None
+
+
+@pytest.mark.parametrize(("archived", "status"), [(False, "unavailable"), (True, "archived")])
+def test_comment_outside_target_task_never_supplies_deep_link(archived, status):
+    task = SimpleNamespace(
+        id="current-task", deleted_at=None, sensitivity=Sensitivity.NORMAL,
+        status=TaskStatus.ARCHIVED if archived else TaskStatus.IN_PROGRESS,
+    )
+    comment = SimpleNamespace(id="foreign-comment", task_id="other-task")
+    item = Notification(
+        user_id=USER.id, notification_type="comment", entity_type="task", entity_id=task.id,
+        dedupe_key=f"comment:{comment.id}:{USER.id}",
+    )
+    result = resolve_notification_target(_Objects((Task, task), (TaskComment, comment)), item, USER, _request())
+    assert result.status == status
+    assert result.target and result.target.id == task.id
+    assert result.target.child_id is None
+
+
+def test_archived_development_case_without_node_preserves_timeline_link():
+    case = SimpleNamespace(id="archived-case", status="archived")
+    item = Notification(
+        user_id=USER.id, notification_type="party_development", entity_type="party_development_case",
+        entity_id=case.id, dedupe_key=f"{USER.id}:party-development:{case.id}:missing:legal_deadline:7",
+    )
+    result = resolve_notification_target(_Objects((PartyDevelopmentCase, case)), item, USER, _request())
+    assert result.status == "archived"
+    assert result.target and result.target.archived and result.target.section == "timeline"
+    assert result.target.child_id is None
+
+
+def test_expired_outbound_transfer_only_links_for_requester_and_admin():
+    transfer = SimpleNamespace(
+        id="expired-transfer", direction=TransferDirection.HOST_TO_DEVICE,
+        status=TransferStatus.EXPIRED, requested_by="requester",
+    )
+    item = Notification(
+        user_id=USER.id, notification_type="transfer", entity_type="transfer", entity_id=transfer.id,
+        dedupe_key="expired-transfer",
+    )
+    db = _Objects((Transfer, transfer))
+    denied = resolve_notification_target(db, item, USER, _request())
+    assert denied.status == "unavailable" and denied.target is None
+    admin = SimpleNamespace(id=USER.id, role=UserRole.ADMIN)
+    result = resolve_notification_target(db, item, admin, _request())
+    assert result.status == "revoked"
+    assert result.target and result.target.section == "transfers"
+
+
+def test_approved_root_uses_current_workspace_scope():
+    root = SimpleNamespace(
+        id="approved-root", enabled=True, approval_status="approved", source=SimpleNamespace(value="host"),
+    )
+    item = Notification(
+        user_id=USER.id, notification_type="root_approval", entity_type="workspace_root",
+        entity_id=root.id, dedupe_key="old-approval",
+    )
+    db = _Objects((WorkspaceRoot, root))
+    admin = SimpleNamespace(id=USER.id, role=UserRole.ADMIN)
+    settled = resolve_notification_target(db, item, admin, _request())
+    assert settled.status == "unavailable" and settled.target and settled.target.section == "grants"
+    local = resolve_notification_target(db, item, USER, _request())
+    assert local.status == "ready" and local.target and local.target.kind == "workspace"
+    remote = resolve_notification_target(db, item, USER, _request("192.0.2.5"))
+    assert remote.status == "unavailable" and remote.target is None
+
+
+def test_unexpected_workspace_failure_is_returned_instead_of_silencing(monkeypatch):
+    def unexpected(*_args):
+        raise ProblemException(503, "SYNTHETIC_UNAVAILABLE", "文件服务不可用", "合成故障")
+
+    monkeypatch.setattr(workspace, "get_file", unexpected)
+    with pytest.raises(ProblemException) as failure:
+        resolve_notification_target(_Objects(), _file_notification(None), USER, _request())
+    assert failure.value.code == "SYNTHETIC_UNAVAILABLE"

@@ -34,7 +34,7 @@ from app.agent_tls import ClientCertificateH11Protocol, check_device_tls
 from app.config import get_settings
 from app.database import Base, DatabaseRuntime, db_runtime
 from app.main import app
-from app.models import AuditLog, Device, RecoveryCredential, User, utcnow
+from app.models import AuditLog, Device, RecoveryCredential, SystemSetting, User, utcnow
 from app.pki import ensure_tls_material, issue_device_certificate
 from app.problems import ProblemException
 from app.security import CSRF_COOKIE, SESSION_COOKIE, hash_token
@@ -307,6 +307,58 @@ def test_rc1_sm_runtime_known_answers_and_disabled_provider(monkeypatch):
     with pytest.raises(local_secrets.LocalRecoveryError) as failure:
         local_secrets._encryption_context(bytes(16), bytes(12))
     assert failure.value.code == "ENROLLMENT_CRYPTO_UNAVAILABLE"
+    with pytest.raises(local_secrets.LocalRecoveryError) as failure:
+        local_secrets._decryption_context(bytes(16), bytes(12), bytes(16))
+    assert failure.value.code == "ENROLLMENT_CRYPTO_UNAVAILABLE"
+
+
+def test_rc1_sm4_rotates_at_write_limit_and_reads_previous_envelope(isolated_crypto_store):
+    runtime = isolated_crypto_store
+    payload = {"device_id": "rotation-device"}
+    with runtime.session_factory.begin() as db:
+        first = local_secrets.encrypt_local_json(payload, device_id="rotation-device", db=db)
+    with runtime.session_factory.begin() as db:
+        setting = db.get(SystemSetting, local_secrets.ACTIVE_KEY_SETTING)
+        assert setting is not None
+        setting.value = {"id": first.split(".")[2], "writes": local_secrets.MAX_KEY_WRITES}
+
+    with runtime.session_factory.begin() as db:
+        second = local_secrets.encrypt_local_json(payload, device_id="rotation-device", db=db)
+        setting = db.get(SystemSetting, local_secrets.ACTIVE_KEY_SETTING)
+        assert setting and setting.value == {"id": second.split(".")[2], "writes": 1}
+    assert first.split(".")[2] != second.split(".")[2]
+    assert local_secrets.decrypt_local_json(first, device_id="rotation-device") == payload
+    assert local_secrets.decrypt_local_json(second, device_id="rotation-device") == payload
+
+
+@pytest.mark.parametrize("config", [True, {"id": False, "writes": 1}, {"id": "a" * 32, "writes": 0},
+                                     {"id": "invalid-key-id", "writes": 1}])
+def test_rc1_invalid_sm4_key_metadata_does_not_create_new_key(isolated_crypto_store, config):
+    runtime = isolated_crypto_store
+    with runtime.session_factory.begin() as db:
+        db.add(SystemSetting(key=local_secrets.ACTIVE_KEY_SETTING, value=config))
+    with runtime.session_factory.begin() as db:
+        with pytest.raises(local_secrets.LocalRecoveryError) as failure:
+            local_secrets.encrypt_local_json({"device_id": "fixture"}, device_id="fixture", db=db)
+        assert failure.value.code == "ENROLLMENT_KEY_INVALID"
+    assert not (local_secrets._key_path().parent / "enrollment-keys").exists()
+
+
+def test_rc1_enrollment_rejects_invalid_legacy_key_and_envelope_structure(isolated_crypto_store):
+    key_path = local_secrets._key_path()
+    key_path.write_bytes(b"malformed-legacy-key")
+    key_path.chmod(0o600)
+    with pytest.raises(local_secrets.LocalRecoveryError) as failure:
+        local_secrets.decrypt_local_json("legacy-record", device_id="fixture")
+    assert failure.value.code == "ENROLLMENT_KEY_INVALID"
+
+    legacy_key = Fernet.generate_key()
+    key_path.write_bytes(legacy_key)
+    non_object = Fernet(legacy_key).encrypt(b"[]").decode()
+    for envelope in (non_object, "v9.sm4-gcm.key.AAAA.AAAA.AAAA", "v1.sm4-gcm.key.AAAA.AAAA.AAAA"):
+        with pytest.raises(local_secrets.LocalRecoveryError) as failure:
+            local_secrets.decrypt_local_json(envelope, device_id="fixture")
+        assert failure.value.code == "ENROLLMENT_RECOVERY_INVALID"
 
 
 def test_rc1_partial_ca_is_not_rebuilt(tmp_path):
