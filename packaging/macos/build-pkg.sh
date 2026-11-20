@@ -166,6 +166,8 @@ if [[ ! -x "$OFFICE_RUNTIME/program/soffice" ]] ||
   printf '%s\n' '[MACOS_OFFICE_RUNTIME_MISSING] 请提供当前架构、包含来源清单和许可证的 LibreOffice headless 运行时。' >&2
   exit 2
 fi
+bash "$ROOT/scripts/prepare-libreoffice-macos.sh" \
+  --architecture "$TARGET_ARCH" --verify-source "$OFFICE_RUNTIME/SOURCE.json"
 if [[ ! -d "$FORMATTER_RUNTIME" ]] ||
   [[ ! -x "$FORMATTER_RUNTIME/partyops-document-formatter-host" ]] ||
   [[ ! -f "$FORMATTER_RUNTIME/source-host.json" ]]; then
@@ -226,6 +228,7 @@ if [[ "$office_description" != *Mach-O* ]] || [[ "$office_description" != *"$TAR
   printf '[MACOS_OFFICE_RUNTIME_ARCH_MISMATCH] soffice 不是 %s Mach-O。\n' "$TARGET_ARCH" >&2
   exit 2
 fi
+/usr/bin/codesign --verify --deep --strict --verbose=2 "$OFFICE_RUNTIME/LibreOffice.app"
 
 mkdir -p "$OUTPUT_DIR"
 # 对每个嵌套 Mach-O 和代码目录逐层签名，再签主 App。--deep 只用于最终
