@@ -25,3 +25,5 @@ Windows 7 SP1 x86/x64、Deepin 25.2.0 LoongArch64、麒麟与 UOS 桌面、openE
 
 - **原生 PDF API 首轮实证：** [GitHub Actions #44740939940](https://github.com/linsky-dev/PartyOps/actions/runs/44740939940) 在 Windows ARM64 通过 PyMuPDF Lite 2.1 的十项合成接口测试，包含旧 `fitz` API 兼容导入、PDF 读取、提取、渲染和异常拒绝；[临时 BUILD_ONLY 证据](https://github.com/linsky-dev/PartyOps/actions/runs/44740939940/artifacts/14631305434)。`fitz` 已提示将来弃用，仅属适配风险记录，不修改已有排版代码。
 - **业务模块专项（待实际运行）：** 新增隔离验证 `app.intake._extract_pdf` 的真实 PartyOps 源码路径，使用纯合成 PDF 测试正常识别、加密拒绝、超过 500 页上限的拒绝；不接触真实文件、OCR 引擎、WPS 或完整安装包，结果必须单独留证。
+
+- **原始 EmbeddingRuntime 业务代码的合成复验（待实际运行）：** 在隔离 Windows ARM64 Runner 上直接通过 AST 提取 GitHub 源码中的原始 `EmbeddingRuntime` 类，依赖项在测试命名空间中注入，而不修改 `backend/app/local_ai.py`。使用合成 WordLevel tokenizer 和只有 Cast/Unsqueeze/Concat 的微型 ONNX 图，运行原 `encode()` 路径，覆盖 CLS/Mean 池化、padding、查询前缀、模型切换、维度和不支持池化拒绝、卸载。只可认定源方法逻辑与隔离候选运行时的兼容性，不代表全应用依赖、正式 BGE 模型包或生产 AI 已验收。

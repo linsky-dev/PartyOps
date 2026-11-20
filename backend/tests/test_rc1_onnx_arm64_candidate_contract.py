@@ -30,3 +30,22 @@ def test_isolated_arm64_onnx_candidate_never_claims_release_readiness() -> None:
     assert '"release_ready": False' in embedding
     assert 'contents: read' in workflow
     assert 'BUILD_ONLY' in workflow
+
+def test_isolated_probe_executes_real_embedding_runtime_class_without_production_changes() -> None:
+    script = (ROOT / "scripts/probe_arm64_partyops_embedding_runtime.py").read_text(encoding="utf-8")
+    workflow = (ROOT / ".github/workflows/cloud-arm64-onnx-candidate.yml").read_text(encoding="utf-8")
+    business = (ROOT / "backend/app/local_ai.py").read_text(encoding="utf-8")
+    assert 'class EmbeddingRuntime' in business
+    assert 'ast.parse(source_text)' in script
+    assert 'item.name == "EmbeddingRuntime"' in script
+    assert 'exec(compile(program' in script
+    assert 'engine.encode(pack' in script
+    assert 'engine.loaded_for(pack.id)' in script
+    assert 'engine.unload()' in script
+    assert 'MODEL_DIMENSION_MISMATCH' in script
+    assert 'MODEL_POOLING_INVALID' in script
+    assert '"full_app_imported": False' in script
+    assert '"real_bge_model_tested": False' in script
+    assert '"release_ready": False' in script
+    assert 'scripts/probe_arm64_partyops_embedding_runtime.py' in workflow
+    assert 'partyops-embedding-runtime.json' in workflow

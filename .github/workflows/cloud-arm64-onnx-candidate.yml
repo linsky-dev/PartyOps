@@ -6,6 +6,8 @@ on:
     paths:
       - '.github/workflows/cloud-arm64-onnx-candidate.yml'
       - 'scripts/probe_arm64_onnx_candidate.py'
+      - 'scripts/probe_arm64_partyops_embedding_runtime.py'
+      - 'backend/app/local_ai.py'
 
 permissions:
   contents: read
@@ -61,6 +63,15 @@ jobs:
           python scripts/probe_arm64_embedding_contract.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+      - name: Execute unchanged PartyOps EmbeddingRuntime source in isolated ARM64 environment
+        shell: pwsh
+        env:
+          PYTHONUTF8: '1'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python scripts/probe_arm64_partyops_embedding_runtime.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: Upload synthetic evidence only
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -69,5 +80,6 @@ jobs:
           path: |
             artifacts/arm64-onnx-candidate/result.json
             artifacts/arm64-onnx-candidate/embedding-contract.json
+            artifacts/arm64-onnx-candidate/partyops-embedding-runtime.json
           if-no-files-found: warn
           retention-days: 14
