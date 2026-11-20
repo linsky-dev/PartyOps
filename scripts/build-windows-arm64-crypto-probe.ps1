@@ -6,6 +6,10 @@ param(
 # 源码采用仓库 uv.lock 中的 cryptography 50.0.0 sdist 以及
 # macOS Intel 同源 SHA-256 验证过的 OpenSSL 3.5.7。
 $ErrorActionPreference = 'Stop'
+# Windows ARM64 Runner 的默认 cp1252 无法打印已有 TAR 校验器的中文成功信息。
+# 只为本次独立探测进程固定 UTF-8，不改变全平台生产运行时。
+$env:PYTHONUTF8 = '1'
+$env:PYTHONIOENCODING = 'utf-8'
 Set-StrictMode -Version Latest
 $PSNativeCommandUseErrorActionPreference = $false
 
