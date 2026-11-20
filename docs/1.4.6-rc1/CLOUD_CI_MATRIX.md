@@ -15,4 +15,4 @@ Windows 7 SP1 x86/x64、Deepin 25.2.0 LoongArch64、麒麟与 UOS 桌面、openE
 
 ## Windows ARM64 AI 推理依赖隔离研究
 
-完整应用仍受锁定 `onnxruntime==1.22.1` 等原生 wheel 缺失影响。由于上游后续版本提供 ARM64 wheel，本轮增加一个 **仅在原生 Windows ARM64 Runner 执行的隔离候选探测**，使用 `onnxruntime==1.24.2`、`numpy==2.3.5`、`onnx==1.23.2` 执行合成 ONNX Identity 模型 CPU 推理。结果单独归为 `BUILD_ONLY`，并与现有 PartyOps 模型、生产锁文件、真实 WPS 和十包验收明确隔离。即使合成模型运行成功，也必须进一步评审 BGE/本地模型算子兼容、应用加载路径、性能、打包、升级和原生验收，才可以考虑 ARM64 特有依赖方案。来源：https://pypi.org/project/onnxruntime/1.24.2/ 、https://pypi.org/project/numpy/2.3.5/ 、https://pypi.org/project/onnx/1.23.2/ 。
+完整应用仍受锁定 `onnxruntime==1.22.1` 等原生 wheel 缺失影响。由于上游后续版本提供 ARM64 wheel，本轮增加一个 **仅在原生 Windows ARM64 Runner 执行的隔离候选探测**，使用 `onnxruntime==1.24.2`、`numpy==2.3.5`、`onnx==1.23.2`、`tokenizers==0.23.3` 执行合成 ONNX Identity CPU 推理、Tokenizer JSON 读取/批量编码及 3 输入嵌入接口模拟。结果单独归为 `BUILD_ONLY`，并与现有 PartyOps 模型、生产锁文件、真实 WPS 和十包验收明确隔离。即使合成模型运行成功，也必须进一步评审 BGE/本地模型算子兼容、应用加载路径、性能、打包、升级和原生验收，才可以考虑 ARM64 特有依赖方案。来源：https://pypi.org/project/onnxruntime/1.24.2/ 、https://pypi.org/project/numpy/2.3.5/ 、https://pypi.org/project/onnx/1.23.2/ 。

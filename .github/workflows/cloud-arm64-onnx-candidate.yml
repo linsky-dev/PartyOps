@@ -38,7 +38,7 @@ jobs:
           PYTHONUTF8: '1'
         run: |
           $ErrorActionPreference = 'Stop'
-          python -m pip install --disable-pip-version-check --only-binary=:all: 'numpy==2.3.5' 'onnxruntime==1.24.2' 'onnx==1.23.2'
+          python -m pip install --disable-pip-version-check --only-binary=:all: 'numpy==2.3.5' 'onnxruntime==1.24.2' 'onnx==1.23.2' 'tokenizers==0.23.3'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -m pip check
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -52,11 +52,22 @@ jobs:
           python scripts/probe_arm64_onnx_candidate.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+      - name: Exercise synthetic PartyOps-style tokenizer and embedding inputs
+        shell: pwsh
+        env:
+          PYTHONUTF8: '1'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python scripts/probe_arm64_embedding_contract.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: Upload synthetic evidence only
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: arm64-onnx-synthetic-build-only-${{ github.sha }}
-          path: artifacts/arm64-onnx-candidate/result.json
+          path: |
+            artifacts/arm64-onnx-candidate/result.json
+            artifacts/arm64-onnx-candidate/embedding-contract.json
           if-no-files-found: warn
           retention-days: 14
