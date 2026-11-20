@@ -7,7 +7,7 @@ param(
 # macOS Intel 同源 SHA-256 验证过的 OpenSSL 3.5.7。
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
-$PSNativeCommandUseErrorActionPreference = $true
+$PSNativeCommandUseErrorActionPreference = $false
 
 if ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString() -ne 'Arm64') {
     throw '[ARM_CRYPTO_WRONG_HOST] 必须使用原生 Windows ARM64 Runner。'
@@ -39,7 +39,15 @@ foreach ($source in @(
 # 复用仓库已有的 TAR 路径/类型/权限/展开体积校验，校验后才解包。
 $validator = @'
 import gzip, subprocess, sys
-with gzip.open(sys.argv[1], "rb") as stream:
+from pathlib import Path
+source = Path(sys.argv[1])
+expanded = source.with_suffix("")
+# subprocess(stdin=GzipFile) passes the underlying compressed fd on Windows,
+# not decompressed TAR bytes. Stream to a real TAR file first.
+with gzip.open(source, "rb") as compressed, expanded.open("xb") as plain:
+    while data := compressed.read(1024 * 1024):
+        plain.write(data)
+with expanded.open("rb") as stream:
     result = subprocess.run(
         [sys.executable, sys.argv[2], "--expected-root", "openssl-3.5.7",
          "--max-members", "100000", "--max-bytes", "1073741824", "--allow-implicit-root"],
