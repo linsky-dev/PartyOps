@@ -300,3 +300,25 @@ def test_unexpected_workspace_failure_is_returned_instead_of_silencing(monkeypat
     with pytest.raises(ProblemException) as failure:
         resolve_notification_target(_Objects(), _file_notification(None), USER, _request())
     assert failure.value.code == "SYNTHETIC_UNAVAILABLE"
+
+
+@pytest.mark.parametrize("revoked", [False, True])
+@pytest.mark.parametrize("entity_type", ["task", "workspace_file", "party_development_case"])
+def test_foreign_recipient_cannot_resolve_any_deep_link(entity_type, revoked):
+    """收到别人的通知对象时，在查业务对象前拒绝，避免泄露定位信息。"""
+    class RejectLookup:
+        def get(self, *_args):
+            raise AssertionError("foreign notification reached business lookup")
+
+    item = Notification(
+        user_id="other-recipient",
+        notification_type="archive_suggestion" if entity_type == "workspace_file" else "comment",
+        entity_type=entity_type,
+        entity_id="foreign-object",
+        target={"kind": entity_type, "id": "foreign-object", "child_id": "foreign-child"},
+        dedupe_key=f"other-recipient:{entity_type}",
+        revoked_at=datetime(2026, 8, 25, tzinfo=timezone.utc) if revoked else None,
+    )
+    result = resolve_notification_target(RejectLookup(), item, USER, _request())
+    assert result.status == "unavailable"
+    assert result.target is None

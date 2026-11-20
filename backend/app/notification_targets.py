@@ -101,6 +101,11 @@ def resolve_notification_target(
 ) -> NotificationDestination:
     from .routers.workspace import current_device_id, get_file
 
+    # 防御性复核通知的实际收件人。即使上游入口漏掉所有权筛选，
+    # 也不能把其他用户的关联任务、设备或文件定位信息交给当前用户。
+    if item.user_id != user.id:
+        return NotificationDestination(status="unavailable")
+
     target: NotificationTarget | None = None
     status: Literal["ready", "unavailable", "archived", "revoked"] = "unavailable"
     entity_id = item.entity_id
