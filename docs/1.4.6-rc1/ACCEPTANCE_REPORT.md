@@ -24,6 +24,8 @@
 | Windows 句柄占用与换库补偿 | PASS | 用真实 Windows 文件句柄占用隔离的 SHM。换库报权限错误后，原 SQLite 主库摘要及两份旁路文件保持一致。另通过五类故障注入，含补偿二次失败时保留同批文件并要求停服。 |
 | Windows x64 修复版 LibreOffice 输入 | PASS | 从上游 MSI 只读解包 26.2.7.3。官方 SHA-256、MSI 及两个启动程序的 Authenticode、x64 PE、许可证和现有打包输入门禁通过。隔离启动及一页合成 DOCX 转 PDF 的回读通过。 [官方来源与校验和](https://download.documentfoundation.org/libreoffice/stable/26.2.7/win/x86_64/LibreOffice_26.2.7_Win_x86-64.msi.mirrorlist) |
 | 五个托管平台国密源码探测（`edafb5d`） | PARTIAL | macOS Intel 新增原生验证，锁定 OpenSSL 3.5.7 源构建与 SM3、SM4-GCM 已知答案、AAD 和标签拒绝通过。其余四个已通过的 Runner 复验通过。Windows ARM64 仍缺锁定 wheel。 [云端运行](https://github.com/linsky-dev/PartyOps/actions/runs/44678047573) |
+| 云端后端全量覆盖率（`e51d1235`） | PASS | [运行 44699646896](https://github.com/linsky-dev/PartyOps/actions/runs/44699646896)：Windows 2324 通过、16 跳过、3 个子测试通过；行覆盖率 96.21%、分支覆盖率 92.00%，达到原 95%/92% 门禁。Linux 专项 170 通过、4 跳过，前端及三个 Windows 排版宿主构建作业均成功。这是 `e51d1235` 的证据，后续安全补丁仍须单独复测。 |
+| 云端分架构探测（`e51d1235`） | PARTIAL | [运行 44699646844](https://github.com/linsky-dev/PartyOps/actions/runs/44699646844)：Windows x64、Ubuntu x64/ARM64、macOS Intel/ARM64 国密运行时探测成功，macOS Intel/ARM64 LibreOffice 独立 headless 探测成功。Windows ARM64 对锁定 `cryptography==50.0.0` 缺 wheel，维持失败/阻塞，不视为已适配。 |
 | 十包构建与逐包真实安装 | NOT_RUN | 尚无本次冻结制品。 |
 | 特殊目标原生安装、升级及真实 WPS | BLOCKED | 需要对应目标环境和合法可用的 WPS 输入。 |
 | 双官网预览及下载回读 | BLOCKED | EdgeOne 控制台可见内容缺少可重建的原始工程。 |
