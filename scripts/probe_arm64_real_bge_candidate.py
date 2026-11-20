@@ -37,7 +37,7 @@ ASSETS = (
     ),
     (
         TOKENIZER_REPOSITORY, TOKENIZER_COMMIT, "tokenizer.json",
-        "258135af5b19e1c7f25ea95432e699e275053b381b04c5915054467cca8abab3", 1_000_000,
+        "48cea5d44424912a6fd1ea647bf4fe50b55ab8b1e5879c3275f80e339e8fae26", 1_000_000,
     ),
 )
 

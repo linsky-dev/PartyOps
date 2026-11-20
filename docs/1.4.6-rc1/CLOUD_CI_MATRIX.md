@@ -33,3 +33,5 @@ Windows 7 SP1 x86/x64、Deepin 25.2.0 LoongArch64、麒麟与 UOS 桌面、openE
 新增 `cloud-arm64-real-bge-candidate.yml` 仅在原生 Windows ARM64 上运行，使用固定提交 `onnx-community/bge-small-zh-v1.5-ONNX@18e2da99700c49ed48c0a0e3683da39348fbbb36` 的 FP32 ONNX 模型及外置权重，配合固定上游 `BAAI/bge-small-zh-v1.5@7999e1d3359715c523056ef9478215996d62a620` 的 tokenizer.json。下载过程核对预置 SHA-256 与大小上限，核验不通过立即拒绝，不把权重或任何私钥上传到 GitHub 审查附件。运行现有 `EmbeddingRuntime` 源码提取类，验证中文真实 512 维向量、CLS 归一化、相同/不同文本相似度、查询前缀和卸载。
 
 注意：ONNX Community 是**第三方导出**，并非已有 RC6 正式签名的 94,965,776 字节 `.partyops-modelpack`，也不声称与历史 `3f24c066…` ONNX 逐字节一致。通过只意味着原生 ARM64 上这组可溯源真实权重与隔离候选运行时可协同工作；正式模型包签名、PartyOps 导入启用、整包安装、资源指标、WPS 和许可证/再分发审查仍是独立门禁。来源：https://huggingface.co/onnx-community/bge-small-zh-v1.5-ONNX/commit/18e2da99700c49ed48c0a0e3683da39348fbbb36 。
+
+- 固定 tokenizer SHA 纠正记录：2026-11-20 原生 ARM64 从 `BAAI/bge-small-zh-v1.5@7999e1d…` 下载到 439,125 字节，SHA-256 为 `48cea5d44424912a6fd1ea647bf4fe50b55ab8b1e5879c3275f80e339e8fae26`。历史 RC6 验收表中 `258135af…` 为历史封装输入，不能作为当前 BAAI 上游 tokenizer 的文件 SHA；首轮检测因此阻断且未执行真实模型推理。纠正后仍需云端实际运行才可标记 PASS。

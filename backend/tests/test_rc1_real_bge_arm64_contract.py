@@ -25,6 +25,7 @@ def test_fixed_model_inputs_and_existing_business_source_remain_separate() -> No
     assert scope["TOKENIZER_COMMIT"] == "7999e1d3359715c523056ef9478215996d62a620"
     assets = scope["ASSETS"]
     assert len(assets) == 3
+    assert assets[2][3] == "48cea5d44424912a6fd1ea647bf4fe50b55ab8b1e5879c3275f80e339e8fae26"
     assert {item[2] for item in assets} == {
         "onnx/model.onnx", "onnx/model.onnx_data", "tokenizer.json",
     }
