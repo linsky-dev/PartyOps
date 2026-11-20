@@ -185,6 +185,33 @@ def test_relations_keep_browse_only_metadata_after_ai_download_is_denied(scopes)
         assert result.json()["title"] == scopes.shared_file.name
 
 
+def test_relation_replay_cannot_change_target_and_reverse_delete_checks_version(scopes):
+    source = f"/objects/knowledge/{scopes.knowledge.id}"
+    reverse = f"/objects/workspace_file/{scopes.host_file.id}"
+    headers = {"Idempotency-Key": "synthetic-replay"}
+    with TestClient(scopes.app) as browser:
+        created = browser.post(
+            f"{source}/links", headers=headers,
+            json={"target_type": "workspace_file", "target_id": scopes.host_file.id},
+        )
+        assert created.status_code == 201, created.text
+        conflict = browser.post(
+            f"{source}/links", headers=headers,
+            json={"target_type": "workspace_file", "target_id": scopes.shared_file.id},
+        )
+        assert conflict.status_code == 409
+        assert conflict.json()["code"] == "OBJECT_LINK_IDEMPOTENCY_CONFLICT"
+        link_id = created.json()["id"]
+        other = f"/objects/workspace_file/{scopes.shared_file.id}"
+        unrelated = browser.delete(f"{other}/links/{link_id}", headers={"If-Match": "1"})
+        assert unrelated.status_code == 404
+        stale = browser.delete(f"{reverse}/links/{link_id}", headers={"If-Match": "2"})
+        assert stale.status_code == 409
+        assert [link["id"] for link in browser.get(f"{source}/links").json()] == [link_id]
+        assert browser.delete(f"{reverse}/links/{link_id}", headers={"If-Match": "1"}).status_code == 200
+        assert browser.get(f"{source}/links").json() == []
+
+
 @pytest.mark.parametrize("substring_fallback", [False, True])
 def test_scoped_search_limits_after_browse_and_download_checks(scopes, tmp_path, substring_fallback):
     keyword = "authorizationfixture"
