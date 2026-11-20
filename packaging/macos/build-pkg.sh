@@ -446,58 +446,11 @@ cleanup() {
 trap cleanup EXIT
 
 VENV="$BUILD_ROOT/venv"
-python3.11 -m venv "$VENV"
-
-# GitHub 的 Intel 原生 Runner 同时存在 Homebrew OpenSSL 与 setup-python
-# 自带 OpenSSL。若让 cryptography 从源码自动探测，编译时可能使用前者、
-# PyInstaller 却收集后者，最终在用户双击启动时因 EVP_DigestSqueeze 等符号
-# 不一致而退出。Intel 构建固定使用经哈希验证、macOS 11 基线的 OpenSSL
-# 3.5 LTS 静态闭包；这样 cryptography 不再依赖 Runner 上任意动态 OpenSSL。
 if [[ "$TARGET_ARCH" == 'x86_64' ]]; then
-  OPENSSL_VERSION='3.5.7'
-  OPENSSL_SOURCE_NAME="openssl-$OPENSSL_VERSION.tar.gz"
-  OPENSSL_SOURCE_URL="https://github.com/openssl/openssl/releases/download/openssl-$OPENSSL_VERSION/$OPENSSL_SOURCE_NAME"
-  OPENSSL_SOURCE_SHA256='a8c0d28a529ca480f9f36cf5792e2cd21984552a3c8e4aa11a24aa31aeac98e8'
-  OPENSSL_SOURCE_DIR="$BUILD_ROOT/openssl-source"
-  OPENSSL_SOURCE="$OPENSSL_SOURCE_DIR/$OPENSSL_SOURCE_NAME"
-  OPENSSL_PREFIX="$BUILD_ROOT/openssl-static"
-  /bin/mkdir -p "$OPENSSL_SOURCE_DIR"
-  curl --fail --location --silent --show-error --retry 1 \
-    "$OPENSSL_SOURCE_URL" --output "$OPENSSL_SOURCE.download"
-  OPENSSL_ACTUAL_SHA256="$(shasum -a 256 "$OPENSSL_SOURCE.download" | awk '{print $1}')"
-  if [[ "$OPENSSL_ACTUAL_SHA256" != "$OPENSSL_SOURCE_SHA256" ]]; then
-    printf '[MACOS_OPENSSL_SOURCE_HASH_MISMATCH] 期望 %s，实际 %s。\n' \
-      "$OPENSSL_SOURCE_SHA256" "$OPENSSL_ACTUAL_SHA256" >&2
-    exit 2
-  fi
-  /bin/mv "$OPENSSL_SOURCE.download" "$OPENSSL_SOURCE"
-  gzip -dc "$OPENSSL_SOURCE" | python3.11 \
-    "$ROOT/scripts/validate-portable-tar.py" \
-    --expected-root "openssl-$OPENSSL_VERSION" \
-    --max-members 100000 --max-bytes 1073741824 --allow-implicit-root
-  /bin/mkdir -p "$OPENSSL_SOURCE_DIR/unpacked"
-  tar -xzf "$OPENSSL_SOURCE" -C "$OPENSSL_SOURCE_DIR/unpacked"
-  (
-    cd "$OPENSSL_SOURCE_DIR/unpacked/openssl-$OPENSSL_VERSION"
-    ./Configure darwin64-x86_64-cc no-shared no-tests \
-      -mmacosx-version-min="$MACOSX_DEPLOYMENT_TARGET" \
-      --prefix="$OPENSSL_PREFIX" --openssldir="$OPENSSL_PREFIX/ssl"
-    make -j"${PARTYOPS_BUILD_JOBS:-2}"
-    make install_sw
-  )
-  OPENSSL_STATIC=1 OPENSSL_DIR="$OPENSSL_PREFIX" \
-    UV_PROJECT_ENVIRONMENT="$VENV" uv sync --project "$ROOT/backend" \
-      --frozen --no-dev --no-cache --no-binary-package cryptography
-  CRYPTOGRAPHY_OPENSSL_VERSION="$(
-    "$VENV/bin/python" -c \
-      'from cryptography.hazmat.backends.openssl.backend import backend; print(backend.openssl_version_text())'
-  )"
-  if [[ "$CRYPTOGRAPHY_OPENSSL_VERSION" != "OpenSSL $OPENSSL_VERSION "* ]]; then
-    printf '[MACOS_CRYPTOGRAPHY_OPENSSL_MISMATCH] 期望 OpenSSL %s，实际 %s。\n' \
-      "$OPENSSL_VERSION" "$CRYPTOGRAPHY_OPENSSL_VERSION" >&2
-    exit 2
-  fi
+  # Intel 的静态 OpenSSL 与 cryptography 源码构建可独立复用并在原生 Runner 验证。
+  bash "$SCRIPT_DIR/build-intel-crypto-environment.sh" "$ROOT" "$BUILD_ROOT" "$VENV"
 else
+  python3.11 -m venv "$VENV"
   UV_PROJECT_ENVIRONMENT="$VENV" uv sync --project "$ROOT/backend" --frozen --no-dev
 fi
 # 主线锁文件中的 numpy/onnxruntime 官方新 wheel 超出 macOS 11 基线，不能
