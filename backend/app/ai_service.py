@@ -398,9 +398,17 @@ def collect_sources(
                 break
         remaining = max(0, 8 - len(sources))
         if remaining and policy.allowed_root_ids:
-            for item in search_workspace_files(db, instruction, limit=remaining * 2):
-                if item.root_id not in policy.allowed_root_ids:
-                    continue
+            allowed_root_ids = [
+                root_id
+                for root_id in dict.fromkeys(policy.allowed_root_ids)
+                if (root := db.get(WorkspaceRoot, root_id))
+                and workspace_root_permissions(db, root, user, device_id)["download"]
+            ]
+            for item in search_workspace_files(
+                db, instruction, limit=remaining * 2,
+                allowed_root_ids=allowed_root_ids, include_directories=False,
+                allowed_extensions=policy.allowed_file_types or None,
+            ):
                 try:
                     source, excerpt = _file_source(db, item, policy, user, device_id)
                 except ProblemException:

@@ -235,7 +235,11 @@ def global_search(
 
     if len(items) < limit and keyword:
         workspace_device_id = workspace_request_device_id(request, request_device(request, db))
-        for file in search_workspace_files(db, keyword, limit=limit - len(items)):
+        allowed_root_ids = browsable_workspace_root_ids(db, user, workspace_device_id)
+        for file in search_workspace_files(
+            db, keyword, limit=limit - len(items),
+            allowed_root_ids=allowed_root_ids, include_directories=False,
+        ):
             if file.is_directory or not file.in_scope:
                 continue
             root = db.get(WorkspaceRoot, file.root_id)

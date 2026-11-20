@@ -109,7 +109,7 @@ def test_ai_sensitive_meeting_and_automatic_source_skips(
         category="综合工作",
         sensitivity=Sensitivity.NORMAL,
     )
-    policy = SimpleNamespace(allowed_task_categories=[], allowed_root_ids=["root-1"])
+    policy = SimpleNamespace(allowed_task_categories=[], allowed_root_ids=["root-1"], allowed_file_types=[])
     db = SimpleNamespace(
         scalar=lambda _statement: SimpleNamespace(meeting_type="party_member_meeting"),
         get=lambda *_args: None,

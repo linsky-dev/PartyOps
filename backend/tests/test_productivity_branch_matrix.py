@@ -126,6 +126,7 @@ def test_global_search_all_business_types_and_permission_filters(monkeypatch, ft
     request = SimpleNamespace(client=SimpleNamespace(host="127.0.0.1"), cookies={})
     monkeypatch.setattr(productivity, "search_workspace_files", lambda *_a, **_k: files)
     monkeypatch.setattr(productivity, "request_device", lambda *_a: SimpleNamespace(id="device-1"))
+    monkeypatch.setattr(productivity, "browsable_workspace_root_ids", lambda *_a: ["root-good"])
     monkeypatch.setattr(productivity, "workspace_root_permissions", lambda _db, root, *_a, **_k: {"browse": root is root_good})
     monkeypatch.setattr(productivity, "archive_fts_search", lambda *_a, **_k: fts_ids)
     monkeypatch.setattr(productivity, "can_view_category", lambda _db, category, _user: category is not category_denied)

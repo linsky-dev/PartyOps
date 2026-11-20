@@ -73,7 +73,11 @@ from ..workspace import (
     validate_root_path,
     validate_selection_paths,
 )
-from ..workspace_access import workspace_request_device_id, workspace_root_permissions
+from ..workspace_access import (
+    browsable_workspace_root_ids,
+    workspace_request_device_id,
+    workspace_root_permissions,
+)
 
 router = APIRouter(tags=["workspace-files"])
 
@@ -1107,9 +1111,12 @@ def search_workspace(
     db: Session = Depends(get_session),
 ) -> list[WorkspaceFileOut]:
     device_id = current_device_id(request, db)
+    allowed_root_ids = browsable_workspace_root_ids(db, user, device_id)
     return [
         workspace_file_out(db, item, user, device_id)
-        for item in search_workspace_files(db, keyword, root_id, limit)
+        for item in search_workspace_files(
+            db, keyword, root_id, limit, allowed_root_ids=allowed_root_ids,
+        )
         if (
             (root := db.get(WorkspaceRoot, item.root_id)) is not None
             and workspace_root_permissions(db, root, user, device_id)["browse"]

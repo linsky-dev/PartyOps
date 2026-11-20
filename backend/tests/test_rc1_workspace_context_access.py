@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 
 from app.config import get_settings
 from app.database import DatabaseRuntime, get_session
@@ -23,8 +24,9 @@ from app.models import (
     WorkspaceRootMember,
 )
 from app.problems import install_problem_handlers
-from app.routers import ai, relations
+from app.routers import ai, productivity, relations, workspace
 from app.security import get_current_user
+from app.workspace import search_workspace_files
 
 
 def _file(db, root, label, *, in_scope=True):
@@ -81,6 +83,8 @@ def scopes(tmp_path, monkeypatch):
     install_problem_handlers(app)
     app.include_router(ai.router)
     app.include_router(relations.router)
+    app.include_router(productivity.router)
+    app.include_router(workspace.router)
 
     def session():
         with runtime.session_factory() as db:
@@ -179,3 +183,45 @@ def test_relations_keep_browse_only_metadata_after_ai_download_is_denied(scopes)
         result = browser.post(f"{source}/links", json=payload)
         assert result.status_code == 201, result.text
         assert result.json()["title"] == scopes.shared_file.name
+
+
+@pytest.mark.parametrize("substring_fallback", [False, True])
+def test_scoped_search_limits_after_browse_and_download_checks(scopes, tmp_path, substring_fallback):
+    keyword = "authorizationfixture"
+    with scopes.runtime.session_factory.begin() as db:
+        owner_id = scopes.device.created_by
+        excluded = WorkspaceRoot(
+            name="合成未共享目录", absolute_path=str(tmp_path / "synthetic-excluded"),
+            created_by=owner_id, device_id=scopes.device.id, source=WorkspaceRootSource.DEVICE,
+            remote_key="excluded", published_by_user_id=owner_id, share_scope="selected",
+        )
+        db.add(excluded)
+        db.flush()
+        policy = db.scalar(select(AIPolicy))
+        policy.allowed_root_ids = [*policy.allowed_root_ids, excluded.id]
+        for index in range(20):
+            _file(db, excluded, f"{keyword} denied {index}")
+        shared = db.get(WorkspaceRoot, scopes.shared_file.root_id)
+        label = f"prefix{keyword}suffix" if substring_fallback else keyword
+        allowed = _file(db, shared, f"{label} visible")
+        assert search_workspace_files(db, "", shared.id, allowed_root_ids=[]) == []
+
+    with TestClient(scopes.app) as browser:
+        listing = browser.get("/workspace/search", params={"keyword": keyword, "limit": 1})
+        assert listing.status_code == 200, listing.text
+        assert [item["id"] for item in listing.json()] == [allowed.id]
+        hidden = browser.get("/workspace/search", params={"keyword": "", "root_id": excluded.id})
+        assert hidden.status_code == 200 and hidden.json() == []
+        unified = browser.get("/global-search", params={"q": keyword, "limit": 1})
+        assert unified.status_code == 200, unified.text
+        assert [(item["type"], item["id"]) for item in unified.json()["items"]] == [("file", allowed.id)]
+
+        denied = _ask(browser, instruction=keyword)
+        assert denied.status_code == 422 and denied.json()["code"] == "AI_SOURCE_EMPTY"
+        assert not scopes.model_calls
+        with scopes.runtime.session_factory.begin() as db:
+            db.get(WorkspaceRootMember, scopes.membership.id).can_download = True
+        result = _ask(browser, instruction=keyword)
+        assert result.status_code == 201, result.text
+        assert [item["id"] for item in result.json()["sources"]] == [allowed.id]
+        assert allowed.extracted_text in scopes.model_calls[0]
