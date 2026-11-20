@@ -10,7 +10,7 @@ from starlette.requests import Request
 from app.config import get_settings
 from app.database import db_runtime
 from app.enums import UserRole
-from app.models import Task, User, WorkspaceFile, WorkspaceLink, WorkspaceRoot
+from app.models import Task, User, WorkspaceFile, WorkspaceLink, WorkspaceRoot, utcnow
 from app.routers import productivity, today
 from app.workspace_access import (
     UNIDENTIFIED_REMOTE_DEVICE,
@@ -73,7 +73,12 @@ def test_global_search_obeys_context_for_host_files(client, admin, staff, tmp_pa
         root = WorkspaceRoot(name="合成主机文件夹", absolute_path=str(tmp_path), created_by=admin["id"])
         db.add(root)
         db.flush()
-        file = WorkspaceFile(root_id=root.id, relative_path="synthetic-only.txt", name="synthetic-only.txt")
+        file = WorkspaceFile(
+            root_id=root.id,
+            relative_path="synthetic-only.txt",
+            name="synthetic-only.txt",
+            last_seen_at=utcnow(),
+        )
         db.add(file)
         db.flush()
         task = Task(title="合成交接事项", owner_id=user.id, created_by=admin["id"], updated_by=admin["id"])

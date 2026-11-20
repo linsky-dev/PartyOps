@@ -194,15 +194,15 @@ finally {
 }
 Invoke-Checked { & $corepack pnpm --dir (Join-Path $root "frontend") run typecheck } "前端类型检查"
 Invoke-Checked { & $corepack pnpm --dir (Join-Path $root "frontend") run test:coverage } "前端覆盖率测试"
-Invoke-Checked { & $corepack pnpm --dir (Join-Path $root "frontend") run test:sites } "静态入口测试"
 Invoke-Checked { & $corepack pnpm --dir (Join-Path $root "frontend") run build } "前端生产构建"
+Invoke-Checked { & $corepack pnpm --dir (Join-Path $root "frontend") run test:sites } "静态入口测试"
 # 官网源码按发布策略不进入主仓库，发布门禁显式限制单 Worker，避免构建机
 # 同时驻留本地模型时 V8 并发预留耗尽 Windows 提交内存。
 Invoke-Checked {
   & $corepack pnpm --dir (Join-Path $root "website") exec vitest run --coverage --minWorkers=1 --maxWorkers=1
 } "官网覆盖率测试"
-Invoke-Checked { & $corepack pnpm --dir (Join-Path $root "website") run test:sites } "官网静态入口测试"
 Invoke-Checked { & $corepack pnpm --dir (Join-Path $root "website") run build } "官网生产构建"
+Invoke-Checked { & $corepack pnpm --dir (Join-Path $root "website") run test:sites } "官网静态入口测试"
 $testTempRoot = Initialize-TestTempRoot
 $previousTemp = $env:TEMP
 $previousTmp = $env:TMP

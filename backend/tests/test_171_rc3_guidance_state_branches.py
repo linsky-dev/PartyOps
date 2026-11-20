@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import pytest
+from starlette.requests import Request
 
 from app.enums import UserRole
 from app.models import OnboardingProgress
@@ -54,7 +55,7 @@ class _Db:
 
 def test_enablement_host_and_device_walk_every_accessible_root(monkeypatch) -> None:
     user = SimpleNamespace(id="user-1", role=UserRole.STAFF)
-    request = SimpleNamespace()
+    request = Request({"type": "http", "client": ("127.0.0.1", 1234), "headers": []})
     monkeypatch.setattr(guidance, "request_device", lambda *_args: None)
     host = guidance.get_enablement(request, user, _Db(scalar=[0], scalars=[[]]))
     assert host.persona == "host_staff" and host.completed_count == 1
