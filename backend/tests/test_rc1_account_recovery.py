@@ -536,6 +536,40 @@ def test_rc1_repairs_mismatched_server_key_without_reissuing_ca(tmp_path):
     )
 
 
+@pytest.mark.parametrize("expired", [False, True])
+def test_rc1_rejects_expired_or_non_ca_certificate_without_reissuing_root(tmp_path, expired):
+    settings = get_settings().model_copy(update={"data_dir": tmp_path, "environment": "test"})
+    material = ensure_tls_material(settings)
+    ca_path = material["ca_path"]
+    key_path = ca_path.with_name("ca.key")
+    anchor = settings.secrets_dir / "pki-root-sha256"
+    original = x509.load_pem_x509_certificate(ca_path.read_bytes())
+    key_bytes = key_path.read_bytes()
+    anchor_bytes = anchor.read_bytes()
+    key = serialization.load_pem_private_key(key_bytes, password=None)
+    now = utcnow()
+    certificate = (
+        x509.CertificateBuilder()
+        .subject_name(original.subject)
+        .issuer_name(original.issuer)
+        .public_key(key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now - timedelta(days=2))
+        .not_valid_after(now + timedelta(days=-1 if expired else 1))
+        .add_extension(x509.BasicConstraints(ca=expired, path_length=None), critical=True)
+        .sign(key, hashes.SHA256())
+        .public_bytes(serialization.Encoding.PEM)
+    )
+    ca_path.write_bytes(certificate)
+    with pytest.raises(ValueError, match="CA 完整性校验失败") as failure:
+        ensure_tls_material(settings)
+    expected = "不在有效期" if expired else "缺少 CA 约束"
+    assert expected in str(failure.value.__cause__)
+    assert ca_path.read_bytes() == certificate
+    assert key_path.read_bytes() == key_bytes
+    assert anchor.read_bytes() == anchor_bytes
+
+
 @pytest.mark.skipif(os.name == "nt", reason="POSIX 密钥文件读权限")
 def test_rc1_legacy_key_permissions_are_checked_without_replacing_existing_keys(isolated_crypto_store):
     key_path = local_secrets._key_path()
