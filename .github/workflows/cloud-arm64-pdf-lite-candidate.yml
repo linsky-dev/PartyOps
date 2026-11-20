@@ -53,11 +53,33 @@ jobs:
           python scripts/probe_arm64_pdf_lite.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+      - name: Install only PartyOps PDF intake's portable dependencies
+        shell: pwsh
+        env:
+          PYTHONUTF8: '1'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python -m pip install --disable-pip-version-check --only-binary=:all: 'fastapi==0.140.7' 'pytesseract==0.3.13' 'defusedxml==0.7.1' 'python-docx==1.2.0' 'openpyxl==3.1.5' 'pillow==13.0.0'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m pip check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Execute unchanged PartyOps PDF intake on synthetic inputs
+        shell: pwsh
+        env:
+          PYTHONUTF8: '1'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python scripts/probe_arm64_partyops_intake.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: Upload isolated candidate evidence (no release)
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: arm64-pdf-lite-build-only-${{ github.sha }}
-          path: artifacts/arm64-pdf-lite/probe.json
+          path: |
+            artifacts/arm64-pdf-lite/probe.json
+            artifacts/arm64-pdf-lite/intake-module.json
           if-no-files-found: warn
           retention-days: 14
