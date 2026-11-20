@@ -40,7 +40,7 @@ def test_sm3_known_answer_mismatch_fails_closed(
 
         def finalize(self) -> bytes:
             self._hash.finalize()
-            return b"\\x00" * 32
+            return bytes(32)
 
     monkeypatch.setattr(hashes, "Hash", CorruptHash)
     with pytest.raises(RuntimeError, match="SM3 已知答案检查失败"):
