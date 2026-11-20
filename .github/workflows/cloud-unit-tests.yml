@@ -70,6 +70,8 @@ jobs:
             tests/test_rc1_workspace_context_access.py \
             tests/test_146_development_tracks.py tests/test_party_development.py \
             tests/test_rc1_dual_development_reminders.py \
+            tests/test_rc1_arm64_crypto_source_contract.py \
+            tests/test_rc1_release_target_contract.py tests/test_rc1_release_gate_fail_closed.py \
             tests/test_document_formatter_source_snapshot.py \
             tests/test_160_rc4_upgrade_startup.py tests/test_version_consistency_gate.py \
             --junitxml=../artifacts/backend/junit.xml \

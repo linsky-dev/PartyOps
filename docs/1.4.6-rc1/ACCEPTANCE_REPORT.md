@@ -29,6 +29,8 @@
 | Windows 全量源码与覆盖率（`1282ffd0`） | PASS | [GitHub Actions #44704652175](https://github.com/linsky-dev/PartyOps/actions/runs/44704652175)：Windows 2,332 项通过、16 项跳过、3 项子测试通过；行覆盖率 96.22%、分支覆盖率 92.01%，均超过 95%/92% 门槛；Linux 176 通过、4 跳过，前端 246 项、生产构建及原有 Windows 排版宿主 x86/x64/AnyCPU 构建均通过。此为源码与 CI 门禁，不是发布包验收。 |
 | Windows ARM64 原生国密运行时（`1282ffd0`） | PASS（运行时） | [GitHub Actions #44704652210](https://github.com/linsky-dev/PartyOps/actions/runs/44704652210) 实际使用 ARM64 Windows Runner、Python 3.12、MSVC/Rust，从固定 SHA-256 的 OpenSSL 3.5.7 及 cryptography 50.0.0 sdist 构建 wheel，绑定 OpenSSL 3.5.7；通过 SM3、RFC 8998 SM4-GCM、标签与 AAD 篡改拒绝。该运行时探测未测试完整 PartyOps ARM64 安装包。 |
 | 原生六平台国密与 macOS LibreOffice（`1282ffd0`） | PASS（专项探测） | 同一 [运行 #44704652210](https://github.com/linsky-dev/PartyOps/actions/runs/44704652210) 的 8 个作业均成功。macOS Intel 从锁定 OpenSSL 3.5.7 编译的原生密码库通过向量；LibreOffice 两架构为 headless 独立冒烟，不等于 WPS。 |
+| ARM64 密码库离线 wheel 审查附件（`1470c710`） | PASS（BUILD_ONLY） | [GitHub Actions #44710662726](https://github.com/linsky-dev/PartyOps/actions/runs/44710662726) 8/8 作业通过，原生 Windows ARM64 由固定源码构建 cryptography 50.0.0 wheel，离线安装和 SM3/SM4-GCM 已知答案通过，留存哈希、来源与显式未签名信息。 [临时构建附件](https://github.com/linsky-dev/PartyOps/actions/runs/44710662726/artifacts/14616598687)。此结果不等于 ARM64 完整 PartyOps 应用已验收。 |
+| PR 源码与锁定依赖 SBOM（`f9b526ca`） | PASS（BUILD_ONLY） | [GitHub Actions #44712221242](https://github.com/linsky-dev/PartyOps/actions/runs/44712221242)：PR 测试合并提交的源码归档、Python/前端 CycloneDX、大小与 SHA-256 核验均通过；[审查附件](https://github.com/linsky-dev/PartyOps/actions/runs/44712221242/artifacts/14616984364)。没有生产发布能力与签名。 |
 | 十包构建与逐包真实安装 | NOT_RUN | 尚无本次冻结制品。 |
 | 特殊目标原生安装、升级及真实 WPS | BLOCKED | 需要对应目标环境和合法可用的 WPS 输入。 |
 | 双官网预览及下载回读 | BLOCKED | EdgeOne 控制台可见内容缺少可重建的原始工程。 |
