@@ -17,20 +17,12 @@ if (-not $corepackCommand) {
 }
 $corepack = $corepackCommand.Source
 
-if ([string]::IsNullOrWhiteSpace($DocumentFormatterSource)) {
-  $DocumentFormatterSource = Join-Path $root "vendor\document-formatter-source"
-}
 if ([string]::IsNullOrWhiteSpace($DocumentFormatterParitySource)) {
   $DocumentFormatterParitySource = Join-Path $root "backend\tests\fixtures\document-formatter-source\input-manual-break.docx"
 }
 if ([string]::IsNullOrWhiteSpace($DocumentFormatterParityGolden)) {
   $DocumentFormatterParityGolden = Join-Path $root "backend\tests\fixtures\document-formatter-source\expected-source-formatted.docx"
 }
-$formatterBuild = Join-Path $DocumentFormatterSource "tools\Build-Windows.ps1"
-if (-not (Test-Path -LiteralPath $formatterBuild)) {
-  throw "缺少新排版工具唯一功能规格：$DocumentFormatterSource。打包门禁要求先完成其 x64/x86 源码构建与功能回归。"
-}
-
 function Invoke-Checked {
   param(
     [Parameter(Mandatory = $true)][scriptblock]$Command,
@@ -104,13 +96,25 @@ function Initialize-TestTempRoot {
   return $resolved
 }
 
-# 先重新构建并运行用户提供的新工具原始 x64/x86 功能契约，避免仅验证迁移后的
+# Windows 功能契约和宿主使用同一份核验过的上游源码。
+$sourceVerifier = Join-Path $root "scripts\verify-document-formatter-source-snapshot.py"
+$sourceArguments = @("--source", $DocumentFormatterSource)
+if ([string]::IsNullOrWhiteSpace($DocumentFormatterSource)) {
+  $DocumentFormatterSource = Join-Path $root ("artifacts\formatter-sources\" + [Guid]::NewGuid().ToString("N"))
+  $sourceArguments = @(
+    "--source", (Join-Path $root "vendor\document-formatter-source"),
+    "--stage-upstream", $DocumentFormatterSource
+  )
+}
 Invoke-Checked {
-  & $python (Join-Path $root "scripts\verify-document-formatter-source-snapshot.py") `
-    --source $DocumentFormatterSource
+  & $python $sourceVerifier @sourceArguments
 } "内嵌公文排版源码上游一致性校验"
 
-# 自有测试而漏掉规格源中的能力变化。此步骤不会发布或启动外部产品窗口。
+$formatterBuild = Join-Path $DocumentFormatterSource "tools\Build-Windows.ps1"
+if (-not (Test-Path -LiteralPath $formatterBuild -PathType Leaf)) {
+  throw "缺少新排版工具唯一功能规格：$DocumentFormatterSource。打包门禁要求先完成其 x64/x86 源码构建与功能回归。"
+}
+
 # 禁止 MSBuild 节点在两次构建后常驻。发布机可能同时运行本地模型，遗留
 # 编译进程会挤满 Windows 提交内存并让后续审计无法启动。
 $env:MSBUILDDISABLENODEREUSE = "1"

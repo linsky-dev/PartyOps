@@ -137,27 +137,38 @@ if command -v pedump >/dev/null 2>&1; then
   }
 fi
 
-source_profile=()
-[[ "$PLATFORM" != 'macos' ]] || source_profile=(--profile mac-quotes-tnr)
-"$PYTHON_BIN" "$ROOT/scripts/verify-document-formatter-source-snapshot.py" --source "$SOURCE" "${source_profile[@]}" >/dev/null
+SOURCE_VERIFIER="$ROOT/scripts/verify-document-formatter-source-snapshot.py"
+if [[ "$PLATFORM" == 'macos' ]]; then
+  "$PYTHON_BIN" "$SOURCE_VERIFIER" --source "$SOURCE" --profile mac-quotes-tnr >/dev/null
+fi
 STAGE="$(mktemp -d "$OUTPUT_PARENT/.formatter-native.${PLATFORM}.${ARCHITECTURE}.XXXXXX")"
+SOURCE_STAGE=''
 cleanup() {
   # Mac 候选失败保留全部暂存证据，不沿用旧 Linux 自动删除流程。
   if [[ "$PLATFORM" == 'macos' ]]; then
     printf '[FORMATTER_NATIVE_WORKSPACE_RETAINED] %s\n' "$STAGE" >&2
     return
   fi
-  if [[ -d "$STAGE" ]]; then
-    case "$STAGE" in
-      "$OUTPUT_PARENT/.formatter-native.${PLATFORM}.${ARCHITECTURE}."*)
-        chmod -R u+w "$STAGE" 2>/dev/null || true
-        /bin/rm -R -- "$STAGE" 2>/dev/null || true
+  local workspace
+  for workspace in "$STAGE" "$SOURCE_STAGE"; do
+    [[ -n "$workspace" && -d "$workspace" ]] || continue
+    case "$workspace" in
+      "$OUTPUT_PARENT/.formatter-native.${PLATFORM}.${ARCHITECTURE}."*|"$OUTPUT_PARENT/.formatter-source.${PLATFORM}.${ARCHITECTURE}."*)
+        chmod -R u+w "$workspace" 2>/dev/null || true
+        /bin/rm -R -- "$workspace" 2>/dev/null || true
         ;;
-      *) printf '[FORMATTER_NATIVE_CLEANUP_REFUSED] 非预期暂存目录：%s\n' "$STAGE" >&2 ;;
+      *) printf '[FORMATTER_NATIVE_CLEANUP_REFUSED] 非预期暂存目录：%s\n' "$workspace" >&2 ;;
     esac
-  fi
+  done
 }
 trap cleanup EXIT
+if [[ "$PLATFORM" == 'linux' ]]; then
+  # 生成 WPS 槽位表与托管载荷使用同一个核验过的上游快照。
+  SOURCE_STAGE="$(mktemp -d "$OUTPUT_PARENT/.formatter-source.${PLATFORM}.${ARCHITECTURE}.XXXXXX")"
+  "$PYTHON_BIN" "$SOURCE_VERIFIER" --source "$SOURCE" --stage-upstream "$SOURCE_STAGE/upstream" \
+    --managed-runtime "$MANAGED_RUNTIME"
+  SOURCE="$SOURCE_STAGE/upstream"
+fi
 
 HOST="$STAGE/partyops-document-formatter-host"
 bundle_inputs=()
@@ -500,5 +511,6 @@ PY
 
 if [[ -d "$OUTPUT" ]]; then rmdir "$OUTPUT"; fi
 mv "$STAGE" "$OUTPUT"
+if [[ "$PLATFORM" == 'linux' ]]; then cleanup; fi
 trap - EXIT
 printf '[FORMATTER_NATIVE_BUILD_OK] %s/%s %s\n' "$PLATFORM" "$ARCHITECTURE" "$OUTPUT"

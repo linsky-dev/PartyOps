@@ -11,6 +11,8 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import shutil
+import stat
 from pathlib import Path
 
 EXPECTED_FILE_COUNT = 898
@@ -19,6 +21,12 @@ MAC_QUOTE_AGGREGATE_SHA256 = "ac8466edf2513ea8e3fe9e61d3b86fb8d7a72ceb6cce366f2d
 INCLUDED_ROOTS = frozenset({"src", "assets", "lib", "tests", "tools"})
 ROOT_SUFFIXES = frozenset({".sln", ".props", ".targets", ".config"})
 EXCLUDED_PARTS = frozenset({"bin", "obj", ".vs", "输出", "packages"})
+PUNCTUATION_SOURCE = Path(
+    "src/PartyOps.DocumentFormatter.AddIn/DocumentRepository/Services/Formatting/EastAsianPunctuationFontService.cs"
+)
+UPSTREAM_PUNCTUATION_SOURCE = (
+    Path(__file__).resolve().parents[1] / "packaging" / "formatter-host" / "upstream" / PUNCTUATION_SOURCE.name
+)
 TEXT_SUFFIXES = frozenset(
     {
         ".cs",
@@ -93,14 +101,65 @@ def verify(source: Path, profile: str = "upstream") -> dict[str, object]:
     }
 
 
+def _ignore_build_products(directory: str, names: list[str]) -> set[str]:
+    ignored = (EXCLUDED_PARTS | {".git"}).intersection(names)
+    for name in set(names) - ignored:
+        path = Path(directory) / name
+        entry = path.lstat()
+        # 避免复制时经符号链接或 Windows 目录连接读取其他工作树。
+        attributes = getattr(entry, "st_file_attributes", 0)
+        if stat.S_ISLNK(entry.st_mode) or attributes & stat.FILE_ATTRIBUTE_REPARSE_POINT:
+            raise RuntimeError(f"[FORMATTER_SOURCE_LINK] 源码暂存不接受链接：{path}")
+    return ignored
+
+
+def stage_upstream(source: Path, destination: Path) -> dict[str, object]:
+    source = source.absolute()
+    destination = destination.absolute()
+    if source.resolve() != source or destination.resolve() != destination:
+        raise RuntimeError("[FORMATTER_SOURCE_LINK] 源码和暂存目录必须使用实际路径。")
+    if destination.exists() or destination.is_symlink() or destination.is_relative_to(source):
+        raise RuntimeError(f"[FORMATTER_SOURCE_STAGE_INVALID] 上游源码需要独立的全新暂存目录：{destination}")
+    shutil.copytree(source, destination, ignore=_ignore_build_products)
+    verify(destination, "mac-quotes-tnr")
+    (destination / PUNCTUATION_SOURCE).write_bytes(UPSTREAM_PUNCTUATION_SOURCE.read_bytes())
+    return verify(destination)
+
+
+def verify_managed_runtime(runtime: Path, snapshot: dict[str, object]) -> None:
+    manifest = json.loads((runtime / "source-host.json").read_text(encoding="utf-8"))
+    expected = {
+        "schema": 2,
+        "platform": "windows",
+        "architecture": "AnyCPU",
+        "adapter": "dotnet-framework-com-source",
+        "source_snapshot_sha256": snapshot["aggregate_sha256"],
+        "source_snapshot_files": snapshot["file_count"],
+    }
+    if not isinstance(manifest, dict) or any(manifest.get(key) != value for key, value in expected.items()):
+        raise RuntimeError("[FORMATTER_MANAGED_SOURCE_DIVERGED] Linux 需要锁定上游构建的 Windows AnyCPU 载荷。")
+    for key, name in (
+        ("host_sha256", "PartyOps.DocumentFormatter.Host.exe"),
+        ("rules_sha256", "PartyOps.DocumentFormatter.AddIn.dll"),
+    ):
+        if manifest.get(key) != _content_sha256(runtime / name):
+            raise RuntimeError(f"[FORMATTER_MANAGED_HASH_DIVERGED] AnyCPU 文件与构建清单不一致：{name}")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--source", type=Path, required=True)
     parser.add_argument("--profile", choices=("upstream", "mac-quotes-tnr"), default="upstream")
+    parser.add_argument("--stage-upstream", type=Path, help="从内嵌 Mac 快照恢复到全新的上游源码目录")
+    parser.add_argument("--managed-runtime", type=Path, help="核对 Linux 所需的 Windows AnyCPU 载荷及构建清单")
     args = parser.parse_args()
+    if args.profile != "upstream" and (args.stage_upstream or args.managed_runtime):
+        parser.error("上游暂存和 Linux 托管载荷校验只适用于 upstream。")
     try:
-        result = verify(args.source, args.profile)
-    except (OSError, UnicodeError, RuntimeError) as exc:
+        result = stage_upstream(args.source, args.stage_upstream) if args.stage_upstream else verify(args.source, args.profile)
+        if args.managed_runtime:
+            verify_managed_runtime(args.managed_runtime, result)
+    except (OSError, UnicodeError, RuntimeError, json.JSONDecodeError) as exc:
         print(str(exc))
         return 2
     print(json.dumps(result, ensure_ascii=False, sort_keys=True))

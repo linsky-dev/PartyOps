@@ -9,11 +9,6 @@ param(
 
 $ErrorActionPreference = "Stop"
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
-$documentFormatterSource = if ($env:PARTYOPS_DOCUMENT_FORMATTER_SOURCE) {
-  $env:PARTYOPS_DOCUMENT_FORMATTER_SOURCE
-} else {
-  Join-Path $repoRoot "vendor\document-formatter-source"
-}
 . (Join-Path $PSScriptRoot "prepare-ocr-runtime.ps1")
 . (Join-Path $PSScriptRoot "prepare-dotnet48-runtime.ps1")
 $releaseVersion = "1.4.6-rc.1"
@@ -527,7 +522,6 @@ Copy-Item -LiteralPath (Join-Path $repoRoot "packaging\uos\update-public-key.txt
 $formatterPlatform = if ($targetArchitecture -eq "x86") { "x86" } else { "x64" }
 & (Join-Path $repoRoot "scripts\build-document-formatter-host.ps1") `
   -Platform $formatterPlatform `
-  -DocumentFormatterSource $documentFormatterSource `
   -StageDirectory (Join-Path $bundleRoot "formatter-host")
 Assert-NativeSuccess "原排版源码无窗口宿主写入安装包"
 $formatterStage = Join-Path $bundleRoot "formatter-host"
