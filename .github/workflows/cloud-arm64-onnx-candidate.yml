@@ -1,0 +1,62 @@
+name: RC1 isolated native ARM64 ONNX candidate smoke
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/cloud-arm64-onnx-candidate.yml'
+      - 'scripts/probe_arm64_onnx_candidate.py'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc1-arm64-onnx-candidate-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native-arm64-onnx:
+    name: Windows ARM64 synthetic ONNX CPU execution (BUILD_ONLY)
+    runs-on: windows-11-arm
+    timeout-minutes: 25
+    steps:
+      - name: Check out exact PR merge commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Install native Windows ARM64 Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+          architecture: arm64
+
+      - name: Install isolated upstream candidate wheels (no source fallback)
+        shell: pwsh
+        env:
+          PYTHONUTF8: '1'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python -m pip install --disable-pip-version-check --only-binary=:all: 'numpy==2.3.5' 'onnxruntime==1.24.2' 'onnx==1.23.2'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m pip check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Execute native CPU inference on synthetic identity ONNX
+        shell: pwsh
+        env:
+          PYTHONUTF8: '1'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python scripts/probe_arm64_onnx_candidate.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Upload synthetic evidence only
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: arm64-onnx-synthetic-build-only-${{ github.sha }}
+          path: artifacts/arm64-onnx-candidate/result.json
+          if-no-files-found: warn
+          retention-days: 14
