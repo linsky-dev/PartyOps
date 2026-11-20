@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-import os
 import subprocess
 import zipfile
 from pathlib import Path
@@ -15,7 +14,7 @@ from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml.ns import qn
 
-from app import official_format, official_format_host
+from app import official_format
 from app import official_format_features as features
 from app.official_format import OfficialFormatError
 from app.official_format_features import capabilities_payload, execute_feature
@@ -423,44 +422,9 @@ def test_redheader_empty_document_and_existing_border_ooxml_structure(
     assert borders is not None and len(borders) == 2
 
 
-def test_native_redheader_requires_fonts_host_and_explicit_integration_opt_in(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """真实 WPS/排版宿主只在获准且依赖齐全的原生环境执行。"""
+def test_native_redheader_font_inventory() -> None:
+    """核验原生排版字体。真实 WPS 套红和金样仍由原端到端入口验收。"""
     _require_system_official_fonts()
-    if os.environ.get("PARTYOPS_RUN_NATIVE_FORMAT_INTEGRATION") != "1":
-        pytest.skip(
-            "BLOCKED_ENV: 原生套红集成未获专用 Runner 显式启用；"
-            "独立 WPS/排版金样门禁仍负责真实验收。"
-        )
-    if official_format_host.resolve_source_host() is None:
-        pytest.skip("BLOCKED_ENV: 当前架构的原源码排版宿主未提供。")
-
-    monkeypatch.delenv("PARTYOPS_FORMATTER_TEST_LOCAL_ENGINE", raising=False)
-    source = tmp_path / "native-redheader.docx"
-    _source_docx(source)
-    result = execute_feature(
-        "redheader",
-        source,
-        tmp_path / "native-redheader-output",
-        {
-            "copy_number": "8",
-            "security": "机密 10年",
-            "urgency": "特急",
-            "agency": "中共测试委员会",
-            "document_number": "测试党发〔2026〕8号",
-            "signatory": "张三",
-            "imprint": "中共测试委员会办公室",
-            "document_type": "up",
-            "compatibility_mode": "wps",
-        },
-    )
-    assert len(result.outputs) == 1
-    assert result.outputs[0].path.is_file()
-    paragraphs = [paragraph.text for paragraph in Document(result.outputs[0].path).paragraphs]
-    assert "000008" in paragraphs
-    assert any("测试党发〔2026〕8号" in paragraph for paragraph in paragraphs)
-    assert any("签发人：张三" in paragraph for paragraph in paragraphs)
 
 
 def test_native_redheader_integration_marks_missing_fonts_as_blocked(

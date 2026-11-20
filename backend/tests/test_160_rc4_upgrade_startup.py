@@ -293,6 +293,30 @@ def test_corrupt_upgrade_archive_is_rejected_before_database_overwrite(
     assert _revision(runtime) == "0023"
 
 
+@pytest.mark.skipif(os.name != "nt", reason="Windows 原生文件句柄共享语义")
+def test_windows_locked_shm_restores_already_moved_database_and_wal(
+    monkeypatch, tmp_path: Path,
+) -> None:
+    """用真实 Windows 句柄复验迁移补偿，所有文件均来自隔离目录。"""
+    runtime, settings = _runtime_at_0023(tmp_path)
+    _bind_runtime(monkeypatch, runtime, settings)
+    backup_path = upgrades.create_pre_upgrade_backup()
+    runtime.dispose()
+    before = backups.sha256_file(settings.database_path)
+    wal = Path(f"{settings.database_path}-wal")
+    shm = Path(f"{settings.database_path}-shm")
+    wal.write_bytes(b"synthetic wal")
+    shm.write_bytes(b"synthetic shm")
+    with shm.open("rb") as held:
+        with pytest.raises(PermissionError):
+            upgrades.restore_database_from_upgrade_backup(backup_path)
+        assert held.read() == b"synthetic shm"
+    assert backups.sha256_file(settings.database_path) == before
+    assert wal.read_bytes() == b"synthetic wal"
+    assert shm.read_bytes() == b"synthetic shm"
+    assert not list(tmp_path.glob("partyops.upgrade-failed-*"))
+
+
 @pytest.mark.parametrize(
     ("detail", "expected"),
     [

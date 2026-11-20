@@ -407,6 +407,74 @@ def test_rc1_enrollment_rejects_invalid_legacy_key_and_envelope_structure(isolat
         assert failure.value.code == "ENROLLMENT_RECOVERY_INVALID"
 
 
+def test_rc1_sm4_missing_key_registration_does_not_replace_existing_enrollment_data(isolated_crypto_store):
+    runtime = isolated_crypto_store
+    with runtime.session_factory.begin() as db:
+        owner = User(username="key-fixture-owner", display_name="合成账号", password_hash="test-only")
+        db.add(owner)
+        db.flush()
+        db.add(Device(
+            id="key-fixture-device", name="合成设备", created_by=owner.id,
+            device_metadata={"enrollment_recovery": "v1.sm4-gcm.synthetic"},
+        ))
+    with runtime.session_factory.begin() as db:
+        with pytest.raises(local_secrets.LocalRecoveryError) as failure:
+            local_secrets.encrypt_local_json({"device_id": "new-fixture"}, device_id="new-fixture", db=db)
+        assert failure.value.code == "ENROLLMENT_KEY_MISSING"
+        assert db.get(SystemSetting, local_secrets.ACTIVE_KEY_SETTING) is None
+        assert db.get(Device, "key-fixture-device").device_metadata["enrollment_recovery"] == "v1.sm4-gcm.synthetic"
+    assert not (local_secrets._key_path().parent / "enrollment-keys").exists()
+
+
+def test_rc1_sm4_does_not_write_when_device_identity_or_key_directory_is_invalid(isolated_crypto_store):
+    runtime = isolated_crypto_store
+    directory = local_secrets._key_path().parent / "enrollment-keys"
+    with runtime.session_factory.begin() as db:
+        with pytest.raises(local_secrets.LocalRecoveryError) as failure:
+            local_secrets.encrypt_local_json({"device_id": "different"}, device_id="fixture", db=db)
+        assert failure.value.code == "ENROLLMENT_RECOVERY_CONTEXT_INVALID"
+        assert not directory.exists()
+
+        directory.write_bytes(b"synthetic invalid key storage")
+        with pytest.raises(local_secrets.LocalRecoveryError) as failure:
+            local_secrets.encrypt_local_json({"device_id": "fixture"}, device_id="fixture", db=db)
+        assert failure.value.code == "ENROLLMENT_KEY_WRITE_FAILED"
+        assert db.get(SystemSetting, local_secrets.ACTIVE_KEY_SETTING) is None
+    assert directory.read_bytes() == b"synthetic invalid key storage"
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows DPAPI 原生读取")
+def test_rc1_sm4_dpapi_rejects_corrupt_and_wrong_size_key_records(isolated_crypto_store):
+    import win32crypt
+
+    with isolated_crypto_store.session_factory.begin() as db:
+        encrypted = local_secrets.encrypt_local_json({"device_id": "dpapi-fixture"}, device_id="dpapi-fixture", db=db)
+    key_path = local_secrets._sm4_key_path(encrypted.split(".")[2])
+    protected = win32crypt.CryptProtectData(b"too short", "合成密钥", None, None, None, 1)
+    for envelope in (b"not a DPAPI envelope", protected):
+        key_path.write_bytes(envelope)
+        with pytest.raises(local_secrets.LocalRecoveryError) as failure:
+            local_secrets.decrypt_local_json(encrypted, device_id="dpapi-fixture")
+        assert failure.value.code == "ENROLLMENT_KEY_INVALID"
+        assert key_path.read_bytes() == envelope
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows DPAPI 写入路径")
+def test_rc1_sm4_dpapi_failure_does_not_leave_a_key_or_database_registration(isolated_crypto_store, monkeypatch):
+    import win32crypt
+
+    def unavailable(*_args):
+        raise OSError("合成的 DPAPI 服务账号故障")
+
+    monkeypatch.setattr(win32crypt, "CryptProtectData", unavailable)
+    with isolated_crypto_store.session_factory.begin() as db:
+        with pytest.raises(local_secrets.LocalRecoveryError) as failure:
+            local_secrets.encrypt_local_json({"device_id": "dpapi-fixture"}, device_id="dpapi-fixture", db=db)
+        assert failure.value.code == "ENROLLMENT_KEY_WRITE_FAILED"
+        assert db.get(SystemSetting, local_secrets.ACTIVE_KEY_SETTING) is None
+    assert not (local_secrets._key_path().parent / "enrollment-keys").exists()
+
+
 def test_rc1_partial_ca_is_not_rebuilt(tmp_path):
     settings = get_settings().model_copy(update={"data_dir": tmp_path, "environment": "test"})
     material = ensure_tls_material(settings)
@@ -417,6 +485,55 @@ def test_rc1_partial_ca_is_not_rebuilt(tmp_path):
         ensure_tls_material(settings)
     assert material["ca_path"].read_bytes() == before
     assert not (root / "ca.key").exists()
+
+
+@pytest.mark.parametrize("failure_kind", ["different_anchor", "linked_anchor", "linked_ca_key"])
+def test_rc1_untrusted_ca_paths_preserve_current_material(tmp_path, failure_kind):
+    settings = get_settings().model_copy(update={"data_dir": tmp_path, "environment": "test"})
+    material = ensure_tls_material(settings)
+    ca = material["ca_path"]
+    root = ca.parent
+    anchor = settings.secrets_dir / "pki-root-sha256"
+    before = {path: path.read_bytes() for path in (ca, root / "ca.key", root / "server.pem")}
+    affected = root / "ca.key" if failure_kind == "linked_ca_key" else anchor
+    if failure_kind == "different_anchor":
+        affected.write_bytes(b"0" * 64 + b"\n")
+    else:
+        target = tmp_path / f"{failure_kind}.fixture"
+        target.write_bytes(affected.read_bytes())
+        target.chmod(0o600)
+        affected.unlink()
+        affected.symlink_to(target)
+    failed_value = affected.read_bytes()
+
+    with pytest.raises(ValueError, match="CA 完整性校验失败"):
+        ensure_tls_material(settings)
+    assert {path: path.read_bytes() for path in before} == before
+    assert affected.read_bytes() == failed_value
+    assert affected.is_symlink() == (failure_kind != "different_anchor")
+
+
+def test_rc1_repairs_mismatched_server_key_without_reissuing_ca(tmp_path):
+    settings = get_settings().model_copy(update={"data_dir": tmp_path, "environment": "test"})
+    material = ensure_tls_material(settings)
+    ca = material["ca_path"]
+    leaf = material["server_cert_path"]
+    anchor = settings.secrets_dir / "pki-root-sha256"
+    previous_ca = ca.read_bytes()
+    previous_anchor = anchor.read_bytes()
+    previous_leaf = leaf.read_bytes()
+    leaf.with_name("server.key").write_bytes(
+        rsa.generate_private_key(public_exponent=65537, key_size=2048).private_bytes(
+            serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()
+        )
+    )
+    ensure_tls_material(settings)
+    assert ca.read_bytes() == previous_ca
+    assert anchor.read_bytes() == previous_anchor
+    assert leaf.read_bytes() != previous_leaf
+    x509.load_pem_x509_certificate(leaf.read_bytes()).verify_directly_issued_by(
+        x509.load_pem_x509_certificate(previous_ca)
+    )
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX 密钥文件读权限")
