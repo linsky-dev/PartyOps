@@ -187,3 +187,119 @@ jobs:
             intel-source-build.json
           if-no-files-found: warn
           retention-days: 30
+
+  macos-office-smoke:
+    name: LibreOffice headless (${{ matrix.architecture }})
+    runs-on: ${{ matrix.label }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: macos-15-intel
+            architecture: x86_64
+            python_architecture: x64
+          - label: macos-15
+            architecture: arm64
+            python_architecture: arm64
+    env:
+      OFFICE_ARCHITECTURE: ${{ matrix.architecture }}
+    steps:
+      - name: Check out the triggering commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Set up native Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.11'
+          architecture: ${{ matrix.python_architecture }}
+
+      - name: Verify the official DMG and extract the app
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence="$RUNNER_TEMP/macos-office-evidence"
+          stage="$RUNNER_TEMP/macos-office"
+          mkdir -p "$evidence"
+          available_kib="$(df -Pk "$RUNNER_TEMP" | awk 'END{print $4}')"
+          if [[ ! "$available_kib" =~ ^[0-9]+$ ]] || (( available_kib < 4 * 1024 * 1024 )); then
+            printf '%s\n' '[MACOS_OFFICE_DISK_INSUFFICIENT] Need 4 GiB free for the DMG and extracted app.' |
+              tee "$evidence/prepare.log" >&2
+            exit 2
+          fi
+          bash scripts/prepare-libreoffice-macos.sh \
+            --architecture "$OFFICE_ARCHITECTURE" --output-root "$stage" \
+            2>&1 | tee "$evidence/prepare.log"
+          runtime="$stage/office-$OFFICE_ARCHITECTURE"
+          cp "$runtime/SOURCE.json" "$evidence/SOURCE.json"
+
+      - name: Probe the original signed headless entry point
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence="$RUNNER_TEMP/macos-office-evidence"
+          runtime="$RUNNER_TEMP/macos-office/office-$OFFICE_ARCHITECTURE"
+          app="$runtime/LibreOffice.app"
+          {
+            uname -m
+            sw_vers
+            printf '%s\n' 'scope=standalone upstream app on this runner; minimum_os_runtime_verified=false'
+            /usr/bin/codesign --verify --deep --strict --verbose=2 "$app"
+            /usr/bin/codesign --display --verbose=4 "$app"
+            /usr/bin/otool -l "$app/Contents/MacOS/soffice" |
+              /usr/bin/awk '/LC_BUILD_VERSION|LC_VERSION_MIN_MACOSX/{lines=5} lines>0{print;lines--}'
+            python3.11 - "$runtime" <<'PY'
+          import json
+          import os
+          import subprocess
+          import sys
+          import tempfile
+          from pathlib import Path
+
+          runtime = Path(sys.argv[1])
+          source = json.loads((runtime / "SOURCE.json").read_text(encoding="utf-8"))
+          with tempfile.TemporaryDirectory(prefix="office-profile-", dir=os.environ["RUNNER_TEMP"]) as temporary:
+              home = Path(temporary)
+              env = {
+                  "HOME": temporary,
+                  "TMPDIR": temporary,
+                  "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+                  "LANG": "en_US.UTF-8",
+              }
+              result = subprocess.run(
+                  [
+                      str(runtime / "LibreOffice.app" / "Contents" / "MacOS" / "soffice"),
+                      f"-env:UserInstallation={(home / 'profile').as_uri()}",
+                      "--headless",
+                      "--version",
+                  ],
+                  cwd=home,
+                  env=env,
+                  stdin=subprocess.DEVNULL,
+                  capture_output=True,
+                  text=True,
+                  timeout=90,
+              )
+          print(f"soffice exit_code={result.returncode}")
+          print(result.stdout.strip())
+          if result.stderr:
+              print(result.stderr.strip(), file=sys.stderr)
+          if result.returncode != 0 or result.stdout.split()[:2] != ["LibreOffice", source["version"]]:
+              raise SystemExit("[MACOS_OFFICE_HEADLESS_FAILED] 退出码或实际版本与锁定来源不一致。")
+          PY
+          } 2>&1 | tee "$evidence/headless-version.log"
+
+      - name: Upload LibreOffice source manifest and logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: macos-office-${{ matrix.architecture }}-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/macos-office-evidence/SOURCE.json
+            ${{ runner.temp }}/macos-office-evidence/prepare.log
+            ${{ runner.temp }}/macos-office-evidence/headless-version.log
+          if-no-files-found: warn
+          retention-days: 30
