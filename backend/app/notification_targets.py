@@ -37,6 +37,10 @@ TASK_SECTIONS = {
     "feedback": "review",
     "materials": "materials",
 }
+DEVELOPMENT_DATE_KINDS = {
+    "reference": "参考计划日期",
+    "legal_deadline": "法规截止日期",
+}
 
 
 class NotificationTarget(BaseModel):
@@ -82,10 +86,12 @@ def _child_id(item: Notification) -> str | None:
     if item.notification_type in {"comment", "mention"} and len(parts) == 3:
         if parts[0] == "comment" and parts[2] == item.user_id:
             return parts[1]
-    if item.notification_type == "party_development" and (
-        len(parts) == 5 or (len(parts) == 7 and parts[5] == "history")
-    ):
-        if parts[:3] == [item.user_id, "party-development", item.entity_id]:
+    if item.notification_type == "party_development":
+        if len(parts) in (7, 8) and parts[-2] == "history":
+            parts = parts[:-2]
+        legacy = len(parts) == 5
+        timed = len(parts) == 6 and parts[4] in DEVELOPMENT_DATE_KINDS
+        if (legacy or timed) and parts[:3] == [item.user_id, "party-development", item.entity_id]:
             return parts[3]
     return None
 

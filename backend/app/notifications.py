@@ -19,7 +19,11 @@ from .models import (
     User,
     utcnow,
 )
-from .notification_targets import TASK_SECTIONS, notification_target
+from .notification_targets import (
+    DEVELOPMENT_DATE_KINDS,
+    TASK_SECTIONS,
+    notification_target,
+)
 from .party_development import completed_node_keys
 from .task_service import required_materials_missing, visible_tasks
 
@@ -409,22 +413,35 @@ def refresh_party_development_notifications(
             PartyDevelopmentMilestone.case_id.in_(cases),
         )
     ).all():
-        ref = milestone.adjusted_at or milestone.planned_at
-        legal_day = _local_date(milestone.legal_deadline_at)
-        legal = legal_day is not None and (legal_day <= today or ref is None)
-        target_day = legal_day if legal else _local_date(ref)
-        remaining = (target_day - today).days if target_day else 0
-        window = "overdue" if remaining < 0 else str(remaining)
         completed = milestone.actual_at is not None or (milestone.case_id, milestone.milestone_type) in confirmed
-        should_notify = (
-            not completed
-            and target_day is not None
-            and (remaining < 0 or remaining in (milestone.reminder_days or [60, 30, 14, 7, 1, 0]))
-        )
         case = cases[milestone.case_id]
+        due_messages: dict[str, tuple[str, str]] = {}
+        if not completed:
+            dates = {
+                "reference": _local_date(milestone.adjusted_at or milestone.planned_at),
+                "legal_deadline": _local_date(milestone.legal_deadline_at),
+            }
+            reminder_days = milestone.reminder_days or [60, 30, 14, 7, 1, 0]
+            for kind, target_day in dates.items():
+                if target_day is None:
+                    continue
+                remaining = (target_day - today).days
+                if remaining >= 0 and remaining not in reminder_days:
+                    continue
+                window = "overdue" if remaining < 0 else str(remaining)
+                label = (
+                    f"已超过 {-remaining} 天" if remaining < 0 else
+                    "今天到期" if remaining == 0 else f"还有 {remaining} 天"
+                )
+                date_kind = DEVELOPMENT_DATE_KINDS[kind]
+                due_messages[f"{kind}:{window}"] = (
+                    f"党员发展{date_kind}{label}：{case.name}",
+                    f"{milestone.milestone_type}，{date_kind} {target_day:%Y-%m-%d}。"
+                    "请按组织程序核对材料和会议安排。",
+                )
         for user in recipients:
             prefix = f"{user.id}:party-development:{case.id}:{milestone.id}:"
-            desired = f"{prefix}{window}" if should_notify else ""
+            desired = {f"{prefix}{suffix}": message for suffix, message in due_messages.items()}
             for old in db.scalars(
                 select(Notification).where(
                     Notification.user_id == user.id,
@@ -434,41 +451,50 @@ def refresh_party_development_notifications(
                     Notification.revoked_at.is_(None),
                 )
             ).all():
-                if old.dedupe_key != desired:
-                    old.revoked_at = current
-                    old.updated_at = current
-                    changed += 1
-            if not should_notify:
-                continue
-            label = f"已超过 {-remaining} 天" if remaining < 0 else ("今天到期" if remaining == 0 else f"还有 {remaining} 天")
-            date_kind = "法规截止日期" if legal else "参考计划日期"
-            title = f"党员发展{date_kind}{label}：{case.name}"
-            body = f"{milestone.milestone_type}，{date_kind} {target_day:%Y-%m-%d}。请按组织程序核对材料和会议安排。"
-            existing = db.scalar(select(Notification).where(Notification.dedupe_key == desired))
-            if existing and existing.revoked_at is not None:
-                # 改期后可能重新进入同一个提醒窗口，历史行仍保留原有撤销记录。
-                existing.dedupe_key = f"{desired}:history:{existing.id}"
-                db.flush()
-                existing = None
-            if existing and existing.read_at is None:
-                if existing.title != title or existing.body != body:
-                    existing.title = title
-                    existing.body = body
-                    existing.updated_at = current
-                    changed += 1
-            elif not existing:
-                changed += add_notification(
-                    db,
-                    user_id=user.id,
-                    notification_type="party_development",
-                    title=title,
-                    body=body,
-                    entity_type="party_development_case",
-                    entity_id=case.id,
-                    dedupe_key=desired,
-                    section="timeline",
-                    child_id=milestone.id,
+                if old.revoked_at is not None or old.dedupe_key in desired:
+                    continue
+                # 旧键只记录窗口。能确认日期种类且仍在原窗口时，沿用通知及已读状态。
+                previous_kind = next(
+                    (kind for kind, label in DEVELOPMENT_DATE_KINDS.items() if old.title.startswith(f"党员发展{label}")),
+                    "",
                 )
+                upgraded_key = f"{prefix}{previous_kind}:{old.dedupe_key[len(prefix):]}"
+                if upgraded_key in desired and not db.scalar(
+                    select(Notification.id).where(Notification.dedupe_key == upgraded_key)
+                ):
+                    old.dedupe_key = upgraded_key
+                    db.flush()
+                else:
+                    old.revoked_at = current
+                old.updated_at = current
+                changed += 1
+
+            for key, (title, body) in desired.items():
+                existing = db.scalar(select(Notification).where(Notification.dedupe_key == key))
+                if existing and existing.revoked_at is not None:
+                    # 改期后重新进入某一日期的提醒窗口时，保留原通知和撤销记录。
+                    existing.dedupe_key = f"{key}:history:{existing.id}"
+                    db.flush()
+                    existing = None
+                if existing and existing.read_at is None:
+                    if existing.title != title or existing.body != body:
+                        existing.title = title
+                        existing.body = body
+                        existing.updated_at = current
+                        changed += 1
+                elif not existing:
+                    changed += add_notification(
+                        db,
+                        user_id=user.id,
+                        notification_type="party_development",
+                        title=title,
+                        body=body,
+                        entity_type="party_development_case",
+                        entity_id=case.id,
+                        dedupe_key=key,
+                        section="timeline",
+                        child_id=milestone.id,
+                    )
     return changed
 
 
