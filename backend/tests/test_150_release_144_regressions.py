@@ -864,8 +864,15 @@ def test_party_development_case_and_milestone_boundaries(client, admin: dict) ->
     ).status_code == 200
 
 
-def test_party_development_notification_converges_after_date_change(client, admin: dict) -> None:
+def test_party_development_notification_converges_after_date_change(client, admin: dict, monkeypatch) -> None:
     """节点改期应更新、撤销当前未读提醒，而不是保留新旧两条。"""
+    from app import notifications as notice_module
+
+    # 该回归使用固定的历史基准日。后台提醒调度器默认按真实日期运行，
+    # 其间并发刷新会把 reference:1 撤销成 reference:overdue，导致测试偶发失败。
+    # 仅在本测试中统一提醒时钟，生产调度与规则代码保持原样。
+    fixed_now = datetime(2026, 8, 25, 2, 30, tzinfo=timezone.utc)
+    monkeypatch.setattr(notice_module, "utcnow", lambda: fixed_now)
 
     created = client.post(
         "/api/v1/party-development/cases",
@@ -880,7 +887,7 @@ def test_party_development_notification_converges_after_date_change(client, admi
     generated = client.post(f"/api/v1/party-development/cases/{case_id}/generate-milestones").json()
     nodes = {row["milestone_type"]: row["id"] for row in generated["milestones"]}
     milestone_id = nodes["activist_reference"]
-    now = datetime(2026, 8, 25, 2, 30, tzinfo=timezone.utc)
+    now = fixed_now
     with db_runtime.session_factory() as db:
         milestone = db.get(PartyDevelopmentMilestone, milestone_id)
         legal_milestone = db.get(PartyDevelopmentMilestone, nodes["conversation_deadline"])
