@@ -33,6 +33,7 @@ from app import account_recovery, local_secrets, recovery_cli
 from app.agent_tls import ClientCertificateH11Protocol, check_device_tls
 from app.config import get_settings
 from app.database import Base, DatabaseRuntime, db_runtime
+from app.enums import UserRole
 from app.main import app
 from app.models import AuditLog, Device, RecoveryCredential, SystemSetting, User, utcnow
 from app.pki import ensure_tls_material, issue_device_certificate
@@ -148,6 +149,51 @@ def test_rc1_recovery_bad_expired_revoked_and_concurrent(rc1_admin):
         attempts = list(executor.map(submit_once, range(2)))
     assert sorted(status for status, _ in attempts) == [200, 400]
     assert {"username": user["username"]} in [body for _, body in attempts]
+
+
+def test_rc1_credentials_refuse_noop_and_incorrect_current_password_without_logout(rc1_admin):
+    user, password = _create(rc1_admin)
+    with _client() as browser:
+        assert _log_in(browser, user["username"], password).status_code == 200
+        cases = [
+            ({"current_password": "incorrect-test-password"}, 403, "CURRENT_PASSWORD_INVALID"),
+            ({"current_password": password, "username": user["username"]}, 422, "CREDENTIALS_UNCHANGED"),
+            ({"current_password": password, "new_password": password}, 422, "PASSWORD_UNCHANGED"),
+        ]
+        for body, status, code in cases:
+            response = browser.patch("/api/v1/auth/credentials", json=body)
+            assert (response.status_code, response.json()["code"]) == (status, code)
+            assert response.headers["cache-control"] == "no-store"
+            assert browser.get("/api/v1/auth/me").json()["id"] == user["id"]
+
+
+def test_rc1_recovery_revalidates_role_inside_redeem_transaction(rc1_admin):
+    user, _ = _create(rc1_admin)
+    credential = _issue(rc1_admin, user)
+    route = f"/api/v1/admin/users/{user['id']}/recovery"
+    with db_runtime.session_factory.begin() as db:
+        db.get(User, user["id"]).role = UserRole.ADMIN
+    with _client() as browser:
+        for answer in (
+            rc1_admin.post(route), rc1_admin.delete(route),
+            _redeem(browser, credential), _redeem(browser, "invalid-format"),
+        ):
+            assert (answer.status_code, answer.json()["code"]) == (400, "RECOVERY_INVALID")
+        with db_runtime.session_factory.begin() as db:
+            row = db.scalar(select(RecoveryCredential).where(
+                RecoveryCredential.digest == account_recovery.sm3_digest(credential.encode("ascii"))
+            ))
+            assert row and row.used_at is None and row.revoked_at is None
+            db.get(User, user["id"]).role = UserRole.STAFF
+        assert _redeem(browser, credential).json() == {"username": user["username"]}
+
+
+def test_rc1_recovery_refuses_client_mode_before_starting_write(monkeypatch):
+    settings = get_settings().model_copy(update={"mode": "client"})
+    monkeypatch.setattr(account_recovery, "get_settings", lambda: settings)
+    with _client() as browser:
+        response = _redeem(browser, "invalid-format")
+    assert (response.status_code, response.json()["code"]) == (403, "RECOVERY_HOST_REQUIRED")
 
 
 def test_rc1_recovery_conflict_and_audit_failure_do_not_consume_credential(rc1_admin, monkeypatch):

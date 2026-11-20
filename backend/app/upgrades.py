@@ -203,23 +203,33 @@ def restore_database_from_upgrade_backup(path: Path) -> None:
             f"{beijing_now().strftime('%Y%m%d-%H%M%S-%f')}"
             f"{settings.database_path.suffix}"
         )
-        moved_companions: list[tuple[Path, Path]] = []
-        if settings.database_path.exists():
-            os.replace(settings.database_path, failed)
-        for suffix in ("-wal", "-shm"):
-            source = Path(f"{settings.database_path}{suffix}")
-            if source.exists():
-                destination = Path(f"{failed}{suffix}")
-                os.replace(source, destination)
-                moved_companions.append((source, destination))
+        moved_files: list[tuple[Path, Path]] = []
         try:
+            for suffix in ("", "-wal", "-shm"):
+                source = Path(f"{settings.database_path}{suffix}")
+                if source.exists():
+                    destination = Path(f"{failed}{suffix}")
+                    os.replace(source, destination)
+                    moved_files.append((source, destination))
             os.replace(extracted, settings.database_path)
-        except OSError:
-            if failed.exists() and not settings.database_path.exists():
-                os.replace(failed, settings.database_path)
-            for source, destination in moved_companions:
-                if destination.exists() and not source.exists():
+        except OSError as move_error:
+            # 主库和旁路文件属于同一次换入。任一移动失败都须恢复已移走的文件。
+            pending: list[str] = []
+            for source, destination in reversed(moved_files):
+                if not destination.exists() and source.exists():
+                    continue
+                if source.exists() or (source == settings.database_path and pending):
+                    pending.append(destination.name)
+                    continue
+                try:
                     os.replace(destination, source)
+                except OSError:
+                    pending.append(destination.name)
+            if pending:
+                names = "、".join(pending)
+                raise RuntimeError(
+                    f"升级回滚补偿未完成，请保持服务停止并核验本次保留的文件：{names}"
+                ) from move_error
             raise
         if settings.database_path.stat().st_size != int(expected_database["size"]):
             raise RuntimeError("恢复后的数据库长度与升级前快照不一致")

@@ -325,9 +325,11 @@ def test_upgrade_restore_rejects_bad_extracted_and_restored_database(
         upgrades.restore_database_from_upgrade_backup(backup)
 
 
+@pytest.mark.parametrize("failed_step", ["database", "wal", "shm", "replacement", "compensation"])
 def test_upgrade_restore_reinstates_previous_database_when_replace_fails(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    failed_step: str,
 ) -> None:
     backup = tmp_path / "backup.zip"
     _backup_zip(backup)
@@ -345,15 +347,33 @@ def test_upgrade_restore_reinstates_previous_database_when_replace_fails(
     real_replace = os.replace
     injected = False
 
-    def fail_new_source(source, destination):
+    def fail_one_move(source, destination):
         nonlocal injected
         source_path = Path(source)
-        if destination == database and source_path != database and not injected:
+        is_replacement = destination == database and source_path != database
+        failed_source = {"database": database, "wal": wal, "shm": shm}.get(failed_step)
+        if failed_step == "compensation" and injected and destination == wal:
+            raise OSError("simulated sidecar restore failure")
+        if not injected and (
+            source_path == failed_source or (failed_step in {"replacement", "compensation"} and is_replacement)
+        ):
             injected = True
             raise OSError("simulated install failure")
         return real_replace(source, destination)
 
-    monkeypatch.setattr(upgrades.os, "replace", fail_new_source)
+    monkeypatch.setattr(upgrades.os, "replace", fail_one_move)
+    if failed_step == "compensation":
+        with pytest.raises(RuntimeError, match="请保持服务停止") as failure:
+            upgrades.restore_database_from_upgrade_backup(backup)
+        pending_db, = tmp_path.glob("partyops.upgrade-failed-*.db")
+        pending_wal = Path(f"{pending_db}-wal")
+        assert pending_db.name in str(failure.value)
+        assert pending_wal.name in str(failure.value)
+        assert pending_db.read_bytes() == b"old"
+        assert pending_wal.read_bytes() == b"old-wal"
+        assert shm.read_bytes() == b"old-shm"
+        assert not database.exists() and not wal.exists()
+        return
     with pytest.raises(OSError, match="simulated"):
         upgrades.restore_database_from_upgrade_backup(backup)
     assert database.read_bytes() == b"old"

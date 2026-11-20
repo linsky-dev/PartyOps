@@ -24,7 +24,7 @@ from app.models import (
     WorkspaceFile,
     WorkspaceRoot,
 )
-from app.notification_targets import resolve_notification_target
+from app.notification_targets import notification_target, resolve_notification_target
 from app.problems import ProblemException
 from app.routers import workspace
 
@@ -188,6 +188,43 @@ def test_notice_without_entity_returns_no_navigation(revoked, status):
     result = resolve_notification_target(_Objects(), item, USER, _request())
     assert result.status == status
     assert result.target is None
+    assert notification_target("task", None, "overview") is None
+
+
+@pytest.mark.parametrize(("notice_type", "entity_type"), [
+    ("mention", "task"),
+    ("party_development", "party_development_case"),
+    ("root_approval", "workspace_root"),
+    ("historical_notice", "unknown_object"),
+])
+def test_deleted_or_unknown_objects_do_not_get_a_fallback_from_old_json(notice_type, entity_type):
+    item = Notification(
+        user_id=USER.id, notification_type=notice_type, entity_type=entity_type,
+        entity_id="missing-object", dedupe_key=f"missing-{notice_type}",
+        target={"kind": "workspace_root", "id": ROOT.id, "child_id": ROOT.id},
+    )
+    result = resolve_notification_target(_Objects((WorkspaceRoot, ROOT)), item, USER, _request())
+    assert result.status == "unavailable"
+    assert result.target is None
+
+
+@pytest.mark.parametrize(("date_kind", "window"), [("legal_deadline", "7"), ("unknown", "7")])
+def test_missing_development_target_recovers_only_recognized_date_kind(date_kind, window):
+    case = SimpleNamespace(id="old-case", status="active")
+    node = SimpleNamespace(id="old-node", case_id=case.id)
+    item = Notification(
+        user_id=USER.id, notification_type="party_development", entity_type="party_development_case",
+        entity_id=case.id, dedupe_key=f"{USER.id}:party-development:{case.id}:{node.id}:{date_kind}:{window}",
+    )
+    result = resolve_notification_target(
+        _Objects((PartyDevelopmentCase, case), (PartyDevelopmentMilestone, node)),
+        item, USER, _request(),
+    )
+    assert result.target
+    if date_kind == "legal_deadline":
+        assert result.status == "ready" and result.target.child_id == node.id
+    else:
+        assert result.status == "unavailable" and result.target.child_id is None
 
 
 @pytest.mark.parametrize(("archived", "status"), [(False, "unavailable"), (True, "archived")])
