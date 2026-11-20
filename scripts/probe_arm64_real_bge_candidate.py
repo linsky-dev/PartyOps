@@ -68,7 +68,9 @@ def _download_verified(directory: Path, repository: str, commit: str, filename: 
     actual_hash = digest.hexdigest()
     if actual_hash != expected_hash or not size:
         target.unlink(missing_ok=True)
-        raise ValueError(f"BGE_ASSET_DIGEST_INVALID:{filename}")
+        # Print only the immutable source digest and byte count for investigation.
+        # Never print model content, credentials, or accept a mismatching hash.
+        raise ValueError(f"BGE_ASSET_DIGEST_INVALID:{filename}:sha256={actual_hash}:bytes={size}")
     return {
         "source_repository": repository,
         "source_commit": commit,
