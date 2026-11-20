@@ -25,6 +25,11 @@ def test_arm64_probe_uses_repository_locked_source_and_strict_native_context() -
     assert "validate-portable-tar.py" in script
     assert "probe-sm-crypto-runtime.py" in script
     assert "OPENSSL_STATIC=1" in script
+    assert "pip wheel" in script
+    assert "--no-index --no-deps --find-links" in script
+    assert "wheel_sha256" in script
+    assert "offline_wheel_install = 'PASS'" in script
+    assert "usable_for_release = $false" in script
 
 
 def test_arm64_probe_does_not_change_other_platform_validation() -> None:
@@ -36,3 +41,5 @@ def test_arm64_probe_does_not_change_other_platform_validation() -> None:
     assert "crypto-runtime.json" in workflow
     assert "continue-on-error: true" in workflow
     assert "Probe SM3 and SM4-GCM runtime support" in workflow
+    assert "arm64-crypto-build-only-" in workflow
+    assert "artifacts/arm64-crypto-probe/build-manifest.json" in workflow

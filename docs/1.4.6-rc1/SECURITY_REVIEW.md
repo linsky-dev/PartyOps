@@ -9,3 +9,5 @@
 - 前端生产锁已将 `markdown-it` 更新为 15.0.3。2026-11-20 检索上游版本与 GHSA 公告后，通过 `pnpm audit --prod` 复验。此结果覆盖当前前端生产锁文件。 [上游发布记录](https://github.com/markdown-it/markdown-it/releases/tag/15.0.3)
 - 跨认证模式的 RC6 自动升级不进入目录。旧程序仍安装在目标机时应按本版操作手册停写并覆盖安装，故障演练仍须使用真实旧安装包和目标包。
 - 生产发布以最终独立审查、完整迁移演练和目标制品密码学测试通过为前提。国密结论仅描述本功能及已验证运行时。
+
+- 2026-11-20 GitHub Actions [#44704652210](https://github.com/linsky-dev/PartyOps/actions/runs/44704652210) 证明 Windows ARM64 原生 OpenSSL 3.5.7 + cryptography 50.0.0 已完成源码哈希校验、SM3/SM4-GCM 标准向量与篡改拒绝。只认可该运行时范围；额外 ARM64 应用发行、安装与真实 WPS 仍按独立门禁。后续 wheel 必须留存实际编译 SHA-256 与 BUILD_ONLY 身份，不以 CI 成功当作可发布签名制品。

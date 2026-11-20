@@ -85,6 +85,10 @@ $probe = Join-Path $root 'scripts/probe-sm-crypto-runtime.py'
 $probeResult = Join-Path $root 'crypto-runtime.json'
 $batch = Join-Path $stage 'build-crypto.cmd'
 $log = Join-Path $root 'arm64-source-build.log'
+# 此目录只用于临时 CI 证据，不作为已签名的可发布依赖仓库。
+$evidence = Join-Path $root 'artifacts/arm64-crypto-probe'
+$wheelhouse = Join-Path $evidence 'wheelhouse'
+New-Item -ItemType Directory -Path $wheelhouse -Force | Out-Null
 # 所有编译和 Python 扩展构建必须在同一个 vcvarsall 上下文中。
 $commands = @(
     '@echo off',
@@ -107,8 +111,10 @@ $commands = @(
     'set CARGO_BUILD_JOBS=2',
     'python -m pip install --disable-pip-version-check --only-binary=:all: cffi==2.1.0 pycparser==3.0',
     'if errorlevel 1 exit /b 31',
-    "python -m pip install --disable-pip-version-check --no-cache-dir --no-deps ""$cryptoTar""",
+    "python -m pip wheel --disable-pip-version-check --no-cache-dir --no-deps --wheel-dir ""$wheelhouse"" ""$cryptoTar""",
     'if errorlevel 1 exit /b 32',
+    "python -m pip install --disable-pip-version-check --no-index --no-deps --find-links ""$wheelhouse"" cryptography==50.0.0",
+    'if errorlevel 1 exit /b 33',
     "python ""$probe"" --output ""$probeResult""",
     'if errorlevel 1 exit /b 41',
     'python -c "from cryptography.hazmat.backends.openssl.backend import backend; v=backend.openssl_version_text(); print(v); assert v.startswith(''OpenSSL 3.5.7 '')"',
@@ -124,4 +130,40 @@ Get-Content -LiteralPath $log -Tail 80
 if ($buildExitCode -ne 0) {
     throw "[ARM_CRYPTO_SOURCE_BUILD_FAILED] 源码构建或向量检查失败（cmd exit $buildExitCode）。"
 }
-Write-Output '[ARM_CRYPTO_SOURCE_PROBE_PASS] 原生 ARM64、OpenSSL 3.5.7 与 cryptography 50.0.0 已通过向量与篡改拒绝检查。'
+# 无网络离线安装通过后，才留存本机 Runner 构建的 wheel 和完整来源清单。
+# 这不是已签名、已冻结或可发布的正式 PartyOps 运行时制品。
+$wheels = @(Get-ChildItem -LiteralPath $wheelhouse -File -Filter 'cryptography-50.0.0-*.whl')
+if ($wheels.Count -ne 1 -or $wheels[0].Name -notmatch '^cryptography-50\.0\.0-cp3\d{2}-abi3-win_arm64\.whl$') {
+    throw '[ARM_CRYPTO_WHEEL_INVALID] 原生 ARM64 构建结果缺失、多于一个或平台标签异常。'
+}
+$proof = Get-Content -LiteralPath $probeResult -Raw -Encoding UTF8 | ConvertFrom-Json
+if ($proof.status -ne 'PASS' -or
+    $proof.runtime.cryptography -ne '50.0.0' -or
+    -not $proof.runtime.cryptography_openssl.StartsWith('OpenSSL 3.5.7 ') -or
+    $proof.vectors.sm3_abc -ne 'PASS' -or
+    $proof.vectors.sm4_gcm_rfc8998_appendix_a_1 -ne 'PASS' -or
+    $proof.vectors.sm4_gcm_modified_tag_rejected -ne 'PASS' -or
+    $proof.vectors.sm4_gcm_modified_aad_rejected -ne 'PASS') {
+    throw '[ARM_CRYPTO_WHEEL_UNVERIFIED] 未满足全部运行时标准向量。'
+}
+$manifest = [ordered]@{
+    schema_version = 1
+    status = 'BUILD_ONLY'
+    usable_for_release = $false
+    signed = $false
+    git_sha = $env:GITHUB_SHA
+    runner = $env:RUNNER_NAME
+    architecture = 'windows-arm64'
+    python_architecture = $pythonArch
+    openssl_version = $proof.runtime.cryptography_openssl
+    openssl_source_sha256 = $opensslHash
+    cryptography_version = '50.0.0'
+    cryptography_source_sha256 = $cryptoHash
+    wheel_filename = $wheels[0].Name
+    wheel_sha256 = (Get-FileHash -LiteralPath $wheels[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+    vector_validation = 'PASS'
+    offline_wheel_install = 'PASS'
+    release_note = 'Unsigned CI-only native dependency build; not a release or installation acceptance.'
+}
+$manifest | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $evidence 'build-manifest.json') -Encoding UTF8
+Write-Output '[ARM_CRYPTO_SOURCE_PROBE_PASS] 原生 ARM64、OpenSSL 3.5.7、cryptography 50.0.0、离线 wheel 安装及标准向量验证通过。'

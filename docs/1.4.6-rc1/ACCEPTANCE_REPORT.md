@@ -26,6 +26,9 @@
 | 五个托管平台国密源码探测（`edafb5d`） | PARTIAL | macOS Intel 新增原生验证，锁定 OpenSSL 3.5.7 源构建与 SM3、SM4-GCM 已知答案、AAD 和标签拒绝通过。其余四个已通过的 Runner 复验通过。Windows ARM64 仍缺锁定 wheel。 [云端运行](https://github.com/linsky-dev/PartyOps/actions/runs/44678047573) |
 | 云端后端全量覆盖率（`e51d1235`） | PASS | [运行 44699646896](https://github.com/linsky-dev/PartyOps/actions/runs/44699646896)：Windows 2324 通过、16 跳过、3 个子测试通过；行覆盖率 96.21%、分支覆盖率 92.00%，达到原 95%/92% 门禁。Linux 专项 170 通过、4 跳过，前端及三个 Windows 排版宿主构建作业均成功。这是 `e51d1235` 的证据，后续安全补丁仍须单独复测。 |
 | 云端分架构探测（`e51d1235`） | PARTIAL | [运行 44699646844](https://github.com/linsky-dev/PartyOps/actions/runs/44699646844)：Windows x64、Ubuntu x64/ARM64、macOS Intel/ARM64 国密运行时探测成功，macOS Intel/ARM64 LibreOffice 独立 headless 探测成功。Windows ARM64 对锁定 `cryptography==50.0.0` 缺 wheel，维持失败/阻塞，不视为已适配。 |
+| Windows 全量源码与覆盖率（`1282ffd0`） | PASS | [GitHub Actions #44704652175](https://github.com/linsky-dev/PartyOps/actions/runs/44704652175)：Windows 2,332 项通过、16 项跳过、3 项子测试通过；行覆盖率 96.22%、分支覆盖率 92.01%，均超过 95%/92% 门槛；Linux 176 通过、4 跳过，前端 246 项、生产构建及原有 Windows 排版宿主 x86/x64/AnyCPU 构建均通过。此为源码与 CI 门禁，不是发布包验收。 |
+| Windows ARM64 原生国密运行时（`1282ffd0`） | PASS（运行时） | [GitHub Actions #44704652210](https://github.com/linsky-dev/PartyOps/actions/runs/44704652210) 实际使用 ARM64 Windows Runner、Python 3.12、MSVC/Rust，从固定 SHA-256 的 OpenSSL 3.5.7 及 cryptography 50.0.0 sdist 构建 wheel，绑定 OpenSSL 3.5.7；通过 SM3、RFC 8998 SM4-GCM、标签与 AAD 篡改拒绝。该运行时探测未测试完整 PartyOps ARM64 安装包。 |
+| 原生六平台国密与 macOS LibreOffice（`1282ffd0`） | PASS（专项探测） | 同一 [运行 #44704652210](https://github.com/linsky-dev/PartyOps/actions/runs/44704652210) 的 8 个作业均成功。macOS Intel 从锁定 OpenSSL 3.5.7 编译的原生密码库通过向量；LibreOffice 两架构为 headless 独立冒烟，不等于 WPS。 |
 | 十包构建与逐包真实安装 | NOT_RUN | 尚无本次冻结制品。 |
 | 特殊目标原生安装、升级及真实 WPS | BLOCKED | 需要对应目标环境和合法可用的 WPS 输入。 |
 | 双官网预览及下载回读 | BLOCKED | EdgeOne 控制台可见内容缺少可重建的原始工程。 |

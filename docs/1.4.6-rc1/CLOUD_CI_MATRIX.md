@@ -5,7 +5,7 @@
 | Runner | 环境探测 | 本轮发行验证 |
 | --- | --- | --- |
 | `windows-2025` | PASS | Windows Server 工具链探测。Windows 10/11 客户端 x64 原生安装另行验收。 |
-| `windows-11-arm` | PASS（基础环境）；国密待复核 | Windows ARM64 无锁定 `cryptography==50.0.0` 官方 wheel。本轮另增独立 OpenSSL 3.5.7 + cryptography 50.0.0 原生源码构建与国密已知答案探测；**实际跑通前仍为 BLOCKED**，且即使探测成功也不代表当前十包以外的 ARM64 安装包已验收。 |
+| `windows-11-arm` | PASS（原生国密运行时） | [2026-11-20 运行 #44704652210](https://github.com/linsky-dev/PartyOps/actions/runs/44704652210) 从固定源码在原生 ARM64 上编译 OpenSSL 3.5.7 和 cryptography 50.0.0；SM3、RFC 8998 SM4-GCM 与篡改拒绝均 PASS。官方 ARM64 wheel 仍缺，完整 PartyOps 原生安装包、WPS/升级尚未验收。 |
 | `ubuntu-24.04` | PASS | amd64 依赖、构建和软件包冒烟。UOS x64 和 openEuler x64 专项另行验收。 |
 | `ubuntu-24.04-arm` | PASS | ARM64 依赖、构建和软件包冒烟。麒麟 ARM64、UOS ARM64 和 openEuler ARM64 专项另行验收。 |
 | `macos-15-intel` | PASS | 当前候选 PKG 和真实 WPS 待专项验证，低版本 macOS 按承诺范围补测。 |

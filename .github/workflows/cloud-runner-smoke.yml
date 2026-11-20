@@ -185,6 +185,17 @@ jobs:
           fi
           "$BUILD_ROOT/venv/bin/python" scripts/probe-sm-crypto-runtime.py --output "$OUTPUT"
 
+      - name: Upload unsigned ARM64 source-built wheel for review (BUILD_ONLY)
+        if: ${{ always() && matrix.label == 'windows-11-arm' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: arm64-crypto-build-only-${{ github.sha }}
+          path: |
+            artifacts/arm64-crypto-probe/build-manifest.json
+            artifacts/arm64-crypto-probe/wheelhouse/*.whl
+          if-no-files-found: warn
+          retention-days: 7
+
       - name: Upload crypto runtime evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
