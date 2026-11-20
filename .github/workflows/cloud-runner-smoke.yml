@@ -17,7 +17,7 @@ jobs:
   runner-smoke:
     name: ${{ matrix.label }}
     runs-on: ${{ matrix.label }}
-    timeout-minutes: 20
+    timeout-minutes: ${{ matrix.label == 'macos-15-intel' && 45 || 20 }}
     strategy:
       fail-fast: false
       matrix:
@@ -72,12 +72,12 @@ jobs:
         continue-on-error: true
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         with:
-          python-version: '3.12'
+          python-version: ${{ matrix.label == 'macos-15-intel' && '3.11' || '3.12' }}
           architecture: ${{ matrix.python_architecture }}
 
       - name: Install the pinned native cryptography wheel
         id: crypto-install
-        if: ${{ steps.native-python.outcome == 'success' }}
+        if: ${{ steps.native-python.outcome == 'success' && matrix.label != 'macos-15-intel' }}
         continue-on-error: true
         shell: pwsh
         run: |
@@ -89,7 +89,7 @@ jobs:
           }
 
       - name: Probe SM3 and SM4-GCM runtime support
-        if: always()
+        if: ${{ always() && matrix.label != 'macos-15-intel' }}
         shell: pwsh
         env:
           CRYPTO_INSTALL_OUTCOME: ${{ steps.crypto-install.outcome }}
@@ -112,6 +112,69 @@ jobs:
             exit $LASTEXITCODE
           }
 
+      - name: Build pinned Intel OpenSSL and cryptography from source
+        id: intel-source-build
+        if: ${{ matrix.label == 'macos-15-intel' && steps.native-python.outcome == 'success' }}
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          LOG="$GITHUB_WORKSPACE/intel-source-build.log"
+          python3.11 --version 2>&1 | tee "$LOG"
+          UV_TOOL_VENV="$RUNNER_TEMP/partyops-uv-tool"
+          python3.11 -m venv "$UV_TOOL_VENV"
+          "$UV_TOOL_VENV/bin/python" -m pip install --disable-pip-version-check 'uv==0.11.7' 2>&1 | tee -a "$LOG"
+          export PARTYOPS_MACOS_PYTHON=python3.11
+          export PARTYOPS_UV="$UV_TOOL_VENV/bin/uv"
+          export MACOSX_DEPLOYMENT_TARGET=11.0
+          BUILD_ROOT="$RUNNER_TEMP/partyops-intel-crypto"
+          mkdir -p "$BUILD_ROOT"
+          bash packaging/macos/build-intel-crypto-environment.sh \
+            "$GITHUB_WORKSPACE" "$BUILD_ROOT" "$BUILD_ROOT/venv" 2>&1 | tee -a "$LOG"
+
+      - name: Probe Intel source-built SM3 and SM4-GCM support
+        if: ${{ always() && matrix.label == 'macos-15-intel' }}
+        shell: bash
+        env:
+          INTEL_SOURCE_BUILD_OUTCOME: ${{ steps.intel-source-build.outcome }}
+        run: |
+          set -euo pipefail
+          OUTPUT="$GITHUB_WORKSPACE/crypto-runtime.json"
+          BUILD_ROOT="$RUNNER_TEMP/partyops-intel-crypto"
+          PROBE_PYTHON=python3.11
+          if ! command -v "$PROBE_PYTHON" >/dev/null 2>&1; then PROBE_PYTHON=python; fi
+          "$PROBE_PYTHON" - "$GITHUB_WORKSPACE/intel-source-build.json" "$INTEL_SOURCE_BUILD_OUTCOME" <<'PY'
+          import json
+          import os
+          import sys
+          from pathlib import Path
+
+          path, outcome = sys.argv[1:]
+          Path(path).write_text(
+              json.dumps(
+                  {
+                      "schema_version": 1,
+                      "status": "PASS" if outcome == "success" else "FAIL",
+                      "runner": os.environ.get("RUNNER_NAME", "unknown"),
+                      "architecture": os.uname().machine,
+                      "python": sys.version.split()[0],
+                      "source_build_step_outcome": outcome,
+                      "source": "OpenSSL 3.5.7 pinned source + cryptography uv source build",
+                  },
+                  ensure_ascii=False,
+                  indent=2,
+              )
+              + "\n",
+              encoding="utf-8",
+          )
+          PY
+          if [[ "$INTEL_SOURCE_BUILD_OUTCOME" != 'success' ]]; then
+            "$PROBE_PYTHON" scripts/probe-sm-crypto-runtime.py --output "$OUTPUT" \
+              --installation-error "Pinned Intel OpenSSL/cryptography source build failed: $INTEL_SOURCE_BUILD_OUTCOME"
+            exit 1
+          fi
+          "$BUILD_ROOT/venv/bin/python" scripts/probe-sm-crypto-runtime.py --output "$OUTPUT"
+
       - name: Upload crypto runtime evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -120,5 +183,7 @@ jobs:
           path: |
             crypto-runtime.json
             cryptography-install.log
+            intel-source-build.log
+            intel-source-build.json
           if-no-files-found: warn
           retention-days: 30

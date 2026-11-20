@@ -63,10 +63,13 @@ jobs:
           mkdir -p artifacts/backend
           cd backend
           .venv/bin/pytest tests/test_auth_hardening.py tests/test_rc1_account_recovery.py \
+            tests/test_rc1_recovery_cli.py \
             tests/test_rc1_agent_identity.py tests/test_z_recovery_and_events.py tests/test_enrollment_codes.py \
             tests/test_146_notification_target_resilience.py tests/test_146_workspace_context.py \
             tests/test_rc1_workspace_context_access.py \
             tests/test_146_development_tracks.py tests/test_party_development.py \
+            tests/test_rc1_dual_development_reminders.py \
+            tests/test_document_formatter_source_snapshot.py \
             tests/test_160_rc4_upgrade_startup.py tests/test_version_consistency_gate.py \
             --junitxml=../artifacts/backend/junit.xml \
             2>&1 | tee ../artifacts/backend/pytest.log
@@ -160,6 +163,56 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+  windows-formatter-source:
+    name: Windows formatter upstream (${{ matrix.architecture }})
+    runs-on: windows-2025
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        architecture: [x64, x86]
+    steps:
+      - name: Check out the triggering commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Set up Python for source verification
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+
+      - name: Rebuild the verified upstream and run the bundled regressions
+        shell: pwsh
+        env:
+          FORMATTER_ARCH: ${{ matrix.architecture }}
+          PYTHONUTF8: '1'
+          MSBUILDDISABLENODEREUSE: '1'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          $available = (Get-Item -LiteralPath $env:GITHUB_WORKSPACE).PSDrive.Free
+          if ($available -lt 4GB) { throw 'Windows runner has less than 4 GiB available.' }
+          $evidence = 'artifacts/formatter-source'
+          New-Item -ItemType Directory -Path $evidence -Force | Out-Null
+          $source = Join-Path $env:RUNNER_TEMP 'formatter-upstream'
+          python scripts/verify-document-formatter-source-snapshot.py `
+            --source vendor/document-formatter-source --stage-upstream $source |
+            Tee-Object -FilePath "$evidence/source-snapshot.json"
+          & (Join-Path $source 'tools/Build-Windows.ps1') -Configuration Release -Platform $env:FORMATTER_ARCH 2>&1 |
+            Tee-Object -FilePath "$evidence/build-and-regression.log"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Upload formatter source build evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: formatter-source-${{ matrix.architecture }}-${{ github.sha }}
+          path: artifacts/formatter-source
+          if-no-files-found: warn
+          retention-days: 14
+
   frontend:
     name: Frontend checks and build
     runs-on: ubuntu-24.04
@@ -212,8 +265,8 @@ jobs:
           mkdir -p ../artifacts/frontend
           pnpm run typecheck 2>&1 | tee ../artifacts/frontend/typecheck.log
           pnpm run test:coverage 2>&1 | tee ../artifacts/frontend/coverage.log
-          pnpm run test:sites 2>&1 | tee ../artifacts/frontend/sites.log
           pnpm run build 2>&1 | tee ../artifacts/frontend/build.log
+          pnpm run test:sites 2>&1 | tee ../artifacts/frontend/sites.log
           pnpm audit --prod --json > ../artifacts/frontend/npm-audit.json
 
       - name: Upload frontend test and build evidence

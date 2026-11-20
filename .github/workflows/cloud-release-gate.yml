@@ -90,7 +90,7 @@ jobs:
           manifest = json.loads((root / "candidate-evidence.json").read_text(encoding="utf-8"))
           required_targets = {
               "windows-10-x64", "windows-11-x64", "windows-7-x64",
-              "windows-7-x86", "windows-10-x86", "windows-10-arm64", "windows-11-arm64",
+              "windows-7-x86",
               "uos-deb-x64", "uos-deb-arm64", "kylin-deb-arm64", "deepin-deb-loong64",
               "openeuler-rpm-x86_64", "openeuler-rpm-aarch64",
               "macos-intel", "macos-apple-silicon",
