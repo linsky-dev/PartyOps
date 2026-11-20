@@ -123,6 +123,31 @@ def test_rc1_recovery_is_single_use_and_preserves_identity(rc1_admin, caplog):
     assert all(secret not in (caplog.text + dump) for secret in (original, token, old_password, new_password))
 
 
+def test_rc1_username_only_recovery_revokes_existing_cookie_and_bearer_sessions(rc1_admin):
+    """仅取回用户名也必须在消费凭据的事务中撤销已有会话。"""
+    user, original_password = _create(rc1_admin)
+    credential = _issue(rc1_admin, user)
+    with _client() as original_browser, _client() as bearer_browser, _client() as redeem_browser, _client() as api:
+        assert _log_in(original_browser, user["username"], original_password).status_code == 200
+        assert _log_in(bearer_browser, user["username"], original_password).status_code == 200
+        bearer = {"Authorization": f"Bearer {bearer_browser.cookies[SESSION_COOKIE]}"}
+        assert api.get("/api/v1/auth/me", headers=bearer).status_code == 200
+        assert _log_in(redeem_browser, user["username"], original_password).status_code == 200
+
+        result = _redeem(redeem_browser, credential)
+        assert result.status_code == 200, result.text
+        assert result.json() == {"username": user["username"]}
+        assert result.headers["cache-control"] == "no-store"
+        assert SESSION_COOKIE not in redeem_browser.cookies
+        assert original_browser.get("/api/v1/auth/me").status_code == 401
+        assert api.get("/api/v1/auth/me", headers=bearer).status_code == 401
+        assert _redeem(api, credential).json()["code"] == "RECOVERY_INVALID"
+        # 找回用户名不能悄悄变更密码或原有用户身份。
+        restored = _log_in(original_browser, user["username"], original_password)
+        assert restored.status_code == 200, restored.text
+        assert restored.json()["id"] == user["id"]
+
+
 def test_rc1_recovery_bad_expired_revoked_and_concurrent(rc1_admin):
     user, _ = _create(rc1_admin)
     expired = _issue(rc1_admin, user)

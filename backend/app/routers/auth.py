@@ -319,8 +319,8 @@ def recover_account(
     ensure_authoritative_host()
     with credential_transaction(db):
         user = redeem_credential(db, payload, client_ip(request))
-    if payload.has_changes:
-        clear_login_cookies(response)
+    # 无论仅找回用户名还是修改登录信息，都不能继续使用旧浏览器会话。
+    clear_login_cookies(response)
     response.headers.update(NO_STORE)
     return RecoveredUsername(username=user.username)
 

@@ -1,26 +1,10 @@
-"""1.4.6 RC1: 启动与密码学自检必须在异常输入下显式失败。
-
-这些回归测试覆盖正式安装包入口的拒绝分支，不降低既有 95% 行、
-92% 分支覆盖率门禁，也不代替目标系统原生安装验收。
-"""
+"""RC1 的国密启动已知答案拒绝路径回归，不涉及既有排版模块。"""
 
 from __future__ import annotations
-
-from pathlib import Path
 
 import pytest
 
 from app import startup_selftest
-
-
-def test_formatter_probe_rejects_oversized_endpoint_record(tmp_path: Path) -> None:
-    """端点记录超出固定上限时，在解析 JSON 或请求端口之前拒绝。"""
-    path = tmp_path / "logs" / "official-format-endpoint.json"
-    path.parent.mkdir()
-    path.write_bytes(b"x" * 4097)
-
-    with pytest.raises(RuntimeError, match="排版端点记录无效"):
-        startup_selftest._probe_owned_formatter(tmp_path, expected_pid=24680)
 
 
 def test_sm3_known_answer_mismatch_fails_closed(

@@ -253,5 +253,9 @@ def redeem_credential(db: Session, payload: RedeemCredential, address: str) -> U
         apply_credential_changes(
             db, user, payload, actor=None, address=address, action="auth.recovery_credentials_changed"
         )
+    else:
+        # 仅找回用户名也属于一次性恢复凭据消费。撤销旧 Cookie/Bearer
+        # 会话与消费记录、审计写入同事务，避免曾丢失的凭据被用于会话保留。
+        revoke_account_sessions(db, user.id)
     write_audit(db, None, "auth.recovery_redeem", "user", user.id, {"purpose": purpose}, address)
     return user
