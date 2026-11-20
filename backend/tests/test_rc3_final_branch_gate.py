@@ -20,7 +20,6 @@ from types import SimpleNamespace
 import pytest
 from pydantic import ValidationError
 from sqlalchemy.exc import OperationalError
-
 from starlette.datastructures import Headers
 
 from app import (
