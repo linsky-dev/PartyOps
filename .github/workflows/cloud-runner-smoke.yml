@@ -17,7 +17,7 @@ jobs:
   runner-smoke:
     name: ${{ matrix.label }}
     runs-on: ${{ matrix.label }}
-    timeout-minutes: ${{ matrix.label == 'macos-15-intel' && 45 || 20 }}
+    timeout-minutes: ${{ matrix.label == 'macos-15-intel' && 45 || matrix.label == 'windows-11-arm' && 55 || 20 }}
     strategy:
       fail-fast: false
       matrix:
@@ -88,11 +88,21 @@ jobs:
             exit $LASTEXITCODE
           }
 
+      - name: Build pinned Windows ARM64 cryptography from source when wheel is missing
+        id: arm64-source-build
+        if: ${{ matrix.label == 'windows-11-arm' && steps.native-python.outcome == 'success' && steps.crypto-install.outcome != 'success' }}
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          ./scripts/build-windows-arm64-crypto-probe.ps1 -OutputDirectory (Join-Path $env:RUNNER_TEMP 'partyops-arm64-crypto')
+
       - name: Probe SM3 and SM4-GCM runtime support
         if: ${{ always() && matrix.label != 'macos-15-intel' }}
         shell: pwsh
         env:
           CRYPTO_INSTALL_OUTCOME: ${{ steps.crypto-install.outcome }}
+          ARM64_SOURCE_OUTCOME: ${{ steps.arm64-source-build.outcome }}
           NATIVE_PYTHON_OUTCOME: ${{ steps.native-python.outcome }}
         run: |
           $ErrorActionPreference = 'Stop'
@@ -102,9 +112,9 @@ jobs:
               --installation-error 'Native Python 3.12 was unavailable'
             exit 1
           }
-          if ($env:CRYPTO_INSTALL_OUTCOME -ne 'success') {
+          if ($env:CRYPTO_INSTALL_OUTCOME -ne 'success' -and $env:ARM64_SOURCE_OUTCOME -ne 'success') {
             python scripts/probe-sm-crypto-runtime.py --output $output `
-              --installation-error 'cryptography 50.0.0 native wheel installation failed'
+              --installation-error 'Pinned cryptography wheel unavailable; native ARM64 source fallback did not pass'
             exit 1
           }
           python scripts/probe-sm-crypto-runtime.py --output $output
@@ -183,6 +193,7 @@ jobs:
           path: |
             crypto-runtime.json
             cryptography-install.log
+            arm64-source-build.log
             intel-source-build.log
             intel-source-build.json
           if-no-files-found: warn
