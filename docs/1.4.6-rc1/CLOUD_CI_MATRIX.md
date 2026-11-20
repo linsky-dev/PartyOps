@@ -16,3 +16,9 @@ Windows 7 SP1 x86/x64、Deepin 25.2.0 LoongArch64、麒麟与 UOS 桌面、openE
 ## Windows ARM64 AI 推理依赖隔离研究
 
 完整应用仍受锁定 `onnxruntime==1.22.1` 等原生 wheel 缺失影响。由于上游后续版本提供 ARM64 wheel，本轮增加一个 **仅在原生 Windows ARM64 Runner 执行的隔离候选探测**，使用 `onnxruntime==1.24.2`、`numpy==2.3.5`、`onnx==1.23.2`、`tokenizers==0.23.3` 执行合成 ONNX Identity CPU 推理、Tokenizer JSON 读取/批量编码及 3 输入嵌入接口模拟。结果单独归为 `BUILD_ONLY`，并与现有 PartyOps 模型、生产锁文件、真实 WPS 和十包验收明确隔离。即使合成模型运行成功，也必须进一步评审 BGE/本地模型算子兼容、应用加载路径、性能、打包、升级和原生验收，才可以考虑 ARM64 特有依赖方案。来源：https://pypi.org/project/onnxruntime/1.24.2/ 、https://pypi.org/project/numpy/2.3.5/ 、https://pypi.org/project/onnx/1.23.2/ 。
+
+## Windows ARM64 PDF 运行时隔离验证
+
+目前 PartyOps 正式锁定 `PyMuPDF==1.26.0`，没有对应的 Windows ARM64 原生 wheel。上游 `pymupdf-lite==2.1` 已提供 `win_arm64` wheel，但官方声明它缺少完整 PyMuPDF Layout 引擎。新建只读 GitHub ARM64 独立作业只用合成文件检验当前 PartyOps 调用到的 `fitz.open`、`get_text("text")`、`get_text("text", sort=True)`、`Matrix`、`get_pixmap`、`Pixmap`、加密文档 `needs_pass` 及无效内容拒绝。不得因这个实验就修改已验收的 WPS 排版、`backend/uv.lock`，也不得把布局分析、真实档案/中文 OCR、安装/签名/升级或供应链许可证核查标记为通过。
+
+候选来源：PyMuPDF Lite 2.1 的官方 PyPI 页 https://pypi.org/project/pymupdf-lite/2.1/ 及官方精简版说明 https://github.com/pymupdf/PyMuPDF/blob/main/README-lite.md 。状态以本轮原生 Actions 日志为准。
