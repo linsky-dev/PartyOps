@@ -14,6 +14,17 @@ RECOVERED_NAME = "tesseract-5.5.3-windows-amd64-recovered"
 MANIFEST_SHA256 = "fa4ef50093a52c72932550a48c01cdea7fe44056d44bcc6460fa40cdffdbdff3"
 
 
+def test_recovery_rejects_unlisted_release_hashes_and_checks_exact_ocr_payload():
+    source = (ROOT / "packaging/windows/recover-ocr-from-public-installer.ps1").read_text(
+        encoding="utf-8"
+    )
+    assert "A7C044B0B830CE416FDF02C84DAA2E7AA4929C0833D9B530BC47486D861A81BE" in source
+    assert "E3E2EA45CCD38ACFF059B5713826A78F998A56CEF75341633F67BD4E17E57DA" in source
+    assert "$allowedInstallerHashes.ContainsKey($sourceHash)" in source
+    assert "Assert-PartyOpsOcrRecoveryTree -Root $extracted" in source
+    assert "Assert-PartyOpsOcrRecoveryTree -Root $output" in source
+
+
 def test_public_ocr_manifest_is_fixed_and_includes_original_evidence():
     manifest_path = ROOT / "packaging/windows/ocr-public-recovery-manifest.json"
     assert hashlib.sha256(manifest_path.read_bytes()).hexdigest() == MANIFEST_SHA256

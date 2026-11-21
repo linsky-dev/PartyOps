@@ -75,6 +75,35 @@ jobs:
           New-Item -ItemType Directory -Path artifacts -Force | Out-Null
           $evidence | ConvertTo-Json | Out-File -LiteralPath artifacts/windows-rc1-sqlite.json -Encoding utf8
 
+      - name: Recover and verify official .NET Framework 4.8 offline prerequisite
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          . ./packaging/windows/prepare-dotnet48-runtime.ps1
+          $repoRoot = (Get-Location).Path
+          $dest = Join-Path $repoRoot 'artifacts/verified-dotnet48/prerequisites'
+          Add-VerifiedPartyOpsDotNet48Prerequisite -RepoRoot $repoRoot -Destination $dest
+          $source = Get-Content -LiteralPath vendor/windows/dotnet-framework-4.8/SOURCE.json -Raw | ConvertFrom-Json
+          $file = Join-Path $dest 'ndp48-x86-x64-allos-enu.exe'
+          if (-not (Test-Path -LiteralPath $file -PathType Leaf)) {
+            throw '[DOTNET48_RUNTIME_VERIFIED_FILE_MISSING]'
+          }
+          $sha = (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($sha -ne '0a3a390c47e639d0f7fc65b21195fee6b7f65b066f80f70c60fab191d14b7e40') {
+            throw '[DOTNET48_RUNTIME_VERIFIED_SHA256_MISMATCH]'
+          }
+          [ordered]@{
+            source_commit = '${{ github.sha }}'
+            component = 'dotnet-framework-4.8-prerequisite'
+            official_sha256 = $sha
+            official_license_basis = $source.redistribution_basis
+            signature_subject = $source.authenticode.subject
+            signature_thumbprint = $source.authenticode.certificate_thumbprint
+            verified_by_original_partyops_build_script = $true
+            installer_generated = $false
+            release_ready = $false
+          } | ConvertTo-Json | Out-File -LiteralPath artifacts/windows-rc1-dotnet48.json -Encoding utf8
+
       - name: Report actual clean-checkout Windows package requirements
         shell: pwsh
         env:
@@ -103,5 +132,6 @@ jobs:
           path: |
             artifacts/windows-rc1-preflight.json
             artifacts/windows-rc1-sqlite.json
+            artifacts/windows-rc1-dotnet48.json
           if-no-files-found: warn
           retention-days: 14
