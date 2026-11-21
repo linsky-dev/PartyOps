@@ -35,7 +35,7 @@ jobs:
           $output = & pwsh -NoProfile -File $entry -ExpectedSourceSha $sha -Mode Preflight
           $exitCode = $LASTEXITCODE
           if ($exitCode -ne 2) { throw '[RC1_NATIVE_WPS_HOSTED_RUNNER_FALSE_PASS]' }
-          $report = ($output -join "\`n") | ConvertFrom-Json
+          $report = ($output -join [Environment]::NewLine) | ConvertFrom-Json
           if ($report.status -ne 'BLOCKED' -or $report.release_ready -or
               $report.native_wps_passed -or $report.native_full_function_passed -or
               $report.candidate_installer_built) {
