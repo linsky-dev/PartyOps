@@ -26,6 +26,44 @@ def _stored_file(folder: Path, name: str, data: bytes) -> dict:
     return {"filename": name, "size_bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()}
 
 
+def _synthetic_installer(target: str) -> tuple[str, bytes]:
+    """Header-shaped fake package for parser tests ONLY, not real installers."""
+    extension = (
+        ".exe" if target.startswith("windows") else
+        ".deb" if target.startswith("deb") else
+        ".rpm" if target.startswith("rpm") else ".pkg"
+    )
+    data = bytearray(4096)
+    if extension == ".exe":
+        data[:2] = b"MZ"
+        data[0x3c:0x40] = (128).to_bytes(4, "little")
+        data[128:132] = b"PE\x00\x00"
+        machine = 0x14c if target == "windows-7-x86" else 0x8664
+        data[132:134] = machine.to_bytes(2, "little")
+    elif extension == ".deb":
+        data[:8] = b"!<arch>\n"
+    elif extension == ".rpm":
+        data[:4] = b"\xed\xab\xee\xdb"
+    else:
+        data[:4] = b"xar!"
+        data[4:6] = (28).to_bytes(2, "big")
+    encoded = target.encode("ascii")
+    data[-len(encoded):] = encoded
+    return f"PartyOps_1.4.6-rc.1_{target}{extension}", bytes(data)
+
+
+def _expected_native_arch(target: str) -> str:
+    return {
+        "windows-10-x64": "amd64", "windows-11-x64": "amd64",
+        "windows-7-x64": "amd64", "windows-7-x86": "x86",
+        "uos-deb-x64": "amd64", "uos-deb-arm64": "aarch64",
+        "kylin-deb-arm64": "aarch64", "deepin-deb-loong64": "loong64",
+        "openeuler-rpm-x86_64": "x86_64",
+        "openeuler-rpm-aarch64": "aarch64",
+        "macos-intel": "x86_64", "macos-apple-silicon": "arm64",
+    }[target]
+
+
 def _fake_manifest(folder: Path) -> dict:
     folder.mkdir(parents=True)
     package_mapping = {
@@ -43,14 +81,17 @@ def _fake_manifest(folder: Path) -> dict:
     installer_rows = [
         {
             "target": package, "status": "PASS",
-            "artifacts": [_stored_file(folder, f"{package}.txt", package.encode())],
+            "artifacts": [_stored_file(folder, *_synthetic_installer(package))],
         }
         for package in package_mapping
     ]
+    hashes = {row["target"]: row["artifacts"][0]["sha256"] for row in installer_rows}
     native_rows = [
         {
             "target": system, "installer_target": package, "status": "PASS",
-            "artifacts": [_stored_file(folder, f"native-{system}.txt", system.encode())],
+            "native_architecture": _expected_native_arch(system),
+            "installed_package_sha256": hashes[package],
+            "artifacts": [_stored_file(folder, f"native-{system}.json", system.encode())],
         }
         for package, systems in package_mapping.items() for system in systems
     ]
@@ -130,3 +171,51 @@ def test_gate_blocks_any_missing_signature_or_wps_acceptance(tmp_path: Path):
     assert verdict["verdict"] == "BLOCKED"
     assert any("signature_status" in error for error in verdict["blockers"])
     assert any("wps_native_acceptance" in error for error in verdict["blockers"])
+
+
+def test_gate_rejects_plain_text_placeholder_even_with_matching_hash(tmp_path: Path):
+    folder = tmp_path / "artifacts" / "candidate"
+    manifest = _fake_manifest(folder)
+    row = manifest["installer_targets"][0]
+    row["artifacts"] = [_stored_file(folder, "placeholder.txt", b"not an installer")]
+    manifest["native_validation_targets"][0]["installed_package_sha256"] = "0" * 64
+    verdict = _evaluate(tmp_path, manifest)
+    assert verdict["verdict"] == "BLOCKED"
+    assert any("exactly one real installer" in b for b in verdict["blockers"])
+    assert any("native tested package SHA" in b for b in verdict["blockers"])
+
+
+def test_gate_rejects_wrong_pe_architecture_and_truncated_package(tmp_path: Path):
+    folder = tmp_path / "artifacts" / "candidate"
+    manifest = _fake_manifest(folder)
+    wrong = manifest["installer_targets"][1]
+    filename = wrong["artifacts"][0]["filename"]
+    content = bytearray((folder / filename).read_bytes())
+    content[132:134] = (0x14c).to_bytes(2, "little")  # x86, not x64
+    wrong["artifacts"] = [_stored_file(folder, filename, bytes(content))]
+    short = manifest["installer_targets"][2]
+    shortfile = short["artifacts"][0]["filename"]
+    short["artifacts"] = [_stored_file(folder, shortfile, b"MZ" + b"\0" * 10)]
+    verdict = _evaluate(tmp_path, manifest)
+    assert verdict["verdict"] == "BLOCKED"
+    assert sum("installer format or architecture invalid" in b for b in verdict["blockers"]) >= 2
+
+
+def test_gate_rejects_native_wrong_architecture_with_valid_package_hash(tmp_path: Path):
+    manifest = _fake_manifest(tmp_path / "artifacts" / "candidate")
+    row = next(x for x in manifest["native_validation_targets"] if x["target"] == "kylin-deb-arm64")
+    row["native_architecture"] = "amd64"
+    verdict = _evaluate(tmp_path, manifest)
+    assert verdict["verdict"] == "BLOCKED"
+    assert any("native architecture does not match target" in b for b in verdict["blockers"])
+
+
+def test_gate_rejects_reused_executable_across_distinct_installer_targets(tmp_path: Path):
+    folder = tmp_path / "artifacts" / "candidate"
+    manifest = _fake_manifest(folder)
+    source, target = manifest["installer_targets"][:2]
+    same_bytes = (folder / source["artifacts"][0]["filename"]).read_bytes()
+    target["artifacts"] = [_stored_file(folder, target["artifacts"][0]["filename"], same_bytes)]
+    verdict = _evaluate(tmp_path, manifest)
+    assert verdict["verdict"] == "BLOCKED"
+    assert any("share identical file hash" in b for b in verdict["blockers"])

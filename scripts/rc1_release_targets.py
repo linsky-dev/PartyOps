@@ -29,3 +29,22 @@ def expected_native_targets() -> dict[str, str]:
         for installer, environments in INSTALLER_VALIDATION_TARGETS.items()
         for environment in environments
     }
+
+
+# Only structural checks: actual Authenticode/codesign/package/native installation
+# evidence is still mandatory and must pass independent review.
+INSTALLER_FILE_SUFFIXES = {
+    **{t: ".exe" for t in ("windows-x64", "windows-7-x64", "windows-7-x86")},
+    **{t: ".deb" for t in ("deb-amd64", "deb-arm64", "deb-loong64")},
+    **{t: ".rpm" for t in ("rpm-x86_64", "rpm-aarch64")},
+    **{t: ".pkg" for t in ("macos-intel", "macos-apple-silicon")},
+}
+
+NATIVE_ACCEPTANCE_ARCH = {
+    "windows-10-x64": "amd64", "windows-11-x64": "amd64",
+    "windows-7-x64": "amd64", "windows-7-x86": "x86",
+    "uos-deb-x64": "amd64", "uos-deb-arm64": "aarch64",
+    "kylin-deb-arm64": "aarch64", "deepin-deb-loong64": "loong64",
+    "openeuler-rpm-x86_64": "x86_64", "openeuler-rpm-aarch64": "aarch64",
+    "macos-intel": "x86_64", "macos-apple-silicon": "arm64",
+}

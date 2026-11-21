@@ -85,7 +85,12 @@ jobs:
           import json
           import os
           from pathlib import Path
-          from scripts.rc1_release_targets import INSTALLER_VALIDATION_TARGETS, expected_native_targets
+          from scripts.rc1_release_targets import (
+              INSTALLER_FILE_SUFFIXES,
+              INSTALLER_VALIDATION_TARGETS,
+              NATIVE_ACCEPTANCE_ARCH,
+              expected_native_targets,
+          )
 
           root = Path("artifacts/candidate")
           manifest = json.loads((root / "candidate-evidence.json").read_text(encoding="utf-8"))
@@ -128,6 +133,37 @@ jobs:
           else:
               verify_artifact(source_archive, "source archive")
 
+          # A SHA-256 of an arbitrary TXT file is not an installer. Check
+          # actual package suffix/header and ensure the twelve native reports
+          # refer to the same artifact that was built for their target.
+          installer_digests = {}
+          used_installers = set()
+          if set(INSTALLER_FILE_SUFFIXES) != required_targets:
+              blockers.append("installer format schema does not match ten targets")
+          if set(NATIVE_ACCEPTANCE_ARCH) != set(expected_native_targets()):
+              blockers.append("native architecture schema does not match twelve targets")
+
+          def valid_installer_header(path, target):
+              if path.stat().st_size < 4096:
+                  return False
+              with path.open("rb") as source:
+                  header = source.read(512)
+              suffix = INSTALLER_FILE_SUFFIXES[target]
+              if suffix == ".exe":
+                  offset = int.from_bytes(header[0x3c:0x40], "little")
+                  machine = int.from_bytes(header[offset + 4:offset + 6], "little")
+                  return (header[:2] == b"MZ" and 64 <= offset <= 500
+                          and header[offset:offset + 4] == b"PE\x00\x00"
+                          and machine == (0x14c if target == "windows-7-x86" else 0x8664))
+              if suffix == ".deb":
+                  return header.startswith(b"!<arch>\n")
+              if suffix == ".rpm":
+                  return header.startswith(b"\xed\xab\xee\xdb")
+              if suffix == ".pkg":
+                  return (header.startswith(b"xar!")
+                          and 28 <= int.from_bytes(header[4:6], "big") <= 512)
+              return False
+
           for target, evidence in actual_targets.items():
               if evidence.get("status") != "PASS":
                   blockers.append(f"installer target is {evidence.get('status', 'MISSING')}: {target}")
@@ -137,6 +173,38 @@ jobs:
                   continue
               for artifact in artifacts:
                   verify_artifact(artifact, target)
+              suffix = INSTALLER_FILE_SUFFIXES.get(target)
+              if suffix is None:
+                  continue
+              packages = [
+                  item for item in artifacts
+                  if str(item.get("filename", "")).lower().endswith(suffix)
+              ]
+              if len(packages) != 1:
+                  blockers.append(f"exactly one real installer artifact required: {target}")
+                  continue
+              item = packages[0]
+              filename = item.get("filename", "")
+              if ("1.4.6" not in filename
+                      or not Path(filename).name.lower().startswith("partyops")):
+                  blockers.append(f"installer filename lacks product/version identity: {target}")
+              path = root / filename
+              if (not path.is_file() or path.is_symlink()
+                      or not path.resolve().is_relative_to(root.resolve())):
+                  continue
+              if not valid_installer_header(path, target):
+                  blockers.append(f"installer format or architecture invalid: {target}")
+              with path.open("rb") as f:
+                  digest = hashlib.sha256()
+                  for chunk in iter(lambda: f.read(1024 * 1024), b""):
+                      digest.update(chunk)
+              actual = digest.hexdigest()
+              if item.get("sha256") != actual:
+                  continue
+              if actual in used_installers:
+                  blockers.append(f"distinct installer targets share identical file hash: {target}")
+              used_installers.add(actual)
+              installer_digests[target] = actual
           native_rows = manifest.get("native_validation_targets", [])
           actual_native = {item.get("target"): item for item in native_rows}
           required_native = expected_native_targets()
@@ -149,6 +217,10 @@ jobs:
                   continue
               if evidence.get("installer_target") != installer_target:
                   blockers.append(f"native target has wrong installer: {target}")
+              if evidence.get("native_architecture") != NATIVE_ACCEPTANCE_ARCH[target]:
+                  blockers.append(f"native architecture does not match target: {target}")
+              if evidence.get("installed_package_sha256") != installer_digests.get(installer_target):
+                  blockers.append(f"native tested package SHA does not match installer: {target}")
               if evidence.get("status") != "PASS":
                   blockers.append(f"native target is {evidence.get('status', 'MISSING')}: {target}")
               native_artifacts = evidence.get("artifacts")
