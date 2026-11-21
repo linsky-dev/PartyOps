@@ -19,6 +19,8 @@ def test_secure_pymupdf_candidate_uses_fixed_upstream_wheel_without_lock_edit():
     assert "e1122bbc3a1212396f0d70d19f78e084991b59ebdfc9d846c28ca8b509de01ad" in workflow
     assert "--only-binary=:all:" in workflow
     assert "--no-index --no-deps" in workflow
+    assert "--find-links $wheelDir 'pymupdf==2.1' 'fastapi==0.140.7'" in workflow
+    assert "python -m pip check" in workflow
     assert "scripts/probe_pymupdf_21_x64.py" in workflow
     assert "persist-credentials: false" in workflow
     assert "BUILD_ONLY" in workflow

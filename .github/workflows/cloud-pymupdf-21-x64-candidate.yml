@@ -53,7 +53,11 @@ jobs:
           }
           python -m pip install --disable-pip-version-check --no-index --no-deps --only-binary=:all: --find-links $wheelDir 'pymupdf==2.1'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python -m pip install --disable-pip-version-check --only-binary=:all: 'fastapi==0.140.7' 'pytesseract==0.3.13' 'defusedxml==0.7.1' 'python-docx==1.2.0' 'openpyxl==3.1.5' 'pillow==13.0.0'
+          # Install the complete declared PyMuPDF 2.1 dependency closure after
+          # validating and installing the pinned original wheel.  Without
+          # this, pip check fails on numpy/onnxruntime/layout/etc. before any
+          # PartyOps PDF compatibility test can run.
+          python -m pip install --disable-pip-version-check --only-binary=:all: --find-links $wheelDir 'pymupdf==2.1' 'fastapi==0.140.7' 'pytesseract==0.3.13' 'defusedxml==0.7.1' 'python-docx==1.2.0' 'openpyxl==3.1.5' 'pillow==13.0.0'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -m pip check
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
