@@ -13,6 +13,7 @@ import hashlib
 import json
 import os
 import platform
+import subprocess
 import sys
 import zipfile
 from pathlib import Path
@@ -276,10 +277,92 @@ def main() -> int:
         finally:
             reopened_engine.dispose()
 
+        # Cross the *Python interpreter* boundary, not merely the SQLAlchemy
+        # engine boundary. The child starts with no model/status verifier
+        # cache and loads the exact unchanged PartyOps EmbeddingRuntime class.
+        expected_vector_path = scratch / "expected-bge-embedding.f32"
+        expected_vector_path.write_bytes(
+            original_vector.astype(np.float32, copy=False).tobytes()
+        )
+        marker = "PARTYOPS_ARM64_OFFICIAL_BGE_FRESH_INTERPRETER_REOPEN_PASS"
+        independent = subprocess.run(
+            [
+                sys.executable,
+                "-I",
+                str(repo / "scripts" / "probe_arm64_official_bge_child.py"),
+                "--sqlite", str(sqlite_path),
+                "--models-dir", str(storage),
+                "--pack-id", pack_id,
+                "--expected-vector", str(expected_vector_path),
+                "--runtime-sha256", runtime_hash,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=180,
+            check=False,
+        )
+        if independent.returncode != 0 or marker not in independent.stdout.splitlines():
+            raise RuntimeError(
+                "OFFICIAL_BGE_FRESH_INTERPRETER_REOPEN_FAILED:\n"
+                + independent.stdout[-1500:]
+                + independent.stderr[-2000:]
+            )
+        evidence["checks"].append("fresh_python_interpreter_with_clean_verifier_cache")
+        evidence["independent_python_process_reopened"] = True
+        evidence["partyops_service_process_restarted"] = False
+
+        # Check the security fix with a *real* official BGE payload after all
+        # successful inference. Alter only the extracted, disposable ONNX
+        # file, not the original signed release archive or public trust root.
+        # Preserve both byte length and mtime to defeat ordinary status caches.
+        tamper_engine = create_engine(sqlite_url)
+        try:
+            with Session(tamper_engine, expire_on_commit=False) as db:
+                pack = db.get(AIModelPack, pack_id)
+                if pack is None:
+                    raise AssertionError("OFFICIAL_BGE_TAMPER_TARGET_NOT_FOUND")
+                model_name = pack.manifest["components"]["embedding"]["model_file"]
+                relative = model_packs._safe_member(model_name)
+                model_file = model_packs.model_pack_root(pack).joinpath(*relative.parts)
+                before = model_file.stat()
+                if before.st_size < 2:
+                    raise AssertionError("OFFICIAL_BGE_TAMPER_TARGET_EMPTY")
+                with model_file.open("r+b") as handle:
+                    handle.seek(-1, os.SEEK_END)
+                    last_byte = handle.read(1)
+                    handle.seek(-1, os.SEEK_END)
+                    handle.write(bytes([last_byte[0] ^ 1]))
+                os.utime(
+                    model_file,
+                    ns=(before.st_atime_ns, before.st_mtime_ns),
+                )
+                after = model_file.stat()
+                if (
+                    after.st_size != before.st_size
+                    or after.st_mtime_ns != before.st_mtime_ns
+                ):
+                    raise AssertionError("OFFICIAL_BGE_TAMPER_FINGERPRINT_CHANGED")
+                _assert_denial(
+                    lambda: model_packs.activate_model_pack(
+                        db, pack, "embedding", admin.id
+                    ),
+                    "MODEL_PACK_CORRUPT",
+                )
+                if pack.status != ModelPackStatus.CORRUPT:
+                    raise AssertionError("OFFICIAL_BGE_TAMPER_NOT_MARKED_CORRUPT")
+                db.rollback()
+            evidence["checks"].append(
+                "real_official_extracted_onnx_same_size_mtime_tamper_activation_denied"
+            )
+            evidence["only_temporary_extracted_payload_tampered"] = True
+        finally:
+            tamper_engine.dispose()
+
     # No model, SQLite DB, or raw public archive is retained as a CI artifact.
     output = repo / "artifacts" / "arm64-crypto-probe" / "official-bge-lifecycle.json"
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(evidence, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    print("PARTYOPS_ARM64_OFFICIAL_BGE_FRESH_PROCESS_AND_TAMPER_DENIAL_PASS")
     print("PARTYOPS_ARM64_OFFICIAL_SIGNED_BGE_IMPORT_ACTIVATION_INFERENCE_PASS")
     return 0
 
