@@ -1,0 +1,146 @@
+name: RC1 Windows x64 verified LibreOffice runtime (BUILD_ONLY)
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/cloud-windows-libreoffice-runtime-candidate.yml'
+      - 'backend/tests/fixtures/document-formatter-source/input-manual-break.docx'
+      - 'packaging/windows/build-windows.ps1'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc1-win-x64-libreoffice-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  office-runtime:
+    name: Verify upstream MSI, extract runtime and convert PartyOps fixture on Windows x64
+    runs-on: windows-2025
+    timeout-minutes: 32
+    steps:
+      - name: Check out exact PR source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Obtain SHA256-locked official LibreOffice 26.2.7 Windows x64 MSI
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $output = Join-Path $env:RUNNER_TEMP 'partyops-lo-26.2.7'
+          New-Item -ItemType Directory -Path $output -Force | Out-Null
+          $url = 'https://download.documentfoundation.org/libreoffice/stable/26.2.7/win/x86_64/LibreOffice_26.2.7_Win_x86-64.msi'
+          $msi = Join-Path $output 'LibreOffice_26.2.7_Win_x86-64.msi'
+          & curl.exe --fail --location --retry 3 --retry-all-errors --connect-timeout 45 --max-time 1200 --output $msi $url
+          if ($LASTEXITCODE -ne 0) { throw '[LIBREOFFICE_UPSTREAM_FETCH_FAILED]' }
+          $expected = '480fecf759fc6393bd614fbf43753eb95a8198fc1a065d41b727e3b664cd1e59'
+          $actual = (Get-FileHash -LiteralPath $msi -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -ne $expected) { throw "[LIBREOFFICE_MSI_SHA256_MISMATCH] $actual" }
+          $signature = Get-AuthenticodeSignature -LiteralPath $msi
+          if ($signature.Status -ne 'Valid' -or -not $signature.SignerCertificate -or
+              $signature.SignerCertificate.Subject -notmatch 'Document Foundation') {
+            throw "[LIBREOFFICE_UPSTREAM_SIGNATURE_INVALID] $($signature.Status)"
+          }
+          "PARTYOPS_OFFICIAL_LIBREOFFICE_MSI_HASH_AND_AUTHENTICODE_PASS"
+          "LIBREOFFICE_MSI_SHA256=$actual"
+
+      - name: Extract MSI without installing or changing host file associations
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $workspace = Join-Path $env:RUNNER_TEMP 'partyops-lo-26.2.7'
+          $msi = Join-Path $workspace 'LibreOffice_26.2.7_Win_x86-64.msi'
+          $stage = Join-Path $workspace 'extracted'
+          $msiLog = Join-Path $workspace 'msi-extraction.log'
+          New-Item -ItemType Directory -Path $stage -Force | Out-Null
+          $proc = Start-Process -FilePath msiexec.exe -ArgumentList @('/a', "`"$msi`"", '/qn', '/norestart', "TARGETDIR=`"$stage`"", '/l*v', "`"$msiLog`"") -Wait -PassThru
+          if ($proc.ExitCode -ne 0) {
+            Get-Content -LiteralPath $msiLog -Tail 60 | Write-Host
+            throw "[LIBREOFFICE_MSI_ADMIN_EXTRACT_FAILED] $($proc.ExitCode)"
+          }
+          $office = @(Get-ChildItem -LiteralPath $stage -Recurse -File -Filter 'soffice.exe' |
+            Where-Object { $_.FullName -match '[\\/]program[\\/]soffice\.exe$' })
+          if ($office.Count -ne 1) { throw '[LIBREOFFICE_OFFICE_EXECUTABLE_AMBIGUOUS]' }
+          $officeRoot = Split-Path -Parent (Split-Path -Parent $office[0].FullName)
+          $officeRoot | Out-File -LiteralPath (Join-Path $workspace 'office-root.txt') -Encoding utf8
+          $sofficeCom = Join-Path $officeRoot 'program/soffice.com'
+          if (-not (Test-Path -LiteralPath $sofficeCom -PathType Leaf)) {
+            throw '[LIBREOFFICE_OFFICE_CLI_MISSING]'
+          }
+          foreach ($binary in @($office[0].FullName, $sofficeCom)) {
+            $sign = Get-AuthenticodeSignature -LiteralPath $binary
+            if ($sign.Status -ne 'Valid' -or -not $sign.SignerCertificate -or
+                $sign.SignerCertificate.Subject -notmatch 'Document Foundation') {
+              throw "[LIBREOFFICE_RUNTIME_SIGNATURE_INVALID] $binary"
+            }
+          }
+          & $sofficeCom '--headless' '--version'
+          if ($LASTEXITCODE -ne 0) { throw '[LIBREOFFICE_RUNTIME_NOT_EXECUTABLE]' }
+          "PARTYOPS_LIBREOFFICE_NATIVE_WINDOWS_X64_EXTRACT_PASS"
+
+      - name: Convert real repository DOCX fixture in isolated user profile
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $workspace = Join-Path $env:RUNNER_TEMP 'partyops-lo-26.2.7'
+          $root = (Get-Content -LiteralPath (Join-Path $workspace 'office-root.txt') -Raw).Trim()
+          $sofficeCom = Join-Path $root 'program/soffice.com'
+          $inputFile = 'backend/tests/fixtures/document-formatter-source/input-manual-break.docx'
+          if (-not (Test-Path -LiteralPath $inputFile)) { throw '[LIBREOFFICE_PARTYOPS_FIXTURE_MISSING]' }
+          $output = Join-Path $workspace 'converted'
+          New-Item -ItemType Directory -Path $output -Force | Out-Null
+          $profile = (Join-Path $workspace 'fresh-office-profile').Replace('\\', '/')
+          $profile = 'file:///' + $profile.Replace(' ', '%20')
+          & $sofficeCom "-env:UserInstallation=$profile" '--headless' '--convert-to' 'pdf' '--outdir' $output $inputFile
+          if ($LASTEXITCODE -ne 0) { throw '[LIBREOFFICE_DOCX_PDF_CONVERSION_FAILED]' }
+          $converted = Join-Path $output 'input-manual-break.pdf'
+          if (-not (Test-Path -LiteralPath $converted -PathType Leaf)) { throw '[LIBREOFFICE_OUTPUT_PDF_MISSING]' }
+          $bytes = [IO.File]::ReadAllBytes($converted)
+          if ($bytes.Length -lt 1000 -or [Text.Encoding]::ASCII.GetString($bytes,0,5) -ne '%PDF-') {
+            throw '[LIBREOFFICE_OUTPUT_PDF_INVALID]'
+          }
+          $signExe = Get-AuthenticodeSignature -LiteralPath (Join-Path $root 'program/soffice.exe')
+          $signCom = Get-AuthenticodeSignature -LiteralPath $sofficeCom
+          $lic = @(Get-ChildItem -LiteralPath $root -File -Recurse |
+            Where-Object { $_.Name -match '^(license|copying|notice)([.\\-]|$)' } |
+            Select-Object -First 25)
+          if (-not $lic.Count) { throw '[LIBREOFFICE_LICENSE_FILES_MISSING]' }
+          $manifest = [ordered]@{
+            schema_version = 1
+            scope = 'WINDOWS_X64_VERIFIED_OFFICIAL_LIBREOFFICE_RUNTIME_DOCX_TO_PDF_BUILD_ONLY'
+            source_commit = '${{ github.sha }}'
+            official_msi_version = '26.2.7'
+            official_msi_sha256 = '480fecf759fc6393bd614fbf43753eb95a8198fc1a065d41b727e3b664cd1e59'
+            official_msi_authenticode = 'Valid'
+            office_executable_sha256 = (Get-FileHash -LiteralPath (Join-Path $root 'program/soffice.exe') -Algorithm SHA256).Hash.ToLowerInvariant()
+            office_cli_sha256 = (Get-FileHash -LiteralPath $sofficeCom -Algorithm SHA256).Hash.ToLowerInvariant()
+            office_executable_signer_thumbprint = $signExe.SignerCertificate.Thumbprint
+            office_cli_signer_thumbprint = $signCom.SignerCertificate.Thumbprint
+            signer_thumbprints_match = $signExe.SignerCertificate.Thumbprint -eq $signCom.SignerCertificate.Thumbprint
+            extracted_path_root = [IO.Path]::GetFileName($root)
+            licensing_files_present = $lic.Count
+            repository_docx_sha256 = (Get-FileHash -LiteralPath $inputFile -Algorithm SHA256).Hash.ToLowerInvariant()
+            converted_pdf_sha256 = (Get-FileHash -LiteralPath $converted -Algorithm SHA256).Hash.ToLowerInvariant()
+            native_docx_to_pdf = 'PASS'
+            actual_installer_built = $false
+            real_wps_acceptance = 'NOT_RUN'
+            native_win10_11_install_and_upgrade = 'NOT_RUN'
+            published = $false
+            release_ready = $false
+          }
+          New-Item -ItemType Directory -Path artifacts -Force | Out-Null
+          $manifest | ConvertTo-Json -Depth 5 | Out-File -LiteralPath 'artifacts/windows-lo-x64-evidence.json' -Encoding utf8
+          "PARTYOPS_LIBREOFFICE_26_2_7_NATIVE_WINDOWS_X64_CONVERSION_PASS"
+
+      - name: Upload evidence only, never a release package
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: partyops-rc1-win-x64-office-runtime-evidence-${{ github.sha }}
+          path: artifacts/windows-lo-x64-evidence.json
+          if-no-files-found: warn
+          retention-days: 14
