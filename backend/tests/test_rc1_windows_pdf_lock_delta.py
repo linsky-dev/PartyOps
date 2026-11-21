@@ -7,7 +7,6 @@ from pathlib import Path
 
 import pytest
 
-
 ROOT = Path(__file__).resolve().parents[2]
 spec = importlib.util.spec_from_file_location(
     "rc1_pdf_lock_delta", ROOT / "scripts/rc1_windows_pdf_lock_delta.py"
