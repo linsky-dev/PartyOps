@@ -79,7 +79,14 @@ def validate_files(source: Path, entries: list[dict]) -> dict[str, dict]:
     return verified
 
 
-def recover(root: Path, installer: Path, manifest_path: Path, source: Path, destination: Path) -> dict:
+def recover(
+    root: Path,
+    installer: Path,
+    manifest_path: Path,
+    release_metadata_path: Path,
+    source: Path,
+    destination: Path,
+) -> dict:
     root = root.resolve(strict=True)
     if not destination.absolute().is_relative_to(root / "artifacts"):
         raise ValueError("local AI output must remain inside repository artifacts/")
@@ -87,27 +94,41 @@ def recover(root: Path, installer: Path, manifest_path: Path, source: Path, dest
         raise ValueError("refusing to overwrite existing local AI candidate")
     if sha256(installer) != EXPECTED_INSTALLER_SHA:
         raise ValueError("published RC6 installer bytes differ")
-    if sha256(manifest_path) != EXPECTED_MANIFEST_SHA:
-        raise ValueError("published RC6 reference manifest bytes differ")
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8-sig"))
-    # The post-startup RC6 release manifest uses schema 4 and does not
-    # declare platform/architecture; the exact pinned release-asset SHA and
-    # the immutable manifest SHA are the independent source identity.
-    if any(manifest.get(k) != v for k, v in (
+    if sha256(release_metadata_path) != EXPECTED_MANIFEST_SHA:
+        raise ValueError("published RC6 reference release metadata bytes differ")
+    release_metadata = json.loads(release_metadata_path.read_text(encoding="utf-8-sig"))
+    # The separately published release approval summary is schema 4, and
+    # intentionally DOES NOT contain a list of installed binary files.
+    if any(release_metadata.get(k) != v for k, v in (
         ("schema_version", 4),
         ("product", "PartyOps"),
         ("version", "1.4.5-rc.6"),
         ("release_tag", "v1.4.5-rc.6"),
     )):
+        raise ValueError("reference RC6 release approval summary identity mismatch")
+    # The actual per-file provenance is the manifest embedded *inside* the
+    # exact 449MB release installer verified above. Never trust a caller-
+    # supplied or reconstructed manifest outside this extracted app folder.
+    embedded_manifest = source / "release-manifest.json"
+    if (manifest_path.is_symlink() or embedded_manifest.is_symlink()
+            or manifest_path.resolve(strict=True) != embedded_manifest.resolve(strict=True)):
+        raise ValueError("per-file release manifest must come from the verified installer")
+    manifest = json.loads(embedded_manifest.read_text(encoding="utf-8-sig"))
+    if any(manifest.get(k) != v for k, v in (
+        ("schema_version", 1),
+        ("product", "PartyOps"),
+        ("version", "1.4.5-rc.6"),
+        ("release_tag", "v1.4.5-rc.6"),
+        ("platform", "windows"),
+        ("architecture", "amd64"),
+    )):
         observed = {key: manifest.get(key) for key in
-                    ("schema_version", "product", "version", "release_tag")}
-        raise ValueError(f"reference release manifest identity mismatch: {observed}")
+                    ("schema_version", "product", "version", "release_tag",
+                     "platform", "architecture")}
+        raise ValueError(f"embedded RC6 application manifest identity mismatch: {observed}")
     files = manifest.get("files")
     if not isinstance(files, list) or not files:
-        raise ValueError(
-            "reference release manifest has no root file list: "
-            f"keys={list(manifest)[:20]}, file_type={type(files).__name__}"
-        )
+        raise ValueError("embedded RC6 app release manifest has no per-file hash list")
     verified = validate_files(source, files)
     destination.mkdir(parents=True)
     for name, reference in verified.items():
@@ -121,7 +142,8 @@ def recover(root: Path, installer: Path, manifest_path: Path, source: Path, dest
         "scope": "WINDOWS_X64_LOCAL_AI_INPUT_RECOVERY_BUILD_ONLY",
         "source_commit": os.environ.get("GITHUB_SHA", ""),
         "release_installer_sha256": EXPECTED_INSTALLER_SHA,
-        "release_manifest_sha256": EXPECTED_MANIFEST_SHA,
+        "release_summary_sha256": EXPECTED_MANIFEST_SHA,
+        "embedded_app_manifest_sha256": sha256(embedded_manifest),
         "file_count": len(verified),
         "files": verified,
         "rc1_signed_installer": False,
@@ -137,13 +159,15 @@ def main() -> int:
     parser.add_argument("--repo-root", type=Path, required=True)
     parser.add_argument("--installer", type=Path, required=True)
     parser.add_argument("--manifest", type=Path, required=True)
+    parser.add_argument("--release-metadata", type=Path, required=True)
     parser.add_argument("--source", type=Path, required=True)
     parser.add_argument("--destination", type=Path, required=True)
     parser.add_argument("--evidence", type=Path, required=True)
     args = parser.parse_args()
     try:
         payload = recover(
-            args.repo_root, args.installer, args.manifest, args.source, args.destination
+            args.repo_root, args.installer, args.manifest,
+            args.release_metadata, args.source, args.destination
         )
         args.evidence.parent.mkdir(parents=True, exist_ok=True)
         args.evidence.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

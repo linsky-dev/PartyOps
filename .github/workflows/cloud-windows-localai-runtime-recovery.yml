@@ -113,7 +113,7 @@ jobs:
           $repoRoot = (Get-Location).Path
           $work = Join-Path $env:RUNNER_TEMP 'partyops-rc6-original-localai'
           $output = Join-Path $repoRoot 'artifacts/windows-localai-verified'
-          python scripts/rc1_windows_recover_local_ai.py --repo-root $repoRoot --installer (Join-Path $work 'PartyOps_1.4.5-rc.6_windows_amd64_startup-20261018.exe') --manifest (Join-Path $work 'release-manifest-windows-startup-20261018.json') --source (Join-Path $work 'extracted/app') --destination $output --evidence (Join-Path $repoRoot 'artifacts/windows-localai-evidence.json')
+          python scripts/rc1_windows_recover_local_ai.py --repo-root $repoRoot --installer (Join-Path $work 'PartyOps_1.4.5-rc.6_windows_amd64_startup-20261018.exe') --manifest (Join-Path $work 'extracted/app/release-manifest.json') --release-metadata (Join-Path $work 'release-manifest-windows-startup-20261018.json') --source (Join-Path $work 'extracted/app') --destination $output --evidence (Join-Path $repoRoot 'artifacts/windows-localai-evidence.json')
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $exe = Join-Path $output 'llama-server.exe'
           $process = Start-Process -FilePath $exe -ArgumentList @('--version') -PassThru -NoNewWindow
