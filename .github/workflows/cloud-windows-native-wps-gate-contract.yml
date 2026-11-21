@@ -51,7 +51,7 @@ jobs:
           # The child deliberately exited 2; do not leak that expected code as this job result.
           exit 0
 
-native-arm64-must-reject-x64-wps-acceptance:
+  native-arm64-must-reject-x64-wps-acceptance:
     runs-on: windows-11-arm
     timeout-minutes: 10
     steps:
