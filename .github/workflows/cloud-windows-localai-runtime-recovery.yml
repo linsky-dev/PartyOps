@@ -1,0 +1,137 @@
+name: RC1 Windows x64 historical local-AI runtime recovery (BUILD_ONLY)
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/cloud-windows-localai-runtime-recovery.yml'
+      - 'scripts/rc1_windows_recover_local_ai.py'
+      - 'backend/tests/test_rc1_windows_local_ai_recovery.py'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc1-windows-localai-source-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  recovered-localai:
+    name: Verify historical release-manifest-bound llama.cpp and real Windows native process
+    runs-on: windows-2025
+    timeout-minutes: 32
+    steps:
+      - name: Checkout exact PR source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Python runtime for isolated verification
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+          architecture: x64
+
+      - name: Exercise tamper-resistant original release recovery tests
+        shell: pwsh
+        run: |
+          python -m unittest discover -s backend/tests -p test_rc1_windows_local_ai_recovery.py -v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Download SHA-locked release executable and independent manifest
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $work = Join-Path $env:RUNNER_TEMP 'partyops-rc6-original-localai'
+          New-Item -ItemType Directory -Path $work -Force | Out-Null
+          $base = 'https://github.com/linsky-dev/PartyOps/releases/download/v1.4.5-rc.6'
+          $installer = Join-Path $work 'PartyOps_1.4.5-rc.6_windows_amd64_startup-20261018.exe'
+          $manifest = Join-Path $work 'release-manifest-windows-startup-20261018.json'
+          & curl.exe --fail --location --retry 3 --retry-all-errors --max-time 1500 --output $installer "$base/PartyOps_1.4.5-rc.6_windows_amd64_startup-20261018.exe"
+          if ($LASTEXITCODE -ne 0) { throw '[LOCALAI_RELEASE_DOWNLOAD_FAILED]' }
+          & curl.exe --fail --location --retry 3 --retry-all-errors --max-time 180 --output $manifest "$base/release-manifest-windows-startup-20261018.json"
+          if ($LASTEXITCODE -ne 0) { throw '[LOCALAI_RELEASE_MANIFEST_DOWNLOAD_FAILED]' }
+          if ((Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant() -ne 'e3e2ea45ccd38acff059b5713826a78f998a56ccef75341633f67bd4e17e57da' -or
+              (Get-Item -LiteralPath $installer).Length -ne 449988807) {
+            throw '[LOCALAI_RELEASE_HASH_MISMATCH]'
+          }
+          if ((Get-FileHash -LiteralPath $manifest -Algorithm SHA256).Hash.ToLowerInvariant() -ne '9e314cbfa1c5d604ad0f24dd8525b0afcda4f511f1cd8d4571114be1061298ee') {
+            throw '[LOCALAI_RELEASE_MANIFEST_HASH_MISMATCH]'
+          }
+          "PARTYOPS_RC6_RELEASE_AND_REFERENCE_MANIFEST_VERIFIED"
+
+      - name: Download hash-locked extraction binary without using an installer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $work = Join-Path $env:RUNNER_TEMP 'partyops-rc6-original-localai'
+          $archive = Join-Path $work 'innoextract670.zip'
+          & curl.exe --fail --location --retry 3 --retry-all-errors --max-time 180 --output $archive 'https://github.com/UserUnknownFactor/innoextract_win/releases/download/670/innoextract670.zip'
+          if ($LASTEXITCODE -ne 0) { throw '[LOCALAI_EXTRACTOR_DOWNLOAD_FAILED]' }
+          if ((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant() -ne '79b69b9b1fcd98f42ccd4b245efdf6a03bcfb674ba6af482f5a46891c9ed4d14') {
+            throw '[LOCALAI_EXTRACTOR_SHA256_MISMATCH]'
+          }
+          $unpacked = Join-Path $work 'tool-unpacked'
+          Expand-Archive -LiteralPath $archive -DestinationPath $unpacked
+          $trusted = Join-Path $work 'trusted-extractor'
+          New-Item -ItemType Directory -Path $trusted -Force | Out-Null
+          $hashes = @{
+            'innoextract.exe' = '0dab51583e403970065db49f87a6a2bf683ab6ebfdf27bede2bf633dd232a1a2'
+            'libbz2-1.dll' = 'b79cd3a7102e359ef6324e98966a67939e58ec2b651ae2847cae84a4dfa453f7'
+          }
+          foreach ($name in $hashes.Keys) {
+            $matching = @(Get-ChildItem -LiteralPath $unpacked -Recurse -File -Filter $name)
+            if ($matching.Count -ne 1) { throw "[LOCALAI_EXTRACTOR_ENTRY_AMBIGUOUS] $name" }
+            Copy-Item -LiteralPath $matching[0].FullName -Destination (Join-Path $trusted $name)
+            if ((Get-FileHash -LiteralPath (Join-Path $trusted $name) -Algorithm SHA256).Hash.ToLowerInvariant() -ne $hashes[$name]) {
+              throw "[LOCALAI_EXTRACTOR_BINARY_HASH_MISMATCH] $name"
+            }
+          }
+
+      - name: Extract historical application into isolated temporary directory
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $work = Join-Path $env:RUNNER_TEMP 'partyops-rc6-original-localai'
+          $installer = Join-Path $work 'PartyOps_1.4.5-rc.6_windows_amd64_startup-20261018.exe'
+          $tool = Join-Path $work 'trusted-extractor/innoextract.exe'
+          $stage = Join-Path $work 'extracted'
+          New-Item -ItemType Directory -Path $stage -Force | Out-Null
+          & $tool --extract --output-dir $stage $installer
+          if ($LASTEXITCODE -ne 0) { throw '[LOCALAI_RC6_PACKAGE_EXTRACTION_FAILED]' }
+          if (-not (Test-Path -LiteralPath (Join-Path $stage 'app/llama-server.exe') -PathType Leaf)) {
+            throw '[LOCALAI_RC6_RUNTIME_NOT_IN_RELEASE]'
+          }
+
+      - name: Enforce full original release manifest and smoke unmodified llama server
+        shell: pwsh
+        env:
+          PYTHONUTF8: '1'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $repoRoot = (Get-Location).Path
+          $work = Join-Path $env:RUNNER_TEMP 'partyops-rc6-original-localai'
+          $output = Join-Path $repoRoot 'artifacts/windows-localai-verified'
+          python scripts/rc1_windows_recover_local_ai.py --repo-root $repoRoot --installer (Join-Path $work 'PartyOps_1.4.5-rc.6_windows_amd64_startup-20261018.exe') --manifest (Join-Path $work 'release-manifest-windows-startup-20261018.json') --source (Join-Path $work 'extracted/app') --destination $output --evidence (Join-Path $repoRoot 'artifacts/windows-localai-evidence.json')
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $exe = Join-Path $output 'llama-server.exe'
+          $process = Start-Process -FilePath $exe -ArgumentList @('--version') -PassThru -NoNewWindow
+          try {
+            if (-not $process.WaitForExit(60000)) { throw '[LOCALAI_NATIVE_VERSION_PROBE_TIMEOUT]' }
+            if ($process.ExitCode -ne 0) { throw "[LOCALAI_NATIVE_VERSION_PROBE_FAILED] $($process.ExitCode)" }
+          } finally {
+            if (-not $process.HasExited) { Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue }
+          }
+          "PARTYOPS_WINDOWS_X64_VERIFIED_HISTORICAL_LOCALAI_RUNTIME_PASS"
+
+      - name: Upload verified runtime inputs, not a signed RC1 installer
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: partyops-rc1-windows-x64-historical-localai-build-only-${{ github.sha }}
+          path: |
+            artifacts/windows-localai-verified/**
+            artifacts/windows-localai-evidence.json
+          if-no-files-found: warn
+          retention-days: 14
