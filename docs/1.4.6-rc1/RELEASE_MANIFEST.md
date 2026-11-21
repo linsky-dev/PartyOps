@@ -25,3 +25,7 @@ RC1 候选证据区分**安装包**与**原生验收目标**：10 个制品目�
 ### 冻结源码与真实 Git 提交强绑定（待新增 CI 验证）
 
 候选审核将新增第二次只读 Git 检出：检出历史候选运行声称的 40 位 SHA，并通过 `git rev-parse` 校验独立工作区的确切提交。随后以 `git archive --format=tar --prefix=PartyOps-1.4.6-rc.1/` 重新生成完整 TAR 流，与已从候选制品下载的 `source.tar.gz` **解压后的 TAR 字节流 SHA-256** 比对；不依赖 gzip 压缩时间和元数据、不向源码目录写入数据。即便某个替换 TAR 的四个关键文件、目录结构和清单哈希都合法，内部内容不同仍必须失败。独立检出需从 GitHub 取得原提交；无法取得或摘要不一致时保持发布门禁失败，而不是把合成源码晋升为正式候选。仍需真实安装包、签名、WPS 和最终人工批准。
+
+### `151e90a` 全量 CI 终结证据
+
+[完整源码与测试 #44895624534](https://github.com/linsky-dev/PartyOps/actions/runs/44895624534) Windows 后端 2383 passed、17 skipped、3 子测试，95%/92% 既有覆盖门槛成功；Linux 217 passed、4 skipped，Ruff 成功；[原生跨平台 #44895624491](https://github.com/linsky-dev/PartyOps/actions/runs/44895624491) 8/8 作业成功，另 [原生 ONNX Runtime 1.32.0 #44895624562](https://github.com/linsky-dev/PartyOps/actions/runs/44895624562) 真正下载官方 Windows ARM64 wheel、固定 SHA-256 核验并执行原 PartyOps EmbeddingRuntime 合成推理成功。**整轮 9/9 个工作流成功**，但 `cloud-release-gate.yml` 是另一个受保护的 `workflow_dispatch`，本轮未实际发布或审批正式制品。新增加的 PyMuPDF 2.1 x64 隔离 API 兼容专项须在新 CI 运行成功后另行确认；当前正式锁 `PyMuPDF==1.26.0` 仍被已知 CVE 门禁阻断。
