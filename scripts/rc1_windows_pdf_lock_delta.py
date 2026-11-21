@@ -35,7 +35,7 @@ def validate_lock_delta(baseline: Path, candidate: Path) -> dict:
         old = tomllib.load(source)
     with candidate.open("rb") as source:
         new = tomllib.load(source)
-    for key in ("version", "requires-python", "resolution-markers", "manifest", "options"):
+    for key in ("version", "revision", "requires-python", "manifest", "options"):
         if old.get(key) != new.get(key):
             raise ValueError("top-level dependency lock drift: " + key)
     prior, updated = _packages(old), _packages(new)
@@ -84,6 +84,31 @@ def validate_lock_delta(baseline: Path, candidate: Path) -> dict:
     unexpected = added - reachable
     if unexpected:
         raise ValueError("new distribution unrelated to PyMuPDF: " + ", ".join(sorted(unexpected)))
+
+    # PyMuPDF 2.1 adds python-version-dependent NetworkX wheels. uv must
+    # partition the same original Python range into two resolver branches.
+    # This is necessary packaging metadata, not an unrelated version upgrade.
+    # When the baseline had no partitions, accept ONLY exact branch markers
+    # declared on the newly introduced PyMuPDF dependency edges.
+    original_markers = old.get("resolution-markers")
+    candidate_markers = new.get("resolution-markers")
+    if original_markers != candidate_markers:
+        allowed = {
+            dependency.get("marker")
+            for package in updated["pymupdf"]
+            for dependency in package.get("dependencies", [])
+            if dependency.get("name", "").casefold().replace("_", "-") in added
+            and isinstance(dependency.get("marker"), str)
+        }
+        if (
+            original_markers not in (None, [])
+            or not isinstance(candidate_markers, list)
+            or not candidate_markers
+            or any(not isinstance(marker, str) for marker in candidate_markers)
+            or set(candidate_markers) != allowed
+            or len(candidate_markers) != len(set(candidate_markers))
+        ):
+            raise ValueError("resolver partitions changed without a matching PyMuPDF dependency edge")
     return {
         "schema_version": 1,
         "scope": "ISOLATED_WINDOWS_X64_PYMUPDF_CANDIDATE_LOCK_DELTA_ONLY",

@@ -63,6 +63,34 @@ def test_only_pdf_and_reachable_transitives_may_be_added(tmp_path: Path):
     assert not result["production_lock_modified"]
 
 
+def test_accepts_only_python_markers_from_new_pymupdf_dependencies(tmp_path: Path):
+    marker_first = "python_full_version < '3.12'"
+    marker_second = "python_full_version >= '3.12'"
+    alternate_deps = (
+        '[{name = "networkx", marker = "python_full_version < \\'3.12\\'"}, '
+        '{name = "networkx", marker = "python_full_version >= \\'3.12\\'"}]'
+    )
+    original_deps = '[{name = "networkx"}]'
+    with_markers = CANDIDATE.replace(
+        'requires-python = ">=3.11"',
+        'requires-python = ">=3.11"\\nresolution-markers = '
+        '["python_full_version >= \\'3.12\\'", "python_full_version < \\'3.12\\'"]'
+    ).replace(original_deps, alternate_deps)
+    result = compare(tmp_path, BASELINE, with_markers)
+    assert result["all_other_locked_distributions_unchanged"]
+    assert result["new_transitive_distributions"] == {"networkx": ["3.7"]}
+    assert marker_first in with_markers and marker_second in with_markers
+
+
+def test_rejects_unrelated_resolver_partition(tmp_path: Path):
+    malicious = CANDIDATE.replace(
+        'requires-python = ">=3.11"',
+        'requires-python = ">=3.11"\\nresolution-markers = ["os_name == \\'nt\\'"]'
+    )
+    with pytest.raises(ValueError, match="resolver partitions"):
+        compare(tmp_path, BASELINE, malicious)
+
+
 def test_rejects_unrelated_version_upgrade(tmp_path: Path):
     with pytest.raises(ValueError, match="other"):
         compare(tmp_path, BASELINE, lock("1.4.6rc1", "2.1", "1.1", EXTRA))
