@@ -84,7 +84,9 @@ jobs:
           import hashlib
           import json
           import os
+          import tarfile
           from pathlib import Path
+          from scripts.rc1_release_evidence import validate_cyclonedx, validate_source_archive
           from scripts.rc1_release_targets import (
               INSTALLER_FILE_SUFFIXES,
               INSTALLER_VALIDATION_TARGETS,
@@ -132,6 +134,10 @@ jobs:
               blockers.append("source archive evidence is missing")
           else:
               verify_artifact(source_archive, "source archive")
+              try:
+                  validate_source_archive(root, source_archive)
+              except (OSError, ValueError, EOFError, tarfile.TarError) as exc:
+                  blockers.append(f"source archive structure invalid: {type(exc).__name__}")
 
           # A SHA-256 of an arbitrary TXT file is not an installer. Check
           # actual package suffix/header and ensure the twelve native reports
@@ -253,6 +259,10 @@ jobs:
               actual_hash = hashlib.sha256(path.read_bytes()).hexdigest()
               if actual_hash != expected_hash:
                   blockers.append(f"SBOM hash mismatch: {filename}")
+              try:
+                  validate_cyclonedx(path)
+              except (OSError, UnicodeError, ValueError) as exc:
+                  blockers.append(f"SBOM CycloneDX contents invalid: {filename} ({type(exc).__name__})")
 
           result = {
               "schema_version": 1,

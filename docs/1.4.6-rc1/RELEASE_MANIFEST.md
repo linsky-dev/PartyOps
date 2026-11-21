@@ -17,3 +17,7 @@ RC1 候选证据区分**安装包**与**原生验收目标**：10 个制品目�
 历史 3D 官网完整 v5 源码已从用户文件库恢复并校验 572/572 项，但未证明它与最新 EdgeOne 生产部署相同，故仍不得未经预览直接覆盖线上；生产站保持旧版，详见 [官网恢复说明](WEBSITE_SOURCE_RECOVERY.md)。
 
 加固代码提交 `fe9fbf8` 在 [完整回归 #44889063749](https://github.com/linsky-dev/PartyOps/actions/runs/44889063749) 通过（Windows 2371 passed /17 skipped，Linux 211 passed /4 skipped，Ruff 成功），[原生矩阵 #44889063821](https://github.com/linsky-dev/PartyOps/actions/runs/44889063821) 8/8 作业通过；只是门禁判定代码的测试，候选发行清单仍然未生成真实安装包。
+
+### 源码归档及 SBOM 内部结构防伪（新 CI 待验证）
+
+原有候选审核在核对 SHA-256 后，进一步按只读方式校验 `PartyOps-1.4.6-rc.1-source.tar.gz` 的目录根、4 个必需源码文件、遍历数量和展开体积上限，并拒绝路径逃逸、符号链接及重复成员；**只读取 TAR 元数据，不从候选包解压文件**。Python/前端 SBOM 必须为 CycloneDX 1.6 且包含非空 `components`，不允许将已哈希的 `{}`、纯文本或伪 TAR 认作有效发布证据。新增隔离对抗测试专门验证这些拒绝路径。本项仍属结构/格式审核，不能代替 GitHub 源码历史、原生安装、可信签名、公证及最终人工发布审批。
