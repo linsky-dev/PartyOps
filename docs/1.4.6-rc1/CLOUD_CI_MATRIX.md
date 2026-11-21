@@ -28,13 +28,13 @@ Windows 7 SP1 x86/x64、Deepin 25.2.0 LoongArch64、麒麟与 UOS 桌面、openE
 
 - **原始 EmbeddingRuntime 业务代码的合成复验（已通过原生云端测试）：** 在隔离 Windows ARM64 Runner 上直接通过 AST 提取 GitHub 源码中的原始 `EmbeddingRuntime` 类，依赖项在测试命名空间中注入，而不修改 `backend/app/local_ai.py`。使用合成 WordLevel tokenizer 和只有 Cast/Unsqueeze/Concat 的微型 ONNX 图，运行原 `encode()` 路径，覆盖 CLS/Mean 池化、padding、查询前缀、模型切换、维度和不支持池化拒绝、卸载。只可认定源方法逻辑与隔离候选运行时的兼容性，不代表全应用依赖、正式 BGE 模型包或生产 AI 已验收。
 
-## Windows ARM64 真 BGE 模型权重专项（独立候选，待实证）
+## Windows ARM64 真 BGE 模型权重专项（独立候选，已实证 BUILD_ONLY）
 
 新增 `cloud-arm64-real-bge-candidate.yml` 仅在原生 Windows ARM64 上运行，使用固定提交 `onnx-community/bge-small-zh-v1.5-ONNX@18e2da99700c49ed48c0a0e3683da39348fbbb36` 的 FP32 ONNX 模型及外置权重，配合固定上游 `BAAI/bge-small-zh-v1.5@7999e1d3359715c523056ef9478215996d62a620` 的 tokenizer.json。下载过程核对预置 SHA-256 与大小上限，核验不通过立即拒绝，不把权重或任何私钥上传到 GitHub 审查附件。运行现有 `EmbeddingRuntime` 源码提取类，验证中文真实 512 维向量、CLS 归一化、相同/不同文本相似度、查询前缀和卸载。
 
 注意：ONNX Community 是**第三方导出**，并非已有 RC6 正式签名的 94,965,776 字节 `.partyops-modelpack`，也不声称与历史 `3f24c066…` ONNX 逐字节一致。通过只意味着原生 ARM64 上这组可溯源真实权重与隔离候选运行时可协同工作；正式模型包签名、PartyOps 导入启用、整包安装、资源指标、WPS 和许可证/再分发审查仍是独立门禁。来源：https://huggingface.co/onnx-community/bge-small-zh-v1.5-ONNX/commit/18e2da99700c49ed48c0a0e3683da39348fbbb36 。
 
-- 固定 tokenizer SHA 纠正记录：2026-11-20 原生 ARM64 从 `BAAI/bge-small-zh-v1.5@7999e1d…` 下载到 439,125 字节，SHA-256 为 `48cea5d44424912a6fd1ea647bf4fe50b55ab8b1e5879c3275f80e339e8fae26`。历史 RC6 验收表中 `258135af…` 为历史封装输入，不能作为当前 BAAI 上游 tokenizer 的文件 SHA；首轮检测因此阻断且未执行真实模型推理。纠正后仍需云端实际运行才可标记 PASS。
+- 固定 tokenizer SHA 纠正记录：2026-11-20 原生 ARM64 从 `BAAI/bge-small-zh-v1.5@7999e1d…` 下载到 439,125 字节，SHA-256 为 `48cea5d44424912a6fd1ea647bf4fe50b55ab8b1e5879c3275f80e339e8fae26`。历史 RC6 验收表中 `258135af…` 为历史封装输入，不能作为当前 BAAI 上游 tokenizer 的文件 SHA；首轮检测因此阻断且未执行真实模型推理。已在 [原生 ARM64 真 BGE 候选 #44878080740](https://github.com/linsky-dev/PartyOps/actions/runs/44878080740) 实际复验通过；此项属于第三方导出权重专项，不能代替正式 RC2 签名包。
 
 ## ARM64 签名模型包 → 原始向量化连续测试
 
@@ -56,5 +56,8 @@ Windows 7 SP1 x86/x64、Deepin 25.2.0 LoongArch64、麒麟与 UOS 桌面、openE
 ## 2026-11-21 官方模型独立原生闭环与新增持久化专项
 
 - **已实证 PASS（BUILD_ONLY）：** [Windows ARM64 原生 #44866043200](https://github.com/linsky-dev/PartyOps/actions/runs/44866043200) 将原版 RC2 已发布 BGE 签名包用正式外部信任根与真实 PartyOps 模型包管理代码在隔离 SQLite 中导入、激活、重复导入拒绝，调用原始 EmbeddingRuntime 验证中文实际向量、查询向量与卸载。标志 `PARTYOPS_ARM64_OFFICIAL_SIGNED_BGE_IMPORT_ACTIVATION_INFERENCE_PASS`；此前仅验证官方包声明、未实际导入的限制在此单个独立脚本范围内已解除。
-- **本轮新增待实证：** 采用仅位于临时目录中的 SQLite 文件，首次激活后关闭初始引擎与原运行实例，以新引擎、Session、EmbeddingRuntime 重开并核验激活记录与向量结果，清除原状态缓存。它不是物理设备/PartyOps 后台进程重启，更不是安装包原生运行或 HTTP/API 完整依赖闭包。
+- **SQLite 全新引擎重开 PASS（BUILD_ONLY）：** [#44873341720](https://github.com/linsky-dev/PartyOps/actions/runs/44873341720) 通过临时 SQLite 文件持久化、旧引擎与模型运行实例关闭、独立新 Engine/Session/EmbeddingRuntime 重开激活记录及实际中文向量结果核对。
 - **继续阻断：** 完整 Windows ARM64 PartyOps 依赖/安装/升级/回滚、授权真实 WPS、多种国产系统同构原生环境、服务端完整 API 与签名生产分发，均不能由上述 BUILD_ONLY 自检替代。
+- **全新 Python 进程重载与真 ONNX 篡改拒绝 PASS（BUILD_ONLY）：** [#44877246001](https://github.com/linsky-dev/PartyOps/actions/runs/44877246001) 在原生 Windows ARM64 实际重启新的 Python 解释器、读取同一临时 SQLite 模型状态并复做真实 BGE 向量，后仅篡改临时提取 ONNX 的一个字节且恢复 mtime，原始激活函数重新哈希并拒绝 `MODEL_PACK_CORRUPT`；完整 PartyOps 进程及正式安装器未重启。
+- **正式签名历史 BGE 管理 HTTP 路径 PASS（Windows x64 TestClient / BUILD_ONLY）：** [#44878080788](https://github.com/linsky-dev/PartyOps/actions/runs/44878080788) 用原已发布包、官方外部公钥和冻结 Windows x64 依赖，通过真实 FastAPI TestClient 路由完成管理员上传、激活、实际中文推理及重复上传拒绝；后续 [#44886050440](https://github.com/linsky-dev/PartyOps/actions/runs/44886050440) 实证匿名/普通用户权限拒绝、非法能力拒绝、临时提取 ONNX 同长度/mtime 篡改后重新通过 HTTP 激活拒绝。后者关联的 Linux 源码测试 207 通过，Ruff I001 单行导入顺序问题已定位、修复待复验。
+- **未解除的发行门禁：** 本文件全部源代码/隔离模型证据都不代表 Windows ARM64 生产级锁定依赖完整运行、真实 Windows 10/11 的安装与升级、真 WPS 排版、十包和十二原生目标安装验收或两套网站发布。

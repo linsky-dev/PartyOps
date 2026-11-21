@@ -14,10 +14,10 @@ import numpy as np
 import pytest
 from fastapi.testclient import TestClient
 
+from app import model_packs
 from app.config import get_settings
 from app.database import db_runtime
 from app.local_ai import EmbeddingRuntime
-from app import model_packs
 from app.models import AIModelPack
 
 OFFICIAL_SHA256 = "57df3669e368497ad6d428dab309fb7665229a57edfe3a4fe1f2afd6a0f1a155"
