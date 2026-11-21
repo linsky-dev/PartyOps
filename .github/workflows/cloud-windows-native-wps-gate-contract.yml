@@ -50,3 +50,48 @@ jobs:
           "PARTYOPS_RC1_WPS_HOSTED_WINDOWS_SERVER_CORRECTLY_BLOCKED"
           # The child deliberately exited 2; do not leak that expected code as this job result.
           exit 0
+
+native-arm64-must-reject-x64-wps-acceptance:
+    runs-on: windows-11-arm
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact triggering source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Prove real ARM64 cannot pass x64 client acceptance
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $actualArchitecture = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
+          if ($actualArchitecture -ne 'Arm64') {
+            throw '[RC1_ARM64_RUNNER_ARCHITECTURE_NOT_NATIVE]'
+          }
+          $entry = Join-Path (Get-Location) 'scripts/rc1-windows-native-wps-gate.ps1'
+          $tokens = $null
+          $parseErrors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile($entry, [ref]$tokens, [ref]$parseErrors) | Out-Null
+          if (@($parseErrors).Count) {
+            throw '[RC1_ARM64_WPS_PREFLIGHT_SCRIPT_INVALID]'
+          }
+          $sha = (git rev-parse HEAD).Trim()
+          $output = & pwsh -NoProfile -File $entry -ExpectedSourceSha $sha -Mode Preflight
+          $exitCode = $LASTEXITCODE
+          if ($exitCode -ne 2) {
+            throw '[RC1_ARM64_FALSE_ACCEPTED_AS_WINDOWS_X64]'
+          }
+          $report = ($output -join [Environment]::NewLine) | ConvertFrom-Json
+          if ($report.os_architecture -ne 'Arm64' -or $report.status -ne 'BLOCKED' -or
+              $report.release_ready -or $report.native_wps_passed -or
+              $report.native_full_function_passed -or $report.candidate_installer_built) {
+            throw '[RC1_ARM64_NATIVE_WPS_ACCEPTANCE_FALSE_PASS]'
+          }
+          if (@($report.blockers | Where-Object { $_ -eq 'WINDOWS_AMD64_ARCH_REQUIRED' }).Count -ne 1) {
+            throw '[RC1_ARM64_REAL_OS_ARCH_GATE_MISSING]'
+          }
+          'PARTYOPS_RC1_NATIVE_ARM64_X64_WPS_GATE_CORRECTLY_BLOCKED'
+          # This run validates only the safety boundary; it does NOT exercise
+          # production WPS, an ARM64 application installer, or any user data.
+          exit 0
