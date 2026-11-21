@@ -26,8 +26,14 @@ REQUIRED = frozenset({
     "ggml.dll",
     "LICENSE",
     "SOURCE.json",
+    # PE import chain: llama-server-impl.dll -> mtmd.dll and
+    # ggml-base.dll -> libomp140.x86_64.dll.
+    "mtmd.dll",
+    "libomp140.x86_64.dll",
+    "ggml-base.dll",
 })
-EXTRA_NATIVE = re.compile(r"^(?:ggml|llama)[a-z0-9_.-]*\.(?:dll|exe)$", re.I)
+# Retain all CPU-specific ggml backends, but not unrelated upstream tools.
+EXTRA_NATIVE = re.compile(r"^ggml(?:-[a-z0-9_.-]+)?\.dll$", re.I)
 
 
 def sha256(file: Path) -> str:

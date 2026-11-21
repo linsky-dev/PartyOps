@@ -55,6 +55,22 @@ class OriginalLocalAIRecoveryContracts(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "hash/size mismatch"):
                 module.validate_files(root, entries)
 
+    def test_minimal_server_runtime_excludes_upstream_cli_and_bench_tools(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "app"
+            entries = fixture(root)
+            for name in ("llama-cli.exe", "llama-bench.exe", "ggml-rpc-server.exe"):
+                blob = b"extra upstream tool"
+                (root / name).write_bytes(blob)
+                entries.append({
+                    "path": name,
+                    "size": len(blob),
+                    "sha256": hashlib.sha256(blob).hexdigest(),
+                })
+            verified = module.validate_files(root, entries)
+            self.assertTrue({"mtmd.dll", "libomp140.x86_64.dll"}.issubset(verified))
+            self.assertFalse({"llama-cli.exe", "llama-bench.exe", "ggml-rpc-server.exe"} & set(verified))
+
     def test_missing_source_file_does_not_pass(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp) / "app"
