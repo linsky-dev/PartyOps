@@ -17,6 +17,7 @@ from fastapi.testclient import TestClient
 from app.config import get_settings
 from app.database import db_runtime
 from app.local_ai import EmbeddingRuntime
+from app import model_packs
 from app.models import AIModelPack
 
 OFFICIAL_SHA256 = "57df3669e368497ad6d428dab309fb7665229a57edfe3a4fe1f2afd6a0f1a155"
@@ -55,6 +56,14 @@ def test_official_signed_bge_http_import_activation_and_inference(
     assert imported["status"] == "installed"
 
     pack_id = imported["id"]
+    # A valid administrator cannot activate a capability the published
+    # embedding-only manifest does not contain.
+    wrong_capability = client.post(
+        f"/api/v1/admin/ai/model-packs/{pack_id}/activate?capability=llm"
+    )
+    assert wrong_capability.status_code == 422, wrong_capability.text
+    assert wrong_capability.json()["code"] == "MODEL_CAPABILITY_MISSING"
+
     enabled = client.post(
         f"/api/v1/admin/ai/model-packs/{pack_id}/activate?capability=embedding"
     )
@@ -84,3 +93,72 @@ def test_official_signed_bge_http_import_activation_and_inference(
     assert duplicate.status_code == 409, duplicate.text
     assert duplicate.json()["code"] == "MODEL_PACK_ALREADY_INSTALLED"
     assert path.is_file() and path.stat().st_size == OFFICIAL_BYTES
+
+    # Fail closed even if the installed copy is modified without changing
+    # its size or mtime. This touches only the pytest-isolated extracted ONNX
+    # payload, never the original signed release archive or signing key.
+    with db_runtime.session_factory() as db:
+        pack = db.get(AIModelPack, pack_id)
+        assert pack is not None
+        model_name = pack.manifest["components"]["embedding"]["model_file"]
+        component = model_packs._safe_member(model_name)
+        extracted = model_packs.model_pack_root(pack).joinpath(*component.parts)
+        original = extracted.stat()
+    assert original.st_size > 2
+    with extracted.open("r+b") as handle:
+        handle.seek(-1, os.SEEK_END)
+        previous = handle.read(1)
+        handle.seek(-1, os.SEEK_END)
+        handle.write(bytes([previous[0] ^ 1]))
+    os.utime(extracted, ns=(original.st_atime_ns, original.st_mtime_ns))
+    assert extracted.stat().st_size == original.st_size
+    assert extracted.stat().st_mtime_ns == original.st_mtime_ns
+    refused = client.post(
+        f"/api/v1/admin/ai/model-packs/{pack_id}/activate?capability=embedding"
+    )
+    assert refused.status_code == 409, refused.text
+    assert refused.json()["code"] == "MODEL_PACK_CORRUPT"
+    assert path.is_file() and path.stat().st_size == OFFICIAL_BYTES
+
+
+def test_official_bge_admin_http_routes_reject_anonymous_and_staff(
+    client: TestClient, admin: dict, staff: dict
+) -> None:
+    # Lightweight mandatory security test. No official model download and no
+    # model material is needed; a second TestClient has no admin cookie.
+    del admin, staff
+    unauthenticated = TestClient(client.app)
+    try:
+        paths = [
+            ("get", "/api/v1/admin/ai/model-packs"),
+            ("post", "/api/v1/admin/ai/model-packs"),
+            ("post", "/api/v1/admin/ai/model-packs/not-a-pack/activate?capability=embedding"),
+        ]
+        for verb, target in paths:
+            kwargs = (
+                {"files": {"file": ("untrusted.partyops-modelpack", b"invalid")}}
+                if target == "/api/v1/admin/ai/model-packs" and verb == "post"
+                else {}
+            )
+            result = getattr(unauthenticated, verb)(target, **kwargs)
+            assert result.status_code == 401, result.text
+            assert result.json()["code"] == "AUTH_REQUIRED"
+
+        # staff is a real, distinct authenticated session but is not allowed
+        # to even list, import or activate administrator-controlled models.
+        login = unauthenticated.post(
+            "/api/v1/auth/login",
+            json={"username": "staff", "password": "PartyOps@2026"},
+        )
+        assert login.status_code == 200, login.text
+        for verb, target in paths:
+            kwargs = (
+                {"files": {"file": ("untrusted.partyops-modelpack", b"invalid")}}
+                if target == "/api/v1/admin/ai/model-packs" and verb == "post"
+                else {}
+            )
+            denied = getattr(unauthenticated, verb)(target, **kwargs)
+            assert denied.status_code == 403, denied.text
+            assert denied.json()["code"] == "ADMIN_REQUIRED"
+    finally:
+        unauthenticated.close()

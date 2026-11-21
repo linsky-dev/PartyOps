@@ -23,6 +23,12 @@ def test_official_bge_http_requires_opt_in_original_release_and_is_not_published
     assert '"/api/v1/admin/ai/model-packs"' in case
     assert "capability=embedding" in case
     assert "MODEL_PACK_ALREADY_INSTALLED" in case
+    assert "MODEL_CAPABILITY_MISSING" in case
+    assert "MODEL_PACK_CORRUPT" in case
+    assert "AUTH_REQUIRED" in case
+    assert "ADMIN_REQUIRED" in case
+    assert "TestClient(client.app)" in case
+    assert "extracted.stat().st_mtime_ns == original.st_mtime_ns" in case
     assert "runs-on: windows-2025" in workflow
     assert "persist-credentials: false" in workflow
     assert "uv sync --project backend --frozen --group dev" in workflow
