@@ -320,3 +320,19 @@ def test_release_gate_requires_pymupdf_lock_with_parseable_version(tmp_path: Pat
     verdict = _evaluate(tmp_path, manifest, pymupdf_version="unverified")
     assert verdict["verdict"] == "BLOCKED"
     assert any("PyMuPDF security floor blocked" in x for x in verdict["blockers"])
+
+def test_release_gate_accepts_official_two_part_pymupdf_versions(tmp_path: Path):
+    """PyMuPDF publishes 2.0 / 2.1, not only 2.0.0 / 2.1.0."""
+    for version in ("2.0", "2.1", "2.1.0"):
+        manifest = _fake_manifest(tmp_path / "artifacts" / "candidate")
+        verdict = _evaluate(tmp_path, manifest, pymupdf_version=version)
+        assert verdict["verdict"] == "READY_FOR_FINAL_HUMAN_RELEASE_APPROVAL", (version, verdict)
+
+
+def test_release_gate_rejects_unreviewed_pymupdf_version_variants(tmp_path: Path):
+    """Never silently accept vulnerable 1.x or prerelease/local builds."""
+    for version in ("1.28", "2.0rc1", "2.1.post1", "2.1+local", "2.1.0.1"):
+        manifest = _fake_manifest(tmp_path / "artifacts" / "candidate")
+        verdict = _evaluate(tmp_path, manifest, pymupdf_version=version)
+        assert verdict["verdict"] == "BLOCKED", (version, verdict)
+        assert any("PyMuPDF security floor blocked" in blocker for blocker in verdict["blockers"])
