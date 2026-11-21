@@ -95,7 +95,10 @@ def recover(root: Path, installer: Path, manifest_path: Path, source: Path, dest
         ("platform", "windows"),
         ("architecture", "amd64"),
     )):
-        raise ValueError("reference release manifest does not match Windows RC6 x64")
+        observed = {key: manifest.get(key) for key in
+                    ("schema_version", "product", "version", "release_tag",
+                     "platform", "architecture", "runtime_profile")}
+        raise ValueError(f"reference release manifest identity mismatch: {observed}")
     files = manifest.get("files")
     if not isinstance(files, list) or not files:
         raise ValueError("reference release manifest has no files")
