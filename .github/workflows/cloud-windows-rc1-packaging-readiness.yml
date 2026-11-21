@@ -47,6 +47,33 @@ jobs:
           python -m unittest discover -s backend/tests -p test_rc1_windows_packaging_readiness.py -v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+      - name: Recover and verify official pinned Windows x64 SQLite from existing build script
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $pythonExe = (python -c 'import sys; print(sys.executable)').Trim()
+          & pwsh -NoProfile -File scripts/prepare-windows-build.ps1 -Python $pythonExe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $dll = 'vendor/windows/sqlite-3.53.4/runtime/sqlite3.dll'
+          if (-not (Test-Path -LiteralPath $dll -PathType Leaf)) {
+            throw '[WINDOWS_SQLITE_SOURCE_MISSING] Pinned SQLite preparation produced no DLL.'
+          }
+          $sha = (Get-FileHash -LiteralPath $dll -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($sha -ne 'ab57d0437795ecc757cb693f32ea224173fa9856594d95cfa6b5033e645cd1ec') {
+            throw '[WINDOWS_SQLITE_DIGEST_MISMATCH] Refuse unverifiable runtime.'
+          }
+          $evidence = [ordered]@{
+            source_commit = '${{ github.sha }}'
+            target = 'windows-10-11-amd64'
+            input = 'sqlite-3.53.4'
+            runtime_sha256 = $sha
+            verification = 'PASS_VERIFIED_OFFICIAL_ARCHIVE_SHA3_DLL_SHA256_AND_NATIVE_DLL_VERSION'
+            signed_installer = $false
+            installer_generated = $false
+            release_ready = $false
+          }
+          $evidence | ConvertTo-Json | Out-File -LiteralPath artifacts/windows-rc1-sqlite.json -Encoding utf8
+
       - name: Report actual clean-checkout Windows package requirements
         shell: pwsh
         env:
@@ -72,6 +99,8 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: partyops-rc1-windows-packaging-readiness-${{ github.sha }}
-          path: artifacts/windows-rc1-preflight.json
+          path: |
+            artifacts/windows-rc1-preflight.json
+            artifacts/windows-rc1-sqlite.json
           if-no-files-found: warn
           retention-days: 14
