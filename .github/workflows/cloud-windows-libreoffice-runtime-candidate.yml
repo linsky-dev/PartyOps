@@ -93,8 +93,8 @@ jobs:
           if (-not (Test-Path -LiteralPath $inputFile)) { throw '[LIBREOFFICE_PARTYOPS_FIXTURE_MISSING]' }
           $output = Join-Path $workspace 'converted'
           New-Item -ItemType Directory -Path $output -Force | Out-Null
-          $profile = (Join-Path $workspace 'fresh-office-profile').Replace('\\', '/')
-          $profile = 'file:///' + $profile.Replace(' ', '%20')
+          # Let System.Uri produce a valid file:///D:/... URI on Windows.
+          $profile = [System.Uri]::new((Join-Path $workspace 'fresh-office-profile')).AbsoluteUri
           # Some Office builds launch a GUI/first-run helper and never return.
           # Bound the actual conversion; never label a hanging process PASS.
           $arguments = @("-env:UserInstallation=$profile", '--headless', '--convert-to', 'pdf', '--outdir', $output, $inputFile)
