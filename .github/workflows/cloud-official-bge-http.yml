@@ -1,0 +1,71 @@
+name: RC1 official BGE FastAPI TestClient acceptance (BUILD_ONLY)
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/cloud-official-bge-http.yml'
+      - 'backend/tests/test_rc1_official_bge_http.py'
+      - 'backend/tests/test_rc1_official_bge_http_contract.py'
+      - 'backend/app/model_packs.py'
+      - 'backend/app/routers/ai.py'
+      - 'backend/app/local_ai.py'
+      - 'scripts/probe_arm64_official_bge_signature.py'
+      - 'scripts/probe_rc1_official_bge_http.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc1-official-bge-http-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  authenticated-api:
+    name: Official signed BGE import and activation using actual FastAPI routes on Windows x64
+    runs-on: windows-2025
+    timeout-minutes: 35
+    env:
+      PYTHONUTF8: '1'
+    steps:
+      - name: Check out the exact triggering commit with no persisted credentials
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Install Windows x64 Python 3.12
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+          architecture: x64
+
+      - name: Install the existing frozen PartyOps dependency lock and test runner
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python -m pip install --disable-pip-version-check 'uv==0.11.7'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          uv sync --project backend --frozen --group dev
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          uv pip install --python backend/.venv/Scripts/python.exe -r backend/requirements-dev.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Verify original release SHA-256 and exercise real PartyOps FastAPI routes
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python scripts/probe_rc1_official_bge_http.py --python backend/.venv/Scripts/python.exe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Upload only detached JSON and JUnit evidence, not the model archive
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: official-bge-http-build-only-${{ github.sha }}
+          path: |
+            artifacts/official-bge-http/evidence.json
+            artifacts/official-bge-http/junit.xml
+          if-no-files-found: warn
+          retention-days: 14
