@@ -36,5 +36,6 @@ def test_arm64_only_uses_locked_orm_and_has_no_production_write() -> None:
     assert 'SQLAlchemy==2.0.43' in workflow
     assert 'pydantic==2.13.4' in workflow
     assert 'pydantic-settings==2.10.1' in workflow
+    assert 'fastapi==0.140.7' in workflow
     assert 'scripts/probe_arm64_modelpack_db_lifecycle.py' in workflow
     assert 'artifacts/arm64-crypto-probe/modelpack-db-lifecycle.json' in workflow

@@ -161,7 +161,7 @@ jobs:
           PYTHONUTF8: '1'
         run: |
           $ErrorActionPreference = 'Stop'
-          python -m pip install --disable-pip-version-check --only-binary=:all: 'SQLAlchemy==2.0.43' 'pydantic==2.13.4' 'pydantic-settings==2.10.1'
+          python -m pip install --disable-pip-version-check --only-binary=:all: 'SQLAlchemy==2.0.43' 'pydantic==2.13.4' 'pydantic-settings==2.10.1' 'fastapi==0.140.7'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -m pip check
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
