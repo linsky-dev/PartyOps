@@ -59,7 +59,7 @@ function Restore-PartyOpsOcrFromPublicInstaller {
   # produce the *identical* 62 OCR files in the frozen per-file manifest.
   $allowedInstallerHashes = @{
     "A7C044B0B830CE416FDF02C84DAA2E7AA4929C0833D9B530BC47486D861A81BE" = "rc6-original"
-    "E3E2EA45CCD38ACFF059B5713826A78F998A56CEF75341633F67BD4E17E57DA" = "rc6-startup-repair-20261018"
+    "E3E2EA45CCD38ACFF059B5713826A78F998A56CCEF75341633F67BD4E17E57DA" = "rc6-startup-repair-20261018"
   }
   $sourceHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $InstallerPath).Hash
   if (-not $allowedInstallerHashes.ContainsKey($sourceHash)) {

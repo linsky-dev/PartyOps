@@ -41,7 +41,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw '[OCR_SOURCE_RELEASE_DOWNLOAD_FAILED]' }
           $meta = Get-Item -LiteralPath $installer
           $sha = (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant()
-          if ($meta.Length -ne 449988807 -or $sha -ne 'e3e2ea45ccd38acff059b5713826a78f998a56cef75341633f67bd4e17e57da') {
+          if ($meta.Length -ne 449988807 -or $sha -ne 'e3e2ea45ccd38acff059b5713826a78f998a56ccef75341633f67bd4e17e57da') {
             throw '[OCR_SOURCE_RELEASE_SHA256_OR_SIZE_MISMATCH]'
           }
           "PARTYOPS_RC6_STARTUP_RELEASE_ASSET_VERIFIED: $sha"
@@ -101,7 +101,7 @@ jobs:
             schema_version = 1
             scope = 'WINDOWS_X64_RC6_STARTUP_RELEASE_RECOVERED_NATIVE_CHINESE_OCR_BUILD_ONLY'
             source_commit = '${{ github.sha }}'
-            rc6_release_asset_sha256 = 'e3e2ea45ccd38acff059b5713826a78f998a56cef75341633f67bd4e17e57da'
+            rc6_release_asset_sha256 = 'e3e2ea45ccd38acff059b5713826a78f998a56ccef75341633f67bd4e17e57da'
             extractor_zip_sha256 = '79b69b9b1fcd98f42ccd4b245efdf6a03bcfb674ba6af482f5a46891c9ed4d14'
             locked_ocr_manifest_sha256 = (Get-FileHash -LiteralPath 'packaging/windows/ocr-public-recovery-manifest.json' -Algorithm SHA256).Hash.ToLowerInvariant()
             verified_files = 62
