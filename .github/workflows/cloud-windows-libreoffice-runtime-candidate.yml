@@ -95,8 +95,20 @@ jobs:
           New-Item -ItemType Directory -Path $output -Force | Out-Null
           $profile = (Join-Path $workspace 'fresh-office-profile').Replace('\\', '/')
           $profile = 'file:///' + $profile.Replace(' ', '%20')
-          & $sofficeCom "-env:UserInstallation=$profile" '--headless' '--convert-to' 'pdf' '--outdir' $output $inputFile
-          if ($LASTEXITCODE -ne 0) { throw '[LIBREOFFICE_DOCX_PDF_CONVERSION_FAILED]' }
+          # Some Office builds launch a GUI/first-run helper and never return.
+          # Bound the actual conversion; never label a hanging process PASS.
+          $arguments = @("-env:UserInstallation=$profile", '--headless', '--convert-to', 'pdf', '--outdir', $output, $inputFile)
+          $process = Start-Process -FilePath $sofficeCom -ArgumentList $arguments -PassThru -NoNewWindow
+          try {
+            if (-not $process.WaitForExit(180000)) {
+              throw '[LIBREOFFICE_CONVERSION_TIMEOUT] Native PDF converter did not exit within 180 s.'
+            }
+            if ($process.ExitCode -ne 0) {
+              throw "[LIBREOFFICE_DOCX_PDF_CONVERSION_FAILED] exit=$($process.ExitCode)"
+            }
+          } finally {
+            if (-not $process.HasExited) { Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue }
+          }
           $converted = Join-Path $output 'input-manual-break.pdf'
           if (-not (Test-Path -LiteralPath $converted -PathType Leaf)) { throw '[LIBREOFFICE_OUTPUT_PDF_MISSING]' }
           $bytes = [IO.File]::ReadAllBytes($converted)
