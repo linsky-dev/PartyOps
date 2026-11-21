@@ -41,3 +41,9 @@ Windows 7 SP1 x86/x64、Deepin 25.2.0 LoongArch64、麒麟与 UOS 桌面、openE
 增量测试 `scripts/probe_arm64_signed_embedding_chain.py` 使用原始 PartyOps 构建器、原始模型包校验函数和原始 `EmbeddingRuntime` 类。仅在原生 Windows ARM64 的固定 `cryptography==50.0.0` 源构建验证后，安装实验专用 `numpy==2.3.5`、`onnxruntime==1.24.2`、`onnx==1.23.2`、`tokenizers==0.23.3` 官方原生 wheel，生成可执行但极小的合成 ONNX/分词器，使用一次性 Ed25519 密钥打包。验签和 SHA-256 成功后才展开模型，原 `encode()` 验证批量向量、查询前缀和归一化；载荷篡改必须在执行前阻断。
 
 测试钥匙、原始 ZIP 和所有模型文件在临时目录内创建及销毁，GitHub 仅留签名包的 SHA-256、源码 SHA、候选依赖版本、脱敏结果。此测试没有正式公钥、RC6 模型包、真实用户数据或应用导入/数据库激活，不代表模型包可公开发布。WPS 核心、生产锁文件和现有 `backend/app` 均不改动。
+
+## Windows ARM64 模型包真实安装与激活源码专项（待云端执行）
+
+基于已 PASS 的签名包 → ONNX 链路，增加 `scripts/probe_arm64_modelpack_db_lifecycle.py`：原生 ARM64 安装与当前锁一致的 SQLAlchemy、Pydantic、Pydantic Settings，使用生产 `app.model_packs` 及 `app.models` 原始模块（不是复制实现），在**独立内存 SQLite、一次性目录、一次性测试密钥**中执行真实 `install_model_pack`、`verify_installed_pack`、`activate_model_pack`、`active_model_pack`、`EmbeddingRuntime.encode`。验证模型包签名、受控目录存储、重复导入拒绝、激活记录提交、已安装模型推理和存储文件损坏拒绝；全部测试材料在 Runner 退出前清理，仅保留无私钥的 BUILD_ONLY 证据。
+
+该专项不启动 HTTP API 或既有正式安装程序，也不验证正式 RC6 签名权重、真实 WPS、全部 ARM64 依赖或数据库升级路径。验收状态以实际 Actions 运行结果为准。
