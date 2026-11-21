@@ -12,3 +12,12 @@
 | Windows ARM64 应用依赖闭包 | 国密轮子已在原生 ARM64 构建并通过 SM3/SM4-GCM，不能代表完整应用支持。冻结锁文件仍有 ONNX Runtime 1.22.1、NumPy 2.2.6、PyMuPDF 1.26.0、tokenizers 0.21.4 等原生轮子缺口。 **已核实官方 PyPI ONNX Runtime 1.32.0 的 Windows ARM64 cp312 原生 wheel（2026-11-13，SHA-256 `64d394c69d561af3efd4d4f49dcac8f11d0ce135a20701c16d53b74056cd4cf8`），[原生 CI #44895624562](https://github.com/linsky-dev/PartyOps/actions/runs/44895624562) 已实际通过 ONNX 1.32.0 wheel 原 SHA-256 核验和 PartyOps 原 EmbeddingRuntime 合成推理，但不得修改已锁定的生产 1.22.1。** | 本轮新增原生 Windows ARM64 只读锁文件与 wheel 标签审计，使用实际 ARM64 Python 及现有锁文件生成 BUILD_ONLY 证据；后续分别取得合法兼容包或经审查的原生构建、功能回归和安装升级验证。不得直接修改既有 x64 的锁定版本规避此项。 |
 | ARM64 官方模型完整 HTTP/API、服务重启与安装包验证 | [#44866043200](https://github.com/linsky-dev/PartyOps/actions/runs/44866043200) 的原生 Windows ARM64 作业已经通过**历史 RC2 原始官方签名包**固定哈希、Ed25519/载荷校验、PartyOps 原源码真实导入/激活及中文 BGE 实际推理；之前 v1/v2 清单格式测试误判已排除。此记录不代表 RC6 安装包的原生导入或完整业务 HTTP/API 成功。 | [#44873341720](https://github.com/linsky-dev/PartyOps/actions/runs/44873341720) 已完成临时 SQLite 引擎重开及原运行实例再验证。原生 [#44877246001](https://github.com/linsky-dev/PartyOps/actions/runs/44877246001) 已进一步通过**全新 Python 解释器**重载与临时提取 ONNX 等体积、mtime 不变篡改的强制重新哈希拒绝；另 [Windows x64 官方包 TestClient #44878080788](https://github.com/linsky-dev/PartyOps/actions/runs/44878080788) 已通过隔离管理员 HTTP 上传/激活及实际推理，但不代表 ARM64 或完整部署网络 API；后续仍须完整部署态 HTTP、真实 PartyOps 安装包/进程重启、全量锁定依赖、签名、WPS、升级与回滚。不能把 BUILD_ONLY 的官方历史包隔离探测当作完整发行支持。 |
 | 冻结、签名与生产批准 | 未冻结源码或制品，未通过完整安全和原生门禁，未请求最终发布批准。 | 完成全部必需检查、可重现制品、升级与回滚演练和双站预览。由用户批准后使用受保护环境发布。 |
+
+## 最近稳定证据与依然未关闭的发布门禁（2026-11-21）
+
+[`aaf01d8b` 的 32/32 代码检查](https://github.com/linsky-dev/PartyOps/commit/aaf01d8bae3e04fed4b3459b451959c2147b6c2d/checks) 全部成功；Windows 正式依赖 [2,414 passed /17 skipped](https://github.com/linsky-dev/PartyOps/actions/runs/44917466125)，隔离 PyMuPDF 2.1 [2,412 passed /19 skipped](https://github.com/linsky-dev/PartyOps/actions/runs/44917466041)。结果仅绑定该 SHA，不覆盖此后提交。项目仍处于开发候选状态。
+
+- **未关闭：** 正式 `backend/uv.lock` 的 PyMuPDF 1.26.0 安全修复、Win7/ARM64/Mac Intel/龙芯及其他承诺系统的正式原生依赖与安装兼容性；不能将 Windows x64 隔离候选直接升级为全平台生产锁。
+- **未关闭：** 专用 Windows 10/11 x64 真实 WPS 用户桌面金样、六功能验收、原始全功能证据更新、候选 EXE 构建及真机安装/升级/回滚、签名。仅验收边界脚本和已有来源输入检查通过。
+- **未关闭：** EdgeOne 当前生产源码与历史 v5 工程比对、3D/经典双站预览、十包与十二系统最终矩阵、发布授权。
+- **WPS 历史变更提醒：** PR 相对 `main` 包含之前的排版宿主/源码暂存及新 C# 文件差异；当前几轮未触碰不等于整个 PR 没有差异。未完成专用原生金样前不擅自回退、改写或批准正式包。

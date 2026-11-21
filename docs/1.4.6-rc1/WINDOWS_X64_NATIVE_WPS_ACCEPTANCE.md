@@ -38,3 +38,10 @@ pwsh -NoProfile -File scripts/rc1-windows-native-wps-gate.ps1 -Mode BuildCandida
 后两个模式调用的是原来的 `scripts/test.ps1` / `packaging/windows/build-windows.ps1`，绝不跳过真实 WPS 金样、六功能证据、签名输入、完整性校验或版本门禁。任何失败直接停止且保留 `artifacts/rc1-native-wps-*/native-wps-candidate.json`；没有运行就不得登记通过。
 
 候选 EXE 即使生成也必须继续执行 Windows 10、Windows 11 两套原生安装、重启、权限、已有安装升级与回滚、备份恢复、哈希、数字签名和人工发布审批。没有这些证据，不得合并、打标签、上官网或称作正式版。
+
+## 原生环境与本轮 CI 边界（2026-11-21）
+
+- [`aaf01d8b` 的原生门禁 #44917466139](https://github.com/linsky-dev/PartyOps/actions/runs/44917466139) 中，标准 `windows-2025` 通过 **拒绝伪装 Windows 10/11 用户端** 测试；真正 `windows-11-arm` 通过 **拒绝把 ARM64 当作 x64** 测试。两个 job 的 PASS 均是**阻断机制正确**，而非真实 WPS 功能 PASS。
+- [Windows 全量源码 CI #44917466125](https://github.com/linsky-dev/PartyOps/actions/runs/44917466125) **2,414 passed / 17 skipped**；[隔离 PyMuPDF 2.1 全回归 #44917466041](https://github.com/linsky-dev/PartyOps/actions/runs/44917466041) **2,412 passed / 19 skipped**，且两者均通过原 95% 行、92% 分支覆盖门槛。这些证据不代替真实 WPS 交互操作。
+- PR 早期确有 `EastAsianPunctuationFontService.cs` 新文件、Windows/Linux 封装构建与源码暂存调整；本轮未改动这些文件。执行真实验收前须以冻结 SHA 确认原始上游快照及本机 WPS 版本，并验证六功能金样；不得仅依据 Windows Server 构建通过声明排版功能通过。
+- 生产 PyMuPDF 尚未取得完整跨架构安全版本方案，因此 `BuildCandidate` 的阻断必须保留。此文中的可执行命令只适用于获得授权的专用 QA 测试机。

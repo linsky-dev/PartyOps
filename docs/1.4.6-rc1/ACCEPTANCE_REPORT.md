@@ -56,3 +56,14 @@
 
 验收证据以各次运行记录的执行系统、架构、命令、依赖和 SHA 为准。安装验收需追加包 SHA-256、日期和未覆盖范围。
 GitHub PR 运行使用该次合并提交作为检出和附件名的一部分。例如，候选分支头为 `edafb5d` 时，工作流检出为 `ddcdd56f45aa`。
+
+## 2026-11-21 最新完整 PR 源码闭环（已冻结证据 SHA，不代表发布完成）
+
+- **源码 SHA：** `aaf01d8bae3e04fed4b3459b451959c2147b6c2d`（本节证据属于此提交；本验收报告后续编辑提交不自动继承这些测试结论）。
+- **PR 全量检查：** [GitHub SHA 检查](https://github.com/linsky-dev/PartyOps/commit/aaf01d8bae3e04fed4b3459b451959c2147b6c2d/checks) 显示 **32/32 checks success**，包含前端、Linux、原生 Runner 及分架构候选证据；不能推导为 10 包 / 12 原生系统安装通过。
+- **Windows 原生产依赖后端：PASS（源码回归）。** [Cloud unit #44917466125](https://github.com/linsky-dev/PartyOps/actions/runs/44917466125) 中实际 Windows x64 后端 **2,414 passed、17 skipped、3 subtests passed**，`scripts/verify-coverage.py --line 95 --branch 92` 成功；前端、Linux 源码和上游排版宿主 AnyCPU/x86/x64 构建检查成功。这是源码/构建级验证，不是原生 WPS 金样验收。
+- **Windows x64 安全 PDF 隔离候选：PASS（BUILD_ONLY）。** [PyMuPDF 2.1 full backend #44917466041](https://github.com/linsky-dev/PartyOps/actions/runs/44917466041)：隔离锁中 `pymupdf==2.1`、`pymupdf-layout==2.1`、`pymupdf4llm==2.1`，**2,412 passed、19 skipped、3 subtests passed**，95% 行、92% 分支覆盖门槛成功；**生产 `backend/uv.lock` 仍为 1.26.0，风险和跨架构适配门禁未解除**。
+- **Windows x64 / ARM64 判定：PASS（仅安全边界）。** [原生作业 #44917466139](https://github.com/linsky-dev/PartyOps/actions/runs/44917466139) 两个 job 均通过：Windows Server 2025 不冒充真实 Windows 10/11 用户环境；真实 `windows-11-arm` 验证 x64 专用 WPS 入口在 `OSArchitecture=Arm64` 时被拒绝。**不表示 ARM64 已运行 WPS，也不表示 x64 已做真实 WPS 验收。**
+- **回归误报修复记录：** [#44915778498](https://github.com/linsky-dev/PartyOps/actions/runs/44915778498)、[#44915778521](https://github.com/linsky-dev/PartyOps/actions/runs/44915778521) 的各一项失败均由测试将说明注释 `scripts/test.ps1` 当作真实执行语句引起；[`1deae76a`](https://github.com/linsky-dev/PartyOps/commit/1deae76a4f39304864f43005d5987e92e0e87d02) 将断言限定到实际调用，随后在冻结 SHA 完整复验通过。
+- **WPS 改动边界：** 本轮三个增量提交 `1deae76a`、`5389ed94`、`aaf01d8b` 仅涉及验收测试/工作流，没有变更生产自动排版业务逻辑。**整个 PR 相对 `main` 仍包含早前排版相关差异**：新增 `packaging/formatter-host/upstream/EastAsianPunctuationFontService.cs`、宿主项目及 Windows/Linux 封装脚本源码核验/暂存调整，和适配插件版本元数据变更；因此**不得宣称整个 PR 的 WPS 部分零差异**。在专用真机的原始金样与六功能门禁完成前不批准正式安装包。
+- **状态：** `main`、RC6 旧包、生产官网、Release 正式资产未更改；本节属于可审计中间证据。没有冻结十包制品、原生升级/回滚/签名、双站预览及正式批准，发行状态仍为 `BLOCKED`。
