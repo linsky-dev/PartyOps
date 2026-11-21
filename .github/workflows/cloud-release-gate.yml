@@ -117,6 +117,7 @@ jobs:
           import tarfile
           from pathlib import Path
           from scripts.rc1_release_evidence import validate_cyclonedx, validate_source_archive
+          from scripts.rc1_release_security import assert_safe_pymupdf_lock
           from scripts.rc1_release_targets import (
               INSTALLER_FILE_SUFFIXES,
               INSTALLER_VALIDATION_TARGETS,
@@ -265,6 +266,14 @@ jobs:
                   continue
               for artifact in native_artifacts:
                   verify_artifact(artifact, f"native:{target}")
+
+          # CVE-2026-120752 affects PyMuPDF 1.25.3 before 2.0;
+          # CVE-2026-82035 additionally includes 1.28.2. A PASS field
+          # cannot waive a known vulnerable frozen dependency.
+          try:
+              assert_safe_pymupdf_lock(Path("source-verify/backend/uv.lock"))
+          except (OSError, ValueError) as exc:
+              blockers.append(f"PyMuPDF security floor blocked: {exc}")
 
           for status_field in (
               "native_installation_acceptance",

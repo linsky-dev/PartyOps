@@ -147,10 +147,16 @@ def _fake_manifest(folder: Path) -> dict:
     }
 
 
-def _evaluate(tmp_path: Path, manifest: dict) -> dict:
+def _evaluate(tmp_path: Path, manifest: dict, *, pymupdf_version: str = "2.1.0") -> dict:
     evidence = tmp_path / "artifacts" / "candidate"
     (evidence / "candidate-evidence.json").write_text(
         json.dumps(manifest, ensure_ascii=False), encoding="utf-8"
+    )
+    synthetic_lock = tmp_path / "source-verify" / "backend" / "uv.lock"
+    synthetic_lock.parent.mkdir(parents=True, exist_ok=True)
+    synthetic_lock.write_text(
+        f'[[package]]\nname = "pymupdf"\nversion = "{pymupdf_version}"\n',
+        encoding="utf-8",
     )
     env = os.environ.copy()
     env.update({
@@ -298,3 +304,19 @@ def test_gate_rejects_hash_matched_empty_sbom_json(tmp_path: Path):
     result = _evaluate(tmp_path, manifest)
     assert result["verdict"] == "BLOCKED"
     assert any("SBOM CycloneDX contents invalid" in x for x in result["blockers"])
+
+
+def test_release_gate_blocks_known_vulnerable_pymupdf_locks(tmp_path: Path):
+    manifest = _fake_manifest(tmp_path / "artifacts" / "candidate")
+    for version in ("1.26.0", "1.28.2"):
+        verdict = _evaluate(tmp_path, manifest, pymupdf_version=version)
+        assert verdict["verdict"] == "BLOCKED"
+        assert any("PyMuPDF security floor blocked" in x for x in verdict["blockers"])
+        assert any("CVE-2026-120752" in x for x in verdict["blockers"])
+
+
+def test_release_gate_requires_pymupdf_lock_with_parseable_version(tmp_path: Path):
+    manifest = _fake_manifest(tmp_path / "artifacts" / "candidate")
+    verdict = _evaluate(tmp_path, manifest, pymupdf_version="unverified")
+    assert verdict["verdict"] == "BLOCKED"
+    assert any("PyMuPDF security floor blocked" in x for x in verdict["blockers"])
