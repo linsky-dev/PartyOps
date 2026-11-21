@@ -37,6 +37,7 @@
 | ARM64 合成签名包与原始 EmbeddingRuntime 连续验证（新增） | NOT_RUN | 计划在同一原生 ARM64 Runner 使用锁定 cryptography 50.0.0 与隔离 ONNX Runtime 候选，以一次性钥匙签发**可运行的合成 ONNX/tokenizer**模型包；先验证签名与全部载荷 SHA，再解包并调用原始 `EmbeddingRuntime.encode()`，同时验证篡改包在提取前被拒绝。此项仍非正式 RC6 签名包、完整应用上传/激活或真实模型权重验收，只有本轮独立作业实际成功才能标记 PASS。 |
 | Windows ARM64 原始签名包→向量推理连续链路（`3c37901c`） | PASS（BUILD_ONLY） | [原生运行 #44758117279](https://github.com/linsky-dev/PartyOps/actions/runs/44758117279) 8/8 作业成功；原始构建器、签名/哈希验证及原始 `EmbeddingRuntime` 接力完成合成向量推理，并拒绝篡改包。未使用 RC6 正式模型包。 |
 | Windows ARM64 原始 SQLAlchemy 模型包导入、激活与损坏拒绝（新增） | NOT_RUN | 新增独立的临时 SQLite 原生测试：调用**未修改的** `install_model_pack()`、`verify_installed_pack()`、`activate_model_pack()`、`active_model_pack()` 及原始向量推理，测试重复安装、损坏文件重激活拒绝。数据只在一次性内存数据库/临时目录内，**非正式 RC6 包、完整 API 服务或安装包验收**。 |
+| RC6 正式 BGE 历史签名包来源（待原生审查） | NOT_RUN（验签），已确认公开来源 | GitHub [v1.4.5-rc.2 Release](https://github.com/linsky-dev/PartyOps/releases/tag/v1.4.5-rc.2) 保留 `PartyOps_BGE_Small_ZH_1.5.0.partyops-modelpack`（94,965,776 字节）；仓库验收记录固定 SHA-256 为 `57df3669e368497ad6d428dab309fb7665229a57edfe3a4fe1f2afd6a0f1a155`，外部信任根 `packaging/uos/update-public-key.txt`。新原生 ARM64 只读专项必须先核对完整文件哈希，再调用原始 `_validate_manifest` 验签及检查包内所有文件，严禁重签。**如果原清单不支持 ARM64，将单独标记为平台 BLOCKED，不得作为 ARM64 通过。** |
 | 十包构建与逐包真实安装 | NOT_RUN | 尚无本次冻结制品。 |
 | 特殊目标原生安装、升级及真实 WPS | BLOCKED | 需要对应目标环境和合法可用的 WPS 输入。 |
 | 双官网预览及下载回读 | BLOCKED | EdgeOne 控制台可见内容缺少可重建的原始工程。 |

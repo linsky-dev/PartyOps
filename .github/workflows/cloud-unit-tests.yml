@@ -78,6 +78,7 @@ jobs:
             tests/test_rc1_arm64_modelpack_signature_contract.py \
             tests/test_rc1_arm64_signed_embedding_chain_contract.py \
             tests/test_rc1_arm64_modelpack_db_lifecycle_contract.py \
+            tests/test_rc1_arm64_official_bge_signature_contract.py \
             tests/test_rc1_arm64_pdf_lite_contract.py \
             tests/test_document_formatter_source_snapshot.py \
             tests/test_160_rc4_upgrade_startup.py tests/test_version_consistency_gate.py \

@@ -47,3 +47,9 @@ Windows 7 SP1 x86/x64、Deepin 25.2.0 LoongArch64、麒麟与 UOS 桌面、openE
 基于已 PASS 的签名包 → ONNX 链路，增加 `scripts/probe_arm64_modelpack_db_lifecycle.py`：原生 ARM64 安装与当前锁一致的 SQLAlchemy、Pydantic、Pydantic Settings，使用生产 `app.model_packs` 及 `app.models` 原始模块（不是复制实现），在**独立内存 SQLite、一次性目录、一次性测试密钥**中执行真实 `install_model_pack`、`verify_installed_pack`、`activate_model_pack`、`active_model_pack`、`EmbeddingRuntime.encode`。验证模型包签名、受控目录存储、重复导入拒绝、激活记录提交、已安装模型推理和存储文件损坏拒绝；全部测试材料在 Runner 退出前清理，仅保留无私钥的 BUILD_ONLY 证据。
 
 该专项不启动 HTTP API 或既有正式安装程序，也不验证正式 RC6 签名权重、真实 WPS、全部 ARM64 依赖或数据库升级路径。验收状态以实际 Actions 运行结果为准。
+
+## 正式签名 BGE 历史发布包来源审查（待原生云端实证）
+
+前期阻塞报告将 RC6 正式 BGE 包误记为原始文件不可获得。现已通过 GitHub Releases API 核实，历史 RC6 验收使用的 `PartyOps_BGE_Small_ZH_1.5.0.partyops-modelpack` 原文件仍存在于 [v1.4.5-rc.2 Release](https://github.com/linsky-dev/PartyOps/releases/tag/v1.4.5-rc.2)，大小 **94,965,776 字节**。对照仓库历史 SHA-256 `57df3669e368497ad6d428dab309fb7665229a57edfe3a4fe1f2afd6a0f1a155`，新建 `scripts/probe_arm64_official_bge_signature.py` 将在原生 ARM64 Runner 下载文件，先完成长度及完整 SHA-256 校验，再使用 `packaging/uos/update-public-key.txt` 作为外部信任根调用未修改的 `app.model_packs._validate_manifest`，逐文件核验签名和摘要，检查原始 `architecture`/`architectures`、`platforms` 声明。所有下载文件仅保存在一次性目录，不重签、不修改模型、不把原包上传为 Actions 制品。
+
+该专项若确实通过，只能标记为**正式已发布包的来源和签名/载荷真实验证**。如原包仅声明 AMD64，ARM64 的正式导入激活继续保留 `BLOCKED`；即使原清单声明 ARM64，此专项也没有完成生产 HTTP 上传、数据库激活、真实 BGE 推理和完整原生安装。生产发布仍需独立签名、WPS 与升级门禁。

@@ -28,7 +28,7 @@ def test_original_install_activate_and_integrity_are_tested_with_ephemeral_db() 
 def test_arm64_only_uses_locked_orm_and_has_no_production_write() -> None:
     script = SOURCE.read_text(encoding="utf-8")
     workflow = WORKFLOW.read_text(encoding="utf-8")
-    assert 'platform.machine().lower() not in ("arm64", "aarch64")' in script
+    assert 'platform.machine().lower() not in {"arm64", "aarch64"}' in script
     assert 'model_packs.get_settings = lambda: test_settings' in script
     assert 'models_dir=storage' in script
     assert 'build_test_signed_pack(' in script
