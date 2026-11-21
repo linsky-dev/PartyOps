@@ -67,14 +67,14 @@ def test_accepts_only_python_markers_from_new_pymupdf_dependencies(tmp_path: Pat
     marker_first = "python_full_version < '3.12'"
     marker_second = "python_full_version >= '3.12'"
     alternate_deps = (
-        '[{name = "networkx", marker = "python_full_version < \\'3.12\\'"}, '
-        '{name = "networkx", marker = "python_full_version >= \\'3.12\\'"}]'
+        '[{name = "networkx", marker = "python_full_version < \'3.12\'"}, '
+        '{name = "networkx", marker = "python_full_version >= \'3.12\'"}]'
     )
     original_deps = '[{name = "networkx"}]'
     with_markers = CANDIDATE.replace(
         'requires-python = ">=3.11"',
-        'requires-python = ">=3.11"\\nresolution-markers = '
-        '["python_full_version >= \\'3.12\\'", "python_full_version < \\'3.12\\'"]'
+        'requires-python = ">=3.11"\nresolution-markers = '
+        '["python_full_version >= \'3.12\'", "python_full_version < \'3.12\'"]'
     ).replace(original_deps, alternate_deps)
     result = compare(tmp_path, BASELINE, with_markers)
     assert result["all_other_locked_distributions_unchanged"]
@@ -85,7 +85,7 @@ def test_accepts_only_python_markers_from_new_pymupdf_dependencies(tmp_path: Pat
 def test_rejects_unrelated_resolver_partition(tmp_path: Path):
     malicious = CANDIDATE.replace(
         'requires-python = ">=3.11"',
-        'requires-python = ">=3.11"\\nresolution-markers = ["os_name == \\'nt\\'"]'
+        'requires-python = ">=3.11"\nresolution-markers = ["os_name == \'nt\'"]'
     )
     with pytest.raises(ValueError, match="resolver partitions"):
         compare(tmp_path, BASELINE, malicious)
