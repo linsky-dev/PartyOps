@@ -7,6 +7,7 @@ on:
       - '.github/workflows/cloud-windows-x64-pdf-lock-review.yml'
       - 'scripts/rc1_windows_pdf_lock_review.py'
       - 'scripts/rc1_windows_pdf_lock_delta.py'
+      - 'scripts/rc1_pymupdf_21_wheel_matrix.py'
       - 'scripts/probe_pymupdf_21_x64.py'
       - 'backend/uv.lock'
       - 'backend/pyproject.toml'
@@ -58,6 +59,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python scripts/rc1_windows_pdf_lock_delta.py --baseline backend/uv.lock --candidate artifacts/windows-pdf-lock-candidate/uv.lock --output artifacts/windows-pdf-lock-delta-evidence.json
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python scripts/rc1_pymupdf_21_wheel_matrix.py --lock artifacts/windows-pdf-lock-candidate/uv.lock --output artifacts/windows-pdf-2.1-wheel-matrix.json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           uv sync --project artifacts/windows-pdf-lock-candidate --locked --no-install-project --no-dev
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           uv pip check --python artifacts/windows-pdf-lock-candidate/.venv/Scripts/python.exe
@@ -92,6 +95,7 @@ jobs:
             artifacts/windows-pdf-lock-candidate/baseline.json
             artifacts/windows-pdf-lock-evidence.json
             artifacts/windows-pdf-lock-delta-evidence.json
+            artifacts/windows-pdf-2.1-wheel-matrix.json
             artifacts/pymupdf-21-x64/compatibility.json
           if-no-files-found: warn
           retention-days: 14
