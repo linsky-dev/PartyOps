@@ -32,10 +32,13 @@ def assert_safe_pymupdf_lock(lock_path: Path) -> str:
     version = matched[0].get("version")
     if not isinstance(version, str):
         raise ValueError("PyMuPDF lock version missing")
-    parsed = re.fullmatch(r"([0-9]+)\.([0-9]+)\.([0-9]+)", version)
+    # Official PyMuPDF releases include two-component versions such as 2.0 / 2.1.
+    # Reject pre-releases, local variants and unrecognized versions for review.
+    parsed = re.fullmatch(r"([0-9]+)\.([0-9]+)(?:\.([0-9]+))?", version)
     if parsed is None:
         raise ValueError("unrecognized PyMuPDF version; review required")
-    numeric = tuple(int(number) for number in parsed.groups())
+    major, minor, patch = parsed.groups()
+    numeric = (int(major), int(minor), int(patch or "0"))
     if numeric < (2, 0, 0):
         raise ValueError(
             f"PyMuPDF {version} violates security floor >=2.0; "
