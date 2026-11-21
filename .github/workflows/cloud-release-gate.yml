@@ -72,6 +72,36 @@ jobs:
             --name "partyops-candidate-$SOURCE_SHA" --dir artifacts/candidate
           (cd artifacts/candidate && sha256sum --check SHA256SUMS.txt)
 
+      - name: Independently check out immutable candidate Git commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ inputs.source_sha }}
+          path: source-verify
+          persist-credentials: false
+
+      - name: Verify candidate source tar against exact Git commit
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          from scripts.rc1_release_evidence import (
+              validate_source_archive,
+              verify_source_archive_git_identity,
+          )
+
+          root = Path("artifacts/candidate")
+          archive = root / "PartyOps-1.4.6-rc.1-source.tar.gz"
+          validate_source_archive(root, {"filename": archive.name})
+          verify_source_archive_git_identity(
+              archive, Path("source-verify"), os.environ["SOURCE_SHA"]
+          )
+          print("PARTYOPS_RC1_IMMUTABLE_GIT_ARCHIVE_IDENTITY_PASS")
+          PY
+
       - name: Evaluate the fail-closed release gate
         id: gate
         if: ${{ !cancelled() }}

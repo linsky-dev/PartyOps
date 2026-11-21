@@ -6,7 +6,11 @@ native package installations, signed attestation and final human approval.
 
 from __future__ import annotations
 
+import gzip
+import hashlib
 import json
+import re
+import subprocess
 import tarfile
 from pathlib import Path, PurePosixPath
 
@@ -66,3 +70,51 @@ def validate_cyclonedx(path: Path) -> None:
         or not data["components"]
     ):
         raise ValueError("CycloneDX 1.6 with nonempty components is required")
+
+
+def verify_source_archive_git_identity(
+    archive_path: Path,
+    checkout_path: Path,
+    expected_sha: str,
+) -> None:
+    """Compare uploaded uncompressed TAR bytes with a separate Git checkout.
+
+    Independent GITHUB_TOKEN-authenticated checkout is done by the workflow.
+    Checking exact tar stream prevents an unrelated-but-structurally-valid
+    archive from masquerading as a frozen source commit. Does not sign code.
+    """
+    if not re.fullmatch(r"[0-9a-f]{40}", expected_sha):
+        raise ValueError("candidate commit SHA must be 40 lowercase hex digits")
+    try:
+        checkout = checkout_path.resolve(strict=True)
+        actual_sha = subprocess.check_output(
+            ["git", "-C", str(checkout), "rev-parse", "--verify", "HEAD^{commit}"],
+            stderr=subprocess.DEVNULL,
+            timeout=30,
+            text=True,
+        ).strip()
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise ValueError("independent source checkout cannot be verified") from exc
+    if actual_sha != expected_sha:
+        raise ValueError("independent checkout does not match candidate commit")
+
+    command = [
+        "git", "-C", str(checkout), "archive", "--format=tar",
+        f"--prefix={ARCHIVE_PREFIX}/", expected_sha,
+    ]
+    try:
+        with subprocess.Popen(
+            command, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        ) as process:
+            assert process.stdout is not None
+            expected_digest = hashlib.file_digest(process.stdout, "sha256").hexdigest()
+            assert process.stderr is not None
+            process.stderr.read(4096)
+            if process.wait(timeout=60) != 0:
+                raise ValueError("cannot generate tar for candidate commit")
+        with gzip.open(archive_path, "rb") as uploaded:
+            actual_digest = hashlib.file_digest(uploaded, "sha256").hexdigest()
+    except (OSError, EOFError, subprocess.SubprocessError) as exc:
+        raise ValueError("cannot hash original and uploaded tar streams") from exc
+    if actual_digest != expected_digest:
+        raise ValueError("uploaded source tar differs from immutable Git commit")
