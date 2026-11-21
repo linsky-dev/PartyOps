@@ -1,0 +1,147 @@
+name: RC1 Windows x64 full runtime INPUT closure (BUILD_ONLY)
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/cloud-windows-x64-runtime-input-closure.yml'
+      - 'scripts/stage-rc1-windows-x64-verified-inputs.ps1'
+      - 'scripts/rc1_windows_recover_local_ai.py'
+      - 'packaging/windows/recover-ocr-from-public-installer.ps1'
+      - 'packaging/windows/prepare-ocr-runtime.ps1'
+      - 'packaging/windows/prepare-dotnet48-runtime.ps1'
+      - 'scripts/prepare-windows-build.ps1'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc1-win-x64-staged-inputs-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  stage-all-inputs:
+    name: Recover and verify all external Windows x64 inputs without packaging
+    runs-on: windows-2025
+    timeout-minutes: 45
+    steps:
+      - name: Check out exact source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Set up Windows x64 Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+          architecture: x64
+
+      - name: Download exact MSI, original RC6 EXE, release approval record and extractor
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $work = Join-Path $env:RUNNER_TEMP 'partyops-rc1-windows-verified-inputs'
+          New-Item -ItemType Directory -Path $work -Force | Out-Null
+          $assets = @(
+            @{
+              file = 'LibreOffice_26.2.7_Win_x86-64.msi'
+              url = 'https://download.documentfoundation.org/libreoffice/stable/26.2.7/win/x86_64/LibreOffice_26.2.7_Win_x86-64.msi'
+              sha = '480fecf759fc6393bd614fbf43753eb95a8198fc1a065d41b727e3b664cd1e59'
+            },
+            @{
+              file = 'PartyOps_1.4.5-rc.6_windows_amd64_startup-20261018.exe'
+              url = 'https://github.com/linsky-dev/PartyOps/releases/download/v1.4.5-rc.6/PartyOps_1.4.5-rc.6_windows_amd64_startup-20261018.exe'
+              sha = 'e3e2ea45ccd38acff059b5713826a78f998a56ccef75341633f67bd4e17e57da'
+            },
+            @{
+              file = 'release-manifest-windows-startup-20261018.json'
+              url = 'https://github.com/linsky-dev/PartyOps/releases/download/v1.4.5-rc.6/release-manifest-windows-startup-20261018.json'
+              sha = '9e314cbfa1c5d604ad0f24dd8525b0afcda4f511f1cd8d4571114be1061298ee'
+            },
+            @{
+              file = 'innoextract670.zip'
+              url = 'https://github.com/UserUnknownFactor/innoextract_win/releases/download/670/innoextract670.zip'
+              sha = '79b69b9b1fcd98f42ccd4b245efdf6a03bcfb674ba6af482f5a46891c9ed4d14'
+            }
+          )
+          foreach ($asset in $assets) {
+            $target = Join-Path $work $asset.file
+            & curl.exe --fail --location --retry 3 --retry-all-errors --connect-timeout 45 --max-time 1800 --output $target $asset.url
+            if ($LASTEXITCODE -ne 0) { throw "[WINDOWS_INPUT_DOWNLOAD_FAILED] $($asset.file)" }
+            $actual = (Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($actual -ne $asset.sha) { throw "[WINDOWS_INPUT_DOWNLOAD_DIGEST_INVALID] $($asset.file)" }
+          }
+          if ((Get-Item -LiteralPath (Join-Path $work 'PartyOps_1.4.5-rc.6_windows_amd64_startup-20261018.exe')).Length -ne 449988807) {
+            throw '[WINDOWS_INPUT_RC6_SOURCE_SIZE_INVALID]'
+          }
+          $unpacked = Join-Path $work 'extractor-unpacked'
+          Expand-Archive -LiteralPath (Join-Path $work 'innoextract670.zip') -DestinationPath $unpacked
+          $trusted = Join-Path $work 'extractor'
+          New-Item -ItemType Directory -Path $trusted -Force | Out-Null
+          $hashes = @{
+            'innoextract.exe' = '0dab51583e403970065db49f87a6a2bf683ab6ebfdf27bede2bf633dd232a1a2'
+            'libbz2-1.dll' = 'b79cd3a7102e359ef6324e98966a67939e58ec2b651ae2847cae84a4dfa453f7'
+          }
+          foreach ($name in $hashes.Keys) {
+            $matches = @(Get-ChildItem -LiteralPath $unpacked -Recurse -File -Filter $name)
+            if ($matches.Count -ne 1) { throw "[WINDOWS_INPUT_EXTRACTOR_AMBIGUOUS] $name" }
+            Copy-Item -LiteralPath $matches[0].FullName -Destination (Join-Path $trusted $name)
+            if ((Get-FileHash -LiteralPath (Join-Path $trusted $name) -Algorithm SHA256).Hash.ToLowerInvariant() -ne $hashes[$name]) {
+              throw "[WINDOWS_INPUT_EXTRACTOR_DIGEST_INVALID] $name"
+            }
+          }
+          "WINDOWS_RC1_ALL_SOURCE_DOWNLOADS_VERIFIED"
+
+      - name: Stage independently verified signed inputs in the original packaging paths
+        shell: pwsh
+        env:
+          PYTHONUTF8: '1'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $work = Join-Path $env:RUNNER_TEMP 'partyops-rc1-windows-verified-inputs'
+          $repoRoot = (Get-Location).Path
+          $pythonExe = (python -c 'import sys; print(sys.executable)').Trim()
+          & pwsh -NoProfile -File scripts/stage-rc1-windows-x64-verified-inputs.ps1 -RepoRoot $repoRoot -LibreOfficeMsi (Join-Path $work 'LibreOffice_26.2.7_Win_x86-64.msi') -Rc6Installer (Join-Path $work 'PartyOps_1.4.5-rc.6_windows_amd64_startup-20261018.exe') -Rc6ReleaseMetadata (Join-Path $work 'release-manifest-windows-startup-20261018.json') -InnoExtractorDirectory (Join-Path $work 'extractor') -Python $pythonExe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Audit the staged x64 inputs without falsely passing WPS or package gate
+        shell: pwsh
+        env:
+          PYTHONUTF8: '1'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python scripts/rc1_windows_packaging_readiness.py --root . --output artifacts/windows-staged-input-preflight.json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $report = Get-Content -LiteralPath artifacts/windows-x64-input-closure-evidence.json -Raw | ConvertFrom-Json
+          $gate = Get-Content -LiteralPath artifacts/windows-staged-input-preflight.json -Raw | ConvertFrom-Json
+          if ($report.release_ready -or $report.installer_built -or $gate.status -ne 'BLOCKED' -or $gate.release_ready) {
+            throw '[WINDOWS_STAGE_FALSE_RELEASE_READY]'
+          }
+          if (@($gate.blockers | Where-Object { $_ -like 'WINDOWS_X64_INPUT_MISSING:*' }).Count -gt 0 -or
+              @($gate.blockers | Where-Object { $_ -eq 'WINDOWS_X64_OCR_SOURCE_MISSING' }).Count -gt 0) {
+            throw '[WINDOWS_STAGE_RUNTIME_INPUTS_INCOMPLETE]'
+          }
+          "PARTYOPS_WINDOWS_X64_EXTERNAL_PACKAGE_INPUTS_STAGED_ALL_PRESENT"
+          @(
+            '### RC1 Windows x64 full external input closure (BUILD_ONLY)',
+            "Source commit: ${{ github.sha }}",
+            "LocalAI files: $($report.local_ai_file_count)",
+            'Official signed LibreOffice 26.2.7.3, SQLite 3.53.4, .NET 4.8, OCR and local AI staged.',
+            'No Windows installer created, no WPS golden or security release gate bypassed.',
+            "Release gate: $($gate.status)"
+          ) | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+
+      - name: Upload full source attestation and staged runtime manifests, not an installer
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: partyops-rc1-windows-x64-input-closure-build-only-${{ github.sha }}
+          path: |
+            artifacts/windows-x64-input-closure-evidence.json
+            artifacts/windows-staged-input-preflight.json
+            artifacts/windows-rc1-input-staging/localai-evidence.json
+            vendor/windows/libreoffice-headless-amd64/SOURCE.json
+            vendor/windows/local-ai/llama-b10331/SOURCE.json
+          if-no-files-found: warn
+          retention-days: 14
