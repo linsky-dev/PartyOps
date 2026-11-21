@@ -45,3 +45,5 @@ jobs:
             throw '[RC1_NATIVE_WPS_SERVER_REJECTION_MISSING]'
           }
           "PARTYOPS_RC1_WPS_HOSTED_WINDOWS_SERVER_CORRECTLY_BLOCKED"
+          # The child deliberately exited 2; do not leak that expected code as this job result.
+          exit 0
