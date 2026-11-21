@@ -75,7 +75,10 @@ $wpsRegistryRoots = @(
 )
 foreach ($path in $wpsRegistryRoots) {
   $items = @(Get-ItemProperty -Path $path -ErrorAction SilentlyContinue |
-    Where-Object { [string]$_.DisplayName -match '^WPS Office(\s|$|\()' })
+    Where-Object {
+      $displayName = $_.PSObject.Properties['DisplayName']
+      $null -ne $displayName -and [string]$displayName.Value -match '^WPS Office(\s|$|\()'
+    })
   if ($items.Count) { $wpsRegistered = $true; break }
 }
 if (-not $wpsRegistered) { [void]$blocked.Add('WPS_OFFICE_CURRENT_USER_OR_MACHINE_INSTALL_NOT_FOUND') }
