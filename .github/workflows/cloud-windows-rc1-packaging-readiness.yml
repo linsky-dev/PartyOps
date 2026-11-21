@@ -1,0 +1,77 @@
+name: RC1 Windows installer prerequisite audit (NO INSTALLER)
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/cloud-windows-rc1-packaging-readiness.yml'
+      - 'scripts/rc1_windows_packaging_readiness.py'
+      - 'backend/tests/test_rc1_windows_packaging_readiness.py'
+      - 'scripts/rc1_release_security.py'
+      - 'scripts/verify-full-function-gate.py'
+      - 'backend/uv.lock'
+      - 'backend/pyproject.toml'
+      - 'backend/requirements.txt'
+      - 'backend/legacy/**'
+      - 'packaging/windows/**'
+      - '.release-gates/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-rc1-readiness-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows-package-inputs:
+    name: Audit Windows x64 + Win7 inputs without building installers
+    runs-on: windows-2025
+    timeout-minutes: 12
+    steps:
+      - name: Checkout exact PR source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Use Python 3.12 x64
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+          architecture: x64
+
+      - name: Run diagnostic-only fail-closed contracts
+        shell: pwsh
+        run: |
+          python -m unittest discover -s backend/tests -p test_rc1_windows_packaging_readiness.py -v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Report actual clean-checkout Windows package requirements
+        shell: pwsh
+        env:
+          PYTHONUTF8: '1'
+        run: |
+          python scripts/rc1_windows_packaging_readiness.py --root . --output artifacts/windows-rc1-preflight.json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $result = Get-Content -LiteralPath artifacts/windows-rc1-preflight.json -Raw | ConvertFrom-Json
+          if ($result.status -ne 'BLOCKED' -or $result.release_ready -or $result.installer_generated) {
+            throw '[WINDOWS_PREFLIGHT_FALSE_READY] Diagnostic may not claim an installer.'
+          }
+          @(
+            '### PartyOps Windows RC1 source-only packaging diagnostic',
+            "Source: ${{ github.sha }}",
+            'No installer built, no signature or real WPS acceptance claimed.',
+            "Release status: $($result.status)",
+            "Missing or unresolved checks: $($result.blockers.Count)",
+            'The JSON artifact lists the exact inputs and next manual/native checks.'
+          ) | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+
+      - name: Upload Windows preflight JSON, not an installer
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: partyops-rc1-windows-packaging-readiness-${{ github.sha }}
+          path: artifacts/windows-rc1-preflight.json
+          if-no-files-found: warn
+          retention-days: 14
