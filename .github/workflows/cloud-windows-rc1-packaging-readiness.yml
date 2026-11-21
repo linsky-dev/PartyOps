@@ -72,6 +72,7 @@ jobs:
             installer_generated = $false
             release_ready = $false
           }
+          New-Item -ItemType Directory -Path artifacts -Force | Out-Null
           $evidence | ConvertTo-Json | Out-File -LiteralPath artifacts/windows-rc1-sqlite.json -Encoding utf8
 
       - name: Report actual clean-checkout Windows package requirements
