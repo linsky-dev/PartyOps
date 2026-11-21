@@ -1,0 +1,23 @@
+# 1.4.6-rc.1 发布阻塞
+
+| 阻塞 | 当前证据 | 解除条件 |
+| --- | --- | --- |
+| EdgeOne 官网源码与生产部署差异 | 已从用户文件库找回 2026-10-28 的历史完整 v5 三维官网源码压缩包（91,727,068 字节，ZIP SHA-256 4f01e37862530654f0173212ff42c222f721054970b8b3fc08c4d1dbcc819f11）。原 ZIP CRC 成功，交接清单 572/572 文件 SHA-256 匹配，44/44 Node 文件语法通过，预加载 9/9 通过。包含 Three.js 外层工程和原 Vue 只读演示。历史 v5 不等于目前 EdgeOne 生产部署的最新版源码。 | 必须对照 EdgeOne 当前部署或原工程变动，按锁定依赖完成独立构建、D1/Worker 迁移及真实浏览器验收。未经比对不能用历史 v5 覆盖现网；经典版同步预览与下载回读仍需验收。详见 [官网历史源码恢复](WEBSITE_SOURCE_RECOVERY.md)。 |
+| 特殊目标原生环境 | 免费标准 Runner 未提供最新十包清单对应的全部目标系统。 | 提供同系统和处理器架构的授权远程会话、安装权限、WPS 和图形会话。见[云端矩阵](CLOUD_CI_MATRIX.md)。 |
+| Win7 第三方安全回移 | Windows 7 两种锁文件的上游扫描命中 AnyIO，x64 也命中 fsspec。Certifi 本轮升级到仍支持 Python 3.8 的 2026.10.19，单项复扫通过。Pillow 12.3.0 和其他带本地构建标识的回移轮子须核对补丁实际范围。 | 审计并验证兼容更新、两架构轮子 SHA-256、离线依赖和原生行为。 |
+| Windows ARM64 完整运行时与安装包 | [运行 #44704652210](https://github.com/linsky-dev/PartyOps/actions/runs/44704652210) 已证明：原生 Windows ARM64 上成功用固定 OpenSSL 3.5.7 + cryptography 50.0.0 sdist 编译国密 wheel，并通过 SM3/SM4-GCM 向量及篡改拒绝，**密码库来源探测阻塞已解除**；当前仍无 ARM64 原生 PartyOps 发行目标。 | 将完整锁定依赖、国密轮子及实际业务程序集成进入另行审查的 ARM64 候选包，逐项验证安装、重启、设备入网、升级、数据与真实 WPS。当前锁文件静态核查还显示：`numpy==2.2.6`、`PyMuPDF==1.26.0`、`tokenizers==0.21.4` 未提供该锁定版本的 Windows ARM64 wheel（虽有 sdist，但未在原生 ARM64 验证），`onnxruntime==1.22.1` 在锁文件中既无 Windows ARM64 wheel 亦无 sdist。不得将密码学成功误标为完整应用支持。 候选 wheel 属 BUILD_ONLY、未经签名与最终验收，不得直接用于生产发布。 |
+| 新版 LibreOffice 供应链 | Windows x64 已核验修复版 26.2.7.3 的官方 MSI、签名、哈希及样本转换。保留从旧 RC6 提取的 26.2.5.2 作隔离对照。当前 Linux、macOS 和旧版 Windows 的锁定输入仍需按公告筛查并更新。 | 使用纳入对应修复且兼容目标的已签名上游输入或可审计回移。按目标复验完整性、证书、许可证、最低系统和排版运行。 [上游安全公告](https://www.libreoffice.org/security/) |
+| 安装器前置证据及运行时 | 源码与版本一致，既有全功能测试指纹已过期。当前检出还缺少原生排版复验及多架构兼容运行时输入。 | 完成依赖依据、原生格式化测试与测试指纹，按架构取得明确来源的 OCR、LibreOffice、模型及适用的兼容载荷。保留原包质量门禁。 |
+| Windows ARM64 PDF 库候选兼容性 | `PyMuPDF==1.26.0` 的正式锁定版本仍无 win_arm64 wheel。新版 `pymupdf-lite==2.1` 有官方原生 wheel，但缺少完整 Layout 引擎；官方完整 `pymupdf==1.28.2` 虽有 win_arm64 wheel，却受 CVE-2026-120752（栈溢出）和 CVE-2026-82035（路径穿越）影响。既有生产锁 `1.26.0` 同样落入 120752 的受影响范围。不得以兼容为由直接启用 1.28.2 完整 wheel。官方 PyMuPDF 2.1 已修补上述 CVE，但 PyPI 2.1 **没有** Windows ARM64 wheel，且为 AGPLv3/商用双许可证。本轮新增**Windows x64 2.1 正式 wheel**隔离真实 PartyOps PDF 导入与转换专项，成功后才能判断 API 兼容性，不能推断 ARM64 可用。 | 先用隔离 ARM64 Runner 验证 PartyOps 当前 `fitz` 读取、渲染及错误拒绝接口。必须取得安全修复版完整原生 ARM64 构建或经审计的补丁回移，随后验证真实中文 PDF/OCR、全量 Layout、许可证、签名与安装升级。不得覆盖正式版本。 |
+| Windows ARM64 应用依赖闭包 | 国密轮子已在原生 ARM64 构建并通过 SM3/SM4-GCM，不能代表完整应用支持。冻结锁文件仍有 ONNX Runtime 1.22.1、NumPy 2.2.6、PyMuPDF 1.26.0、tokenizers 0.21.4 等原生轮子缺口。 **已核实官方 PyPI ONNX Runtime 1.32.0 的 Windows ARM64 cp312 原生 wheel（2026-11-13，SHA-256 `64d394c69d561af3efd4d4f49dcac8f11d0ce135a20701c16d53b74056cd4cf8`），[原生 CI #44895624562](https://github.com/linsky-dev/PartyOps/actions/runs/44895624562) 已实际通过 ONNX 1.32.0 wheel 原 SHA-256 核验和 PartyOps 原 EmbeddingRuntime 合成推理，但不得修改已锁定的生产 1.22.1。** | 本轮新增原生 Windows ARM64 只读锁文件与 wheel 标签审计，使用实际 ARM64 Python 及现有锁文件生成 BUILD_ONLY 证据；后续分别取得合法兼容包或经审查的原生构建、功能回归和安装升级验证。不得直接修改既有 x64 的锁定版本规避此项。 |
+| ARM64 官方模型完整 HTTP/API、服务重启与安装包验证 | [#44866043200](https://github.com/linsky-dev/PartyOps/actions/runs/44866043200) 的原生 Windows ARM64 作业已经通过**历史 RC2 原始官方签名包**固定哈希、Ed25519/载荷校验、PartyOps 原源码真实导入/激活及中文 BGE 实际推理；之前 v1/v2 清单格式测试误判已排除。此记录不代表 RC6 安装包的原生导入或完整业务 HTTP/API 成功。 | [#44873341720](https://github.com/linsky-dev/PartyOps/actions/runs/44873341720) 已完成临时 SQLite 引擎重开及原运行实例再验证。原生 [#44877246001](https://github.com/linsky-dev/PartyOps/actions/runs/44877246001) 已进一步通过**全新 Python 解释器**重载与临时提取 ONNX 等体积、mtime 不变篡改的强制重新哈希拒绝；另 [Windows x64 官方包 TestClient #44878080788](https://github.com/linsky-dev/PartyOps/actions/runs/44878080788) 已通过隔离管理员 HTTP 上传/激活及实际推理，但不代表 ARM64 或完整部署网络 API；后续仍须完整部署态 HTTP、真实 PartyOps 安装包/进程重启、全量锁定依赖、签名、WPS、升级与回滚。不能把 BUILD_ONLY 的官方历史包隔离探测当作完整发行支持。 |
+| 冻结、签名与生产批准 | 未冻结源码或制品，未通过完整安全和原生门禁，未请求最终发布批准。 | 完成全部必需检查、可重现制品、升级与回滚演练和双站预览。由用户批准后使用受保护环境发布。 |
+
+## 最近稳定证据与依然未关闭的发布门禁（2026-11-21）
+
+[`aaf01d8b` 的 32/32 代码检查](https://github.com/linsky-dev/PartyOps/commit/aaf01d8bae3e04fed4b3459b451959c2147b6c2d/checks) 全部成功；Windows 正式依赖 [2,414 passed /17 skipped](https://github.com/linsky-dev/PartyOps/actions/runs/44917466125)，隔离 PyMuPDF 2.1 [2,412 passed /19 skipped](https://github.com/linsky-dev/PartyOps/actions/runs/44917466041)。结果仅绑定该 SHA，不覆盖此后提交。项目仍处于开发候选状态。
+
+- **未关闭：** 正式 `backend/uv.lock` 的 PyMuPDF 1.26.0 安全修复、Win7/ARM64/Mac Intel/龙芯及其他承诺系统的正式原生依赖与安装兼容性；不能将 Windows x64 隔离候选直接升级为全平台生产锁。
+- **未关闭：** 专用 Windows 10/11 x64 真实 WPS 用户桌面金样、六功能验收、原始全功能证据更新、候选 EXE 构建及真机安装/升级/回滚、签名。仅验收边界脚本和已有来源输入检查通过。
+- **未关闭：** EdgeOne 当前生产源码与历史 v5 工程比对、3D/经典双站预览、十包与十二系统最终矩阵、发布授权。
+- **WPS 历史变更提醒：** PR 相对 `main` 包含之前的排版宿主/源码暂存及新 C# 文件差异；当前几轮未触碰不等于整个 PR 没有差异。未完成专用原生金样前不擅自回退、改写或批准正式包。

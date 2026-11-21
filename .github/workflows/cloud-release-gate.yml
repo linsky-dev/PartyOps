@@ -1,0 +1,330 @@
+name: Cloud release gate review
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_run_id:
+        description: Successful cloud-package-candidate workflow run ID
+        required: true
+        type: string
+      source_sha:
+        description: Full commit SHA recorded in the candidate evidence
+        required: true
+        type: string
+      confirmation:
+        description: Enter REVIEW-CANDIDATE-1.4.6-RC.1
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: partyops-release-gate-${{ inputs.source_sha }}
+  cancel-in-progress: false
+
+jobs:
+  validate-candidate:
+    name: Verify candidate evidence and release readiness
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out the release gate implementation
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Verify the candidate run and download its evidence
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          set -euo pipefail
+          test "$CONFIRMATION" = 'REVIEW-CANDIDATE-1.4.6-RC.1'
+          [[ "$CANDIDATE_RUN_ID" =~ ^[0-9]+$ ]]
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$CANDIDATE_RUN_ID" \
+            > candidate-run.json
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          run = json.loads(Path("candidate-run.json").read_text(encoding="utf-8"))
+          checks = {
+              "workflow": run.get("path") == ".github/workflows/cloud-package-candidate.yml",
+              "trigger": run.get("event") == "workflow_dispatch",
+              "branch": run.get("head_branch") == "main",
+              "status": run.get("status") == "completed" and run.get("conclusion") == "success",
+              "source_sha": run.get("head_sha") == os.environ["SOURCE_SHA"],
+          }
+          failed = [name for name, passed in checks.items() if not passed]
+          if failed:
+              raise SystemExit("Candidate workflow provenance check failed: " + ", ".join(failed))
+          PY
+          mkdir -p artifacts/candidate
+          gh run download "$CANDIDATE_RUN_ID" --repo "$GITHUB_REPOSITORY" \
+            --name "partyops-candidate-$SOURCE_SHA" --dir artifacts/candidate
+          (cd artifacts/candidate && sha256sum --check SHA256SUMS.txt)
+
+      - name: Independently check out immutable candidate Git commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ inputs.source_sha }}
+          path: source-verify
+          persist-credentials: false
+
+      - name: Verify candidate source tar against exact Git commit
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          from scripts.rc1_release_evidence import (
+              validate_source_archive,
+              verify_source_archive_git_identity,
+          )
+
+          root = Path("artifacts/candidate")
+          archive = root / "PartyOps-1.4.6-rc.1-source.tar.gz"
+          validate_source_archive(root, {"filename": archive.name})
+          verify_source_archive_git_identity(
+              archive, Path("source-verify"), os.environ["SOURCE_SHA"]
+          )
+          print("PARTYOPS_RC1_IMMUTABLE_GIT_ARCHIVE_IDENTITY_PASS")
+          PY
+
+      - name: Evaluate the fail-closed release gate
+        id: gate
+        if: ${{ !cancelled() }}
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib
+          import json
+          import os
+          import tarfile
+          from pathlib import Path
+          from scripts.rc1_release_evidence import validate_cyclonedx, validate_source_archive
+          from scripts.rc1_release_security import assert_safe_pymupdf_lock
+          from scripts.rc1_release_targets import (
+              INSTALLER_FILE_SUFFIXES,
+              INSTALLER_VALIDATION_TARGETS,
+              NATIVE_ACCEPTANCE_ARCH,
+              expected_native_targets,
+          )
+
+          root = Path("artifacts/candidate")
+          manifest = json.loads((root / "candidate-evidence.json").read_text(encoding="utf-8"))
+          required_targets = set(INSTALLER_VALIDATION_TARGETS)
+          actual_targets = {item.get("target"): item for item in manifest.get("installer_targets", [])}
+          blockers = []
+          if manifest.get("version") != "1.4.6-rc.1":
+              blockers.append("candidate version does not match 1.4.6-rc.1")
+          if manifest.get("source_commit") != os.environ["SOURCE_SHA"]:
+              blockers.append("candidate source SHA does not match the requested commit")
+          if manifest.get("source_commit_verified") is not True:
+              blockers.append("candidate source SHA was not verified by its build")
+          if (required_targets != set(actual_targets)
+                  or len(manifest.get("installer_targets", [])) != len(actual_targets)):
+              blockers.append("installer target matrix is incomplete or contains unknown targets")
+          def verify_artifact(evidence, label):
+              filename = evidence.get("filename")
+              if not filename or Path(filename).is_absolute() or ".." in Path(filename).parts:
+                  blockers.append(f"artifact path is missing or invalid: {label}")
+                  return
+              path = root / filename
+              if path.is_symlink() or not path.resolve().is_relative_to(root.resolve()):
+                  blockers.append(f"artifact path escapes the candidate evidence directory: {label}")
+                  return
+              if not path.is_file():
+                  blockers.append(f"artifact file is missing: {label}")
+                  return
+              digest = hashlib.sha256()
+              with path.open("rb") as source:
+                  for block in iter(lambda: source.read(1024 * 1024), b""):
+                      digest.update(block)
+              if evidence.get("size_bytes") != path.stat().st_size:
+                  blockers.append(f"artifact size mismatch: {label}")
+              if evidence.get("sha256") != digest.hexdigest():
+                  blockers.append(f"artifact SHA-256 mismatch: {label}")
+
+          source_archive = manifest.get("source_archive")
+          if source_archive is None:
+              blockers.append("source archive evidence is missing")
+          else:
+              verify_artifact(source_archive, "source archive")
+              try:
+                  validate_source_archive(root, source_archive)
+              except (OSError, ValueError, EOFError, tarfile.TarError) as exc:
+                  blockers.append(f"source archive structure invalid: {type(exc).__name__}")
+
+          # A SHA-256 of an arbitrary TXT file is not an installer. Check
+          # actual package suffix/header and ensure the twelve native reports
+          # refer to the same artifact that was built for their target.
+          installer_digests = {}
+          used_installers = set()
+          if set(INSTALLER_FILE_SUFFIXES) != required_targets:
+              blockers.append("installer format schema does not match ten targets")
+          if set(NATIVE_ACCEPTANCE_ARCH) != set(expected_native_targets()):
+              blockers.append("native architecture schema does not match twelve targets")
+
+          def valid_installer_header(path, target):
+              if path.stat().st_size < 4096:
+                  return False
+              with path.open("rb") as source:
+                  header = source.read(512)
+              suffix = INSTALLER_FILE_SUFFIXES[target]
+              if suffix == ".exe":
+                  offset = int.from_bytes(header[0x3c:0x40], "little")
+                  machine = int.from_bytes(header[offset + 4:offset + 6], "little")
+                  return (header[:2] == b"MZ" and 64 <= offset <= 500
+                          and header[offset:offset + 4] == b"PE\x00\x00"
+                          and machine == (0x14c if target == "windows-7-x86" else 0x8664))
+              if suffix == ".deb":
+                  return header.startswith(b"!<arch>\n")
+              if suffix == ".rpm":
+                  return header.startswith(b"\xed\xab\xee\xdb")
+              if suffix == ".pkg":
+                  return (header.startswith(b"xar!")
+                          and 28 <= int.from_bytes(header[4:6], "big") <= 512)
+              return False
+
+          for target, evidence in actual_targets.items():
+              if evidence.get("status") != "PASS":
+                  blockers.append(f"installer target is {evidence.get('status', 'MISSING')}: {target}")
+              artifacts = evidence.get("artifacts")
+              if not artifacts:
+                  blockers.append(f"installer artifact evidence is missing: {target}")
+                  continue
+              for artifact in artifacts:
+                  verify_artifact(artifact, target)
+              suffix = INSTALLER_FILE_SUFFIXES.get(target)
+              if suffix is None:
+                  continue
+              packages = [
+                  item for item in artifacts
+                  if str(item.get("filename", "")).lower().endswith(suffix)
+              ]
+              if len(packages) != 1:
+                  blockers.append(f"exactly one real installer artifact required: {target}")
+                  continue
+              item = packages[0]
+              filename = item.get("filename", "")
+              if ("1.4.6" not in filename
+                      or not Path(filename).name.lower().startswith("partyops")):
+                  blockers.append(f"installer filename lacks product/version identity: {target}")
+              path = root / filename
+              if (not path.is_file() or path.is_symlink()
+                      or not path.resolve().is_relative_to(root.resolve())):
+                  continue
+              if not valid_installer_header(path, target):
+                  blockers.append(f"installer format or architecture invalid: {target}")
+              with path.open("rb") as f:
+                  digest = hashlib.sha256()
+                  for chunk in iter(lambda: f.read(1024 * 1024), b""):
+                      digest.update(chunk)
+              actual = digest.hexdigest()
+              if item.get("sha256") != actual:
+                  continue
+              if actual in used_installers:
+                  blockers.append(f"distinct installer targets share identical file hash: {target}")
+              used_installers.add(actual)
+              installer_digests[target] = actual
+          native_rows = manifest.get("native_validation_targets", [])
+          actual_native = {item.get("target"): item for item in native_rows}
+          required_native = expected_native_targets()
+          if (set(actual_native) != set(required_native)
+                  or len(native_rows) != len(actual_native)):
+              blockers.append("native target matrix is incomplete or contains duplicate targets")
+          for target, installer_target in required_native.items():
+              evidence = actual_native.get(target)
+              if evidence is None:
+                  continue
+              if evidence.get("installer_target") != installer_target:
+                  blockers.append(f"native target has wrong installer: {target}")
+              if evidence.get("native_architecture") != NATIVE_ACCEPTANCE_ARCH[target]:
+                  blockers.append(f"native architecture does not match target: {target}")
+              if evidence.get("installed_package_sha256") != installer_digests.get(installer_target):
+                  blockers.append(f"native tested package SHA does not match installer: {target}")
+              if evidence.get("status") != "PASS":
+                  blockers.append(f"native target is {evidence.get('status', 'MISSING')}: {target}")
+              native_artifacts = evidence.get("artifacts")
+              if not native_artifacts:
+                  blockers.append(f"native test evidence is missing: {target}")
+                  continue
+              for artifact in native_artifacts:
+                  verify_artifact(artifact, f"native:{target}")
+
+          # CVE-2026-120752 affects PyMuPDF 1.25.3 before 2.0;
+          # CVE-2026-82035 additionally includes 1.28.2. A PASS field
+          # cannot waive a known vulnerable frozen dependency.
+          try:
+              assert_safe_pymupdf_lock(Path("source-verify/backend/uv.lock"))
+          except (OSError, ValueError) as exc:
+              blockers.append(f"PyMuPDF security floor blocked: {exc}")
+
+          for status_field in (
+              "native_installation_acceptance",
+              "wps_native_acceptance",
+              "upgrade_and_rollback_acceptance",
+              "signature_status",
+              "security_review_status",
+              "website_preview_status",
+          ):
+              if manifest.get(status_field) != "PASS":
+                  blockers.append(f"{status_field} is {manifest.get(status_field, 'MISSING')}")
+
+          for filename, digest_key in (
+              ("sbom-python.cdx.json", "python"),
+              ("sbom-frontend.cdx.json", "frontend"),
+          ):
+              path = root / filename
+              expected_hash = manifest.get("sbom", {}).get(digest_key)
+              if not path.is_file() or not expected_hash:
+                  blockers.append(f"SBOM evidence is missing: {filename}")
+                  continue
+              actual_hash = hashlib.sha256(path.read_bytes()).hexdigest()
+              if actual_hash != expected_hash:
+                  blockers.append(f"SBOM hash mismatch: {filename}")
+              try:
+                  validate_cyclonedx(path)
+              except (OSError, UnicodeError, ValueError) as exc:
+                  blockers.append(f"SBOM CycloneDX contents invalid: {filename} ({type(exc).__name__})")
+
+          result = {
+              "schema_version": 1,
+              "version": "1.4.6-rc.1",
+              "source_commit": os.environ["SOURCE_SHA"],
+              "verdict": "READY_FOR_FINAL_HUMAN_RELEASE_APPROVAL" if not blockers else "BLOCKED",
+              "blockers": blockers,
+          }
+          Path("release-gate-result.json").write_text(
+              json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+          )
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"verdict={result['verdict']}\n")
+          print(json.dumps(result, ensure_ascii=False, indent=2))
+          PY
+          test "$(python -c 'import json; print(json.load(open("release-gate-result.json"))["verdict"])')" \
+            = 'READY_FOR_FINAL_HUMAN_RELEASE_APPROVAL'
+
+      - name: Upload release gate review result
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: release-gate-review-${{ inputs.source_sha }}
+          path: release-gate-result.json
+          if-no-files-found: ignore
+          retention-days: 30

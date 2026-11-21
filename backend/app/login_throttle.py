@@ -29,9 +29,10 @@ class _FailureState:
 class LoginThrottle:
     """按账号和客户端地址双维度限制连续登录失败。"""
 
-    def __init__(self) -> None:
+    def __init__(self, *, log_failures: bool = True) -> None:
         self._states: dict[str, _FailureState] = {}
         self._lock = threading.RLock()
+        self._log_failures = log_failures
 
     @staticmethod
     def _digest(kind: str, value: str) -> str:
@@ -128,13 +129,14 @@ class LoginThrottle:
                 self._states[client_key].locked_until - current,
             )
             failures = self._states[account_key].failures
-        logger.warning(
-            "login_failed account=%s client=%s failures=%s locked=%s",
-            account_key[:12],
-            client_key[:12],
-            failures,
-            retry > 0,
-        )
+        if self._log_failures:
+            logger.warning(
+                "login_failed account=%s client=%s failures=%s locked=%s",
+                account_key[:12],
+                client_key[:12],
+                failures,
+                retry > 0,
+            )
         return int(retry + 0.999)
 
     def record_success(self, username: str) -> None:

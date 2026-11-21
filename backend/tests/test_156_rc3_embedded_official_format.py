@@ -341,5 +341,8 @@ def test_authenticated_api_only_returns_ticket_metadata(
     payload = response.json()
     assert set(payload) == {"expires_at", "local_base_url", "ticket"}
     assert payload["local_base_url"].startswith("http://127.0.0.1:")
-    assert "filename" not in response.text.lower()
-    assert "path" not in response.text.lower()
+    # Opaque random tickets can coincidentally contain "path" or "filename"
+    # in their base64url text. Check response schema, not token substrings.
+    assert isinstance(payload["ticket"], str) and payload["ticket"]
+    assert "filename" not in payload
+    assert "path" not in payload

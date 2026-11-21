@@ -7,18 +7,23 @@ import { api } from "../api";
 import type { NotificationItem } from "../types";
 import { formatServerTime } from "../utils/datetime";
 import { zhLabel } from "../utils/labels";
+import { openNotification } from "../utils/notificationNavigation";
 import PageHelp from "../components/PageHelp.vue";
 
 const router = useRouter();
 const items = ref<NotificationItem[]>([]);
 const typeFilter = ref("");
 const unreadOnly = ref(false);
+const includeRevoked = ref(false);
 const loading = ref(false);
 const types = [
   ["", "全部通知"], ["comment", "评论"], ["mention", "提及"], ["assignment", "指派"],
-  ["review", "审核"], ["transfer", "传输"], ["root_approval", "共享目录审批"],
+  ["review", "审核"], ["feedback", "等待反馈"], ["materials", "材料缺项"],
+  ["deadline", "截止提醒"], ["overdue", "逾期"], ["party_development", "发展党员"],
+  ["transfer", "传输"], ["root_approval", "共享目录审批"], ["archive_suggestion", "归档建议"],
+  ["automation", "自动化提醒"],
 ];
-const unreadCount = computed(() => items.value.filter((item) => !item.read_at).length);
+const unreadCount = computed(() => items.value.filter((item) => !item.read_at && !item.revoked_at).length);
 
 async function load() {
   loading.value = true;
@@ -26,6 +31,7 @@ async function load() {
     const query = new URLSearchParams({ limit: "500" });
     if (typeFilter.value) query.set("notification_type", typeFilter.value);
     if (unreadOnly.value) query.set("unread_only", "true");
+    if (includeRevoked.value) query.set("include_revoked", "true");
     items.value = await api.get<NotificationItem[]>(`/notifications?${query}`);
   } catch (error) {
     Message.error(error instanceof Error ? error.message : "通知加载失败");
@@ -35,11 +41,8 @@ async function load() {
 }
 
 async function openItem(item: NotificationItem) {
-  if (!item.read_at) await api.post(`/notifications/${item.id}/read`);
-  if (item.entity_type === "task" && item.entity_id) await router.push(`/tasks/${item.entity_id}`);
-  else if (item.entity_type === "transfer") await router.push("/fleet/inbox");
-  else if (item.entity_type === "workspace_root") await router.push("/fleet/grants");
-  else await load();
+  await openNotification(router, item);
+  if (unreadOnly.value && item.read_at) items.value = items.value.filter(({ id }) => id !== item.id);
 }
 
 async function markAllRead() {
@@ -59,12 +62,14 @@ onMounted(load);
     </header>
     <section class="notice-toolbar">
       <a-select v-model="typeFilter" style="width: 180px" @change="load"><a-option v-for="option in types" :key="option[0]" :value="option[0]">{{ option[1] }}</a-option></a-select>
-      <a-checkbox v-model="unreadOnly" @change="load">只看未读</a-checkbox><span>{{ unreadCount }} 条未读</span>
+      <a-checkbox v-model="unreadOnly" @change="load">只看未读</a-checkbox>
+      <a-checkbox v-model="includeRevoked" :disabled="unreadOnly" @change="load">包含已撤销</a-checkbox>
+      <span>{{ unreadCount }} 条未读</span>
     </section>
     <a-spin :loading="loading" style="width: 100%">
       <section class="notice-list">
-        <button v-for="item in items" :key="item.id" type="button" :class="{ unread: !item.read_at }" @click="openItem(item)">
-          <IconNotification :size="18" /><span><b>{{ item.title }}</b><small>{{ item.body || zhLabel(item.notification_type, "协同通知") }}</small></span><em>{{ zhLabel(item.notification_type, "通知") }}</em><time>{{ formatServerTime(item.created_at, "MM-DD HH:mm") }}</time>
+        <button v-for="item in items" :key="item.id" type="button" :class="{ unread: !item.read_at && !item.revoked_at }" @click="openItem(item)">
+          <IconNotification :size="18" /><span><b>{{ item.title }}</b><small>{{ item.body || zhLabel(item.notification_type, "协同通知") }}</small></span><em>{{ item.revoked_at ? "已撤销" : (types.find(([key]) => key === item.notification_type)?.[1] || "通知") }}</em><time>{{ formatServerTime(item.created_at, "MM-DD HH:mm") }}</time>
         </button>
         <div v-if="!items.length && !loading" class="empty-state">当前筛选下没有通知。</div>
       </section>

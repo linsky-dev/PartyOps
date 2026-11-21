@@ -10,7 +10,7 @@ import {
 } from "@arco-design/web-vue/es/icon";
 import { Message } from "@arco-design/web-vue";
 import { useSessionStore } from "../stores/session";
-import { ApiError } from "../api";
+import { api, ApiError } from "../api";
 import { orientalDateLabel } from "../utils/lunar";
 import { validateLoginForm, type LoginFieldErrors } from "../utils/onboarding";
 import OrientalArtLayer from "../components/OrientalArtLayer.vue";
@@ -22,6 +22,10 @@ const session = useSessionStore();
 const loading = ref(false);
 const showPassword = ref(false);
 const showConnection = ref(false);
+const showRecovery = ref(false);
+const recoveryBusy = ref(false);
+const recoveryResult = ref("");
+const recoveryForm = reactive({ credential: "", username: "", newPassword: "" });
 const configured = ref(true);
 const usernameInput = ref<{ focus?: () => void } | null>(null);
 const passwordInput = ref<{ focus?: () => void } | null>(null);
@@ -52,6 +56,34 @@ onMounted(async () => {
 
 function clearFieldError(field: keyof LoginFieldErrors) {
   delete fieldErrors[field];
+}
+
+function closeRecovery() {
+  if (!recoveryBusy.value) {
+    showRecovery.value = false;
+    recoveryResult.value = "";
+    Object.assign(recoveryForm, { credential: "", username: "", newPassword: "" });
+  }
+}
+
+async function recoverAccount() {
+  if (recoveryBusy.value || !recoveryForm.credential.trim()) return;
+  recoveryBusy.value = true;
+  try {
+    const account = await api.post<{ username: string }>("/auth/recovery/redeem", {
+      credential: recoveryForm.credential.trim(),
+      username: recoveryForm.username.trim() || undefined,
+      new_password: recoveryForm.newPassword || undefined,
+    });
+    recoveryResult.value = account.username;
+    form.username = account.username;
+    form.password = "";
+    Object.assign(recoveryForm, { credential: "", username: "", newPassword: "" });
+  } catch (error) {
+    Message.error(error instanceof Error ? error.message : "恢复失败，请重试或联系管理员重新签发。");
+  } finally {
+    recoveryBusy.value = false;
+  }
 }
 
 async function focusFirstError() {
@@ -182,13 +214,39 @@ async function submit() {
           </a-button>
         </form>
         <div class="form-rule bottom"></div>
-        <button class="connection-settings" type="button" @click="showConnection = true">
-          <IconSettings />
-          连接设置
-        </button>
+        <div class="login-secondary-actions">
+          <button class="connection-settings" type="button" @click="showConnection = true">
+            <IconSettings /> 连接设置
+          </button>
+          <button v-if="configured" class="connection-settings" type="button" @click="showRecovery = true">
+            恢复账号
+          </button>
+        </div>
         <p v-if="!configured" class="setup-note">业务数据只保存在这台主机；首位管理员创建后请立即配置备份。</p>
       </div>
     </section>
+    <a-modal :visible="showRecovery" title="恢复账号" :footer="false" :mask-closable="false" @cancel="closeRecovery">
+      <div v-if="recoveryResult">
+        <a-alert type="success">账号用户名为 <strong>{{ recoveryResult }}</strong>。恢复凭据已经使用。</a-alert>
+        <a-button class="recovery-action" type="primary" @click="closeRecovery">返回登录</a-button>
+      </div>
+      <template v-else>
+        <p>请联系管理员核验身份后取得一次性恢复凭据。管理员可使用事先保存的离线恢复码。</p>
+        <a-form :model="recoveryForm" layout="vertical" class="recovery-form" @submit-success="recoverAccount">
+          <a-form-item label="恢复凭据" required>
+            <a-input-password v-model="recoveryForm.credential" autocomplete="off" />
+          </a-form-item>
+          <a-form-item label="新用户名（选填）">
+            <a-input v-model="recoveryForm.username" autocomplete="off" />
+          </a-form-item>
+          <a-form-item label="新密码（选填）">
+            <a-input-password v-model="recoveryForm.newPassword" autocomplete="new-password" />
+          </a-form-item>
+          <p>留空两项只找回用户名，同样会消耗恢复凭据。</p>
+          <a-button type="primary" html-type="submit" :disabled="!recoveryForm.credential.trim()" :loading="recoveryBusy">验证并恢复</a-button>
+        </a-form>
+      </template>
+    </a-modal>
     <a-modal v-model:visible="showConnection" title="局域网连接设置" :footer="false">
       <div class="connection-modal">
         <span class="connection-dot"></span>
@@ -443,6 +501,12 @@ form {
   line-height: 1.6;
   text-align: center;
 }
+
+.login-secondary-actions { display: flex; justify-content: center; gap: 10px; }
+.login-secondary-actions .connection-settings { margin: 0; }
+.recovery-form { display: block; }
+.recovery-form :deep(.arco-input-wrapper) { height: auto; padding: 0 8px; font-size: 14px; }
+.recovery-action { margin-top: 16px; }
 
 .connection-modal {
   display: flex;

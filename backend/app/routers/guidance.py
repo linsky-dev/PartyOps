@@ -35,7 +35,7 @@ from ..schemas import (
     ProjectionCheckpointOut,
 )
 from ..security import get_current_user, require_admin
-from ..workspace_access import workspace_root_permissions
+from ..workspace_access import workspace_request_device_id, workspace_root_permissions
 from .router_utils import client_ip, parse_if_match
 
 router = APIRouter(tags=["guidance-and-projections"])
@@ -103,6 +103,7 @@ def get_enablement(
     """按当前电脑和账号返回由真实业务状态计算的上手闭环。"""
 
     device = request_device(request, db)
+    workspace_device_id = workspace_request_device_id(request, device)
     is_admin = user.role.value == "admin"
     persona = f"{'client' if device else 'host'}_{'admin' if is_admin else 'staff'}"
     task_exists = bool(
@@ -130,7 +131,7 @@ def get_enablement(
         )
     ).all():
         if workspace_root_permissions(
-            db, root, user, device.id if device else None
+            db, root, user, workspace_device_id
         )["browse"]:
             accessible_root = True
             break

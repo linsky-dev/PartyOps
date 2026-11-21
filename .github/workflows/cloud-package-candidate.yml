@@ -1,0 +1,196 @@
+name: Cloud package candidate evidence
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Full Git commit SHA to build and test from main
+        required: true
+        type: string
+      confirmation:
+        description: Enter BUILD-SOURCE-CANDIDATE-1.4.6-RC.1
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: partyops-candidate-${{ inputs.source_sha }}
+  cancel-in-progress: false
+
+jobs:
+  tests:
+    name: Run required tests for the candidate
+    uses: ./.github/workflows/cloud-unit-tests.yml
+    permissions:
+      contents: read
+
+  hosted-runner-matrix:
+    name: Verify all six hosted runner labels
+    uses: ./.github/workflows/cloud-runner-smoke.yml
+    permissions:
+      contents: read
+
+  source-candidate:
+    name: Build source archive and release evidence
+    needs: [tests]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out the requested frozen source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ inputs.source_sha }}
+          persist-credentials: false
+
+      - name: Verify source identity and release version
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = main
+          test "$CONFIRMATION" = 'BUILD-SOURCE-CANDIDATE-1.4.6-RC.1'
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$SOURCE_SHA" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          python scripts/verify-version-consistency.py \
+            --root . --expected 1.4.6-rc.1
+
+      - name: Create frozen source archive
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          git archive --format=tar --prefix='PartyOps-1.4.6-rc.1/' "$SOURCE_SHA" \
+            | gzip -n > artifacts/PartyOps-1.4.6-rc.1-source.tar.gz
+
+      - name: Set up Python for CycloneDX
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+
+      - name: Generate Python dependency SBOM
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check 'cyclonedx-bom==7.3.1' 'uv==0.11.7'
+          uv export --project backend --frozen --no-dev --no-emit-project --no-hashes \
+            --output-file artifacts/locked-runtime.txt --quiet
+          cyclonedx-py requirements artifacts/locked-runtime.txt \
+            --spec-version 1.6 --output-format JSON --output-reproducible \
+            --output-file artifacts/sbom-python.cdx.json
+
+      - name: Set up Node.js and pnpm
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+
+      - name: Generate frontend dependency SBOM
+        shell: bash
+        run: |
+          set -euo pipefail
+          corepack enable
+          corepack prepare 'pnpm@11.9.0' --activate
+          corepack pnpm --dir frontend sbom \
+            --sbom-format cyclonedx --sbom-spec-version 1.6 --prod --lockfile-only \
+            --out "$GITHUB_WORKSPACE/artifacts/sbom-frontend.cdx.json"
+
+      - name: Write candidate provenance and target status
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib
+          import json
+          import os
+          import platform
+          import subprocess
+          from datetime import datetime, timezone
+          from pathlib import Path
+          from scripts.rc1_release_targets import INSTALLER_VALIDATION_TARGETS
+
+          root = Path.cwd()
+          artifacts = root / "artifacts"
+          def sha256(path):
+              digest = hashlib.sha256()
+              with path.open("rb") as stream:
+                  for block in iter(lambda: stream.read(1024 * 1024), b""):
+                      digest.update(block)
+              return digest.hexdigest()
+
+          source_sha = os.environ["SOURCE_SHA"]
+          manifest = {
+              "schema_version": 1,
+              "product": "PartyOps",
+              "version": "1.4.6-rc.1",
+              "release_tag": "v1.4.6-rc.1",
+              "source_commit": source_sha,
+              "source_commit_verified": subprocess.check_output(
+                  ["git", "rev-parse", "HEAD"], text=True
+              ).strip() == source_sha,
+              "created_at": datetime.now(timezone.utc).isoformat(),
+              "builder": {
+                  "runner_os": platform.platform(),
+                  "runner_architecture": platform.machine(),
+                  "workflow_run_id": os.environ["GITHUB_RUN_ID"],
+              },
+              "source_archive": {
+                  "filename": "PartyOps-1.4.6-rc.1-source.tar.gz",
+                  "status": "BUILD_ONLY",
+                  "size_bytes": (artifacts / "PartyOps-1.4.6-rc.1-source.tar.gz").stat().st_size,
+                  "sha256": sha256(artifacts / "PartyOps-1.4.6-rc.1-source.tar.gz"),
+              },
+              "sbom": {
+                  "python": sha256(artifacts / "sbom-python.cdx.json"),
+                  "frontend": sha256(artifacts / "sbom-frontend.cdx.json"),
+              },
+              "installer_targets": [
+                  {"target": target, "status": "NOT_RUN", "artifacts": []}
+                  for target in INSTALLER_VALIDATION_TARGETS
+              ],
+              "native_validation_targets": [
+                  {
+                      "target": environment,
+                      "installer_target": installer,
+                      "status": "NOT_RUN",
+                      "artifacts": [],
+                  }
+                  for installer, environments in INSTALLER_VALIDATION_TARGETS.items()
+                  for environment in environments
+              ],
+              "native_installation_acceptance": "NOT_RUN",
+              "wps_native_acceptance": "NOT_RUN",
+              "upgrade_and_rollback_acceptance": "NOT_RUN",
+              "signature_status": "NOT_RUN",
+              "security_review_status": "NOT_RUN",
+              "website_preview_status": "NOT_RUN",
+              "release_gate": "BLOCKED",
+          }
+          (artifacts / "candidate-evidence.json").write_text(
+              json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
+              encoding="utf-8",
+          )
+
+          files = sorted(
+              path for path in artifacts.iterdir()
+              if path.is_file() and path.name != "SHA256SUMS.txt"
+          )
+          with (artifacts / "SHA256SUMS.txt").open("w", encoding="utf-8", newline="\n") as output:
+              for path in files:
+                  output.write(f"{sha256(path)}  {path.name}\n")
+          PY
+
+      - name: Upload frozen source and candidate evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: partyops-candidate-${{ inputs.source_sha }}
+          path: artifacts
+          if-no-files-found: error
+          retention-days: 30

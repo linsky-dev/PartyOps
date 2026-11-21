@@ -20,6 +20,7 @@ from types import SimpleNamespace
 import pytest
 from pydantic import ValidationError
 from sqlalchemy.exc import OperationalError
+from starlette.datastructures import Headers
 
 from app import (
     ai_service,
@@ -45,6 +46,7 @@ from app.enums import (
     Sensitivity,
     UpdateStatus,
     UserRole,
+    WorkspaceRootSource,
 )
 from app.models import (
     Device,
@@ -221,7 +223,7 @@ def _ai_task(identity: str) -> SimpleNamespace:
 def test_ai_source_scope_and_automatic_collection_limits(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    user = SimpleNamespace(id="user")
+    user = SimpleNamespace(id="user", role=UserRole.STAFF)
     policy = SimpleNamespace(
         allowed_task_categories=["发布"],
         allowed_root_ids=["root-1"],
@@ -241,12 +243,13 @@ def test_ai_source_scope_and_automatic_collection_limits(
     assert scoped.value.code == "AI_TASK_SCOPE_DENIED"
 
     tasks = [_ai_task(f"task-{index}") for index in range(6)]
-    root = SimpleNamespace(id="root-1", enabled=True, name="资料")
+    root = SimpleNamespace(id="root-1", enabled=True, name="资料", source=WorkspaceRootSource.HOST)
     files = [
         SimpleNamespace(
             id=f"file-{index}",
             root_id="other" if index == 0 else "root-1",
             status=FileIndexStatus.INDEXED,
+            in_scope=True,
             extension=".txt",
             extracted_text="正文",
             ocr_text="",
@@ -322,9 +325,11 @@ def test_upgrade_restore_rejects_bad_extracted_and_restored_database(
         upgrades.restore_database_from_upgrade_backup(backup)
 
 
+@pytest.mark.parametrize("failed_step", ["database", "wal", "shm", "replacement", "compensation"])
 def test_upgrade_restore_reinstates_previous_database_when_replace_fails(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    failed_step: str,
 ) -> None:
     backup = tmp_path / "backup.zip"
     _backup_zip(backup)
@@ -342,15 +347,33 @@ def test_upgrade_restore_reinstates_previous_database_when_replace_fails(
     real_replace = os.replace
     injected = False
 
-    def fail_new_source(source, destination):
+    def fail_one_move(source, destination):
         nonlocal injected
         source_path = Path(source)
-        if destination == database and source_path != database and not injected:
+        is_replacement = destination == database and source_path != database
+        failed_source = {"database": database, "wal": wal, "shm": shm}.get(failed_step)
+        if failed_step == "compensation" and injected and destination == wal:
+            raise OSError("simulated sidecar restore failure")
+        if not injected and (
+            source_path == failed_source or (failed_step in {"replacement", "compensation"} and is_replacement)
+        ):
             injected = True
             raise OSError("simulated install failure")
         return real_replace(source, destination)
 
-    monkeypatch.setattr(upgrades.os, "replace", fail_new_source)
+    monkeypatch.setattr(upgrades.os, "replace", fail_one_move)
+    if failed_step == "compensation":
+        with pytest.raises(RuntimeError, match="请保持服务停止") as failure:
+            upgrades.restore_database_from_upgrade_backup(backup)
+        pending_db, = tmp_path.glob("partyops.upgrade-failed-*.db")
+        pending_wal = Path(f"{pending_db}-wal")
+        assert pending_db.name in str(failure.value)
+        assert pending_wal.name in str(failure.value)
+        assert pending_db.read_bytes() == b"old"
+        assert pending_wal.read_bytes() == b"old-wal"
+        assert shm.read_bytes() == b"old-shm"
+        assert not database.exists() and not wal.exists()
+        return
     with pytest.raises(OSError, match="simulated"):
         upgrades.restore_database_from_upgrade_backup(backup)
     assert database.read_bytes() == b"old"
@@ -1334,7 +1357,7 @@ def test_security_bearer_expired_revoked_disabled_and_optional_paths() -> None:
     now = datetime.now(timezone.utc)
     bearer_request = SimpleNamespace(
         cookies={},
-        headers={"authorization": "Bearer bearer-token"},
+        headers=Headers({"authorization": "Bearer bearer-token"}),
     )
 
     class SecurityDb:
@@ -1345,7 +1368,7 @@ def test_security_bearer_expired_revoked_disabled_and_optional_paths() -> None:
         def scalar(self, _statement):
             return self.record
 
-        def get(self, _model, _identity):
+        def get(self, _model, _identity, *, populate_existing=False):
             return self.user
 
     with pytest.raises(ProblemException) as missing:
@@ -1379,7 +1402,7 @@ def test_security_bearer_expired_revoked_disabled_and_optional_paths() -> None:
         security.get_current_user(bearer_request, SecurityDb(valid_record, disabled))
     assert denied.value.code == "USER_DISABLED"
 
-    cookie_request = SimpleNamespace(cookies={security.SESSION_COOKIE: "token"})
+    cookie_request = SimpleNamespace(cookies={security.SESSION_COOKIE: "token"}, headers=Headers())
     assert (
         security.get_current_user_optional(cookie_request, SecurityDb(revoked)) is None
     )

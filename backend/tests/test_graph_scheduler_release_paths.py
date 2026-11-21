@@ -20,6 +20,7 @@ from app.models import (
     PeriodReport,
     Task,
     TopicSpace,
+    User,
     WorkJournalEntry,
     WorkspaceFile,
     WorkspaceRoot,
@@ -89,8 +90,8 @@ def test_describe_object_enforces_every_object_boundary(monkeypatch) -> None:
     monkeypatch.setattr(object_graph, "can_view_category", lambda *_args: True)
     monkeypatch.setattr(
         object_graph,
-        "grant_allows",
-        lambda _db, _user, _device, _root, capability: capability == "share",
+        "workspace_root_permissions",
+        lambda *_args: {"browse": True},
     )
 
     expected = {
@@ -194,13 +195,17 @@ def test_visible_links_filters_inaccessible_related_objects(monkeypatch) -> None
 
 
 class _RuleDb:
-    def __init__(self, scalar_batches: list[list[object]]):
+    def __init__(self, scalar_batches: list[list[object]], objects: dict[tuple[type, str], object]):
         self.scalar_batches = iter(scalar_batches)
+        self.objects = objects
         self.added: list[object] = []
         self.existing: set[str] = set()
 
     def scalars(self, _statement):
         return _ScalarRows(next(self.scalar_batches))
+
+    def get(self, model, object_id):
+        return self.objects.get((model, object_id))
 
     def scalar(self, statement):
         del statement
@@ -253,15 +258,25 @@ def test_automation_rules_cover_file_due_and_overdue_suggestions() -> None:
             name="年度工作报告.pdf",
             relative_path="2026/年度/年度工作报告.pdf",
             extension="pdf",
+            root_id="host-root",
             version=2,
         ),
         SimpleNamespace(
-            id="file-2", name="说明.txt", relative_path="其他/说明.txt", extension="txt", version=1
+            id="file-2", name="说明.txt", relative_path="其他/说明.txt",
+            extension="txt", root_id="host-root", version=1,
         ),
     ]
     overdue = [SimpleNamespace(id="task-1", title="逾期事项", owner_id=None)]
     due = [SimpleNamespace(id="task-2", title="即将到期事项", owner_id=owner)]
-    db = _RuleDb([rules, files, overdue, due])
+    db = _RuleDb(
+        [rules, files, overdue, due],
+        {
+            (User, owner): SimpleNamespace(id=owner, active=True, role=UserRole.STAFF),
+            (WorkspaceRoot, "host-root"): SimpleNamespace(
+                id="host-root", source=WorkspaceRootSource.HOST, enabled=True,
+            ),
+        },
+    )
 
     scheduler.run_automation_rules(db, admin)
 

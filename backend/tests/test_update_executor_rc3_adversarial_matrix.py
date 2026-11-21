@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import sqlite3
 import subprocess
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -24,7 +25,10 @@ def _settings(tmp_path: Path) -> SimpleNamespace:
     (attachments / "material.txt").write_text("material", encoding="utf-8")
     (archives / "archive.txt").write_text("archive", encoding="utf-8")
     database = data_dir / "partyops.db"
-    database.write_bytes(b"sqlite-backup-source")
+    with closing(sqlite3.connect(database)) as connection:
+        with connection:
+            connection.execute("CREATE TABLE sample (value TEXT)")
+            connection.execute("INSERT INTO sample VALUES (?)", ("sqlite-backup-source",))
     return SimpleNamespace(
         data_dir=data_dir,
         database_path=database,
@@ -187,7 +191,8 @@ def test_rpm_host_update_failure_restores_program_database_and_trees(
 
     assert not update_executor._execute_linux_rpm_host_update(run_id, package_path, {})
     assert states[-1] == expected_status
-    assert settings.database_path.read_bytes() == b"sqlite-backup-source"
+    with closing(sqlite3.connect(settings.database_path)) as connection:
+        assert connection.execute("SELECT value FROM sample").fetchone() == ("sqlite-backup-source",)
     assert (settings.attachments_dir / "material.txt").is_file()
     assert (settings.archives_dir / "archive.txt").is_file()
 

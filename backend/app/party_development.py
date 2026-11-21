@@ -85,6 +85,26 @@ REFERENCE_NODE_MAP: dict[str, str] = {
     "archive": "archive_target",
 }
 
+# 一项已确认事实可对应多个旧版参考或时限节点。时间轴和提醒共用此映射。
+FACT_REFERENCE_NODES = {
+    "conversation": ("conversation_target", "conversation_window", "conversation_deadline"),
+    "activist_date": ("activist_reference",),
+    "development_object_date": ("development_object_reference",),
+    "political_review_completed": ("political_review_target", "political_review"),
+    "training_completed": ("training",),
+    "pre_review_approved": ("pre_review_target",),
+    "branch_acceptance": ("branch_acceptance_target", "branch_acceptance_deadline"),
+    "committee_approval_actual": ("committee_approval_target", "committee_approval"),
+    "oath": ("oath_target", "oath_deadline"),
+    "transition_branch_meeting": ("transition_branch_target",),
+    "transition_approval": ("transition_approval_target", "transition_approval_deadline"),
+}
+
+
+def completed_node_keys(fact: str) -> tuple[str, ...]:
+    return (fact, *FACT_REFERENCE_NODES.get(fact, ()))
+
+
 # 时间轴对外返回的稳定中文标题。机器键仅用于接口兼容和规则计算，
 # 不能直接暴露到生产界面，避免导入数据后出现英文内部字段。
 NODE_LABELS: dict[str, str] = {

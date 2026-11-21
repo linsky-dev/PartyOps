@@ -609,7 +609,13 @@ def activate_model_pack(
             "当前程序版本无法运行该模型",
             f"请先升级 PartyOps 至 {pack.min_runtime_version} 或更高版本。",
         )
-    if not verify_installed_pack(pack):
+    # 激活属于低频的安全边界：不能复用状态页的尺寸/mtime 校验缓存。
+    # 即使不受信文件被同体积替换并恢复 mtime，激活前也必须逐字节 SHA-256 核验。
+    # RLock 保证并发状态查询无法在清除缓存后、重新验算前填回旧结果。
+    with _verification_lock:
+        _verification_cache.pop(pack.id, None)
+        integrity_ok = verify_installed_pack(pack)
+    if not integrity_ok:
         pack.status = ModelPackStatus.CORRUPT
         db.flush()
         raise ProblemException(409, "MODEL_PACK_CORRUPT", "模型包校验失败", "请重新导入模型包。")

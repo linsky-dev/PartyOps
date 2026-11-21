@@ -8,6 +8,10 @@ from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 
 from alembic.config import Config
+from cryptography import x509
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.x509.oid import NameOID
 from fastapi.testclient import TestClient
 from openpyxl import Workbook
 from pydantic import ValidationError
@@ -236,13 +240,28 @@ def test_production_enrollment_uses_one_time_header_without_opening_other_writes
     assert mismatch.status_code == 403
     assert mismatch.json()["code"] == "ENROLLMENT_TOKEN_MISMATCH"
 
+    monkeypatch.setattr(get_settings(), "tls_enabled", True)
+    csr_required = client.post(
+        "https://127.0.0.1/api/v1/devices/enroll",
+        headers={"Origin": "https://malicious.invalid", "X-PartyOps-Enrollment-Code": code},
+        json=payload,
+    )
+    assert csr_required.status_code == 422
+    assert csr_required.json()["code"] == "ENROLLMENT_CERTIFICATE_REQUIRED"
+
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    csr = x509.CertificateSigningRequestBuilder().subject_name(
+        x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "synthetic device")])
+    ).sign(key, hashes.SHA256())
+    payload["csr_pem"] = csr.public_bytes(serialization.Encoding.PEM).decode("ascii")
     enrolled = client.post(
-        "http://127.0.0.1/api/v1/devices/enroll",
+        "https://127.0.0.1/api/v1/devices/enroll",
         headers={"Origin": "https://malicious.invalid", "X-PartyOps-Enrollment-Code": code},
         json=payload,
     )
     assert enrolled.status_code == 201, enrolled.text
     assert enrolled.json()["device_id"]
+    assert enrolled.json()["certificate_pem"].startswith("-----BEGIN CERTIFICATE-----")
 
     # 同一个安全头不能替其它写接口绕过 Origin 门禁。
     unrelated = client.post(

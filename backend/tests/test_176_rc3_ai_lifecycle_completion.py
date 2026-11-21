@@ -32,6 +32,8 @@ class _Upload:
 
 class _Request:
     client = SimpleNamespace(host="127.0.0.1")
+    cookies: dict[str, str] = {}
+    headers: dict[str, str] = {}
 
 
 def _code(call, expected: str) -> None:

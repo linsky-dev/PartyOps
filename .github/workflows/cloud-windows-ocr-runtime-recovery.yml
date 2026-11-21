@@ -1,0 +1,124 @@
+name: RC1 Windows x64 recovered Chinese OCR runtime (BUILD_ONLY)
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/cloud-windows-ocr-runtime-recovery.yml'
+      - 'packaging/windows/recover-ocr-from-public-installer.ps1'
+      - 'packaging/windows/prepare-ocr-runtime.ps1'
+      - 'packaging/windows/ocr-public-recovery-manifest.json'
+      - 'backend/tests/test_windows_ocr_public_recovery.py'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc1-win-x64-ocr-recovery-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  recover-ocr:
+    name: Recover exact 62-file Chinese OCR runtime from released RC6 installer
+    runs-on: windows-2025
+    timeout-minutes: 32
+    steps:
+      - name: Checkout exact PR source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Obtain hash-locked published RC6 startup-corrected Windows installer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $work = Join-Path $env:RUNNER_TEMP 'partyops-rc6-ocr-source'
+          New-Item -ItemType Directory -Path $work -Force | Out-Null
+          $release = 'https://github.com/linsky-dev/PartyOps/releases/download/v1.4.5-rc.6/PartyOps_1.4.5-rc.6_windows_amd64_startup-20261018.exe'
+          $installer = Join-Path $work 'PartyOps_1.4.5-rc.6_windows_amd64_startup-20261018.exe'
+          & curl.exe --fail --location --retry 3 --retry-all-errors --connect-timeout 45 --max-time 1500 --output $installer $release
+          if ($LASTEXITCODE -ne 0) { throw '[OCR_SOURCE_RELEASE_DOWNLOAD_FAILED]' }
+          $meta = Get-Item -LiteralPath $installer
+          $sha = (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($meta.Length -ne 449988807 -or $sha -ne 'e3e2ea45ccd38acff059b5713826a78f998a56ccef75341633f67bd4e17e57da') {
+            throw '[OCR_SOURCE_RELEASE_SHA256_OR_SIZE_MISMATCH]'
+          }
+          "PARTYOPS_RC6_STARTUP_RELEASE_ASSET_VERIFIED: $sha"
+
+      - name: Acquire pinned extractor and verify every executable byte
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $work = Join-Path $env:RUNNER_TEMP 'partyops-rc6-ocr-source'
+          $archive = Join-Path $work 'innoextract670.zip'
+          & curl.exe --fail --location --retry 3 --retry-all-errors --connect-timeout 45 --max-time 300 --output $archive 'https://github.com/UserUnknownFactor/innoextract_win/releases/download/670/innoextract670.zip'
+          if ($LASTEXITCODE -ne 0) { throw '[OCR_EXTRACTOR_DOWNLOAD_FAILED]' }
+          $sha = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($sha -ne '79b69b9b1fcd98f42ccd4b245efdf6a03bcfb674ba6af482f5a46891c9ed4d14') {
+            throw '[OCR_EXTRACTOR_ARCHIVE_HASH_MISMATCH]'
+          }
+          $unpacked = Join-Path $work 'unpacked'
+          Expand-Archive -LiteralPath $archive -DestinationPath $unpacked
+          $trusted = Join-Path $work 'trusted-extractor'
+          New-Item -ItemType Directory -Path $trusted -Force | Out-Null
+          foreach ($name in @('innoextract.exe','libbz2-1.dll')) {
+            $source = @(Get-ChildItem -LiteralPath $unpacked -Recurse -File -Filter $name)
+            if ($source.Count -ne 1) { throw "[OCR_EXTRACTOR_ENTRY_AMBIGUOUS] $name" }
+            Copy-Item -LiteralPath $source[0].FullName -Destination (Join-Path $trusted $name)
+          }
+          $hashes = @{
+            'innoextract.exe' = '0dab51583e403970065db49f87a6a2bf683ab6ebfdf27bede2bf633dd232a1a2'
+            'libbz2-1.dll' = 'b79cd3a7102e359ef6324e98966a67939e58ec2b651ae2847cae84a4dfa453f7'
+          }
+          foreach ($name in $hashes.Keys) {
+            $actual = (Get-FileHash -LiteralPath (Join-Path $trusted $name) -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($actual -ne $hashes[$name]) { throw "[OCR_EXTRACTOR_BINARY_HASH_MISMATCH] $name" }
+          }
+
+      - name: Verify 62 recovered OCR files and native Tesseract Chinese/English
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $work = Join-Path $env:RUNNER_TEMP 'partyops-rc6-ocr-source'
+          $installer = Join-Path $work 'PartyOps_1.4.5-rc.6_windows_amd64_startup-20261018.exe'
+          $toolsDir = Join-Path $work 'trusted-extractor'
+          $repoRoot = (Get-Location).Path
+          & pwsh -NoProfile -File packaging/windows/recover-ocr-from-public-installer.ps1 -RepoRoot $repoRoot -InstallerPath $installer -ExtractorDirectory $toolsDir
+          if ($LASTEXITCODE -ne 0) { throw '[OCR_RESTORE_FAILED]' }
+          . ./packaging/windows/prepare-ocr-runtime.ps1
+          $env:PARTYOPS_LEGACY_ARCH = ''
+          $output = Join-Path $repoRoot 'artifacts/windows-ocr-validated/ocr'
+          Expand-VerifiedPartyOpsOcrRuntime -RepoRoot $repoRoot -Destination $output
+          $sourceManifest = Get-Content -LiteralPath 'packaging/windows/ocr-public-recovery-manifest.json' -Raw | ConvertFrom-Json
+          $expectedCount = @($sourceManifest.files.PSObject.Properties).Count
+          $actualFiles = @(Get-ChildItem -LiteralPath $output -Recurse -File)
+          if ($expectedCount -ne 62 -or $actualFiles.Count -ne 62) {
+            throw "[OCR_NATIVE_PAYLOAD_COUNT_INVALID] Expected 62, observed $($actualFiles.Count)"
+          }
+          New-Item -ItemType Directory -Path artifacts -Force | Out-Null
+          [ordered]@{
+            schema_version = 1
+            scope = 'WINDOWS_X64_RC6_STARTUP_RELEASE_RECOVERED_NATIVE_CHINESE_OCR_BUILD_ONLY'
+            source_commit = '${{ github.sha }}'
+            rc6_release_asset_sha256 = 'e3e2ea45ccd38acff059b5713826a78f998a56ccef75341633f67bd4e17e57da'
+            extractor_zip_sha256 = '79b69b9b1fcd98f42ccd4b245efdf6a03bcfb674ba6af482f5a46891c9ed4d14'
+            locked_ocr_manifest_sha256 = (Get-FileHash -LiteralPath 'packaging/windows/ocr-public-recovery-manifest.json' -Algorithm SHA256).Hash.ToLowerInvariant()
+            verified_files = 62
+            native_tesseract_chinese_english = 'PASS'
+            rc1_installer_built = $false
+            native_wps_accepted = $false
+            release_ready = $false
+          } | ConvertTo-Json | Out-File -LiteralPath artifacts/windows-ocr-recovery-evidence.json -Encoding utf8
+          "PARTYOPS_RC1_WINDOWS_X64_ORIGINAL_62_FILE_OCR_NATIVE_RUNTIME_PASS"
+
+      - name: Upload verified OCR runtime and provenance (NOT AN INSTALLER)
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: partyops-rc1-windows-x64-verified-ocr-build-only-${{ github.sha }}
+          path: |
+            artifacts/windows-ocr-validated/ocr/**
+            artifacts/windows-ocr-recovery-evidence.json
+          if-no-files-found: warn
+          retention-days: 14

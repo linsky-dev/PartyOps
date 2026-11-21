@@ -1583,7 +1583,8 @@ def test_backup_manifest_failure_modes_and_restore_rollback(
 async def test_scheduler_runs_backup_recurrence_and_isolates_failures(
     client: TestClient, admin: dict, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    now = datetime.now()
+    now = datetime(2026, 8, 25, 2, 30, tzinfo=timezone(timedelta(hours=8)))
+    monkeypatch.setattr(scheduler, "beijing_now", lambda: now)
     settings = get_settings()
     monkeypatch.setattr(settings, "backup_hour", now.hour)
     monkeypatch.setattr(settings, "backup_minute", max(0, now.minute - 1))

@@ -109,7 +109,7 @@ def test_ai_sensitive_meeting_and_automatic_source_skips(
         category="综合工作",
         sensitivity=Sensitivity.NORMAL,
     )
-    policy = SimpleNamespace(allowed_task_categories=[], allowed_root_ids=["root-1"])
+    policy = SimpleNamespace(allowed_task_categories=[], allowed_root_ids=["root-1"], allowed_file_types=[])
     db = SimpleNamespace(
         scalar=lambda _statement: SimpleNamespace(meeting_type="party_member_meeting"),
         get=lambda *_args: None,
@@ -364,17 +364,22 @@ def test_private_write_fallback_and_loopback_invalid_json(
     tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     target = tmp_path / "private" / "secret.pem"
-    monkeypatch.setattr(pki.os, "name", "posix")
+    monkeypatch.setattr(
+        pki, "os",
+        SimpleNamespace(name="posix", fdopen=pki.os.fdopen, fsync=pki.os.fsync),
+    )
     original_chmod = Path.chmod
 
     def denied_chmod(self, mode, **kwargs):
-        if self.suffix == ".tmp":
+        if self.parent == target.parent and self != target:
             raise OSError("chmod unavailable")
         return original_chmod(self, mode, **kwargs)
 
     monkeypatch.setattr(Path, "chmod", denied_chmod)
     with pytest.raises(OSError, match="chmod unavailable"):
         pki._write_private(target, b"secret")
+    assert not target.exists()
+    assert not list(target.parent.iterdir())
 
     class Response:
         def __enter__(self):

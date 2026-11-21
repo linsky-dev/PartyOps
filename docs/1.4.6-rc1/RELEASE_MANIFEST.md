@@ -1,0 +1,31 @@
+# 1.4.6-rc.1 候选制品记录
+
+源码通过[草稿 PR #16](https://github.com/linsky-dev/PartyOps/pull/16)集成，当前未冻结。发行制品、签名、公证、附件 SBOM 和正式下载地址为 `NOT_RUN`，以[验收报告](ACCEPTANCE_REPORT.md)为准。
+
+冻结时按 Windows x64、Win7 x86/x64、DEB amd64/arm64/loong64、RPM x86_64/aarch64、macOS Intel/Apple Silicon 十个包登记源提交、依赖锁文件、制品名、大小、SHA-256、构建和原生证据链接、签名状态及下载回读。仅登记存在且验签通过的升级包。RC6 安装包及其历史补丁一律按原始版本保留。
+
+PR 阶段新增只读源码/SBOM 预检（`cloud-pr-source-preflight.yml`）。该流程归档测试使用的 PR 合并提交并生成 Python 和前端锁定依赖的 CycloneDX 清单、SHA-256 和 `BUILD_ONLY` 来源证据；并非正式冻结、签名、安装包或发布许可，不能替代主分支的人工确认门禁。
+
+RC1 候选证据区分**安装包**与**原生验收目标**：10 个制品目标复用已有发行分类，12 个系统环境分别保留独立安装、功能、签名、升级和 WPS 证据。Windows 10/11 x64 使用同一现代 Windows 安装包，但必须两套原生验收；UOS ARM64 和麒麟 ARM64 同理复用对应 DEB。新增 `scripts/rc1_release_targets.py` 维护精确映射，`cloud-release-gate.yml` 对缺少任何一项、重复目标、错误包关联或缺少可校验附件的结果一律阻断；候选清单默认 `NOT_RUN`，不可将 `BUILD_ONLY` 自动提升为 PASS。
+
+## 发布门禁结构验真增强（源码 CI 已通过，正式包仍缺）
+
+十类制品除了清单的 `PASS` 和 SHA-256，还需核对固定格式（Windows EXE、DEB、RPM、macOS PKG）、最低大小、标准格式文件头、Windows PE 架构及唯一安装包哈希。十二类原生验收增加 `native_architecture` 和 `installed_package_sha256` 字段：每个系统的声明架构必须一致，被测安装包哈希必须与所对应的真实安装包一致。旧版仅上传任意文本并标注 PASS 的材料不能再使门禁进入最终批准前置状态。
+
+这只是**静态格式与引用完整性**校验，不能代替 Authenticode、Developer ID/公证、实际原生安装、完整功能/WPS、升级与回滚的独立验证，也不能构成未经额外验真的原生 CI 真实性担保。测试夹具使用伪造文件头是为了检验守卫逻辑，绝不是正式候选包。正式候选仍必须通过受保护的人工批准。
+
+历史 3D 官网完整 v5 源码已从用户文件库恢复并校验 572/572 项，但未证明它与最新 EdgeOne 生产部署相同，故仍不得未经预览直接覆盖线上；生产站保持旧版，详见 [官网恢复说明](WEBSITE_SOURCE_RECOVERY.md)。
+
+加固代码提交 `fe9fbf8` 在 [完整回归 #44889063749](https://github.com/linsky-dev/PartyOps/actions/runs/44889063749) 通过（Windows 2371 passed /17 skipped，Linux 211 passed /4 skipped，Ruff 成功），[原生矩阵 #44889063821](https://github.com/linsky-dev/PartyOps/actions/runs/44889063821) 8/8 作业通过；只是门禁判定代码的测试，候选发行清单仍然未生成真实安装包。
+
+### 源码归档及 SBOM 内部结构防伪（新 CI 待验证）
+
+原有候选审核在核对 SHA-256 后，进一步按只读方式校验 `PartyOps-1.4.6-rc.1-source.tar.gz` 的目录根、4 个必需源码文件、遍历数量和展开体积上限，并拒绝路径逃逸、符号链接及重复成员；**只读取 TAR 元数据，不从候选包解压文件**。Python/前端 SBOM 必须为 CycloneDX 1.6 且包含非空 `components`，不允许将已哈希的 `{}`、纯文本或伪 TAR 认作有效发布证据。新增隔离对抗测试专门验证这些拒绝路径。本项仍属结构/格式审核，不能代替 GitHub 源码历史、原生安装、可信签名、公证及最终人工发布审批。
+
+### 冻结源码与真实 Git 提交强绑定（待新增 CI 验证）
+
+候选审核将新增第二次只读 Git 检出：检出历史候选运行声称的 40 位 SHA，并通过 `git rev-parse` 校验独立工作区的确切提交。随后以 `git archive --format=tar --prefix=PartyOps-1.4.6-rc.1/` 重新生成完整 TAR 流，与已从候选制品下载的 `source.tar.gz` **解压后的 TAR 字节流 SHA-256** 比对；不依赖 gzip 压缩时间和元数据、不向源码目录写入数据。即便某个替换 TAR 的四个关键文件、目录结构和清单哈希都合法，内部内容不同仍必须失败。独立检出需从 GitHub 取得原提交；无法取得或摘要不一致时保持发布门禁失败，而不是把合成源码晋升为正式候选。仍需真实安装包、签名、WPS 和最终人工批准。
+
+### `151e90a` 全量 CI 终结证据
+
+[完整源码与测试 #44895624534](https://github.com/linsky-dev/PartyOps/actions/runs/44895624534) Windows 后端 2383 passed、17 skipped、3 子测试，95%/92% 既有覆盖门槛成功；Linux 217 passed、4 skipped，Ruff 成功；[原生跨平台 #44895624491](https://github.com/linsky-dev/PartyOps/actions/runs/44895624491) 8/8 作业成功，另 [原生 ONNX Runtime 1.32.0 #44895624562](https://github.com/linsky-dev/PartyOps/actions/runs/44895624562) 真正下载官方 Windows ARM64 wheel、固定 SHA-256 核验并执行原 PartyOps EmbeddingRuntime 合成推理成功。**整轮 9/9 个工作流成功**，但 `cloud-release-gate.yml` 是另一个受保护的 `workflow_dispatch`，本轮未实际发布或审批正式制品。新增加的 PyMuPDF 2.1 x64 隔离 API 兼容专项须在新 CI 运行成功后另行确认；当前正式锁 `PyMuPDF==1.26.0` 仍被已知 CVE 门禁阻断。

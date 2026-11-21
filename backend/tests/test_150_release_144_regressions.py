@@ -19,6 +19,7 @@ from app.models import (
     Device,
     Notification,
     PartyDevelopmentMilestone,
+    PartyDevelopmentProgressEvent,
     ReminderPreference,
     Task,
     User,
@@ -148,7 +149,7 @@ def test_device_403_marks_reauthorization_and_stops_agent(
     assert saved["authentication_state"] == "reauth_required"
     assert saved["last_agent_error"] == "heartbeat"
     assert saved["protocol_version"] == 2
-    assert saved["runtime_version"] == "1.4.5-rc.6"
+    assert saved["runtime_version"] == "1.4.6-rc.1"
 
 
 def test_legacy_pairing_403_stops_backup_retry_loop(
@@ -359,8 +360,9 @@ def test_meeting_workflow_structured_document_and_development_case(client, admin
     regenerated = client.post(f"/api/v1/party-development/cases/{case.json()['id']}/generate-milestones")
     assert regenerated.status_code == 200, regenerated.text
     second_nodes = {node["milestone_type"]: node for node in regenerated.json()["milestones"]}
-    assert second_nodes["application"]["actual_at"].startswith("2026-01-15")
-    assert second_nodes["application"]["version"] == 2
+    # 重新生成计划不得改写已发生的节点版本，但尚未办理的节点仍会重新测算。
+    assert second_nodes["application"] == first_nodes["application"]
+    assert second_nodes["conversation_deadline"]["version"] == first_nodes["conversation_deadline"]["version"] + 1
     assert generated.json()["milestones"]
     assert any(row["legal_deadline_at"] and not row["actual_at"] for row in generated.json()["milestones"])
     docx_export = client.get("/api/v1/party-development/cases/export.docx")
@@ -862,8 +864,15 @@ def test_party_development_case_and_milestone_boundaries(client, admin: dict) ->
     ).status_code == 200
 
 
-def test_party_development_notification_converges_after_date_change(client, admin: dict) -> None:
+def test_party_development_notification_converges_after_date_change(client, admin: dict, monkeypatch) -> None:
     """节点改期应更新、撤销当前未读提醒，而不是保留新旧两条。"""
+    from app import notifications as notice_module
+
+    # 该回归使用固定的历史基准日。后台提醒调度器默认按真实日期运行，
+    # 其间并发刷新会把 reference:1 撤销成 reference:overdue，导致测试偶发失败。
+    # 仅在本测试中统一提醒时钟，生产调度与规则代码保持原样。
+    fixed_now = datetime(2026, 8, 25, 2, 30, tzinfo=timezone.utc)
+    monkeypatch.setattr(notice_module, "utcnow", lambda: fixed_now)
 
     created = client.post(
         "/api/v1/party-development/cases",
@@ -876,46 +885,69 @@ def test_party_development_notification_converges_after_date_change(client, admi
     )
     case_id = created.json()["id"]
     generated = client.post(f"/api/v1/party-development/cases/{case_id}/generate-milestones").json()
-    milestone_id = next(row["id"] for row in generated["milestones"] if not row["actual_at"])
+    nodes = {row["milestone_type"]: row["id"] for row in generated["milestones"]}
+    milestone_id = nodes["activist_reference"]
+    now = fixed_now
     with db_runtime.session_factory() as db:
         milestone = db.get(PartyDevelopmentMilestone, milestone_id)
-        milestone.actual_at = None
-        milestone.adjusted_at = datetime.now(timezone.utc) + timedelta(days=1)
+        legal_milestone = db.get(PartyDevelopmentMilestone, nodes["conversation_deadline"])
+        milestone.adjusted_at = now + timedelta(days=1)
+        legal_milestone.adjusted_at = now + timedelta(days=90)
+
+        def active_notice(node_id: str) -> Notification | None:
+            return db.scalar(
+                select(Notification).where(
+                    Notification.user_id == admin["id"],
+                    Notification.entity_type == "party_development_case",
+                    Notification.entity_id == case_id,
+                    Notification.dedupe_key.like(f"%:{node_id}:%"),
+                    Notification.revoked_at.is_(None),
+                )
+            )
+
         db.commit()
-        first = refresh_party_development_notifications(db, now=datetime.now(timezone.utc))
+        first = refresh_party_development_notifications(db, now=now)
         db.commit()
         assert first > 0
-        assert refresh_party_development_notifications(db, now=datetime.now(timezone.utc)) == 0
-        notice = db.scalar(
-            select(Notification).where(
-                Notification.entity_type == "party_development_case",
-                Notification.entity_id == case_id,
-                Notification.dedupe_key.like(f"%:{milestone_id}:%"),
-                Notification.revoked_at.is_(None),
-            )
-        )
-        assert notice is not None
+        assert refresh_party_development_notifications(db, now=now) == 0
+        notice = active_notice(milestone_id)
+        assert notice is not None and "参考计划日期" in notice.title
+        legal_notice = active_notice(legal_milestone.id)
+        assert legal_notice is not None and "法规截止日期" in legal_notice.title
         notice.title = "旧标题"
         db.commit()
-        assert refresh_party_development_notifications(db, now=datetime.now(timezone.utc)) > 0
+        assert refresh_party_development_notifications(db, now=now) > 0
         db.commit()
-        milestone.adjusted_at = datetime.now(timezone.utc) + timedelta(days=90)
+        assert active_notice(milestone_id).title != "旧标题"
+        milestone.adjusted_at = now + timedelta(days=90)
         db.commit()
-        assert refresh_party_development_notifications(db, now=datetime.now(timezone.utc)) > 0
+        assert refresh_party_development_notifications(db, now=now) > 0
         db.commit()
-        assert db.scalar(
-            select(Notification).where(
-                Notification.entity_type == "party_development_case",
-                Notification.entity_id == case_id,
-                Notification.dedupe_key.like(f"%:{milestone_id}:%"),
-                Notification.revoked_at.is_(None),
-            )
-        ) is None
+        assert active_notice(milestone_id) is None
+
+        # 回到原提醒窗口会另建活动通知，旧记录仍保持撤销。
+        milestone.adjusted_at = now + timedelta(days=1)
+        db.commit()
+        assert refresh_party_development_notifications(db, now=now) > 0
+        db.commit()
+        assert active_notice(milestone_id).id != notice.id
+        assert notice.revoked_at is not None
+
+        # 旧参考节点保留测算日期，独立事实确认后应撤销活动提醒。
+        db.add(PartyDevelopmentProgressEvent(
+            case_id=case_id, milestone_type="activist_date", actual_at=now,
+            created_by=admin["id"], evidence_note="模拟组织记录", status="confirmed",
+        ))
+        db.commit()
+        assert refresh_party_development_notifications(db, now=now) > 0
+        db.commit()
+        assert active_notice(milestone_id) is None
+        assert active_notice(legal_milestone.id) is not None
         milestone.adjusted_at = None
         milestone.planned_at = None
         milestone.legal_deadline_at = None
         db.commit()
-        assert refresh_party_development_notifications(db, now=datetime.now(timezone.utc)) == 0
+        assert refresh_party_development_notifications(db, now=now) == 0
 
 
 def test_notification_disabled_preference_and_daily_refresh_branches(client, admin: dict) -> None:

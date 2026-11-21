@@ -1,0 +1,101 @@
+name: RC1 Windows x64 secure PDF dependency candidate (BUILD_ONLY)
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/cloud-windows-x64-pdf-lock-review.yml'
+      - 'scripts/rc1_windows_pdf_lock_review.py'
+      - 'scripts/rc1_windows_pdf_lock_delta.py'
+      - 'scripts/rc1_pymupdf_21_wheel_matrix.py'
+      - 'scripts/probe_pymupdf_21_x64.py'
+      - 'backend/uv.lock'
+      - 'backend/pyproject.toml'
+      - 'backend/requirements.txt'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc1-windows-x64-pdf-lock-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  review-only:
+    name: Isolated PyMuPDF 2.1 resolution and real Windows x64 app PDF smoke
+    runs-on: windows-2025
+    timeout-minutes: 32
+    steps:
+      - name: Checkout exact PR merge SHA
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Install official CPython 3.12 x64
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+          architecture: x64
+
+      - name: Prepare isolated dependency project; leave production locks intact
+        shell: pwsh
+        env:
+          PYTHONUTF8: '1'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python -m pip install --disable-pip-version-check 'uv==0.11.7'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python scripts/rc1_windows_pdf_lock_review.py prepare --root . --candidate artifacts/windows-pdf-lock-candidate
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Resolve and install isolated secure full dependency closure
+        shell: pwsh
+        env:
+          PYTHONUTF8: '1'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          uv lock --project artifacts/windows-pdf-lock-candidate --upgrade-package pymupdf
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python scripts/rc1_windows_pdf_lock_delta.py --baseline backend/uv.lock --candidate artifacts/windows-pdf-lock-candidate/uv.lock --output artifacts/windows-pdf-lock-delta-evidence.json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python scripts/rc1_pymupdf_21_wheel_matrix.py --lock artifacts/windows-pdf-lock-candidate/uv.lock --output artifacts/windows-pdf-2.1-wheel-matrix.json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          uv sync --project artifacts/windows-pdf-lock-candidate --locked --no-install-project --no-dev
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          uv pip check --python artifacts/windows-pdf-lock-candidate/.venv/Scripts/python.exe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Execute PartyOps original PDF parsing and conversion under candidate lock
+        shell: pwsh
+        env:
+          PYTHONUTF8: '1'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & artifacts/windows-pdf-lock-candidate/.venv/Scripts/python.exe scripts/probe_pymupdf_21_x64.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Confirm production dependency pins unchanged and record independent result
+        shell: pwsh
+        env:
+          PYTHONUTF8: '1'
+        run: |
+          python scripts/rc1_windows_pdf_lock_review.py finalize --root . --candidate artifacts/windows-pdf-lock-candidate --evidence artifacts/windows-pdf-lock-evidence.json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Upload candidate lock and provenance only, never an installer
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: partyops-rc1-windows-x64-secure-pdf-lock-${{ github.sha }}
+          path: |
+            artifacts/windows-pdf-lock-candidate/pyproject.toml
+            artifacts/windows-pdf-lock-candidate/uv.lock
+            artifacts/windows-pdf-lock-candidate/requirements.txt
+            artifacts/windows-pdf-lock-candidate/baseline.json
+            artifacts/windows-pdf-lock-evidence.json
+            artifacts/windows-pdf-lock-delta-evidence.json
+            artifacts/windows-pdf-2.1-wheel-matrix.json
+            artifacts/pymupdf-21-x64/compatibility.json
+          if-no-files-found: warn
+          retention-days: 14

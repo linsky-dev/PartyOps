@@ -157,21 +157,24 @@ describe("API 客户端", () => {
   });
 
   it("保留 FormData 边界并支持 Blob、204 与下载地址", async () => {
-    const responses = [
-      new Response(new Blob(["file"]), {
-        status: 200,
-        headers: { "content-type": "application/octet-stream" },
-      }),
-      new Response(null, { status: 204 }),
-    ];
+    const binaryResponse = new Response("file", {
+      status: 200,
+      headers: { "content-type": "application/octet-stream" },
+    });
+    const responseBlobType = (await binaryResponse.clone().blob()).constructor;
     const fetchMock = vi.fn()
-      .mockResolvedValueOnce(responses[0])
-      .mockResolvedValueOnce(responses[1]);
+      .mockResolvedValueOnce(binaryResponse)
+      .mockResolvedValueOnce(new Response(null, { status: 204 }));
     vi.stubGlobal("fetch", fetchMock);
-    const form = new FormData();
-    form.append("file", new Blob(["x"]), "x.txt");
+    vi.stubGlobal("FormData", window.FormData);
+    const form = new window.FormData();
+    form.append("file", new window.Blob(["x"]), "x.txt");
     const blob = await api.post<Blob>("/upload", form);
-    expect(blob).toBeInstanceOf(Blob);
+    // 表单文件使用 DOM 构造器；响应二进制以同一 Fetch 实现的 Blob 为准。
+    expect(blob).toBeInstanceOf(responseBlobType);
+    await expect(blob.text()).resolves.toBe("file");
+    expect(blob.type).toBe("application/octet-stream");
+    expect(fetchMock.mock.calls[0][1].body).toBe(form);
     expect(fetchMock.mock.calls[0][1].headers.has("Content-Type")).toBe(false);
     await expect(api.delete<void>("/sessions/current")).resolves.toBeUndefined();
     expect(downloadUrl("/exports/tasks.xlsx")).toBe("/api/v1/exports/tasks.xlsx");
@@ -242,12 +245,13 @@ describe("API 客户端", () => {
   });
 
   it("支持无正文 POST 和缺失内容类型的二进制响应", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(new Uint8Array([1, 2, 3]), { status: 200 }),
-    );
+    const response = new Response(new Uint8Array([1, 2, 3]), { status: 200 });
+    const responseBlobType = (await response.clone().blob()).constructor;
+    const fetchMock = vi.fn().mockResolvedValue(response);
     vi.stubGlobal("fetch", fetchMock);
     const result = await api.post<Blob>("/ping");
-    expect(result).toBeInstanceOf(Blob);
+    expect(result).toBeInstanceOf(responseBlobType);
+    expect(new Uint8Array(await result.arrayBuffer())).toEqual(new Uint8Array([1, 2, 3]));
     expect(fetchMock.mock.calls[0][1].body).toBeUndefined();
   });
 

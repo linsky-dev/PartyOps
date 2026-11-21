@@ -9,15 +9,10 @@ param(
 
 $ErrorActionPreference = "Stop"
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
-$documentFormatterSource = if ($env:PARTYOPS_DOCUMENT_FORMATTER_SOURCE) {
-  $env:PARTYOPS_DOCUMENT_FORMATTER_SOURCE
-} else {
-  Join-Path $repoRoot "vendor\document-formatter-source"
-}
 . (Join-Path $PSScriptRoot "prepare-ocr-runtime.ps1")
 . (Join-Path $PSScriptRoot "prepare-dotnet48-runtime.ps1")
-$releaseVersion = "1.4.5-rc.6"
-$releaseTag = "v1.4.5-rc.6"
+$releaseVersion = "1.4.6-rc.1"
+$releaseTag = "v1.4.6-rc.1"
 & $Python (Join-Path $repoRoot "scripts\verify-full-function-gate.py") verify --root $repoRoot --scope package
 if ($LASTEXITCODE -ne 0) { throw "全功能测试门禁失败，拒绝生成 Windows 安装包。" }
 & $Python (Join-Path $repoRoot "scripts\verify-version-consistency.py") `
@@ -527,7 +522,6 @@ Copy-Item -LiteralPath (Join-Path $repoRoot "packaging\uos\update-public-key.txt
 $formatterPlatform = if ($targetArchitecture -eq "x86") { "x86" } else { "x64" }
 & (Join-Path $repoRoot "scripts\build-document-formatter-host.ps1") `
   -Platform $formatterPlatform `
-  -DocumentFormatterSource $documentFormatterSource `
   -StageDirectory (Join-Path $bundleRoot "formatter-host")
 Assert-NativeSuccess "原排版源码无窗口宿主写入安装包"
 $formatterStage = Join-Path $bundleRoot "formatter-host"
@@ -596,7 +590,7 @@ if ($isLegacy) {
 if (-not (Test-Path -LiteralPath $InnoCompiler)) { throw "未找到 Inno Setup 6：$InnoCompiler" }
 $env:PARTYOPS_WINDOWS_BUILD_ROOT = $bundleRoot
 $env:PARTYOPS_WINDOWS_OUTPUT_ROOT = $outputRoot
-$installerBase = if ($isLegacy) { "PartyOps_1.4.5-rc.6_windows7_$targetArchitecture" } else { "PartyOps_1.4.5-rc.6_windows_amd64" }
+$installerBase = if ($isLegacy) { "PartyOps_1.4.6-rc.1_windows7_$targetArchitecture" } else { "PartyOps_1.4.6-rc.1_windows_amd64" }
 $installer = Join-Path $outputRoot "$installerBase.exe"
 $hashPath = "$installer.sha256"
 $candidatePath = Join-Path $outputRoot "$installerBase.candidate.json"

@@ -26,6 +26,7 @@ from ..models import (
     WorkJournalRevision,
     utcnow,
 )
+from ..notification_targets import NotificationDestination, resolve_notification_target
 from ..problems import ProblemException
 from ..reports import (
     auto_fill_report,
@@ -966,11 +967,11 @@ def list_notifications(
     limit: int = Query(default=100, ge=1, le=500),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_session),
+    include_revoked: bool = False,
 ) -> list[Notification]:
-    statement = select(Notification).where(
-        Notification.user_id == user.id,
-        Notification.revoked_at.is_(None),
-    )
+    statement = select(Notification).where(Notification.user_id == user.id)
+    if not include_revoked or unread_only:
+        statement = statement.where(Notification.revoked_at.is_(None))
     if unread_only:
         statement = statement.where(Notification.read_at.is_(None))
     if notification_type:
@@ -980,15 +981,30 @@ def list_notifications(
     )
 
 
+def _owned_notification(db: Session, notification_id: str, user: User) -> Notification:
+    item = db.get(Notification, notification_id)
+    if not item or item.user_id != user.id:
+        raise ProblemException(404, "NOTIFICATION_NOT_FOUND", "提醒不存在", "未找到该提醒。")
+    return item
+
+
+@router.get("/notifications/{notification_id}/target", response_model=NotificationDestination)
+def get_notification_target(
+    notification_id: str,
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_session),
+) -> NotificationDestination:
+    return resolve_notification_target(db, _owned_notification(db, notification_id, user), user, request)
+
+
 @router.post("/notifications/{notification_id}/read", response_model=NotificationOut)
 def read_notification(
     notification_id: str,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_session),
 ) -> Notification:
-    item = db.get(Notification, notification_id)
-    if not item or item.user_id != user.id:
-        raise ProblemException(404, "NOTIFICATION_NOT_FOUND", "提醒不存在", "未找到该提醒。")
+    item = _owned_notification(db, notification_id, user)
     item.read_at = item.read_at or utcnow()
     db.commit()
     db.refresh(item)

@@ -11,7 +11,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
-$releaseVersion = "1.4.5-rc.6"
+$releaseVersion = "1.4.6-rc.1"
 $wheelhousePath = (Resolve-Path -LiteralPath $Wheelhouse).Path
 $evidencePath = (Resolve-Path -LiteralPath $EvidenceRoot).Path
 $pythonPath = (Resolve-Path -LiteralPath $Python).Path
@@ -63,7 +63,7 @@ $savedDataDir = $env:PARTYOPS_DATA_DIR
 try {
   $env:PARTYOPS_DATA_DIR = $legacySchemaRoot
   $legacySchema = & $pythonPath -c "import pathlib,sqlite3,sys; sys.path.insert(0, str(pathlib.Path(sys.argv[1]))); from app.database import DatabaseRuntime; DatabaseRuntime().create_schema(); db=sqlite3.connect(str(pathlib.Path(sys.argv[2])/'partyops.db')); print(db.execute('select version_num from alembic_version').fetchone()[0])" $backendRoot $legacySchemaRoot
-  if ($LASTEXITCODE -ne 0 -or $legacySchema -notcontains "0026") {
+  if ($LASTEXITCODE -ne 0 -or $legacySchema -notcontains "0028") {
     throw "Win7 $Architecture Python 3.8 数据库迁移链初始化门禁失败，拒绝继续冻结安装包。"
   }
 } finally {

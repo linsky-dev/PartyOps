@@ -89,6 +89,46 @@ def _revision(runtime: DatabaseRuntime) -> str:
         )
 
 
+def test_native_rollback_preserves_committed_recovery_schema(tmp_path: Path) -> None:
+    runtime, settings = _runtime_at_0023(tmp_path)
+    upgrades.ensure_native_rollback_safe(settings.database_path)
+    runtime.create_schema()
+    with runtime.session_factory() as db:
+        user = db.get(User, "rc4-upgrade-admin")
+        assert user is not None
+        user.username = "renamed-after-upgrade"
+        db.commit()
+    with pytest.raises(RuntimeError, match="前向修复"):
+        upgrades.ensure_native_rollback_safe(settings.database_path)
+    with runtime.session_factory() as db:
+        user = db.get(User, "rc4-upgrade-admin")
+        assert user is not None
+        assert user.username == "renamed-after-upgrade"
+    assert _revision(runtime) == backups.SCHEMA_VERSION
+
+
+def test_upgrade_from_rc6_creates_verified_backup_and_preserves_identity(monkeypatch, tmp_path: Path) -> None:
+    runtime, settings = _runtime_at_0023(tmp_path)
+    config = runtime._alembic_config()
+    with runtime.engine.begin() as connection:
+        config.attributes["connection"] = connection
+        command.upgrade(config, "0026")
+    assert _revision(runtime) == "0026"
+    _bind_runtime(monkeypatch, runtime, settings)
+
+    app_main._initialize_runtime()
+
+    assert _revision(runtime) == backups.SCHEMA_VERSION
+    assert "recovery_credentials" in inspect(runtime.engine).get_table_names()
+    with runtime.session_factory() as db:
+        user = db.get(User, "rc4-upgrade-admin")
+        assert user is not None
+        assert (user.username, user.password_hash, user.role) == ("rc4-admin", "test-only", UserRole.ADMIN)
+    backup, = settings.backups_dir.glob("PartyOps-pre-upgrade-*.partyops-backup")
+    assert backups.verify_backup(backup)["schema_version"] == "0026"
+    assert upgrades.read_upgrade_transaction_state()["state"] == "completed"
+
+
 def test_full_initialize_runtime_upgrades_real_0023_database(monkeypatch, tmp_path: Path) -> None:
     """精确复现 rc.3 的 backup_runs 缺列故障，并要求完整启动事务成功。"""
 
@@ -101,7 +141,7 @@ def test_full_initialize_runtime_upgrades_real_0023_database(monkeypatch, tmp_pa
     with runtime.engine.connect() as connection:
         assert connection.execute(
             text("SELECT version_num FROM alembic_version")
-        ).scalar_one() == "0026"
+        ).scalar_one() == backups.SCHEMA_VERSION
         assert connection.execute(
             text("SELECT display_name FROM users WHERE id='rc4-upgrade-admin'")
         ).scalar_one() == "原位升级管理员"
@@ -204,7 +244,7 @@ def test_next_launch_recovers_process_interrupted_during_migration(
                 "WHERE id='rc4-upgrade-admin'"
             )
         )
-    assert _revision(runtime) == "0026"
+    assert _revision(runtime) == backups.SCHEMA_VERSION
 
     recovered = upgrades.recover_interrupted_upgrade()
 
@@ -251,6 +291,30 @@ def test_corrupt_upgrade_archive_is_rejected_before_database_overwrite(
 
     assert backups.sha256_file(settings.database_path) == before
     assert _revision(runtime) == "0023"
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows 原生文件句柄共享语义")
+def test_windows_locked_shm_restores_already_moved_database_and_wal(
+    monkeypatch, tmp_path: Path,
+) -> None:
+    """用真实 Windows 句柄复验迁移补偿，所有文件均来自隔离目录。"""
+    runtime, settings = _runtime_at_0023(tmp_path)
+    _bind_runtime(monkeypatch, runtime, settings)
+    backup_path = upgrades.create_pre_upgrade_backup()
+    runtime.dispose()
+    before = backups.sha256_file(settings.database_path)
+    wal = Path(f"{settings.database_path}-wal")
+    shm = Path(f"{settings.database_path}-shm")
+    wal.write_bytes(b"synthetic wal")
+    shm.write_bytes(b"synthetic shm")
+    with shm.open("rb") as held:
+        with pytest.raises(PermissionError):
+            upgrades.restore_database_from_upgrade_backup(backup_path)
+        assert held.read() == b"synthetic shm"
+    assert backups.sha256_file(settings.database_path) == before
+    assert wal.read_bytes() == b"synthetic wal"
+    assert shm.read_bytes() == b"synthetic shm"
+    assert not list(tmp_path.glob("partyops.upgrade-failed-*"))
 
 
 @pytest.mark.parametrize(

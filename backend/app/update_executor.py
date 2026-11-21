@@ -50,7 +50,7 @@ from .platform_info import (
     update_platform_key,
 )
 from .problems import ProblemException
-from .upgrades import restore_database_from_upgrade_backup
+from .upgrades import ensure_native_rollback_safe, restore_database_from_upgrade_backup
 from .versioning import parse_release_version
 
 logger = logging.getLogger(__name__)
@@ -1135,6 +1135,7 @@ def _execute_linux_rpm_host_update(
         service_stopped = True
         program_restored = False
         try:
+            ensure_native_rollback_safe(settings.database_path)
             program_restored = bool(
                 rollback_package is not None
                 and _verify_cached_rollback_artifact(rollback_package)
@@ -1848,6 +1849,7 @@ def _execute_windows_host_update(
         _run(["sc.exe", "stop", "PartyOpsHost"], timeout=60)
         program_restored = False
         try:
+            ensure_native_rollback_safe(settings.database_path)
             program_restored = _verify_cached_rollback_artifact(
                 rollback_installer
             ) and _run_windows_installer(rollback_installer, service_handoff=True)
@@ -2267,6 +2269,7 @@ def _restore_personal_database_as_user(backup_path: Path, desktop_uid: int) -> N
 
     settings = get_settings()
     database = settings.database_path
+    ensure_native_rollback_safe(database)
     try:
         original = database.stat()
         database_gid = int(original.st_gid)
@@ -2379,6 +2382,7 @@ def execute_linux_personal_root_transaction(
                 process.kill()
                 process.wait(timeout=10)
         process = None
+        ensure_native_rollback_safe(settings.database_path)
         if not _rollback_linux_personal_package_locked(run_id):
             raise RuntimeError("个人更新健康失败，原生包回滚未能完成")
         _restore_personal_database_as_user(backup, desktop_uid)
@@ -2403,6 +2407,7 @@ def execute_linux_personal_root_transaction(
             and target_version
         ):
             try:
+                ensure_native_rollback_safe(get_settings().database_path)
                 if _linux_native_version(
                     platform_name
                 ) == target_version and _rollback_linux_personal_package_locked(run_id):
@@ -2754,6 +2759,7 @@ def execute_macos_update(run_id: str) -> bool:
         if transaction is not None and mutation_started and previous_version:
             try:
                 _stop_macos_runtime(app_path, settings.port)
+                ensure_native_rollback_safe(settings.database_path)
                 snapshot = transaction / "PartyOps-previous.app"
                 failed_app = transaction / "PartyOps-failed.app"
                 restored = _restore_macos_application(snapshot, app_path, failed_app)
@@ -3126,6 +3132,7 @@ def execute_host_update(run_id: str) -> bool:
         _run(["systemctl", "stop", "partyops"], timeout=30)
         program_restored = False
         try:
+            ensure_native_rollback_safe(settings.database_path)
             if rollback_package is not None and rollback_package.is_file():
                 unpack = _run_linux_package_manager(
                     ["dpkg", "--unpack", str(rollback_package)], timeout=300

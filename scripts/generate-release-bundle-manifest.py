@@ -18,7 +18,7 @@ from pathlib import Path
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-VERSION = "1.4.5-rc.6"
+VERSION = "1.4.6-rc.1"
 # 经确认的最终活动矩阵固定在发布工具源码中，和质量门禁一起冻结。
 # 数量从完整目录派生；用户传入的报告或可编辑的实验室 YAML 不能删除必需目标。
 RELEASE_PACKAGES = {
@@ -30,8 +30,8 @@ RELEASE_PACKAGES = {
     "linux_amd64": {"filename": f"PartyOps_{VERSION}_linux_amd64.deb", "platform": "linux-deb/amd64", "targets": ("uos-deb-x64",)},
     "linux_arm64": {"filename": f"PartyOps_{VERSION}_linux_arm64.deb", "platform": "linux-deb/arm64", "targets": ("uos-deb-arm64",)},
     "linux_loong64": {"filename": f"PartyOps_{VERSION}_linux_loong64.deb", "platform": "linux-deb/loong64", "targets": ("deepin-deb-loong64",)},
-    "rpm_x86_64": {"filename": "PartyOps-1.4.5-0.rc.6.1.x86_64.rpm", "platform": "linux-rpm/amd64", "targets": ("openeuler-iso-x64",)},
-    "rpm_aarch64": {"filename": "PartyOps-1.4.5-0.rc.6.1.aarch64.rpm", "platform": "linux-rpm/arm64", "targets": ("openeuler-iso-arm64",)},
+    "rpm_x86_64": {"filename": "PartyOps-1.4.6-0.rc.1.1.x86_64.rpm", "platform": "linux-rpm/amd64", "targets": ("openeuler-iso-x64",)},
+    "rpm_aarch64": {"filename": "PartyOps-1.4.6-0.rc.1.1.aarch64.rpm", "platform": "linux-rpm/arm64", "targets": ("openeuler-iso-arm64",)},
     "macos_x86_64": {"filename": f"PartyOps_{VERSION}_macos_x86_64.pkg", "platform": "macos/amd64", "targets": ("macos-x64",)},
     "macos_arm64": {"filename": f"PartyOps_{VERSION}_macos_arm64.pkg", "platform": "macos/arm64", "targets": ("macos-arm64",)},
 }
@@ -577,8 +577,8 @@ def build_manifest(
     manifest: dict[str, object] = {
         "schema_version": 5,
         "product": "PartyOps",
-        "version": "1.4.5-rc.6",
-        "release_tag": "v1.4.5-rc.6",
+        "version": "1.4.6-rc.1",
+        "release_tag": "v1.4.6-rc.1",
         "source_commit": acceptance["source_commit"],
         "release_tooling_commit": acceptance["source_commit"],
         "source_fingerprint": acceptance["source_fingerprint"],

@@ -31,6 +31,8 @@ pytesseract==0.3.13
 cryptography==50.0.0+partyops.1
 defusedxml==0.7.1
 httpx<0.28
+# 上游仍支持 Python 3.8，固定含安全更新的 Mozilla 根证书集合。
+certifi==2026.10.19
 packaging==25.0
 click==8.3.3+partyops.1
 python-dotenv==1.2.2+partyops.1

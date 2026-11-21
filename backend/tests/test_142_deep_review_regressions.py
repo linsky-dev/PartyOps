@@ -1061,8 +1061,11 @@ async def test_upload_final_hash_does_not_block_event_loop(
             return content
 
     original_sha256_path = fleet.sha256_path
+    event_loop_thread_id = threading.get_ident()
+    hashing_thread_ids: list[int] = []
 
     def slow_sha256_path(path):
+        hashing_thread_ids.append(threading.get_ident())
         time.sleep(0.15)
         return original_sha256_path(path)
 
@@ -1078,7 +1081,6 @@ async def test_upload_final_hash_does_not_block_event_loop(
     monkeypatch.setattr(fleet, "get_settings", lambda: settings)
     monkeypatch.setattr(fleet, "sha256_path", slow_sha256_path)
 
-    started = time.perf_counter()
     task = asyncio.create_task(
         fleet.upload_chunk(
             transfer.id,
@@ -1089,11 +1091,13 @@ async def test_upload_final_hash_does_not_block_event_loop(
             db=FakeDatabase(),
         )
     )
-    await asyncio.sleep(0.02)
-    responsiveness = time.perf_counter() - started
     result = await task
 
-    assert responsiveness < 0.08
+    # A loaded shared Windows Runner can delay asyncio.sleep by >80 ms without
+    # the product ever blocking the loop. Verify the security/performance
+    # invariant directly: final whole-file hashing ran on a worker thread.
+    assert hashing_thread_ids
+    assert all(thread_id != event_loop_thread_id for thread_id in hashing_thread_ids)
     assert result["status"] == "transferring"
 
 

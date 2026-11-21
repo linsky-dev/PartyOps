@@ -9,6 +9,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
+from fastapi import Request
 from sqlalchemy import select
 
 from app.backups import (
@@ -19,19 +20,33 @@ from app.backups import (
 )
 from app.config import get_settings
 from app.database import db_runtime
-from app.models import BackupRun, EventOutbox, User
+from app.models import BackupRun, EventOutbox, LoginSession, User, utcnow
 from app.problems import ProblemException
 from app.routers.events import event_stream
+from app.security import SESSION_COOKIE, issue_session
+
+
+def sse_request(token: str, scheme: str = "cookie") -> Request:
+    headers = [
+        (b"cookie", f"{SESSION_COOKIE}={token}".encode("ascii"))
+        if scheme == "cookie" else (b"authorization", f"Bearer {token}".encode("ascii"))
+    ]
+    return Request({"type": "http", "method": "GET", "headers": headers})
 
 
 @pytest.mark.asyncio
-async def test_sse_replays_event_and_heartbeat(client, admin, monkeypatch) -> None:
-    with db_runtime.session_factory() as db:
+async def test_sse_replays_event_and_heartbeat(admin, monkeypatch) -> None:
+    with db_runtime.session_factory.begin() as db:
         user = db.get(User, admin["id"])
-        highest = db.scalar(select(EventOutbox.id).order_by(EventOutbox.id.desc()))
-    response = await event_stream("0", user)
+        token, _, _ = issue_session(db, user)
+        fixture = EventOutbox(event_type="test.changed", payload={"test": "合成数据"})
+        db.add(fixture)
+        db.flush()
+        event_id = fixture.id
+    request = sse_request(token)
+    response = await event_stream(request, str(event_id - 1), user)
     event = await anext(response.body_iterator)
-    assert event["id"]
+    assert event["id"] == str(event_id)
     assert json.loads(event["data"]) == {}
     await response.body_iterator.aclose()
 
@@ -39,10 +54,31 @@ async def test_sse_replays_event_and_heartbeat(client, admin, monkeypatch) -> No
         return None
 
     monkeypatch.setattr(asyncio, "sleep", no_sleep)
-    heartbeat_response = await event_stream(str((highest or 0) + 10000), user)
+    heartbeat_response = await event_stream(request, str(event_id + 10000), user)
     heartbeat = await anext(heartbeat_response.body_iterator)
     assert heartbeat["event"] == "heartbeat"
     await heartbeat_response.body_iterator.aclose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("scheme", ["cookie", "bearer"])
+async def test_sse_closes_active_stream_after_session_revocation(admin, monkeypatch, scheme) -> None:
+    with db_runtime.session_factory.begin() as db:
+        user = db.get(User, admin["id"])
+        token, _, session = issue_session(db, user)
+        session_id = session.id
+
+    async def no_sleep(_seconds: float) -> None:
+        return None
+
+    monkeypatch.setattr(asyncio, "sleep", no_sleep)
+    response = await event_stream(sse_request(token, scheme), "1000000000", user)
+    iterator = response.body_iterator
+    assert (await anext(iterator))["event"] == "heartbeat"
+    with db_runtime.session_factory.begin() as db:
+        db.get(LoginSession, session_id).revoked_at = utcnow()
+    with pytest.raises(StopAsyncIteration):
+        await anext(iterator)
 
 
 def test_backup_safe_members_and_manifest_errors(tmp_path: Path) -> None:

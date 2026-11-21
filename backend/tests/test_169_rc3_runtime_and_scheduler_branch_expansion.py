@@ -12,7 +12,8 @@ import numpy as np
 import pytest
 
 from app import local_ai, scheduler
-from app.models import Notification
+from app.enums import UserRole, WorkspaceRootSource
+from app.models import Notification, User, WorkspaceRoot
 from app.problems import ProblemException
 
 
@@ -231,7 +232,10 @@ def test_automation_empty_suggestions_and_scheduler_backup_skip(monkeypatch) -> 
         relative_path="年度/报告.pdf",
         extension="pdf",
         version=1,
+        root_id="root-1",
     )
+    owner = SimpleNamespace(id=rule.owner_id, active=True, role=UserRole.STAFF)
+    root = SimpleNamespace(id=file.root_id, enabled=True, source=WorkspaceRootSource.HOST)
 
     class RuleDb:
         def __init__(self):
@@ -243,6 +247,9 @@ def test_automation_empty_suggestions_and_scheduler_backup_skip(monkeypatch) -> 
 
         def scalar(self, _statement):
             return None
+
+        def get(self, model, key):
+            return {(User, owner.id): owner, (WorkspaceRoot, root.id): root}.get((model, key))
 
         def add(self, value):
             self.added.append(value)

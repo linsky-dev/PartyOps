@@ -1,21 +1,24 @@
 param(
   [Parameter(Mandatory = $true)]
   [ValidateSet('windows_amd64','windows7_amd64','windows7_x86')]
-  [string]$Package
+  [string]$Package,
+  [string]$BuildKit = $env:PARTYOPS_BUILD_KIT,
+  [string]$BuildDirectory = $env:PARTYOPS_COMPAT_BUILD_DIR,
+  [string]$InnoCompiler
 )
 
-# 复用已核验的本机构建环境；所有新增缓存和中间文件留在 D/E 盘。
+# 兼容构建工具与缓存使用检出目录或显式配置的路径。
 $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..\..')).Path
-$projectRoot = Split-Path -Parent $repoRoot
-$buildKit = Join-Path $projectRoot '.build-kit'
-$temporaryRoot = Join-Path $projectRoot '.partyops-vm-lab\builds\windows-local\tmp'
+if (!$BuildKit) { $BuildKit = Join-Path $repoRoot '.build-kit' }
+if (!$BuildDirectory) { $BuildDirectory = Join-Path $repoRoot '.partyops-vm-lab\builds\windows-local' }
+$temporaryRoot = Join-Path $BuildDirectory 'tmp'
 New-Item -ItemType Directory -Path $temporaryRoot -Force | Out-Null
 $env:TEMP = $temporaryRoot
 $env:TMP = $temporaryRoot
-$env:PIP_CACHE_DIR = Join-Path $projectRoot '.partyops-vm-lab\builds\windows-local\pip-cache'
+$env:PIP_CACHE_DIR = Join-Path $BuildDirectory 'pip-cache'
 $env:PYTHONUTF8 = '1'
-$innoCompiler = Join-Path $env:LOCALAPPDATA 'Programs\Inno Setup 6\ISCC.exe'
+if (!$InnoCompiler) { $InnoCompiler = Join-Path $env:LOCALAPPDATA 'Programs\Inno Setup 6\ISCC.exe' }
 if (-not (Test-Path -LiteralPath $innoCompiler)) { throw '本机已登记的 Inno Setup 6 不存在。' }
 Push-Location $repoRoot
 try {

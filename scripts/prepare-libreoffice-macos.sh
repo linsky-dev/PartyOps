@@ -5,9 +5,10 @@ umask 077
 # 从 The Document Foundation 官方、固定哈希的 DMG 中提取原生 macOS
 # LibreOffice 闭包。PartyOps 只调用无界面的 Writer 转换入口，不依赖用户
 # 另行安装 LibreOffice，也不引用 Homebrew 或 Runner 私有路径。
-VERSION='26.2.5.2'
+VERSION='26.8.3.1'
 ARCHITECTURE=''
 OUTPUT_ROOT=''
+SOURCE_MANIFEST=''
 while (($#)); do
   case "$1" in
     --architecture)
@@ -16,6 +17,10 @@ while (($#)); do
       ;;
     --output-root)
       OUTPUT_ROOT="${2:-}"
+      shift 2
+      ;;
+    --verify-source)
+      SOURCE_MANIFEST="${2:-}"
       shift 2
       ;;
     *)
@@ -29,19 +34,20 @@ done
   printf '%s\n' '[MACOS_OFFICE_NATIVE_REQUIRED] LibreOffice 运行时必须在真实 macOS 上准备。' >&2
   exit 2
 }
-[[ -n "$OUTPUT_ROOT" ]] || {
-  printf '%s\n' '用法：prepare-libreoffice-macos.sh --architecture arm64|x86_64 --output-root DIR' >&2
+if [[ -z "$SOURCE_MANIFEST" && -z "$OUTPUT_ROOT" ]] ||
+  [[ -n "$SOURCE_MANIFEST" && -n "$OUTPUT_ROOT" ]]; then
+  printf '%s\n' '用法：prepare-libreoffice-macos.sh --architecture arm64|x86_64 (--output-root DIR | --verify-source SOURCE.json)' >&2
   exit 2
-}
+fi
 case "$ARCHITECTURE" in
   arm64)
     ARCHIVE="LibreOffice_${VERSION}_MacOS_aarch64.dmg"
-    EXPECTED_SHA256='c99fb4fe574437fc4cb820a4ca15271bca325920861f7139858b36d7f9df78ad'
+    EXPECTED_SHA256='de943203795e5057785f65515063e2db5eb60b0bb6d8e2534fec59e5cc5fb988'
     ARCHIVE_DIRECTORY='aarch64'
     ;;
   x86_64)
     ARCHIVE="LibreOffice_${VERSION}_MacOS_x86-64.dmg"
-    EXPECTED_SHA256='e26180298685274b54aa7fe6e1101c65465a372f457a6748ebd642720811db36'
+    EXPECTED_SHA256='bb3c35d628780510915ad9e759d7ed898094d7985d01b2181bd1d4ecd94fd159'
     ARCHIVE_DIRECTORY='x86_64'
     ;;
   *)
@@ -55,11 +61,52 @@ esac
   exit 2
 }
 
+URL="https://downloadarchive.documentfoundation.org/libreoffice/old/${VERSION}/mac/${ARCHIVE_DIRECTORY}/${ARCHIVE}"
+verify_source() {
+  python3.11 - "$1" "$URL" "$EXPECTED_SHA256" "$VERSION" "$ARCHITECTURE" <<'VERIFY_SOURCE'
+import json
+import plistlib
+import sys
+from pathlib import Path
+
+path, url, sha256, version, architecture = sys.argv[1:]
+expected = {
+    "upstream": url,
+    "archive_sha256": sha256,
+    "version": version,
+    "architecture": architecture,
+    "platform": "macos",
+    "minimum_macos": "11.0",
+}
+try:
+    source = json.loads(Path(path).read_text(encoding="utf-8"))
+except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+    raise SystemExit(f"[MACOS_OFFICE_SOURCE_INVALID] 无法读取来源清单：{exc}") from exc
+if not isinstance(source, dict):
+    raise SystemExit("[MACOS_OFFICE_SOURCE_INVALID] 需要 JSON 对象。")
+for key, value in expected.items():
+    if source.get(key) != value:
+        raise SystemExit(f"[MACOS_OFFICE_SOURCE_MISMATCH] 来源清单字段 {key} 与锁定输入不一致。")
+
+bundle_info = Path(path).parent / "LibreOffice.app" / "Contents" / "Info.plist"
+try:
+    bundle = plistlib.loads(bundle_info.read_bytes())
+except (OSError, plistlib.InvalidFileException) as exc:
+    raise SystemExit(f"[MACOS_OFFICE_SOURCE_INVALID] 无法读取 LibreOffice.app 版本：{exc}") from exc
+if not isinstance(bundle, dict) or bundle.get("CFBundleShortVersionString") != version:
+    raise SystemExit("[MACOS_OFFICE_BUNDLE_VERSION_MISMATCH] LibreOffice.app 版本与锁定输入不一致。")
+VERIFY_SOURCE
+}
+if [[ -n "$SOURCE_MANIFEST" ]]; then
+  # 打包复用此处的上游锁，核验调用方提供的运行时来源与 App 版本。
+  verify_source "$SOURCE_MANIFEST"
+  exit
+fi
+
 OUTPUT_ROOT="$(mkdir -p "$OUTPUT_ROOT" && cd "$OUTPUT_ROOT" && pwd -P)"
 OUTPUT="$OUTPUT_ROOT/office-$ARCHITECTURE"
 DOWNLOADS="$OUTPUT_ROOT/downloads"
 DOWNLOAD="$DOWNLOADS/$ARCHIVE"
-URL="https://downloadarchive.documentfoundation.org/libreoffice/old/${VERSION}/mac/${ARCHIVE_DIRECTORY}/${ARCHIVE}"
 if [[ -e "$OUTPUT" ]]; then
   printf '[MACOS_OFFICE_OUTPUT_EXISTS] 拒绝覆盖运行时：%s\n' "$OUTPUT" >&2
   exit 2
@@ -173,10 +220,10 @@ path.write_text(
     encoding="utf-8",
 )
 PY
+verify_source "$RUNTIME/SOURCE.json"
 
-# 此处只冻结来源、架构、许可和上游签名证据。真实 ``--headless --version``
-# 由最终 PartyOps.app 完成逐个 Mach-O 统一签名后，在 package-self-test、
-# 全新安装和覆盖升级三条路径中执行，避免把合法闭包误判为构建失败。
+# 准备阶段保留上游签名。独立启动冒烟在原始签名边界内执行；
+# PartyOps 随包验收须在最终 App 完成签名后执行。
 hdiutil detach "$MOUNT" -quiet
 MOUNTED=0
 /bin/mv "$RUNTIME" "$OUTPUT"

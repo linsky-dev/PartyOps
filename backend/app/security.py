@@ -24,6 +24,21 @@ CSRF_COOKIE = "partyops_csrf"
 CSRF_HEADER = "X-PartyOps-CSRF"
 
 
+def session_token(request: Request, *, allow_bearer: bool = True) -> str | None:
+    """一次请求只允许一种应用会话，避免混用时错选身份。"""
+    cookie = request.cookies.get(SESSION_COOKIE)
+    scheme, _, value = request.headers.get("Authorization", "").strip().partition(" ")
+    if cookie and scheme.lower() == "bearer":
+        raise ProblemException(
+            400, "AUTH_SCHEME_CONFLICT", "认证方式冲突", "请使用单一登录会话提交请求。"
+        )
+    if cookie:
+        return cookie
+    if allow_bearer and scheme.lower() == "bearer":
+        return value.strip() or None
+    return None
+
+
 def hash_password(password: str) -> str:
     return password_hasher.hash(password)
 
@@ -59,7 +74,8 @@ def validate_session_csrf(request: Request, record: LoginSession) -> None:
 
     if request.method.upper() in {"GET", "HEAD", "OPTIONS"}:
         return
-    if request.headers.get("authorization", "").lower().startswith("bearer "):
+    if (not request.cookies.get(SESSION_COOKIE)
+            and request.headers.get("Authorization", "").strip().lower().startswith("bearer ")):
         return
     expected_hash = (record.csrf_token_hash or "").strip()
     if not expected_hash:
@@ -89,15 +105,12 @@ def _ensure_aware(value: datetime) -> datetime:
 def get_current_user(
     request: Request, db: Session = Depends(get_session)
 ) -> User:
-    token = request.cookies.get(SESSION_COOKIE)
-    if not token:
-        authorization = request.headers.get("authorization", "")
-        if authorization.lower().startswith("bearer "):
-            token = authorization[7:].strip()
+    token = session_token(request)
     if not token:
         raise ProblemException(401, "AUTH_REQUIRED", "需要登录", "请先登录系统。")
     record = db.scalar(
         select(LoginSession).where(LoginSession.token_hash == hash_token(token))
+        .execution_options(populate_existing=True)
     )
     if not record or record.revoked_at is not None:
         raise ProblemException(401, "SESSION_INVALID", "登录已失效", "请重新登录。")
@@ -105,7 +118,7 @@ def get_current_user(
         raise ProblemException(401, "SESSION_EXPIRED", "登录已过期", "请重新登录。")
     if get_settings().environment == "production":
         validate_session_csrf(request, record)
-    user = db.get(User, record.user_id)
+    user = db.get(User, record.user_id, populate_existing=True)
     if not user or not user.active:
         raise ProblemException(403, "USER_DISABLED", "账号不可用", "请联系管理员。")
     record.last_seen_at = utcnow()
@@ -116,7 +129,7 @@ def get_current_user_optional(
     request: Request, db: Session = Depends(get_session)
 ) -> User | None:
     """返回当前有效用户；无会话时不报错，供支持令牌认证的混合端点使用。"""
-    token = request.cookies.get(SESSION_COOKIE)
+    token = session_token(request, allow_bearer=False)
     if not token:
         return None
     record = db.scalar(

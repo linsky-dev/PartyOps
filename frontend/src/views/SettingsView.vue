@@ -148,6 +148,9 @@ const logs = ref("");
 const loadingBackup = ref(false);
 const userVisible = ref(false);
 const userEditVisible = ref(false);
+const recoveryUser = ref<User | null>(null);
+const issuedRecovery = ref<{ credential: string; expires_at: string } | null>(null);
+const recoveryBusy = ref(false);
 const userDeleteVisible = ref(false);
 const deletingUser = ref<User | null>(null);
 const deletionImpact = ref<UserDeletionImpact | null>(null);
@@ -228,7 +231,7 @@ const MAX_POLL_FAILURES = 8;
 const MAX_MISSING_POLLS = 8;
 const userForm = reactive({ username: "", display_name: "", password: "", role: "staff" });
 const editingUser = ref<User | null>(null);
-const editUserForm = reactive({ display_name: "", role: "staff", active: true, password: "" });
+const editUserForm = reactive({ display_name: "", role: "staff", active: true });
 const networkForm = reactive({ bind_host: "", advertise_host: "", port: 18765, migration_grace_hours: 24 });
 const pairingForm = reactive({ name: "协同终端" });
 const importInput = ref<HTMLInputElement | null>(null);
@@ -942,7 +945,6 @@ function openUserEdit(user: User) {
     display_name: user.display_name,
     role: user.role,
     active: user.active,
-    password: "",
   });
   userEditVisible.value = true;
 }
@@ -959,16 +961,37 @@ async function saveUserEdit() {
       },
       { "If-Match": String(editingUser.value.version) },
     );
-    if (editUserForm.password) {
-      await api.post(`/admin/users/${editingUser.value.id}/reset-password`, {
-        password: editUserForm.password,
-      });
-    }
     userEditVisible.value = false;
     Message.success("用户权限已更新");
     await load();
   } catch (error) {
     Message.error(error instanceof Error ? error.message : "用户更新失败");
+  }
+}
+
+function closeUserRecovery() {
+  if (recoveryBusy.value) return;
+  recoveryUser.value = null;
+  issuedRecovery.value = null;
+}
+
+async function manageUserRecovery(action: "issue" | "revoke") {
+  const member = recoveryUser.value;
+  if (!member || recoveryBusy.value) return;
+  issuedRecovery.value = null;
+  recoveryBusy.value = true;
+  try {
+    const path = `/admin/users/${member.id}/recovery`;
+    if (action === "issue") {
+      issuedRecovery.value = await api.post<{ credential: string; expires_at: string }>(path);
+    } else {
+      await api.delete(path);
+      Message.success("该账号的恢复凭据已撤销。");
+    }
+  } catch (error) {
+    Message.error(error instanceof Error ? error.message : "恢复凭据操作失败");
+  } finally {
+    recoveryBusy.value = false;
   }
 }
 
@@ -1738,7 +1761,7 @@ onBeforeUnmount(() => {
             <a-table-column title="用户名" data-index="username" />
             <a-table-column title="角色"><template #cell="{ record }">{{ record.role === "admin" ? "管理员" : "协同人员" }}</template></a-table-column>
             <a-table-column title="状态"><template #cell="{ record }">{{ record.archived_at ? "已归档" : record.active ? "启用" : "停用" }}</template></a-table-column>
-            <a-table-column title="操作" :width="260"><template #cell="{ record }"><a-space><a-button v-if="!record.archived_at" size="mini" type="text" @click="openUserEdit(record)">编辑角色与权限</a-button><a-button v-if="record.archived_at" size="mini" type="text" @click="restoreUser(record)">恢复</a-button><a-button v-else-if="record.id !== session.user?.id" size="mini" type="text" status="danger" @click="openUserDelete(record)">删除/归档</a-button></a-space></template></a-table-column>
+            <a-table-column title="操作" :width="300"><template #cell="{ record }"><a-space wrap><a-button v-if="!record.archived_at" size="mini" type="text" @click="openUserEdit(record)">编辑角色与权限</a-button><a-button v-if="record.role === 'staff' && record.active && !record.archived_at" size="mini" type="text" @click="recoveryUser = record">签发或撤销恢复凭据</a-button><a-button v-if="record.archived_at" size="mini" type="text" @click="restoreUser(record)">恢复</a-button><a-button v-else-if="record.id !== session.user?.id" size="mini" type="text" status="danger" @click="openUserDelete(record)">删除/归档</a-button></a-space></template></a-table-column>
           </template>
         </a-table>
       </a-tab-pane>
@@ -1820,15 +1843,25 @@ onBeforeUnmount(() => {
       <a-form-item label="移除原因" required><a-textarea v-model="backupDeleteReason" /></a-form-item>
     </a-modal>
 
-    <a-modal v-model:visible="userEditVisible" title="用户权限与密码" @ok="saveUserEdit">
+    <a-modal v-model:visible="userEditVisible" title="用户权限" @ok="saveUserEdit">
       <a-form :model="editUserForm" layout="vertical">
         <a-form-item label="姓名"><a-input v-model="editUserForm.display_name" /></a-form-item>
         <a-form-item label="角色"><a-select v-model="editUserForm.role"><a-option value="staff">协同人员</a-option><a-option value="admin">管理员</a-option></a-select></a-form-item>
         <a-form-item label="账号启用"><a-switch v-model="editUserForm.active" /></a-form-item>
-        <a-form-item label="重置密码（不修改请留空）">
-          <a-input-password v-model="editUserForm.password" autocomplete="new-password" />
-        </a-form-item>
       </a-form>
+    </a-modal>
+
+    <a-modal :visible="Boolean(recoveryUser)" title="用户恢复凭据" :footer="false" :mask-closable="false" @cancel="closeUserRecovery">
+      <p>请先核验 {{ recoveryUser?.display_name }} 的身份。重新签发会使旧凭据失效。</p>
+      <div v-if="issuedRecovery" class="user-recovery-code" role="status">
+        <p>仅在此处显示。请当面或通过可信渠道交付。到期时间 {{ formatServerTime(issuedRecovery.expires_at, "YYYY-MM-DD HH:mm") }}。</p>
+        <code>{{ issuedRecovery.credential }}</code>
+      </div>
+      <a-space wrap>
+        <a-button type="primary" :loading="recoveryBusy" @click="manageUserRecovery('issue')">确认已核验并签发</a-button>
+        <a-button status="danger" :disabled="recoveryBusy" @click="manageUserRecovery('revoke')">撤销凭据</a-button>
+        <a-button :disabled="recoveryBusy" @click="closeUserRecovery">关闭</a-button>
+      </a-space>
     </a-modal>
 
     <a-modal v-model:visible="userDeleteVisible" title="归档用户并移交责任" @ok="archiveUser">
@@ -1859,6 +1892,8 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+.user-recovery-code { margin: 12px 0; padding: 12px; border: 1px solid var(--line); background: var(--paper); }
+.user-recovery-code code { display: block; overflow-wrap: anywhere; user-select: all; }
 .diagnostic-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);

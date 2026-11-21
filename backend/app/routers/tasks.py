@@ -631,6 +631,7 @@ def add_comment(
             entity_type="task",
             entity_id=task.id,
             dedupe_key=f"comment:{comment.id}:{recipient_id}",
+            child_id=comment.id,
         )
     write_audit(db, user, "comment.create", "comment", comment.id, {"task_id": task.id}, client_ip(request))
     emit_event(db, "comment.created", task.id, {"comment_id": comment.id, "mentioned_user_ids": mentioned_ids})

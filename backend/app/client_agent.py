@@ -42,7 +42,7 @@ from .platform_info import detect_platform_info
 from .schemas import serialize_api_datetime
 from .time_utils import beijing_iso
 
-AGENT_VERSION = "1.4.5-rc.6"
+AGENT_VERSION = "1.4.6-rc.1"
 AGENT_PROTOCOL_VERSION = 2
 AUTHENTICATION_EXIT_CODE = 4
 _ACTIVE_SSL_CONTEXT = None
@@ -409,6 +409,10 @@ def configure_ssl_context(config: dict[str, object]) -> None:
     """为 HTTPS 主机和独立 mTLS Agent 通道加载随设备保存的证书。"""
 
     global _ACTIVE_SSL_CONTEXT
+    _ACTIVE_SSL_CONTEXT = _create_ssl_context(config)
+
+
+def _create_ssl_context(config: dict[str, object]) -> ssl.SSLContext | None:
     ca_value = str(config.get("ca_file", "")).strip()
     cert_value = str(config.get("certificate_file", "")).strip()
     key_value = str(config.get("key_file", "")).strip()
@@ -416,12 +420,11 @@ def configure_ssl_context(config: dict[str, object]) -> None:
     cert_file = Path(cert_value).expanduser() if cert_value else Path()
     key_file = Path(key_value).expanduser() if key_value else Path()
     if not ca_value or not ca_file.is_file():
-        _ACTIVE_SSL_CONTEXT = None
-        return
+        return None
     context = ssl.create_default_context(cafile=str(ca_file))
     if cert_value and key_value and cert_file.is_file() and key_file.is_file():
         context.load_cert_chain(str(cert_file), str(key_file))
-    _ACTIVE_SSL_CONTEXT = context
+    return context
 
 
 def device_metadata() -> dict[str, object]:
@@ -894,14 +897,16 @@ def refresh_shared_root_statuses(
 
 
 def _save_config(path: Path, config: Mapping[str, object]) -> None:
-    temporary = path.with_suffix(path.suffix + ".tmp")
-    temporary.write_text(
-        json.dumps(config, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
-    if os.name != "nt":
-        temporary.chmod(0o600)
-    temporary.replace(path)
+    descriptor, name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
+    temporary = Path(name)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as output:
+            json.dump(config, output, ensure_ascii=False, indent=2)
+            output.flush()
+            os.fsync(output.fileno())
+        temporary.replace(path)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 def _safe_shared_roots(config: dict[str, object]) -> list[dict[str, object]]:
@@ -1269,8 +1274,9 @@ def rotate_device_certificate(
     config: dict[str, object],
     config_path: Path,
 ) -> dict[str, object]:
-    """生成新密钥并通过旧证书完成一次性证书轮换。"""
+    """用旧证书获取候选，成套写入后再原子切换配置。"""
 
+    global _ACTIVE_SSL_CONTEXT
     device_id = str(config.get("device_id", "")).strip()
     if not device_id:
         raise AgentCommandError("DEVICE_ID_MISSING", "设备配置缺少编号")
@@ -1287,37 +1293,45 @@ def rotate_device_certificate(
         method="POST",
         timeout=30,
     )
-    if not isinstance(result, dict) or not result.get("certificate_pem"):
+    if not isinstance(result, dict) or not result.get("certificate_pem") or not result.get("ca_certificate_pem"):
         raise AgentCommandError("CERTIFICATE_ROTATION_FAILED", "主机未返回新设备证书")
     pki_dir = config_path.parent / "pki"
-    _save_config(config_path, config)
-    pki_dir.mkdir(parents=True, exist_ok=True)
-    key_path = pki_dir / "device.key"
-    cert_path = pki_dir / "device.pem"
-    ca_path = pki_dir / "ca.pem"
-    key_path.write_bytes(
-        private_key.private_bytes(
+    pki_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+    staged = Path(tempfile.mkdtemp(prefix="rotation-", dir=pki_dir))
+    key_path = staged / "device.key"
+    cert_path = staged / "device.pem"
+    ca_path = staged / "ca.pem"
+    contents = (
+        (key_path, private_key.private_bytes(
             serialization.Encoding.PEM,
             serialization.PrivateFormat.PKCS8,
             serialization.NoEncryption(),
-        )
+        )),
+        (cert_path, str(result["certificate_pem"]).encode("utf-8")),
+        (ca_path, str(result["ca_certificate_pem"]).encode("utf-8")),
     )
-    cert_path.write_text(str(result["certificate_pem"]), encoding="utf-8")
-    ca_path.write_text(str(result["ca_certificate_pem"]), encoding="utf-8")
-    if os.name != "nt":
-        key_path.chmod(0o600)
-        cert_path.chmod(0o600)
-        ca_path.chmod(0o644)
-    config.update(
-        {
-            "agent_url": str(result.get("agent_url", config.get("agent_url", ""))),
-            "key_file": str(key_path.resolve()),
-            "certificate_file": str(cert_path.resolve()),
-            "ca_file": str(ca_path.resolve()),
-        }
-    )
-    _save_config(config_path, config)
-    configure_ssl_context(config)
+    next_config = {
+        **config,
+        "agent_url": str(result.get("agent_url", config.get("agent_url", ""))),
+        "key_file": str(key_path.resolve()),
+        "certificate_file": str(cert_path.resolve()),
+        "ca_file": str(ca_path.resolve()),
+    }
+    try:
+        for path, content in contents:
+            with path.open("xb") as stream:
+                if os.name != "nt":
+                    path.chmod(0o600)
+                stream.write(content)
+                stream.flush()
+                os.fsync(stream.fileno())
+        context = _create_ssl_context(next_config)
+        _save_config(config_path, next_config)
+    except (OSError, ValueError, KeyError):
+        shutil.rmtree(staged, ignore_errors=True)
+        raise
+    config.update(next_config)
+    _ACTIVE_SSL_CONTEXT = context
     return {"ok": True, "message": "设备证书已轮换"}
 
 

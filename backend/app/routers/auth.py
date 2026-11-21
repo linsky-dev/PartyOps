@@ -11,6 +11,22 @@ from fastapi import APIRouter, Depends, Request, Response
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from ..account_recovery import (
+    NO_STORE,
+    CurrentPassword,
+    IssuedCredential,
+    RecoveredUsername,
+    RedeemCredential,
+    UpdateCredentials,
+    apply_credential_changes,
+    credential_transaction,
+    ensure_authoritative_host,
+    issue_credential,
+    recovery_error,
+    redeem_credential,
+    revoke_recovery_credentials,
+    verify_current_password,
+)
 from ..audit import write_audit
 from ..config import get_settings
 from ..database import db_runtime, get_session
@@ -33,6 +49,8 @@ from ..security import (
     hash_password,
     hash_token,
     issue_session,
+    require_admin,
+    session_token,
     verify_password,
 )
 from ..seed import seed_demo_data, seed_templates
@@ -198,35 +216,30 @@ def login(
             extra={"retry_after_seconds": retry_after},
             headers={"Retry-After": str(retry_after)},
         )
-    user = db.scalar(select(User).where(User.username == payload.username.lower()))
-    if not user or not user.active or not verify_password(payload.password, user.password_hash):
-        retry_after = login_throttle.record_failure(
-            payload.username,
-            address,
-            settings=settings,
-        )
-        if retry_after:
-            raise ProblemException(
-                429,
-                "LOGIN_THROTTLED",
-                "登录尝试过于频繁",
-                f"请等待约 {retry_after} 秒后再试。",
-                extra={"retry_after_seconds": retry_after},
-                headers={"Retry-After": str(retry_after)},
+    # 与凭据修改共用写临界区，旧密码验证不能在撤销后签出新会话。
+    with credential_transaction(db):
+        user = db.scalar(select(User).where(User.username == payload.username.lower()))
+        if not user or not user.active or not verify_password(payload.password, user.password_hash):
+            retry_after = login_throttle.record_failure(
+                payload.username,
+                address,
+                settings=settings,
             )
-        raise ProblemException(401, "LOGIN_FAILED", "登录失败", "用户名或密码不正确。")
-    login_throttle.record_success(payload.username)
-    token, csrf_token, session = issue_session(db, user)
-    write_audit(
-        db,
-        user,
-        "auth.login",
-        "session",
-        session.id,
-        {},
-        client_ip(request),
-    )
-    db.commit()
+            if retry_after:
+                raise ProblemException(
+                    429,
+                    "LOGIN_THROTTLED",
+                    "登录尝试过于频繁",
+                    f"请等待约 {retry_after} 秒后再试。",
+                    extra={"retry_after_seconds": retry_after},
+                    headers={"Retry-After": str(retry_after)},
+                )
+            raise ProblemException(401, "LOGIN_FAILED", "登录失败", "用户名或密码不正确。")
+        login_throttle.record_success(payload.username)
+        token, csrf_token, session = issue_session(db, user)
+        write_audit(
+            db, user, "auth.login", "session", session.id, {}, address,
+        )
     response.set_cookie(
         SESSION_COOKIE,
         token,
@@ -255,7 +268,7 @@ def logout(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_session),
 ) -> Response:
-    token = request.cookies.get(SESSION_COOKIE)
+    token = session_token(request)
     if token:
         session = db.scalar(
             select(LoginSession).where(LoginSession.token_hash == hash_token(token))
@@ -266,10 +279,111 @@ def logout(
                 db, user, "auth.logout", "session", session.id, {}, client_ip(request)
             )
             db.commit()
-    response.delete_cookie(SESSION_COOKIE, path="/")
-    response.delete_cookie(CSRF_COOKIE, path="/")
+    clear_login_cookies(response)
     response.status_code = 204
     return response
+
+
+def clear_login_cookies(response: Response) -> None:
+    response.delete_cookie(SESSION_COOKIE, path="/")
+    response.delete_cookie(CSRF_COOKIE, path="/")
+
+
+@router.patch("/auth/credentials", response_model=UserOut)
+def change_credentials(
+    payload: UpdateCredentials,
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_session),
+) -> User:
+    ensure_authoritative_host()
+    with credential_transaction(db):
+        user = get_current_user(request, db)
+        address = client_ip(request)
+        verify_current_password(db, user, payload.current_password, address)
+        apply_credential_changes(
+            db, user, payload, actor=user, address=address, action="auth.credentials_changed"
+        )
+    clear_login_cookies(response)
+    response.headers.update(NO_STORE)
+    return user
+
+
+@router.post("/auth/recovery/redeem", response_model=RecoveredUsername)
+def recover_account(
+    payload: RedeemCredential,
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_session),
+) -> RecoveredUsername:
+    ensure_authoritative_host()
+    with credential_transaction(db):
+        user = redeem_credential(db, payload, client_ip(request))
+    # 无论仅找回用户名还是修改登录信息，都不能继续使用旧浏览器会话。
+    clear_login_cookies(response)
+    response.headers.update(NO_STORE)
+    return RecoveredUsername(username=user.username)
+
+
+@router.post("/admin/users/{user_id}/recovery", response_model=IssuedCredential, status_code=201)
+def issue_user_recovery(
+    user_id: str, request: Request, response: Response, db: Session = Depends(get_session)
+) -> IssuedCredential:
+    ensure_authoritative_host()
+    with credential_transaction(db):
+        admin = require_admin(get_current_user(request, db))
+        target = db.get(User, user_id)
+        if target is None:
+            raise recovery_error()
+        issued = issue_credential(db, target, "staff", admin, client_ip(request))
+    response.headers.update(NO_STORE)
+    return issued
+
+
+@router.delete("/admin/users/{user_id}/recovery", status_code=204)
+def revoke_user_recovery(
+    user_id: str, request: Request, db: Session = Depends(get_session)
+) -> Response:
+    ensure_authoritative_host()
+    with credential_transaction(db):
+        admin = require_admin(get_current_user(request, db))
+        target = db.get(User, user_id)
+        if target is None or target.role == UserRole.ADMIN:
+            raise recovery_error()
+        revoke_recovery_credentials(db, target.id, "staff")
+        write_audit(db, admin, "auth.recovery_revoke", "user", target.id,
+                    {"purpose": "staff"}, client_ip(request))
+    return Response(status_code=204, headers=NO_STORE)
+
+
+@router.post("/auth/recovery/offline", response_model=IssuedCredential, status_code=201)
+def issue_admin_offline_recovery(
+    payload: CurrentPassword, request: Request, response: Response,
+    db: Session = Depends(get_session),
+) -> IssuedCredential:
+    ensure_authoritative_host()
+    with credential_transaction(db):
+        admin = require_admin(get_current_user(request, db))
+        address = client_ip(request)
+        verify_current_password(db, admin, payload.current_password, address)
+        issued = issue_credential(db, admin, "admin_offline", admin, address)
+    response.headers.update(NO_STORE)
+    return issued
+
+
+@router.delete("/auth/recovery/offline", status_code=204)
+def revoke_admin_offline_recovery(
+    payload: CurrentPassword, request: Request, db: Session = Depends(get_session)
+) -> Response:
+    ensure_authoritative_host()
+    with credential_transaction(db):
+        admin = require_admin(get_current_user(request, db))
+        address = client_ip(request)
+        verify_current_password(db, admin, payload.current_password, address)
+        revoke_recovery_credentials(db, admin.id, "admin_offline")
+        write_audit(db, admin, "auth.recovery_revoke", "user", admin.id,
+                    {"purpose": "admin_offline"}, address)
+    return Response(status_code=204, headers=NO_STORE)
 
 
 @router.get("/auth/me", response_model=UserOut)

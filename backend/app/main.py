@@ -25,8 +25,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import func, select
+from starlette.concurrency import run_in_threadpool
 
 from . import __version__
+from .agent_tls import ClientCertificateH11Protocol, check_device_tls
 from .config import get_settings
 from .database import db_runtime, get_session
 from .device_versions import (
@@ -45,7 +47,7 @@ from .networking import (
     validate_bind_host,
     validate_transport_security,
 )
-from .problems import install_problem_handlers
+from .problems import ProblemException, install_problem_handlers, problem_response
 from .routers import (
     admin,
     ai,
@@ -69,6 +71,7 @@ from .routers import (
 )
 from .scheduler import scheduler_loop
 from .schemas import serialize_api_datetime
+from .security import SESSION_COOKIE
 from .seed import seed_templates
 from .startup_diagnostics import (
     DATABASE_SCHEMA_FAILED,
@@ -374,6 +377,9 @@ def _initialize_runtime() -> dict[str, object]:
     return capabilities
 
 
+_runtime_ready = threading.Event()
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     instance_lock = DataDirectoryInstanceLock(settings.data_dir)
@@ -415,8 +421,10 @@ async def lifespan(_app: FastAPI):
         instance_lock.release()
         raise
     try:
+        _runtime_ready.set()
         yield
     finally:
+        _runtime_ready.clear()
         assert stop_event is not None and scheduler is not None
         stop_event.set()
         try:
@@ -544,9 +552,31 @@ def _loopback_client(request: Request) -> bool:
         )
 
 
+def _authenticate_agent_transport(request: Request, token: str) -> None:
+    """在工作线程核对设备身份，数据库会话只在本次验证中使用。"""
+    with db_runtime.session_factory() as db:
+        check_device_tls(request, db, token)
+
+
 @app.middleware("http")
 async def trace_requests(request: Request, call_next):
     request.state.trace_id = normalize_trace_id(request.headers.get("X-Trace-Id"))
+    server = request.scope.get("server")
+    if (
+        settings.tls_enabled
+        and settings.agent_port != settings.port
+        and server
+        and server[1] == settings.agent_port
+        and not _runtime_ready.is_set()
+    ):
+        return _apply_security_headers(
+            problem_response(
+                request, ProblemException(
+                    503, "HOST_STARTING", "主机尚未就绪", "请稍后重试设备操作。"
+                )
+            ),
+            request,
+        )
     if not _host_allowed(request):
         return _apply_security_headers(
             JSONResponse(
@@ -563,8 +593,20 @@ async def trace_requests(request: Request, call_next):
             request,
         )
     authorization = request.headers.get("Authorization", "").strip().lower()
+    has_session_cookie = bool(request.cookies.get(SESSION_COOKIE))
+    bearer = authorization == "bearer" or authorization.startswith("bearer ")
+    if has_session_cookie and bearer:
+        return _apply_security_headers(
+            problem_response(
+                request, ProblemException(
+                    400, "AUTH_SCHEME_CONFLICT", "认证方式冲突", "请使用单一登录会话提交请求。"
+                )
+            ),
+            request,
+        )
+    browser_auth_write = request.url.path in {"/api/v1/auth/login", "/api/v1/auth/recovery/redeem"}
     non_browser_write = (
-        authorization.startswith("bearer ")
+        bearer
         or bool(request.headers.get("X-PartyOps-Device-Token"))
         # 首次入网由无会话的本机 Agent 发起。仅允许精确的入网端点携带
         # 一次性入网码头，路由仍会把请求头与正文做常量时间比对；不能把
@@ -585,7 +627,7 @@ async def trace_requests(request: Request, call_next):
     )
     if (
         request.method.upper() in {"POST", "PUT", "PATCH", "DELETE"}
-        and not non_browser_write
+        and (has_session_cookie or browser_auth_write or not non_browser_write)
         and not _origin_allowed(request)
     ):
         return _apply_security_headers(
@@ -604,25 +646,12 @@ async def trace_requests(request: Request, call_next):
         )
     # 设备令牌只允许走独立的双向 TLS Agent 端口；浏览器主端口即使在同一
     # 局域网内也不能用复制的令牌冒充终端。
-    if (
-        settings.environment == "production"
-        and request.headers.get("X-PartyOps-Device-Token")
-        and (not settings.tls_enabled or request.url.port != settings.agent_port)
-    ):
-        return _apply_security_headers(
-            JSONResponse(
-                status_code=403,
-                content={
-                    "type": "https://partyops.local/problems/AGENT_MTLS_REQUIRED",
-                    "title": "需要设备双向 TLS 通道",
-                    "detail": "终端接口必须通过 Agent 双向 TLS 安全端口访问。",
-                    "code": "AGENT_MTLS_REQUIRED",
-                    "trace_id": request.state.trace_id,
-                },
-                media_type="application/problem+json",
-            ),
-            request,
-        )
+    device_token = request.headers.get("X-PartyOps-Device-Token")
+    if settings.environment == "production" and device_token:
+        try:
+            await run_in_threadpool(_authenticate_agent_transport, request, device_token)
+        except ProblemException as exc:
+            return _apply_security_headers(problem_response(request, exc), request)
     if request.url.path.startswith("/api/v1/") and not request.url.path.startswith(
         (
             "/api/v1/health",
@@ -754,11 +783,12 @@ class _UvicornOptions(TypedDict, total=False):
     host: str
     port: int
     loop: Literal["asyncio"]
-    http: Literal["h11"]
+    http: Literal["h11"] | type[ClientCertificateH11Protocol]
     ws: Literal["none"]
     workers: int
     reload: bool
     access_log: bool
+    proxy_headers: bool
     timeout_graceful_shutdown: int
     ssl_certfile: str
     ssl_keyfile: str
@@ -788,6 +818,7 @@ def run() -> None:
         # 业务请求已经进入按日轮转的 partyops.log；关闭 Uvicorn 每请求
         # access log，避免个人模式的 launcher.log 随访问量无上限增长。
         "access_log": False,
+        "proxy_headers": False,
         # SSE、下载或旧浏览器连接不能无限阻塞软件升级。收到 SIGTERM 后
         # 最多等待 15 秒完成请求，随后由 Uvicorn 取消残留连接并执行 lifespan
         # 清理；安装器仍会在覆盖程序前复核进程身份和退出状态。
@@ -814,6 +845,7 @@ def run() -> None:
             agent_options: _UvicornOptions = {
                 **uvicorn_options,
                 "port": settings.agent_port,
+                "http": ClientCertificateH11Protocol,
                 "ssl_cert_reqs": 2,
                 # 主端口负责数据库、调度器和后台任务初始化；Agent 端口只复用
                 # 已初始化的 ASGI 应用，避免同一进程重复启动两个调度器。

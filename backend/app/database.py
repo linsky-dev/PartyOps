@@ -124,6 +124,7 @@ class DatabaseRuntime:
         engine = create_engine(
             f"sqlite:///{path.as_posix()}",
             connect_args={"check_same_thread": False, "timeout": 5},
+            hide_parameters=True,
             module=sqlite3_dbapi,
             future=True,
         )

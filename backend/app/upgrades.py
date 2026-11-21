@@ -189,6 +189,11 @@ def restore_database_from_upgrade_backup(path: Path) -> None:
             ) as destination_stream:
                 while chunk := source_stream.read(1024 * 1024):
                     destination_stream.write(chunk)
+        if (
+            extracted.stat().st_size != int(expected_database["size"])
+            or sha256_file(extracted) != str(expected_database["sha256"])
+        ):
+            raise RuntimeError("提取的数据库长度或哈希与已验证快照不一致")
         with closing(sqlite3_connect(extracted)) as restored:
             if restored.execute("PRAGMA quick_check").fetchone()[0] != "ok":
                 raise RuntimeError("升级前备份数据库完整性检查失败，拒绝覆盖当前数据")
@@ -198,23 +203,33 @@ def restore_database_from_upgrade_backup(path: Path) -> None:
             f"{beijing_now().strftime('%Y%m%d-%H%M%S-%f')}"
             f"{settings.database_path.suffix}"
         )
-        moved_companions: list[tuple[Path, Path]] = []
-        if settings.database_path.exists():
-            os.replace(settings.database_path, failed)
-        for suffix in ("-wal", "-shm"):
-            source = Path(f"{settings.database_path}{suffix}")
-            if source.exists():
-                destination = Path(f"{failed}{suffix}")
-                os.replace(source, destination)
-                moved_companions.append((source, destination))
+        moved_files: list[tuple[Path, Path]] = []
         try:
+            for suffix in ("", "-wal", "-shm"):
+                source = Path(f"{settings.database_path}{suffix}")
+                if source.exists():
+                    destination = Path(f"{failed}{suffix}")
+                    os.replace(source, destination)
+                    moved_files.append((source, destination))
             os.replace(extracted, settings.database_path)
-        except OSError:
-            if failed.exists() and not settings.database_path.exists():
-                os.replace(failed, settings.database_path)
-            for source, destination in moved_companions:
-                if destination.exists() and not source.exists():
+        except OSError as move_error:
+            # 主库和旁路文件属于同一次换入。任一移动失败都须恢复已移走的文件。
+            pending: list[str] = []
+            for source, destination in reversed(moved_files):
+                if not destination.exists() and source.exists():
+                    continue
+                if source.exists() or (source == settings.database_path and pending):
+                    pending.append(destination.name)
+                    continue
+                try:
                     os.replace(destination, source)
+                except OSError:
+                    pending.append(destination.name)
+            if pending:
+                names = "、".join(pending)
+                raise RuntimeError(
+                    f"升级回滚补偿未完成，请保持服务停止并核验本次保留的文件：{names}"
+                ) from move_error
             raise
         if settings.database_path.stat().st_size != int(expected_database["size"]):
             raise RuntimeError("恢复后的数据库长度与升级前快照不一致")
@@ -232,6 +247,18 @@ def sqlite3_connect(path: Path):
     from .database import sqlite3_dbapi
 
     return sqlite3_dbapi.connect(f"file:{path.as_posix()}?mode=ro", uri=True)
+
+
+def ensure_native_rollback_safe(database: Path) -> None:
+    """启用账号恢复后的数据库只允许原位修复，避免快照回退认证或业务状态。"""
+    if not database.is_file():
+        return
+    with closing(sqlite3_connect(database)) as connection:
+        recovery_enabled = connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='recovery_credentials'"
+        ).fetchone()
+    if recovery_enabled:
+        raise RuntimeError("账号恢复模式已启用。请保留数据库和备份并使用兼容版本前向修复。")
 
 
 def record_upgrade(

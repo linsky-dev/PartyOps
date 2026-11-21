@@ -13,7 +13,8 @@ from starlette.datastructures import Headers, UploadFile
 
 from app import archive_service, scheduler
 from app import official_format_service as format_service
-from app.enums import ArchiveRecordMode, UserRole
+from app.enums import ArchiveRecordMode, UserRole, WorkspaceRootSource
+from app.models import User, WorkspaceRoot
 from app.official_format import LocalDocument
 from app.official_format_service import (
     OfficialFormatLocalService,
@@ -443,10 +444,17 @@ def test_scheduler_notification_filters_and_dedupe_paths() -> None:
         SimpleNamespace(id="valid", name="年度报告.pdf", relative_path="年度/年度报告.pdf", extension="pdf", version=1),
     ]
     task = SimpleNamespace(id="task-1", title="完成归档", owner_id=None)
+    owner = SimpleNamespace(id="owner-1", active=True, role=UserRole.STAFF)
+    root = SimpleNamespace(id="root-1", enabled=True, source=WorkspaceRootSource.HOST)
+    for file in files:
+        file.root_id = root.id
 
     class RuleDb(_Db):
         def __init__(self):
-            super().__init__(scalars=[rules, files, [task]])
+            super().__init__(
+                gets={(User, owner.id): owner, (WorkspaceRoot, root.id): root},
+                scalars=[rules, files, [task]],
+            )
             self.scalar_calls = 0
 
         def scalar(self, _statement):
@@ -662,13 +670,13 @@ def test_party_development_timeline_covers_all_visual_states(monkeypatch) -> Non
             "version": 1,
         },
     ]
-    monkeypatch.setattr(development_routes, "_case_or_404", lambda *_args: SimpleNamespace())
+    monkeypatch.setattr(development_routes, "_case_or_404", lambda *_args: SimpleNamespace(id="case-1"))
     monkeypatch.setattr(
         development_routes,
         "_case_out",
         lambda *_args: {"milestones": milestones, "progress_events": progress},
     )
-    monkeypatch.setattr(development_routes, "utcnow", lambda: now)
+    monkeypatch.setattr(development_routes, "beijing_now", lambda: now)
     result = development_routes.get_case_timeline("case-1", SimpleNamespace(), _Db())
     states = {row["milestone_type"]: row["visual_state"] for row in result["timeline"]}
     assert states == {

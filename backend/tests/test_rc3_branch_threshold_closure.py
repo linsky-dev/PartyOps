@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import os
+import sqlite3
 import subprocess
 import sys
+from contextlib import closing
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -149,7 +151,8 @@ def test_restore_personal_database_owner_matrix(monkeypatch, tmp_path: Path) -> 
     )
 
     def restore(_backup: Path) -> None:
-        settings.database_path.write_bytes(b"db")
+        with closing(sqlite3.connect(settings.database_path)) as connection:
+            connection.execute("CREATE TABLE IF NOT EXISTS sample (id INTEGER PRIMARY KEY)")
 
     monkeypatch.setattr(
         update_executor, "restore_database_from_upgrade_backup", restore

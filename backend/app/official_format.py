@@ -23,7 +23,7 @@ from typing import Any, Iterable, cast
 
 from lxml import etree
 
-VERSION = "1.4.5-rc.6"
+VERSION = "1.4.6-rc.1"
 MAX_FILE_BYTES = 50 * 1024 * 1024
 MAX_PACKAGE_BYTES = 512 * 1024 * 1024
 MAX_ZIP_RATIO = 200
