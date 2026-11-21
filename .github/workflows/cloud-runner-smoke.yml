@@ -186,6 +186,15 @@ jobs:
           python scripts/probe_arm64_official_bge_signature.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+      - name: Import activate and infer authentic official BGE on native ARM64 in isolated SQLite
+        if: ${{ matrix.label == 'windows-11-arm' && (steps.arm64-source-build.outcome == 'success' || steps.crypto-install.outcome == 'success') }}
+        shell: pwsh
+        env:
+          PYTHONUTF8: '1'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python scripts/probe_arm64_official_bge_lifecycle.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Build pinned Intel OpenSSL and cryptography from source
         id: intel-source-build
         if: ${{ matrix.label == 'macos-15-intel' && steps.native-python.outcome == 'success' }}
@@ -273,6 +282,7 @@ jobs:
             artifacts/arm64-crypto-probe/signed-embedding-chain.json
             artifacts/arm64-crypto-probe/modelpack-db-lifecycle.json
             artifacts/arm64-crypto-probe/official-bge-signature-audit.json
+            artifacts/arm64-crypto-probe/official-bge-lifecycle.json
             intel-source-build.log
             intel-source-build.json
           if-no-files-found: warn
