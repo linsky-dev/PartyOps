@@ -2,7 +2,7 @@
 
 | 阻塞 | 当前证据 | 解除条件 |
 | --- | --- | --- |
-| EdgeOne 官网工程 | `partyops-cn-overseas` 当前生产 `dpv7nyk55sit` 和旧部署均显示 ZIP 拉取，项目未关联 Git。制品只含静态站点及少量源文件，项目 Blob 和 KV 页面未发现源码归档。 | 在同一 EdgeOne 项目中定位可导出的原上传工程、构建脚本和锁文件。两套站点用同一份冻结清单做预览与回读。 |
+| EdgeOne 官网源码与生产部署差异 | 已从用户文件库找回 2026-10-28 的历史完整 v5 三维官网源码压缩包（91,727,068 字节，ZIP SHA-256 4f01e37862530654f0173212ff42c222f721054970b8b3fc08c4d1dbcc819f11）。原 ZIP CRC 成功，交接清单 572/572 文件 SHA-256 匹配，44/44 Node 文件语法通过，预加载 9/9 通过。包含 Three.js 外层工程和原 Vue 只读演示。历史 v5 不等于目前 EdgeOne 生产部署的最新版源码。 | 必须对照 EdgeOne 当前部署或原工程变动，按锁定依赖完成独立构建、D1/Worker 迁移及真实浏览器验收。未经比对不能用历史 v5 覆盖现网；经典版同步预览与下载回读仍需验收。详见 [官网历史源码恢复](WEBSITE_SOURCE_RECOVERY.md)。 |
 | 特殊目标原生环境 | 免费标准 Runner 未提供最新十包清单对应的全部目标系统。 | 提供同系统和处理器架构的授权远程会话、安装权限、WPS 和图形会话。见[云端矩阵](CLOUD_CI_MATRIX.md)。 |
 | Win7 第三方安全回移 | Windows 7 两种锁文件的上游扫描命中 AnyIO，x64 也命中 fsspec。Certifi 本轮升级到仍支持 Python 3.8 的 2026.10.19，单项复扫通过。Pillow 12.3.0 和其他带本地构建标识的回移轮子须核对补丁实际范围。 | 审计并验证兼容更新、两架构轮子 SHA-256、离线依赖和原生行为。 |
 | Windows ARM64 完整运行时与安装包 | [运行 #44704652210](https://github.com/linsky-dev/PartyOps/actions/runs/44704652210) 已证明：原生 Windows ARM64 上成功用固定 OpenSSL 3.5.7 + cryptography 50.0.0 sdist 编译国密 wheel，并通过 SM3/SM4-GCM 向量及篡改拒绝，**密码库来源探测阻塞已解除**；当前仍无 ARM64 原生 PartyOps 发行目标。 | 将完整锁定依赖、国密轮子及实际业务程序集成进入另行审查的 ARM64 候选包，逐项验证安装、重启、设备入网、升级、数据与真实 WPS。当前锁文件静态核查还显示：`numpy==2.2.6`、`PyMuPDF==1.26.0`、`tokenizers==0.21.4` 未提供该锁定版本的 Windows ARM64 wheel（虽有 sdist，但未在原生 ARM64 验证），`onnxruntime==1.22.1` 在锁文件中既无 Windows ARM64 wheel 亦无 sdist。不得将密码学成功误标为完整应用支持。 候选 wheel 属 BUILD_ONLY、未经签名与最终验收，不得直接用于生产发布。 |
