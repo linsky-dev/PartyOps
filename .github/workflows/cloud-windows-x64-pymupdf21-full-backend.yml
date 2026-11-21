@@ -6,6 +6,8 @@ on:
     paths:
       - '.github/workflows/cloud-windows-x64-pymupdf21-full-backend.yml'
       - 'scripts/rc1_windows_pdf_lock_review.py'
+      - 'scripts/rc1_windows_pdf_lock_delta.py'
+      - 'backend/tests/test_rc1_windows_pdf_lock_delta.py'
       - 'scripts/probe_pymupdf_21_x64.py'
       - 'backend/uv.lock'
       - 'backend/pyproject.toml'
@@ -49,6 +51,8 @@ jobs:
           python scripts/rc1_windows_pdf_lock_review.py prepare --root . --candidate artifacts/windows-pdf-full-regression
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           uv lock --project artifacts/windows-pdf-full-regression --upgrade-package pymupdf
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python scripts/rc1_windows_pdf_lock_delta.py --baseline backend/uv.lock --candidate artifacts/windows-pdf-full-regression/uv.lock --output artifacts/windows-pdf-full-regression-delta.json
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           uv sync --project artifacts/windows-pdf-full-regression --locked --no-install-project --group dev
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -98,5 +102,6 @@ jobs:
             artifacts/windows-pdf-full-regression-evidence/**
             artifacts/windows-pdf-full-regression/uv.lock
             artifacts/windows-pdf-full-regression/pyproject.toml
+            artifacts/windows-pdf-full-regression-delta.json
           if-no-files-found: warn
           retention-days: 14
