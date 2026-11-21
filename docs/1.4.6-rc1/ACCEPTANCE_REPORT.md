@@ -38,7 +38,7 @@
 | Windows ARM64 原始签名包→向量推理连续链路（`3c37901c`） | PASS（BUILD_ONLY） | [原生运行 #44758117279](https://github.com/linsky-dev/PartyOps/actions/runs/44758117279) 8/8 作业成功；原始构建器、签名/哈希验证及原始 `EmbeddingRuntime` 接力完成合成向量推理，并拒绝篡改包。未使用 RC6 正式模型包。 |
 | Windows ARM64 原始 SQLAlchemy 模型包导入、激活与损坏拒绝（新增） | NOT_RUN | 新增独立的临时 SQLite 原生测试：调用**未修改的** `install_model_pack()`、`verify_installed_pack()`、`activate_model_pack()`、`active_model_pack()` 及原始向量推理，测试重复安装、损坏文件重激活拒绝。数据只在一次性内存数据库/临时目录内，**非正式 RC6 包、完整 API 服务或安装包验收**。 |
 | RC2 历史官方 BGE 签名包原生来源、签名与载荷验收 | PASS（BUILD_ONLY） | [原生 Windows ARM64 #44862849895](https://github.com/linsky-dev/PartyOps/actions/runs/44862849895) 下载固定大小 94,965,776 字节、SHA-256 为 `57df3669…` 的原始 RC2 资产，使用未修改的原签名校验器和仓库外置正式公钥验证 Ed25519 签名及全部载荷。签名清单明确声明 Windows ARM64；尚未证明正式 HTTP 导入、原生安装或实际 WPS。 |
-| 官方签名 BGE 原生 ARM64 导入、激活、真实推理（新增专项） | NOT_RUN | 本次新增与上一步不同的隔离测试：以原始发布包和正式外部公钥调用真实 `app.model_packs`，在临时 SQLite 和目录中完成导入、验签、启用、真正 BGE 中文向量推理、重复导入拒绝；仅上传脱敏 JSON。待新 CI 的独立作业日志确认后才能标记 PASS。 |
+| 官方签名 BGE 原生 ARM64 导入、激活、真实推理（新增专项） | FAIL（首轮格式兼容检查）/ 新一轮 NOT_RUN | 原始 [#44864858208](https://github.com/linsky-dev/PartyOps/actions/runs/44864858208) 在完整 SHA-256、Ed25519 与载荷校验 PASS 后，被新增脚本对 v2 `architectures` 数组的单一判定阻断（`OFFICIAL_BGE_ARM64_EMBEDDING_NOT_DECLARED`）。签名审计采用兼容的 v1 单数字段 `architecture` 和 v2 复数字段，声明了 ARM64；这次只修正独立测试对旧格式的判定，不修改官方模型包、签名或正式验证器。重新执行前不得把导入/激活/推理记为通过。 本次新增与上一步不同的隔离测试：以原始发布包和正式外部公钥调用真实 `app.model_packs`，在临时 SQLite 和目录中完成导入、验签、启用、真正 BGE 中文向量推理、重复导入拒绝；仅上传脱敏 JSON。待新 CI 的独立作业日志确认后才能标记 PASS。 |
 | 十包构建与逐包真实安装 | NOT_RUN | 尚无本次冻结制品。 |
 | 特殊目标原生安装、升级及真实 WPS | BLOCKED | 需要对应目标环境和合法可用的 WPS 输入。 |
 | 双官网预览及下载回读 | BLOCKED | EdgeOne 控制台可见内容缺少可重建的原始工程。 |

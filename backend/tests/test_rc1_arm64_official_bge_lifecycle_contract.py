@@ -13,6 +13,9 @@ def test_unchanged_official_signature_manager_and_embedding_execution() -> None:
     ast.parse(source, filename=str(SOURCE))
     assert "download_exact_official_package(source)" in source
     assert "OFFICIAL_SHA256" in source
+    assert 'manifest.get("architecture")' in source
+    assert 'manifest.get("architectures")' in source
+    assert '"universal"' in source
     assert "update-public-key.txt" in source
     assert "model_packs._validate_manifest(manifest, archive)" in source
     assert "model_packs.install_model_pack(source, ASSET_NAME, admin, db)" in source

@@ -81,8 +81,16 @@ def main() -> int:
             files, signed = model_packs._validate_manifest(manifest, archive)
             if not signed or not files:
                 raise RuntimeError("OFFICIAL_SIGNED_PAYLOAD_INVALID")
+            # RC2 historical models can use v1 singular 'architecture' instead
+            # of the v2 'architectures' array. Use the same conservative
+            # compatibility rule as the *already passing* official signature
+            # audit; never rewrite or re-sign the published manifest.
+            architectures = manifest.get("architectures")
+            if not isinstance(architectures, list) or not architectures:
+                legacy_architecture = manifest.get("architecture")
+                architectures = [legacy_architecture] if isinstance(legacy_architecture, str) else []
             if not (
-                "arm64" in manifest.get("architectures", [])
+                any(value in {"arm64", "universal"} for value in architectures if isinstance(value, str))
                 and "windows" in manifest.get("platforms", [])
                 and isinstance(manifest.get("components", {}).get("embedding"), dict)
             ):
