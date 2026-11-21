@@ -11,4 +11,5 @@
 - 生产发布以最终独立审查、完整迁移演练和目标制品密码学测试通过为前提。国密结论仅描述本功能及已验证运行时。
 
 - 2026-11-20 GitHub Actions [#44704652210](https://github.com/linsky-dev/PartyOps/actions/runs/44704652210) 证明 Windows ARM64 原生 OpenSSL 3.5.7 + cryptography 50.0.0 已完成源码哈希校验、SM3/SM4-GCM 标准向量与篡改拒绝。只认可该运行时范围；额外 ARM64 应用发行、安装与真实 WPS 仍按独立门禁。后续 wheel 必须留存实际编译 SHA-256 与 BUILD_ONLY 身份，不以 CI 成功当作可发布签名制品。
-- 2026-11-21 模型启用路径安全加固：对已安装模型的激活强制清除尺寸/修改时间指纹缓存、重新读取全部文件 SHA-256；新增等体积篡改并恢复 mtime 的拒绝回归。保留状态页现有的轻量缓存与 WPS 实现不变。专项需通过新 CI 才记为 PASS。
+- 2026-11-21 模型启用路径安全加固：对已安装模型的激活强制清除尺寸/修改时间指纹缓存、重新读取全部文件 SHA-256；新增等体积篡改并恢复 mtime 的拒绝回归。保留状态页现有的轻量缓存与 WPS 实现不变。已在 [Windows 全量 #44866043106](https://github.com/linsky-dev/PartyOps/actions/runs/44866043106) 的 2364 项通过回归中验证，保留正式制品门禁。
+- 2026-11-21 七条新 CI 工作流在 `f48bedc` 全部通过：[#44866043106](https://github.com/linsky-dev/PartyOps/actions/runs/44866043106) Windows 后端 2364 passed /16 skipped（95% 行和 92% 分支门槛通过），Linux 专项 207 passed /4 skipped；[#44866043200](https://github.com/linsky-dev/PartyOps/actions/runs/44866043200) 原生 Windows ARM64 完整验证了官方 RC2 BGE 原包签名、载荷、真正 SQLite 导入激活与中文推理。此前 Windows 随机票据与事件循环时间阈值两项误判复测已关闭，均没有修改业务排版代码；新增的 SQLite 重新开库/新 EmbeddingRuntime 测试需后续独立实证，官方 HTTP 上传和正式安装包仍未验证。

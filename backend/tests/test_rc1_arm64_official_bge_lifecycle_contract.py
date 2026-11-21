@@ -26,7 +26,10 @@ def test_unchanged_official_signature_manager_and_embedding_execution() -> None:
     assert "runtime.encode(pack, phrases)" in source
     assert "is_query=True" in source
     assert "MODEL_PACK_ALREADY_INSTALLED" in source
-    assert 'create_engine("sqlite+pysqlite:///:memory:")' in source
+    assert '"sqlite+pysqlite:///{sqlite_path.as_posix()}"' in source
+    assert 'reopened_engine = create_engine(sqlite_url)' in source
+    assert '"sqlite_database_reopened"' in source
+    assert '"app_process_restarted"' in source
     assert "with TemporaryDirectory(" in source
     assert '"release_ready": False' in source
     assert '"full_application_installed": False' in source

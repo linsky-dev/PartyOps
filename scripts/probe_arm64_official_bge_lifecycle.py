@@ -2,7 +2,7 @@
 
 This test downloads the immutable historical public release model pack, verifies its
 exact archive digest and publisher signature, then exercises unchanged PartyOps
-model management with in-memory SQLite and temporary storage. No user database,
+model management with an isolated temporary on-disk SQLite database and temporary storage. No user database,
 production package, signing key, public trust root, or WPS file is modified.
 This is BUILD_ONLY; it is not HTTP upload, an installer, or release approval.
 """
@@ -96,7 +96,11 @@ def main() -> int:
             ):
                 raise RuntimeError("OFFICIAL_BGE_ARM64_EMBEDDING_NOT_DECLARED")
 
-        engine = create_engine("sqlite+pysqlite:///:memory:")
+        # Use a disposable *file* DB so a second independent engine can test
+        # persisted activation after the first session and connection are closed.
+        sqlite_path = scratch / "official-bge-ci.sqlite3"
+        sqlite_url = f"sqlite+pysqlite:///{sqlite_path.as_posix()}"
+        engine = create_engine(sqlite_url)
         Base.metadata.create_all(
             bind=engine,
             tables=[User.__table__, AIModelPack.__table__, AIModelActivation.__table__],
@@ -180,8 +184,10 @@ def main() -> int:
                 if runtime.loaded_for(pack.id):
                     raise AssertionError("OFFICIAL_BGE_UNLOAD_FAILED")
 
+                pack_id = pack.id
+                original_vector = vectors[0].copy()
                 evidence = {
-                    "schema_version": 1,
+                    "schema_version": 2,
                     "status": "PASS",
                     "scope": "OFFICIAL_SIGNED_RC2_BGE_NATIVE_ARM64_SQLITE_INSTALL_ACTIVATE_INFERENCE",
                     "source_commit": os.environ.get("GITHUB_SHA", ""),
@@ -224,6 +230,51 @@ def main() -> int:
                 }
         finally:
             engine.dispose()
+
+        # This proves database persistence across a fresh SQLAlchemy engine and
+        # model runtime, not an OS/service restart or a complete HTTP install.
+        model_packs._verification_cache.clear()
+        reopened_engine = create_engine(sqlite_url)
+        try:
+            with Session(reopened_engine, expire_on_commit=False) as reopened_db:
+                reopened_pack = reopened_db.get(AIModelPack, pack_id)
+                activated = model_packs.active_model_pack(reopened_db, "embedding")
+                if (
+                    reopened_pack is None
+                    or activated is None
+                    or activated.id != pack_id
+                    or reopened_pack.status != ModelPackStatus.ACTIVE
+                ):
+                    raise AssertionError("OFFICIAL_BGE_SQLITE_REOPEN_ACTIVATION_LOST")
+                if not model_packs.verify_installed_pack(reopened_pack):
+                    raise AssertionError("OFFICIAL_BGE_SQLITE_REOPEN_PAYLOAD_CORRUPT")
+                RestartRuntime, restarted_source_hash = _load_unchanged_runtime(
+                    repo / "backend" / "app" / "local_ai.py",
+                    model_packs.model_pack_root(reopened_pack),
+                )
+                if restarted_source_hash != runtime_hash:
+                    raise AssertionError("OFFICIAL_BGE_RUNTIME_SOURCE_CHANGED")
+                resumed_runtime = RestartRuntime()
+                try:
+                    resumed_row = resumed_runtime.encode(reopened_pack, [phrases[0]])[0]
+                    resumed_vector = np.frombuffer(resumed_row, dtype=np.float32)
+                    if (
+                        resumed_vector.shape != (dimension,)
+                        or not np.all(np.isfinite(resumed_vector))
+                        or not np.allclose(
+                            resumed_vector, original_vector, rtol=1e-5, atol=1e-5
+                        )
+                    ):
+                        raise AssertionError("OFFICIAL_BGE_SQLITE_REOPEN_INFERENCE_CHANGED")
+                finally:
+                    resumed_runtime.unload()
+                evidence["checks"].append(
+                    "fresh_sqlite_engine_session_and_embedding_runtime_reopen"
+                )
+                evidence["sqlite_database_reopened"] = True
+                evidence["app_process_restarted"] = False
+        finally:
+            reopened_engine.dispose()
 
     # No model, SQLite DB, or raw public archive is retained as a CI artifact.
     output = repo / "artifacts" / "arm64-crypto-probe" / "official-bge-lifecycle.json"

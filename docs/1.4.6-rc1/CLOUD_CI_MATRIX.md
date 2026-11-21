@@ -42,14 +42,19 @@ Windows 7 SP1 x86/x64、Deepin 25.2.0 LoongArch64、麒麟与 UOS 桌面、openE
 
 测试钥匙、原始 ZIP 和所有模型文件在临时目录内创建及销毁，GitHub 仅留签名包的 SHA-256、源码 SHA、候选依赖版本、脱敏结果。此测试没有正式公钥、RC6 模型包、真实用户数据或应用导入/数据库激活，不代表模型包可公开发布。WPS 核心、生产锁文件和现有 `backend/app` 均不改动。
 
-## Windows ARM64 模型包真实安装与激活源码专项（待云端执行）
+## Windows ARM64 模型包真实安装与激活源码专项（原生云端已实证）
 
 基于已 PASS 的签名包 → ONNX 链路，增加 `scripts/probe_arm64_modelpack_db_lifecycle.py`：原生 ARM64 安装与当前锁一致的 SQLAlchemy、Pydantic、Pydantic Settings，使用生产 `app.model_packs` 及 `app.models` 原始模块（不是复制实现），在**独立内存 SQLite、一次性目录、一次性测试密钥**中执行真实 `install_model_pack`、`verify_installed_pack`、`activate_model_pack`、`active_model_pack`、`EmbeddingRuntime.encode`。验证模型包签名、受控目录存储、重复导入拒绝、激活记录提交、已安装模型推理和存储文件损坏拒绝；全部测试材料在 Runner 退出前清理，仅保留无私钥的 BUILD_ONLY 证据。
 
 该专项不启动 HTTP API 或既有正式安装程序，也不验证正式 RC6 签名权重、真实 WPS、全部 ARM64 依赖或数据库升级路径。验收状态以实际 Actions 运行结果为准。
 
-## 正式签名 BGE 历史发布包来源审查（待原生云端实证）
+## 正式签名 BGE 历史发布包来源审查（原生云端已实证）
 
 前期阻塞报告将 RC6 正式 BGE 包误记为原始文件不可获得。现已通过 GitHub Releases API 核实，历史 RC6 验收使用的 `PartyOps_BGE_Small_ZH_1.5.0.partyops-modelpack` 原文件仍存在于 [v1.4.5-rc.2 Release](https://github.com/linsky-dev/PartyOps/releases/tag/v1.4.5-rc.2)，大小 **94,965,776 字节**。对照仓库历史 SHA-256 `57df3669e368497ad6d428dab309fb7665229a57edfe3a4fe1f2afd6a0f1a155`，新建 `scripts/probe_arm64_official_bge_signature.py` 将在原生 ARM64 Runner 下载文件，先完成长度及完整 SHA-256 校验，再使用 `packaging/uos/update-public-key.txt` 作为外部信任根调用未修改的 `app.model_packs._validate_manifest`，逐文件核验签名和摘要，检查原始 `architecture`/`architectures`、`platforms` 声明。所有下载文件仅保存在一次性目录，不重签、不修改模型、不把原包上传为 Actions 制品。
 
 该专项若确实通过，只能标记为**正式已发布包的来源和签名/载荷真实验证**。如原包仅声明 AMD64，ARM64 的正式导入激活继续保留 `BLOCKED`；即使原清单声明 ARM64，此专项也没有完成生产 HTTP 上传、数据库激活、真实 BGE 推理和完整原生安装。生产发布仍需独立签名、WPS 与升级门禁。
+## 2026-11-21 官方模型独立原生闭环与新增持久化专项
+
+- **已实证 PASS（BUILD_ONLY）：** [Windows ARM64 原生 #44866043200](https://github.com/linsky-dev/PartyOps/actions/runs/44866043200) 将原版 RC2 已发布 BGE 签名包用正式外部信任根与真实 PartyOps 模型包管理代码在隔离 SQLite 中导入、激活、重复导入拒绝，调用原始 EmbeddingRuntime 验证中文实际向量、查询向量与卸载。标志 `PARTYOPS_ARM64_OFFICIAL_SIGNED_BGE_IMPORT_ACTIVATION_INFERENCE_PASS`；此前仅验证官方包声明、未实际导入的限制在此单个独立脚本范围内已解除。
+- **本轮新增待实证：** 采用仅位于临时目录中的 SQLite 文件，首次激活后关闭初始引擎与原运行实例，以新引擎、Session、EmbeddingRuntime 重开并核验激活记录与向量结果，清除原状态缓存。它不是物理设备/PartyOps 后台进程重启，更不是安装包原生运行或 HTTP/API 完整依赖闭包。
+- **继续阻断：** 完整 Windows ARM64 PartyOps 依赖/安装/升级/回滚、授权真实 WPS、多种国产系统同构原生环境、服务端完整 API 与签名生产分发，均不能由上述 BUILD_ONLY 自检替代。
