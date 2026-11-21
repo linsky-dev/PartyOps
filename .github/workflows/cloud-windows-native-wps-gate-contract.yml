@@ -44,6 +44,9 @@ jobs:
           if (@($report.blockers | Where-Object { $_ -eq 'WINDOWS_10_11_CLIENT_REQUIRED' }).Count -ne 1) {
             throw '[RC1_NATIVE_WPS_SERVER_REJECTION_MISSING]'
           }
+          if ($report.os_architecture -ne 'X64') {
+            throw '[RC1_NATIVE_WPS_RUNNER_ARCH_PROBE_UNEXPECTED]'
+          }
           "PARTYOPS_RC1_WPS_HOSTED_WINDOWS_SERVER_CORRECTLY_BLOCKED"
           # The child deliberately exited 2; do not leak that expected code as this job result.
           exit 0

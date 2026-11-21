@@ -14,6 +14,8 @@ def test_native_wps_launcher_is_opt_in_and_platform_bound() -> None:
         "ConfirmDedicatedTestMachine",
         "ConfirmInteractiveWpsAcceptance",
         "WINDOWS_10_11_CLIENT_REQUIRED",
+        "WINDOWS_AMD64_ARCH_REQUIRED",
+        "WINDOWS_ARCH_IDENTITY_UNAVAILABLE",
         "INTERACTIVE_WPS_USER_SESSION_REQUIRED",
         "WPS_OFFICE_CURRENT_USER_OR_MACHINE_INSTALL_NOT_FOUND",
         "SOURCE_COMMIT_NOT_APPROVED",
@@ -59,3 +61,14 @@ def test_preflight_returns_blocked_without_starting_native_wps() -> None:
     )
     assert "exit 2" in SOURCE
     assert "Test-Path -LiteralPath" in SOURCE
+
+
+def test_x64_native_gate_checks_os_arch_not_just_64bit_process() -> None:
+    # Windows ARM64 also reports Is64BitOperatingSystem=True. Never treat it
+    # as equivalent to the genuine Windows x64 client release target.
+    assert "RuntimeInformation]::OSArchitecture" in SOURCE
+    assert "if ($osArchitecture -ne 'X64')" in SOURCE
+    assert "os_architecture = $osArchitecture" in SOURCE
+    assert SOURCE.index("WINDOWS_AMD64_ARCH_REQUIRED") < SOURCE.index(
+        "if ($Mode -eq 'Preflight')"
+    )

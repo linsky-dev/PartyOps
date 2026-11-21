@@ -48,6 +48,17 @@ try {
 if (-not [Environment]::Is64BitOperatingSystem) {
   [void]$blocked.Add('WINDOWS_X64_REQUIRED')
 }
+# A 64-bit OS can still be ARM64. The existing amd64 installer and WPS
+# acceptance scope must never run under Windows-on-ARM x64 emulation.
+$osArchitecture = ''
+try {
+  $osArchitecture = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
+  if ($osArchitecture -ne 'X64') {
+    [void]$blocked.Add('WINDOWS_AMD64_ARCH_REQUIRED')
+  }
+} catch {
+  [void]$blocked.Add('WINDOWS_ARCH_IDENTITY_UNAVAILABLE')
+}
 $windowsCaption = ''
 $osBuild = 0
 try {
@@ -116,6 +127,7 @@ $report = [ordered]@{
   expected_source_commit = $ExpectedSourceSha.ToLowerInvariant()
   os_caption = $windowsCaption
   os_build = $osBuild
+  os_architecture = $osArchitecture
   wps_registered = $wpsRegistered
   production_pymupdf_secured = [bool]$version
   python_secure_pdf_version = [string]$version
