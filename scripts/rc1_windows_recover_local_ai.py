@@ -90,18 +90,24 @@ def recover(root: Path, installer: Path, manifest_path: Path, source: Path, dest
     if sha256(manifest_path) != EXPECTED_MANIFEST_SHA:
         raise ValueError("published RC6 reference manifest bytes differ")
     manifest = json.loads(manifest_path.read_text(encoding="utf-8-sig"))
+    # The post-startup RC6 release manifest uses schema 4 and does not
+    # declare platform/architecture; the exact pinned release-asset SHA and
+    # the immutable manifest SHA are the independent source identity.
     if any(manifest.get(k) != v for k, v in (
+        ("schema_version", 4),
+        ("product", "PartyOps"),
         ("version", "1.4.5-rc.6"),
-        ("platform", "windows"),
-        ("architecture", "amd64"),
+        ("release_tag", "v1.4.5-rc.6"),
     )):
         observed = {key: manifest.get(key) for key in
-                    ("schema_version", "product", "version", "release_tag",
-                     "platform", "architecture", "runtime_profile")}
+                    ("schema_version", "product", "version", "release_tag")}
         raise ValueError(f"reference release manifest identity mismatch: {observed}")
     files = manifest.get("files")
     if not isinstance(files, list) or not files:
-        raise ValueError("reference release manifest has no files")
+        raise ValueError(
+            "reference release manifest has no root file list: "
+            f"keys={list(manifest)[:20]}, file_type={type(files).__name__}"
+        )
     verified = validate_files(source, files)
     destination.mkdir(parents=True)
     for name, reference in verified.items():
