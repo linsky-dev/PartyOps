@@ -1,0 +1,47 @@
+name: RC1 native Windows 10/11 WPS entrypoint fail-closed contract
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/cloud-windows-native-wps-gate-contract.yml'
+      - 'scripts/rc1-windows-native-wps-gate.ps1'
+      - 'backend/tests/test_rc1_windows_native_wps_gate.py'
+
+permissions:
+  contents: read
+
+jobs:
+  hosted-server-must-not-impersonate-windows-client:
+    runs-on: windows-2025
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact triggering source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: \${{ github.sha }}
+          persist-credentials: false
+
+      - name: Validate PowerShell grammar and hosted-server refusal
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $entry = Join-Path (Get-Location) 'scripts/rc1-windows-native-wps-gate.ps1'
+          $tokenStream = $null
+          $parseErrors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile($entry, [ref]$tokenStream, [ref]$parseErrors) | Out-Null
+          if (@($parseErrors).Count) { throw '[RC1_NATIVE_WPS_ENTRYPOINT_SYNTAX_INVALID]' }
+          $sha = (git rev-parse HEAD).Trim()
+          $output = & pwsh -NoProfile -File $entry -ExpectedSourceSha $sha -Mode Preflight
+          $exitCode = $LASTEXITCODE
+          if ($exitCode -ne 2) { throw '[RC1_NATIVE_WPS_HOSTED_RUNNER_FALSE_PASS]' }
+          $report = ($output -join "\`n") | ConvertFrom-Json
+          if ($report.status -ne 'BLOCKED' -or $report.release_ready -or
+              $report.native_wps_passed -or $report.native_full_function_passed -or
+              $report.candidate_installer_built) {
+            throw '[RC1_NATIVE_WPS_PREVIEW_FABRICATED_ACCEPTANCE]'
+          }
+          if (@($report.blockers | Where-Object { $_ -eq 'WINDOWS_10_11_CLIENT_REQUIRED' }).Count -ne 1) {
+            throw '[RC1_NATIVE_WPS_SERVER_REJECTION_MISSING]'
+          }
+          "PARTYOPS_RC1_WPS_HOSTED_WINDOWS_SERVER_CORRECTLY_BLOCKED"
