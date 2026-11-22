@@ -468,6 +468,11 @@ def test_host_switch_rollback_keeps_snapshot_when_service_cannot_restart(
 
 
 def test_strict_mode_switch_service_restore_checks_running_state(monkeypatch) -> None:
+    # Keep synthetic monotonic/sleep isolated to the module under test:
+    # modifying the global time module can exhaust finite ticks inside pytest.
+    monkeypatch.setattr(
+        setup_wizard, "time", SimpleNamespace(**vars(setup_wizard.time))
+    )
     monkeypatch.setenv("PARTYOPS_ENVIRONMENT", "production")
     monkeypatch.setattr(setup_wizard, "os", _os_proxy("nt"))
     monkeypatch.setattr(setup_wizard, "_windows_service_running", lambda _name: False)
@@ -1491,6 +1496,11 @@ def test_personal_data_directory_supports_custom_paths_and_rejects_unsafe_media(
 def test_windows_service_acl_stop_and_autostart_errors(
     monkeypatch, tmp_path: Path
 ) -> None:
+    # Keep synthetic monotonic/sleep isolated to the module under test:
+    # modifying the global time module can exhaust finite ticks inside pytest.
+    monkeypatch.setattr(
+        setup_wizard, "time", SimpleNamespace(**vars(setup_wizard.time))
+    )
     monkeypatch.setattr(setup_wizard, "os", _os_proxy("nt"))
     monkeypatch.setenv("PARTYOPS_ENVIRONMENT", "production")
     completed = lambda code=0, out="", err="": subprocess.CompletedProcess(
@@ -2194,6 +2204,11 @@ def test_query_windows_service_state_matrix(
 def test_start_service_and_health_timeout_diagnostics(
     monkeypatch, tmp_path: Path
 ) -> None:
+    # Keep synthetic monotonic/sleep isolated to the module under test:
+    # modifying the global time module can exhaust finite ticks inside pytest.
+    monkeypatch.setattr(
+        setup_wizard, "time", SimpleNamespace(**vars(setup_wizard.time))
+    )
     monkeypatch.setattr(
         setup_wizard, "_query_windows_host_service", lambda: ("running", "ok")
     )
