@@ -53,3 +53,11 @@ pwsh -NoProfile -File scripts/rc1-windows-native-wps-gate.ps1 -Mode BuildCandida
 - 该模式的 \`.release-gates/full-function-tests.json\` 只保存 \`package\` 指纹，并显式标注 \`record_scope=package\`；\`verify --scope website/full\` 必须拒绝。待最新版 EdgeOne 官网源码恢复并完成官网测试后，仍需运行原 \`scripts/test.ps1 -Scope Full\` 获取独立完整证据，且需双站真实预览与人工发布批准。
 - **仅为测试链路解耦，不解除 PDF 生产锁安全阻塞、不代替真实 Windows 10/11 WPS 用户桌面，更不授权打包或正式发布。** 当前云端普通 Windows Server Runner 不具备真实用户桌面和 WPS；不能把源码/合同测试误写成原生功能通过。
 
+## Windows WPS 先行真机验证（2026-11-22）
+
+**独立的 NativeTests 只测试真实 WPS，不签发安装包资格。** 之前 NativeTests 实际会调用 \`test.ps1 -Scope Package\`，其 \`pip-audit\` 因旧版生产 PyMuPDF 被阻断，妨碍先独立完成 WPS 金样。现在 \`NativeTests\` 显式调用原始 \`scripts/test.ps1 -Scope WpsOnly\`，只执行原先开头的 Windows x64/x86 排版源码构建、搬迁宿主自检、三页视觉金样及真实 WPS 六功能 12 场景。它不调用依赖安全审计、后端/前端、官网或生成全功能凭据的 \`record\`，也不会调用安装包构建器。实际执行成功才记录 \`PASS_NATIVE_WPS_ONLY\` 和 \`native_wps_passed=true\`；\`native_full_function_passed\`、签名、升级/回滚、\`release_ready\` 一律为 \`false\`。
+
+此模式可先行在专用 Windows 10/11 x64 交互桌面使用：须安装 WPS，具备原始排版源码、后端 Python 测试环境及可信 LibreOffice 渲染环境；不用为 WPS-only 验证提前准备打包才需要的本地 AI、OCR、.NET、SQLite 与 Corepack。仍使用前述 \`-Mode NativeTests\` 命令及两个明确确认开关。
+
+**BuildCandidate 严格不变：** 继续要求生产 PyMuPDF 安全升级，调用原 \`scripts/test.ps1 -Scope Package\` 完成排版、前后端及所有安全审查并核验包级凭据，最后才能调用原始 Windows 打包脚本。最终网站和全量发布仍需原 \`-Scope Full\` 及双官网批准。未在真实 Windows 10/11+WPS 用户桌面运行时，不得把 CI 的拒绝型 PASS 或静态测试认定为 WPS 功能验收成功。
+

@@ -115,6 +115,17 @@ $missingRuntime = @($runtimePaths | Where-Object {
   -not (Test-Path -LiteralPath (Join-Path $root $_))
 })
 if ($missingRuntime.Count) { [void]$blocked.Add('STAGED_WINDOWS_BUILD_INPUTS_MISSING') }
+# Independent WPS-only QA does not need the SQLite, local-AI, OCR, .NET, or
+# Corepack inputs needed to build an installer. It still needs the real WPS
+# user desktop, the original formatter source and real PDF goldens.
+$nativeWpsPaths = @(
+  'backend/.venv/Scripts/python.exe',
+  'vendor/windows/libreoffice-headless-amd64/program/soffice.com',
+  'vendor/windows/libreoffice-headless-amd64/SOURCE.json'
+)
+$missingNativeWps = @($nativeWpsPaths | Where-Object {
+  -not (Test-Path -LiteralPath (Join-Path $root $_))
+})
 if (-not (Get-Command corepack -ErrorAction SilentlyContinue)) {
   [void]$blocked.Add('NODE_COREPACK_MISSING')
 }
@@ -132,6 +143,7 @@ $report = [ordered]@{
   production_pymupdf_secured = [bool]$version
   python_secure_pdf_version = [string]$version
   missing_runtime_paths = $missingRuntime
+  missing_native_wps_paths = $missingNativeWps
   blockers = @($blocked.ToArray())
   native_wps_passed = $false
   native_full_function_passed = $false
@@ -147,6 +159,13 @@ $report = [ordered]@{
 $testBlockers = @($blocked.ToArray() | Where-Object {
   $_ -ne 'SECURE_PYMUPDF_PRODUCTION_LOCK_REQUIRED'
 })
+if ($Mode -eq 'NativeTests') {
+  # WPS-only validation does not grant package/full approval.
+  $testBlockers = @($testBlockers | Where-Object {
+    $_ -ne 'STAGED_WINDOWS_BUILD_INPUTS_MISSING' -and $_ -ne 'NODE_COREPACK_MISSING'
+  })
+  if ($missingNativeWps.Count) { $testBlockers += 'NATIVE_WPS_TEST_INPUTS_MISSING' }
+}
 if ($Mode -eq 'Preflight') {
   $report | ConvertTo-Json -Depth 8
   if ($blocked.Count) { exit 2 }
@@ -175,15 +194,24 @@ function Save-Receipt {
   )
 }
 try {
-  # Run the unchanged installer/WPS tests without depending on the separately
-  # hosted website source. This mode cannot bless website or full publication.
-  & (Join-Path $root 'scripts/test.ps1') -Scope Package
-  if ($LASTEXITCODE -ne 0) { throw '[WINDOWS_ORIGINAL_FULL_FUNCTION_TESTS_FAILED]' }
-  & $Python (Join-Path $root 'scripts/verify-full-function-gate.py') verify --root $root --scope package
-  if ($LASTEXITCODE -ne 0) { throw '[WINDOWS_FULL_FUNCTION_RECORD_UNVERIFIED]' }
-  $report.native_wps_passed = $true
-  $report.native_full_function_passed = $true
-  $report.status = 'PASS_NATIVE_TESTS_ONLY'
+  if ($Mode -eq 'NativeTests') {
+    # Actual WPS goldens + original six-function E2E only. Never issue a
+    # full-function receipt, start PyInstaller, or claim a release-ready EXE.
+    & (Join-Path $root 'scripts/test.ps1') -Scope WpsOnly
+    if ($LASTEXITCODE -ne 0) { throw '[WINDOWS_ORIGINAL_WPS_TESTS_FAILED]' }
+    $report.native_wps_passed = $true
+    $report.status = 'PASS_NATIVE_WPS_ONLY'
+  } else {
+    # BuildCandidate requires the complete source/security audit and verified
+    # package receipt. Independent website release remains separately gated.
+    & (Join-Path $root 'scripts/test.ps1') -Scope Package
+    if ($LASTEXITCODE -ne 0) { throw '[WINDOWS_ORIGINAL_FULL_FUNCTION_TESTS_FAILED]' }
+    & $Python (Join-Path $root 'scripts/verify-full-function-gate.py') verify --root $root --scope package
+    if ($LASTEXITCODE -ne 0) { throw '[WINDOWS_FULL_FUNCTION_RECORD_UNVERIFIED]' }
+    $report.native_wps_passed = $true
+    $report.native_full_function_passed = $true
+    $report.status = 'PASS_NATIVE_TESTS_ONLY'
+  }
   if ($Mode -eq 'BuildCandidate') {
     # Unmodified original packaging command and ALL its native WPS guards.
     & (Join-Path $root 'packaging/windows/build-windows.ps1') -Python $Python
