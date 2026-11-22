@@ -73,7 +73,7 @@ def test_native_wps_only_cannot_forge_full_suite_or_installer() -> None:
     assert SOURCE.index("NATIVE_WPS_TEST_INPUTS_MISSING") < SOURCE.index(
         "if ($Mode -eq 'Preflight')"
     )
-    assert SOURCE.index("if ($Mode -eq 'BuildCandidate' -and $blocked.Count)") < SOURCE.index(
+    assert SOURCE.index("if ($Mode -eq 'BuildCandidate' -and $blocked.Count)") < SOURCE.rindex(
         "if ($Mode -eq 'NativeTests') {"
     )
     assert SOURCE.count("report.native_full_function_passed = $true") == 1

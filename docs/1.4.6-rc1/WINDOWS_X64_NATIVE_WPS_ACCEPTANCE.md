@@ -35,7 +35,7 @@ pwsh -NoProfile -File scripts/rc1-windows-native-wps-gate.ps1 -Mode NativeTests 
 pwsh -NoProfile -File scripts/rc1-windows-native-wps-gate.ps1 -Mode BuildCandidate -ExpectedSourceSha $sha -ConfirmDedicatedTestMachine -ConfirmInteractiveWpsAcceptance
 ```
 
-后两个模式调用的是原来的 `scripts/test.ps1` / `packaging/windows/build-windows.ps1`，绝不跳过真实 WPS 金样、六功能证据、签名输入、完整性校验或版本门禁。任何失败直接停止且保留 `artifacts/rc1-native-wps-*/native-wps-candidate.json`；没有运行就不得登记通过。
+两个模式均保留原始 WPS 金样与六功能测试；但 **NativeTests 不验证签名、安装包安全及完整功能门禁**。只有 BuildCandidate 才会在全部安全和全功能门禁通过后调用原 `packaging/windows/build-windows.ps1`。任何失败直接停止并留存相应测试证据；没有运行就不得登记通过。
 
 候选 EXE 即使生成也必须继续执行 Windows 10、Windows 11 两套原生安装、重启、权限、已有安装升级与回滚、备份恢复、哈希、数字签名和人工发布审批。没有这些证据，不得合并、打标签、上官网或称作正式版。
 
@@ -48,16 +48,16 @@ pwsh -NoProfile -File scripts/rc1-windows-native-wps-gate.ps1 -Mode BuildCandida
 
 ## 仅验证 Windows 安装包范围，不阻塞于独立官网源码（2026-11-22）
 
-- 原 \`scripts/test.ps1\` 默认 \`-Scope Full\` **保持不变**，仍运行原有排版、后端、前端、官网及安全完整质量门禁，记录 \`full/package/website\` 三范围指纹。
-- 专用 Windows 10/11 x64 原生验收入口在 \`NativeTests\` 和 \`BuildCandidate\` 下调用原测试脚本的 \`-Scope Package\` 模式，仅跳过**不随 PartyOps 安装包分发的官网**审计、测试和构建；原始 Windows x64/x86 WPS 源码回归、真实三页金样、六功能 12 场景、后端、前端、依赖安全审查、签名输入及源码冻结要求**全部保持**。
-- 该模式的 \`.release-gates/full-function-tests.json\` 只保存 \`package\` 指纹，并显式标注 \`record_scope=package\`；\`verify --scope website/full\` 必须拒绝。待最新版 EdgeOne 官网源码恢复并完成官网测试后，仍需运行原 \`scripts/test.ps1 -Scope Full\` 获取独立完整证据，且需双站真实预览与人工发布批准。
+- 原 `scripts/test.ps1` 默认 `-Scope Full` **保持不变**，仍运行原有排版、后端、前端、官网及安全完整质量门禁，记录 `full/package/website` 三范围指纹。
+- 专用 Windows 10/11 x64 的 `BuildCandidate` 入口调用原测试脚本的 `-Scope Package`，仅跳过**不随 PartyOps 安装包分发的官网**审计、测试和构建；原始 WPS、后端、前端、依赖安全审查和包级证据仍全部执行。`NativeTests` 现已改为专用 `-Scope WpsOnly`，只保留真正的 WPS 验收，不声称通过完整打包门禁；详见下节。
+- 该模式的 `.release-gates/full-function-tests.json` 只保存 `package` 指纹，并显式标注 `record_scope=package`；`verify --scope website/full` 必须拒绝。待最新版 EdgeOne 官网源码恢复并完成官网测试后，仍需运行原 `scripts/test.ps1 -Scope Full` 获取独立完整证据，且需双站真实预览与人工发布批准。
 - **仅为测试链路解耦，不解除 PDF 生产锁安全阻塞、不代替真实 Windows 10/11 WPS 用户桌面，更不授权打包或正式发布。** 当前云端普通 Windows Server Runner 不具备真实用户桌面和 WPS；不能把源码/合同测试误写成原生功能通过。
 
 ## Windows WPS 先行真机验证（2026-11-22）
 
-**独立的 NativeTests 只测试真实 WPS，不签发安装包资格。** 之前 NativeTests 实际会调用 \`test.ps1 -Scope Package\`，其 \`pip-audit\` 因旧版生产 PyMuPDF 被阻断，妨碍先独立完成 WPS 金样。现在 \`NativeTests\` 显式调用原始 \`scripts/test.ps1 -Scope WpsOnly\`，只执行原先开头的 Windows x64/x86 排版源码构建、搬迁宿主自检、三页视觉金样及真实 WPS 六功能 12 场景。它不调用依赖安全审计、后端/前端、官网或生成全功能凭据的 \`record\`，也不会调用安装包构建器。实际执行成功才记录 \`PASS_NATIVE_WPS_ONLY\` 和 \`native_wps_passed=true\`；\`native_full_function_passed\`、签名、升级/回滚、\`release_ready\` 一律为 \`false\`。
+**独立的 NativeTests 只测试真实 WPS，不签发安装包资格。** 之前 NativeTests 实际会调用 `test.ps1 -Scope Package`，其 `pip-audit` 因旧版生产 PyMuPDF 被阻断，妨碍先独立完成 WPS 金样。现在 `NativeTests` 显式调用原始 `scripts/test.ps1 -Scope WpsOnly`，只执行原先开头的 Windows x64/x86 排版源码构建、搬迁宿主自检、三页视觉金样及真实 WPS 六功能 12 场景。它不调用依赖安全审计、后端/前端、官网或生成全功能凭据的 `record`，也不会调用安装包构建器。实际执行成功才记录 `PASS_NATIVE_WPS_ONLY` 和 `native_wps_passed=true`；`native_full_function_passed`、签名、升级/回滚、`release_ready` 一律为 `false`。
 
-此模式可先行在专用 Windows 10/11 x64 交互桌面使用：须安装 WPS，具备原始排版源码、后端 Python 测试环境及可信 LibreOffice 渲染环境；不用为 WPS-only 验证提前准备打包才需要的本地 AI、OCR、.NET、SQLite 与 Corepack。仍使用前述 \`-Mode NativeTests\` 命令及两个明确确认开关。
+此模式可先行在专用 Windows 10/11 x64 交互桌面使用：须安装 WPS，具备原始排版源码、后端 Python 测试环境及可信 LibreOffice 渲染环境；不用为 WPS-only 验证提前准备打包才需要的本地 AI、OCR、.NET、SQLite 与 Corepack。仍使用前述 `-Mode NativeTests` 命令及两个明确确认开关。
 
-**BuildCandidate 严格不变：** 继续要求生产 PyMuPDF 安全升级，调用原 \`scripts/test.ps1 -Scope Package\` 完成排版、前后端及所有安全审查并核验包级凭据，最后才能调用原始 Windows 打包脚本。最终网站和全量发布仍需原 \`-Scope Full\` 及双官网批准。未在真实 Windows 10/11+WPS 用户桌面运行时，不得把 CI 的拒绝型 PASS 或静态测试认定为 WPS 功能验收成功。
+**BuildCandidate 严格不变：** 继续要求生产 PyMuPDF 安全升级，调用原 `scripts/test.ps1 -Scope Package` 完成排版、前后端及所有安全审查并核验包级凭据，最后才能调用原始 Windows 打包脚本。最终网站和全量发布仍需原 `-Scope Full` 及双官网批准。未在真实 Windows 10/11+WPS 用户桌面运行时，不得把 CI 的拒绝型 PASS 或静态测试认定为 WPS 功能验收成功。
 
