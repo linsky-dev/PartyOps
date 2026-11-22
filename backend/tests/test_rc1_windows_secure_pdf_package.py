@@ -54,6 +54,18 @@ def test_vulnerable_or_inconsistent_source_cannot_package(
         module.verify_inputs(_fixture(tmp_path, lock=lock, project=project, req=req))
 
 
+def test_layout_companion_package_is_not_the_core_pymupdf_pin(tmp_path: Path) -> None:
+    root = _fixture(tmp_path)
+    (root / "backend/pyproject.toml").write_text(
+        '[project]\ndependencies = ["PyMuPDF==2.1", "pymupdf-layout==2.1", "pymupdf4llm==2.1"]\n',
+        encoding="utf-8",
+    )
+    (root / "backend/requirements.txt").write_text(
+        "PyMuPDF==2.1\npymupdf-layout==2.1\npymupdf4llm==2.1\n", encoding="utf-8"
+    )
+    assert module.verify_inputs(root) == "2.1"
+
+
 def test_installed_build_interpreter_must_match_source(tmp_path: Path, monkeypatch) -> None:
     root = _fixture(tmp_path)
     monkeypatch.setattr(module, "_installed_pdf_version", lambda: "1.26.0")

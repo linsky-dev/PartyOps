@@ -37,7 +37,7 @@ def _one_exact_pin(dependencies: list[str], location: str) -> str:
         if not isinstance(requirement, str):
             raise ValueError("WINDOWS_PDF_DEPENDENCIES_INVALID:" + location)
         stripped = requirement.strip()
-        if re.match(r"^pymupdf(?:\b|\s|[<>=!~])", stripped, flags=re.IGNORECASE):
+        if re.match(r"^pymupdf(?:$|\s|[<>=!~\[;@])", stripped, flags=re.IGNORECASE):
             match = _PIN.fullmatch(stripped)
             if match is None:
                 raise ValueError("WINDOWS_PDF_DEPENDENCY_NOT_EXACTLY_PINNED:" + location)
