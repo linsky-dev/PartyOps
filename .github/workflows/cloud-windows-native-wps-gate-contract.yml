@@ -7,6 +7,9 @@ on:
       - '.github/workflows/cloud-windows-native-wps-gate-contract.yml'
       - 'scripts/rc1-windows-native-wps-gate.ps1'
       - 'backend/tests/test_rc1_windows_native_wps_gate.py'
+      - 'packaging/windows/build-windows.ps1'
+      - 'scripts/verify_windows_secure_pdf_package.py'
+      - 'backend/tests/test_rc1_windows_secure_pdf_package.py'
 
 permissions:
   contents: read
@@ -49,6 +52,54 @@ jobs:
           }
           "PARTYOPS_RC1_WPS_HOSTED_WINDOWS_SERVER_CORRECTLY_BLOCKED"
           # The child deliberately exited 2; do not leak that expected code as this job result.
+          exit 0
+
+      - name: Prepare a pinned Python interpreter for direct packager guard
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+          architecture: x64
+
+      - name: Direct Windows x64 packager must fail before making an installer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = (Get-Location).Path
+          $packager = Join-Path $root 'packaging/windows/build-windows.ps1'
+          $tokens = $null
+          $parseErrors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile($packager, [ref]$tokens, [ref]$parseErrors) | Out-Null
+          if (@($parseErrors).Count) { throw '[RC1_DIRECT_WINDOWS_PACKAGER_SCRIPT_INVALID]' }
+
+          # The pinned production dependency is known to be unsafe. This run
+          # proves the real packager rejects it BEFORE WPS, PyInstaller, or Inno.
+          # Child stderr is expected and captured, not treated as this job's failure.
+          $ErrorActionPreference = 'Continue'
+          try {
+            $output = & pwsh -NoProfile -File $packager -Python python 2>&1
+            $childExit = $LASTEXITCODE
+          } finally {
+            $ErrorActionPreference = 'Stop'
+          }
+          if ($childExit -eq 0) {
+            throw '[RC1_WINDOWS_UNSAFE_PDF_LOCK_REACHED_INSTALLER_BUILDER]'
+          }
+          $diagnostic = ($output | Out-String)
+          if ($diagnostic -notmatch '\[WINDOWS_X64_PDF_BUILD_INPUTS_UNSAFE\]' -or
+              $diagnostic -notmatch 'PyMuPDF 1\.26\.0 violates security floor') {
+            throw '[RC1_DIRECT_PACKAGER_DID_NOT_FAIL_AT_EXPECTED_SECURITY_GATE]'
+          }
+          foreach ($path in @(
+            'artifacts/PartyOps_1.4.6-rc.1_windows_amd64.exe',
+            'artifacts/PartyOps_1.4.6-rc.1_windows_amd64.candidate.json',
+            'artifacts/windows-runtime',
+            '.build-windows'
+          )) {
+            if (Test-Path -LiteralPath (Join-Path $root $path)) {
+              throw "[RC1_DIRECT_PACKAGER_LEFT_BUILD_ARTIFACT] $path"
+            }
+          }
+          'PARTYOPS_RC1_DIRECT_WINDOWS_X64_UNSAFE_PDF_PACKAGE_BLOCKED_BEFORE_BUILD'
           exit 0
 
   native-arm64-must-reject-x64-wps-acceptance:
