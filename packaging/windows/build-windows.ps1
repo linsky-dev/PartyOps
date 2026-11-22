@@ -13,6 +13,17 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 . (Join-Path $PSScriptRoot "prepare-dotnet48-runtime.ps1")
 $releaseVersion = "1.4.6-rc.1"
 $releaseTag = "v1.4.6-rc.1"
+# Independently fail closed in the ORIGINAL Windows x64 builder, even when
+# invoked directly rather than through the RC1 native WPS / release workflow.
+# A safe uv.lock value alone is insufficient while requirements.txt still
+# controls the packages PyInstaller actually bundles.
+$securePdfVerifier = Join-Path $repoRoot "scripts\verify_windows_secure_pdf_package.py"
+if (-not $LegacyArchitecture) {
+  & $Python $securePdfVerifier --root $repoRoot
+  if ($LASTEXITCODE -ne 0) {
+    throw "[WINDOWS_X64_PDF_BUILD_INPUTS_UNSAFE] 生产锁、项目声明与安装依赖必须全部一致且已修复。"
+  }
+}
 & $Python (Join-Path $repoRoot "scripts\verify-full-function-gate.py") verify --root $repoRoot --scope package
 if ($LASTEXITCODE -ne 0) { throw "全功能测试门禁失败，拒绝生成 Windows 安装包。" }
 & $Python (Join-Path $repoRoot "scripts\verify-version-consistency.py") `
@@ -321,6 +332,12 @@ if (-not $isLegacy) {
     $ErrorActionPreference = $previousEap
   }
   Assert-NativeSuccess "Windows Python 构建依赖安装"
+  # The active PyInstaller interpreter must actually contain the safe version.
+  # This catches pip reinstalling an old requirements.txt PDF package.
+  & $Python $securePdfVerifier --root $repoRoot --check-installed
+  if ($LASTEXITCODE -ne 0) {
+    throw "[WINDOWS_X64_PDF_BUILD_ENV_UNSAFE] PyInstaller Python 里的 PDF 库与安全锁不一致。"
+  }
 }
 $sqliteVersion = & $Python -c "import sqlite3; print(sqlite3.sqlite_version)"
 Assert-NativeSuccess "开发运行时 SQLite 版本读取"
