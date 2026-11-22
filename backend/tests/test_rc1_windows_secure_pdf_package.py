@@ -56,10 +56,10 @@ def test_vulnerable_or_inconsistent_source_cannot_package(
 
 def test_installed_build_interpreter_must_match_source(tmp_path: Path, monkeypatch) -> None:
     root = _fixture(tmp_path)
-    monkeypatch.setattr(module.importlib.metadata, "version", lambda _name: "1.26.0")
+    monkeypatch.setattr(module, "_installed_pdf_version", lambda: "1.26.0")
     with pytest.raises(ValueError, match="WINDOWS_PDF_BUILD_INTERPRETER_VERSION_MISMATCH"):
         module.verify_inputs(root, check_installed=True)
-    monkeypatch.setattr(module.importlib.metadata, "version", lambda _name: "2.1.0")
+    monkeypatch.setattr(module, "_installed_pdf_version", lambda: "2.1.0")
     assert module.verify_inputs(root, check_installed=True) == "2.1"
 
 

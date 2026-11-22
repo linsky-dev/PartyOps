@@ -47,6 +47,11 @@ def _one_exact_pin(dependencies: list[str], location: str) -> str:
     return matches[0]
 
 
+def _installed_pdf_version() -> str:
+    """One overridable seam so unit tests never patch global metadata APIs."""
+    return importlib.metadata.version("PyMuPDF")
+
+
 def verify_inputs(root: Path, *, check_installed: bool = False) -> str:
     backend = root.resolve(strict=True) / "backend"
     lock_version = assert_safe_pymupdf_lock(backend / "uv.lock")
@@ -70,7 +75,7 @@ def verify_inputs(root: Path, *, check_installed: bool = False) -> str:
         )
     if check_installed:
         try:
-            installed = importlib.metadata.version("PyMuPDF")
+            installed = _installed_pdf_version()
         except importlib.metadata.PackageNotFoundError:
             raise ValueError("WINDOWS_PDF_BUILD_INTERPRETER_PYMUPDF_MISSING") from None
         if _normalized_version(installed) != locked:
