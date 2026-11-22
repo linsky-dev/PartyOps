@@ -10,6 +10,9 @@ on:
       - 'packaging/windows/build-windows.ps1'
       - 'scripts/verify_windows_secure_pdf_package.py'
       - 'backend/tests/test_rc1_windows_secure_pdf_package.py'
+      - 'scripts/test.ps1'
+      - 'scripts/verify-full-function-gate.py'
+      - 'backend/tests/test_full_function_gate.py'
 
 permissions:
   contents: read
@@ -24,6 +27,25 @@ jobs:
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
+
+      - name: Parse package-scoped original full-function QA entrypoint
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $entry = Join-Path (Get-Location) 'scripts/test.ps1'
+          $tokens = $null
+          $parseErrors = $null
+          $syntax = [System.Management.Automation.Language.Parser]::ParseFile($entry, [ref]$tokens, [ref]$parseErrors)
+          if (@($parseErrors).Count -ne 0) { throw '[RC1_FULL_FUNCTION_POWERSHELL_SYNTAX_INVALID]' }
+          $scope = @($syntax.ParamBlock.Parameters | Where-Object {
+            $_.Name.VariablePath.UserPath -eq 'Scope'
+          })
+          if ($scope.Count -ne 1 -or $scope[0].DefaultValue.Extent.Text -notmatch 'Full') {
+            throw '[RC1_PACKAGE_SCOPE_NOT_OPT_IN_OR_FULL_NOT_DEFAULT]'
+          }
+          # Only parses the original test script. Real WPS golden cases are
+          # deliberately not attempted on Windows Server.
+          'PARTYOPS_RC1_NATIVE_PACKAGE_QA_SCOPE_PARSE_PASS'
 
       - name: Validate PowerShell grammar and hosted-server refusal
         shell: pwsh
