@@ -208,11 +208,12 @@ def record(root: Path, scope: str = "full") -> int:
             item for item in payload["scope"] if not item.startswith("website-")
         ]
     target.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    print(
-        "[FULL_FUNCTION_GATE_RECORDED] "
-        f"{target} package={source_fingerprints['package']['sha256']} "
-        f"website={source_fingerprints['website']['sha256']}"
+    # Package-only evidence intentionally has no website fingerprint.
+    # Printing must not assume that an untested scope was recorded.
+    scopes_logged = " ".join(
+        f"{name}={item['sha256']}" for name, item in source_fingerprints.items()
     )
+    print(f"[FULL_FUNCTION_GATE_RECORDED] {target} {scopes_logged}")
     return 0
 
 
