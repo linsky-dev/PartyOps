@@ -2,7 +2,7 @@ param(
   [string]$DocumentFormatterSource = $env:PARTYOPS_DOCUMENT_FORMATTER_SOURCE,
   [string]$DocumentFormatterParitySource = $env:PARTYOPS_DOCUMENT_FORMATTER_PARITY_SOURCE,
   [string]$DocumentFormatterParityGolden = $env:PARTYOPS_DOCUMENT_FORMATTER_PARITY_GOLDEN,
-  [ValidateSet("Full", "Package")][string]$Scope = "Full"
+  [ValidateSet("Full", "Package", "WpsOnly")][string]$Scope = "Full"
 )
 
 $ErrorActionPreference = "Stop"
@@ -13,10 +13,11 @@ $corepackCommand = Get-Command "corepack" -ErrorAction SilentlyContinue
 if (-not (Test-Path -LiteralPath $python)) {
   throw "缺少后端 Python 环境：$python。请先按开发说明安装锁定依赖。"
 }
-if (-not $corepackCommand) {
+# Real-WPS goldens are independent of frontend and website tooling.
+if (-not $corepackCommand -and $Scope -ne "WpsOnly") {
   throw "未找到 Corepack。请安装 Node.js 22 并启用 package.json 指定的 pnpm 版本。"
 }
-$corepack = $corepackCommand.Source
+$corepack = if ($corepackCommand) { $corepackCommand.Source } else { "" }
 
 if ([string]::IsNullOrWhiteSpace($DocumentFormatterParitySource)) {
   $DocumentFormatterParitySource = Join-Path $root "backend\tests\fixtures\document-formatter-source\input-manual-break.docx"
@@ -178,6 +179,13 @@ finally {
     Stop-Process -Force -ErrorAction SilentlyContinue
 }
 
+# All original x64/x86 WPS builds, goldens, and six-function 12-scenario
+# end-to-end checks have run above. This opt-in path is NOT a package release
+# test. It must stop before audit, full-function receipt and installer build.
+if ($Scope -eq "WpsOnly") {
+  Write-Host "[NATIVE_WPS_ONLY_FINISHED] WPS 测试完成；全量安全、发布和打包门禁未执行。"
+  return
+}
 Invoke-Checked { & $corepack pnpm --dir (Join-Path $root "frontend") audit --prod --audit-level high } "前端生产依赖审计"
 # Windows/package QA must remain independently executable when the separately
 # maintained website checkout has not yet been restored. Full remains default.

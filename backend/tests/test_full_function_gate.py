@@ -100,7 +100,7 @@ def test_package_only_wps_evidence_never_certifies_website_or_full(tmp_path: Pat
 
 def test_package_only_switch_preserves_native_wps_and_security_checks() -> None:
     source = (ROOT / "scripts/test.ps1").read_text(encoding="utf-8")
-    assert '[ValidateSet("Full", "Package")][string]$Scope = "Full"' in source
+    assert '[ValidateSet("Full", "Package", "WpsOnly")][string]$Scope = "Full"' in source
     assert source.count('if ($Scope -eq "Full")') == 2
     for command in (
         'verify-document-formatter-parity.py',
@@ -114,6 +114,18 @@ def test_package_only_switch_preserves_native_wps_and_security_checks() -> None:
         assert command in source
     assert '($Scope.ToLowerInvariant())' not in source
     assert '$gateScope = $Scope.ToLowerInvariant()' in source
+
+
+def test_wps_only_mode_stops_after_real_wps_e2e_without_granting_release() -> None:
+    source = (ROOT / "scripts/test.ps1").read_text(encoding="utf-8")
+    assert source.count('if ($Scope -eq "WpsOnly")') == 1
+    stop = source.index('if ($Scope -eq "WpsOnly")')
+    assert source.index("verify-document-formatter-parity.py") < stop
+    assert source.index("verify-document-formatter-features-e2e.py") < stop
+    assert source.index('  return\n}', stop) < source.index("pip_audit")
+    assert stop < source.index("verify-full-function-gate.py")
+    assert stop < source.index('pnpm --dir (Join-Path $root "frontend") audit')
+    assert 'Scope.ToLowerInvariant()' in source
 
 
 def test_package_gate_rejects_changed_legacy_wheel_lock(tmp_path: Path) -> None:
