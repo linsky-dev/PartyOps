@@ -76,8 +76,11 @@ def test_windows_builder_enforces_gate_before_and_after_pip_install() -> None:
     gate = "verify_windows_secure_pdf_package.py"
     assert source.count(gate) == 1
     assert source.index(gate) < source.index("verify-full-function-gate.py")
-    assert source.index("if (-not $LegacyArchitecture) {") < source.index(gate)
-    assert source.index("PyMuPDF") < source.index("--check-installed")
+    assert source.index(gate) < source.index("if (-not $LegacyArchitecture) {")
+    assert source.index("if (-not $LegacyArchitecture) {") < source.index(
+        "& $Python $securePdfVerifier --root $repoRoot"
+    )
     assert source.index("pip install -r") < source.index("--check-installed")
+    assert source.index("--check-installed") < source.index("[WINDOWS_X64_PDF_BUILD_ENV_UNSAFE]")
     assert source.count("--check-installed") == 1
     assert "[WINDOWS_X64_PDF_BUILD_ENV_UNSAFE]" in source
