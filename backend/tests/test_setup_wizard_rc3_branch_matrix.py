@@ -855,7 +855,16 @@ def test_personal_process_stop_is_pid_safe_and_bounded(
     )
     signals: list[int] = []
     monkeypatch.setattr(setup_wizard.os, "kill", lambda _pid, sig: signals.append(sig))
-    monkeypatch.setattr(setup_wizard.time, "sleep", lambda _seconds: None)
+    # Patch only this module's clock: time.monotonic is otherwise shared by
+    # pytest/async libraries that can consume our finite synthetic ticks.
+    monkeypatch.setattr(
+        setup_wizard,
+        "time",
+        SimpleNamespace(
+            monotonic=setup_wizard.time.monotonic,
+            sleep=lambda _seconds: None,
+        ),
+    )
     assert setup_wizard._stop_personal_process_for_data_migration(data_dir, 18775)
     assert signals == [setup_wizard.signal.SIGTERM]
     assert not marker.exists()
