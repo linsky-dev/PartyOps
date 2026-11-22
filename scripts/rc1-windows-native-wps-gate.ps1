@@ -175,7 +175,9 @@ function Save-Receipt {
   )
 }
 try {
-  & (Join-Path $root 'scripts/test.ps1')
+  # Run the unchanged installer/WPS tests without depending on the separately
+  # hosted website source. This mode cannot bless website or full publication.
+  & (Join-Path $root 'scripts/test.ps1') -Scope Package
   if ($LASTEXITCODE -ne 0) { throw '[WINDOWS_ORIGINAL_FULL_FUNCTION_TESTS_FAILED]' }
   & $Python (Join-Path $root 'scripts/verify-full-function-gate.py') verify --root $root --scope package
   if ($LASTEXITCODE -ne 0) { throw '[WINDOWS_FULL_FUNCTION_RECORD_UNVERIFIED]' }

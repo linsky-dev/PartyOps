@@ -163,12 +163,17 @@ def _fingerprint_record(root: Path, scope: str) -> dict[str, object]:
     return {"sha256": fingerprint, "file_count": file_count}
 
 
-def record(root: Path) -> int:
+def record(root: Path, scope: str = "full") -> int:
+    # A package-only WPS acceptance must not depend on the independent website
+    # checkout, but it must also NEVER certify that untested website.
+    if scope not in ("full", "package"):
+        raise ValueError("record accepts only full or package scope")
+    scopes = ("package",) if scope == "package" else ("package", "website", "full")
     source_fingerprints = {
-        scope: _fingerprint_record(root, scope)
-        for scope in ("package", "website", "full")
+        name: _fingerprint_record(root, name)
+        for name in scopes
     }
-    if any(source_fingerprints[scope]["file_count"] == 0 for scope in ("package", "website")):
+    if any(source_fingerprints[name]["file_count"] == 0 for name in scopes):
         print(
             "[FULL_FUNCTION_GATE_SCOPE_MISSING] 安装包或官网源码范围为空，拒绝记录不完整测试门禁。",
             file=sys.stderr,
@@ -196,6 +201,12 @@ def record(root: Path) -> int:
             "dependency-audits-secret-scan-static-analysis",
         ],
     }
+    if scope == "package":
+        payload["record_scope"] = "package"
+        payload["suite"] = "scripts/test.ps1 -Scope Package"
+        payload["scope"] = [
+            item for item in payload["scope"] if not item.startswith("website-")
+        ]
     target.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(
         "[FULL_FUNCTION_GATE_RECORDED] "
@@ -223,6 +234,17 @@ def verify(root: Path, scope: str) -> int:
         return 2
     if payload.get("fingerprint_canonicalization") != FINGERPRINT_CANONICALIZATION:
         print("[FULL_FUNCTION_GATE_INVALID] 门禁指纹规范化版本无效。", file=sys.stderr)
+        return 2
+    record_scope = payload.get("record_scope", "full")
+    if record_scope not in ("full", "package"):
+        print("[FULL_FUNCTION_GATE_INVALID] 未知测试证据范围。", file=sys.stderr)
+        return 2
+    if record_scope == "package" and scope != "package":
+        print(
+            f"[FULL_FUNCTION_GATE_SCOPE_UNTESTED:{scope}] 仅运行安装包测试，"
+            "不得用于官网或完整发布门禁。",
+            file=sys.stderr,
+        )
         return 2
     fingerprints = payload.get("source_fingerprints")
     expected = fingerprints.get(scope) if isinstance(fingerprints, dict) else None
@@ -252,9 +274,9 @@ def main() -> int:
     args = parser.parse_args()
     root = args.root.resolve()
     if args.mode == "record":
-        if args.scope != "full":
-            parser.error("record 只能记录 full 范围")
-        return record(root)
+        if args.scope not in ("full", "package"):
+            parser.error("record 只能记录 full 或 package 范围")
+        return record(root, args.scope)
     return verify(root, args.scope)
 
 

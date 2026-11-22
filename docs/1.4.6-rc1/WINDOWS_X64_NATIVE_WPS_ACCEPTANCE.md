@@ -45,3 +45,11 @@ pwsh -NoProfile -File scripts/rc1-windows-native-wps-gate.ps1 -Mode BuildCandida
 - [Windows 全量源码 CI #44917466125](https://github.com/linsky-dev/PartyOps/actions/runs/44917466125) **2,414 passed / 17 skipped**；[隔离 PyMuPDF 2.1 全回归 #44917466041](https://github.com/linsky-dev/PartyOps/actions/runs/44917466041) **2,412 passed / 19 skipped**，且两者均通过原 95% 行、92% 分支覆盖门槛。这些证据不代替真实 WPS 交互操作。
 - PR 早期确有 `EastAsianPunctuationFontService.cs` 新文件、Windows/Linux 封装构建与源码暂存调整；本轮未改动这些文件。执行真实验收前须以冻结 SHA 确认原始上游快照及本机 WPS 版本，并验证六功能金样；不得仅依据 Windows Server 构建通过声明排版功能通过。
 - 生产 PyMuPDF 尚未取得完整跨架构安全版本方案，因此 `BuildCandidate` 的阻断必须保留。此文中的可执行命令只适用于获得授权的专用 QA 测试机。
+
+## 仅验证 Windows 安装包范围，不阻塞于独立官网源码（2026-11-22）
+
+- 原 \`scripts/test.ps1\` 默认 \`-Scope Full\` **保持不变**，仍运行原有排版、后端、前端、官网及安全完整质量门禁，记录 \`full/package/website\` 三范围指纹。
+- 专用 Windows 10/11 x64 原生验收入口在 \`NativeTests\` 和 \`BuildCandidate\` 下调用原测试脚本的 \`-Scope Package\` 模式，仅跳过**不随 PartyOps 安装包分发的官网**审计、测试和构建；原始 Windows x64/x86 WPS 源码回归、真实三页金样、六功能 12 场景、后端、前端、依赖安全审查、签名输入及源码冻结要求**全部保持**。
+- 该模式的 \`.release-gates/full-function-tests.json\` 只保存 \`package\` 指纹，并显式标注 \`record_scope=package\`；\`verify --scope website/full\` 必须拒绝。待最新版 EdgeOne 官网源码恢复并完成官网测试后，仍需运行原 \`scripts/test.ps1 -Scope Full\` 获取独立完整证据，且需双站真实预览与人工发布批准。
+- **仅为测试链路解耦，不解除 PDF 生产锁安全阻塞、不代替真实 Windows 10/11 WPS 用户桌面，更不授权打包或正式发布。** 当前云端普通 Windows Server Runner 不具备真实用户桌面和 WPS；不能把源码/合同测试误写成原生功能通过。
+

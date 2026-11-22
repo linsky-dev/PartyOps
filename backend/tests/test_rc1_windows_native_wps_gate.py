@@ -10,7 +10,7 @@ SOURCE = (ROOT / "scripts/rc1-windows-native-wps-gate.ps1").read_text(encoding="
 # Match executable invocations, not explanatory strings in the header comment.
 # False positives here previously prevented the entire Windows backend suite
 # from passing even though the gate itself refused unsupported environments.
-NATIVE_TEST_CALL = "& (Join-Path $root 'scripts/test.ps1')"
+NATIVE_TEST_CALL = "& (Join-Path $root 'scripts/test.ps1') -Scope Package"
 VERIFY_CALL = "& $Python (Join-Path $root 'scripts/verify-full-function-gate.py') verify --root $root --scope package"
 BUILD_CALL = "& (Join-Path $root 'packaging/windows/build-windows.ps1') -Python $Python"
 

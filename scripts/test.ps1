@@ -1,7 +1,8 @@
 param(
   [string]$DocumentFormatterSource = $env:PARTYOPS_DOCUMENT_FORMATTER_SOURCE,
   [string]$DocumentFormatterParitySource = $env:PARTYOPS_DOCUMENT_FORMATTER_PARITY_SOURCE,
-  [string]$DocumentFormatterParityGolden = $env:PARTYOPS_DOCUMENT_FORMATTER_PARITY_GOLDEN
+  [string]$DocumentFormatterParityGolden = $env:PARTYOPS_DOCUMENT_FORMATTER_PARITY_GOLDEN,
+  [ValidateSet("Full", "Package")][string]$Scope = "Full"
 )
 
 $ErrorActionPreference = "Stop"
@@ -178,7 +179,11 @@ finally {
 }
 
 Invoke-Checked { & $corepack pnpm --dir (Join-Path $root "frontend") audit --prod --audit-level high } "前端生产依赖审计"
-Invoke-Checked { & $corepack pnpm --dir (Join-Path $root "website") audit --prod --audit-level high } "官网生产依赖审计"
+# Windows/package QA must remain independently executable when the separately
+# maintained website checkout has not yet been restored. Full remains default.
+if ($Scope -eq "Full") {
+  Invoke-Checked { & $corepack pnpm --dir (Join-Path $root "website") audit --prod --audit-level high } "官网生产依赖审计"
+}
 Invoke-Checked { & $python -m pip check } "Python 依赖一致性检查"
 Invoke-CheckedWithRetry {
   & $python -m pip_audit -r (Join-Path $root "backend\requirements-release.txt")
@@ -200,13 +205,17 @@ Invoke-Checked { & $corepack pnpm --dir (Join-Path $root "frontend") run typeche
 Invoke-Checked { & $corepack pnpm --dir (Join-Path $root "frontend") run test:coverage } "前端覆盖率测试"
 Invoke-Checked { & $corepack pnpm --dir (Join-Path $root "frontend") run build } "前端生产构建"
 Invoke-Checked { & $corepack pnpm --dir (Join-Path $root "frontend") run test:sites } "静态入口测试"
-# 官网源码按发布策略不进入主仓库，发布门禁显式限制单 Worker，避免构建机
-# 同时驻留本地模型时 V8 并发预留耗尽 Windows 提交内存。
-Invoke-Checked {
-  & $corepack pnpm --dir (Join-Path $root "website") exec vitest run --coverage --minWorkers=1 --maxWorkers=1
-} "官网覆盖率测试"
-Invoke-Checked { & $corepack pnpm --dir (Join-Path $root "website") run build } "官网生产构建"
-Invoke-Checked { & $corepack pnpm --dir (Join-Path $root "website") run test:sites } "官网静态入口测试"
+# The website is a separate publication boundary. Only Full may audit/build it.
+# Package still runs ALL original WPS golden/six-function, backend, frontend,
+# dependency/security and native-package tests unchanged.
+if ($Scope -eq "Full") {
+  # 限制单 Worker，避免构建机同时驻留模型时 V8 并发占满提交内存。
+  Invoke-Checked {
+    & $corepack pnpm --dir (Join-Path $root "website") exec vitest run --coverage --minWorkers=1 --maxWorkers=1
+  } "官网覆盖率测试"
+  Invoke-Checked { & $corepack pnpm --dir (Join-Path $root "website") run build } "官网生产构建"
+  Invoke-Checked { & $corepack pnpm --dir (Join-Path $root "website") run test:sites } "官网静态入口测试"
+}
 $testTempRoot = Initialize-TestTempRoot
 $previousTemp = $env:TEMP
 $previousTmp = $env:TMP
@@ -235,7 +244,9 @@ finally {
     $env:TMP = $previousTmp
 }
 
-# 只有前述全量功能、覆盖率、安全与生产构建全部通过，才写入平台打包门禁。
+# Package evidence certifies ONLY the installer source scope; it can never
+# satisfy website/full release verification. Default Full is unchanged.
+$gateScope = $Scope.ToLowerInvariant()
 Invoke-Checked {
-  & $python (Join-Path $root "scripts\verify-full-function-gate.py") record --root $root
-} "记录全功能测试门禁"
+  & $python (Join-Path $root "scripts\verify-full-function-gate.py") record --root $root --scope $gateScope
+} "记录指定范围全功能测试门禁"
