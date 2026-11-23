@@ -61,7 +61,21 @@ New-Item -ItemType Directory -Force -Path `
 
 Copy-Item -LiteralPath (Join-Path $root "install.sh") -Destination $staging
 Copy-Item -LiteralPath (Join-Path $root "一键安装党建智办.sh") -Destination $staging
-Copy-Item -LiteralPath (Join-Path $root "安装说明.txt") -Destination $staging
+# 历史根目录“安装说明.txt”已不在当前源码中；从当前版本生成指南，
+# 避免离线包汇总因遗留文件名直接失败。
+$installationGuide = @(
+  "党建智办 PartyOps $version UOS V20 离线安装说明",
+  "一、备份原有账号、数据、附件和配置后，在解压目录运行 bash install.sh。",
+  "二、原位升级无需卸载旧版本；安装器按机器架构自动选择 amd64/arm64 DEB。",
+  "三、安装前自动校验 BUILD-KIT-SHA256SUMS 和安装包 SHA-256。",
+  "四、失败时查看 artifacts/one-click-install.log；勿删除业务数据。",
+  "五、当前为内部候选版，正式发布仍需 UOS 目标机安装验收。"
+) -join [Environment]::NewLine
+[IO.File]::WriteAllText(
+  (Join-Path $staging "安装说明.txt"),
+  $installationGuide + [Environment]::NewLine,
+  (New-Object System.Text.UTF8Encoding($false))
+)
 Copy-Item -LiteralPath (Join-Path $root "packaging\uos\one-click-install.sh") `
   -Destination (Join-Path $staging "packaging\uos")
 foreach ($document in @(
