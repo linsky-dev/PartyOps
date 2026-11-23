@@ -59,6 +59,101 @@ def trusted_data_directory(path: Path) -> Path:
     return path
 
 
+
+def windows_personal_owner_scope(path: Path) -> bool:
+    """Identify this Windows user's *configured* personal DB; never downgrade host ACLs.
+
+    The current OS account must own the saved mode, personal configuration,
+    database directory and database file. No broad write ACE is permitted.
+    An elevated service operator using a different user's profile will not
+    qualify; that case must use the existing protected-host recovery flow.
+    """
+    if os.name != "nt":
+        return False
+    import json
+
+    import win32api  # type: ignore[import-untyped]
+    import win32security  # type: ignore[import-untyped]
+
+    from .setup_wizard import config_root, load_host_environment
+
+    root = config_root()
+    mode_path = root / "mode.json"
+    config_path = root / "personal.env"
+    try:
+        for entry, limit in ((root, None), (mode_path, 8192), (config_path, 65536),
+                             (path, None), (path / "partyops.db", None)):
+            info = entry.lstat()
+            if stat.S_ISLNK(info.st_mode) or (
+                getattr(info, "st_file_attributes", 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT
+            ):
+                return False
+            if limit is not None and info.st_size > limit:
+                return False
+        mode = json.loads(mode_path.read_text(encoding="utf-8"))
+        if not isinstance(mode, dict) or mode.get("mode") != "personal":
+            return False
+        configured_path = Path(str(mode.get("config_path") or config_path))
+        if not configured_path.is_absolute() or configured_path.resolve(strict=True) != config_path.resolve(strict=True):
+            return False
+        environment = load_host_environment(config_path, inherit_environment=False)
+        saved_path = environment.get("PARTYOPS_DATA_DIR", "").strip()
+        if environment.get("PARTYOPS_MODE") != "personal" or not saved_path:
+            return False
+        declared = Path(saved_path)
+        if not declared.is_absolute() or declared.resolve(strict=True) != path.resolve(strict=True):
+            return False
+
+        token = win32security.OpenProcessToken(
+            win32api.GetCurrentProcess(), win32security.TOKEN_QUERY
+        )
+        try:
+            user_sid = win32security.ConvertSidToStringSid(
+                win32security.GetTokenInformation(token, win32security.TokenUser)[0]
+            )
+        finally:
+            token.Close()
+        allowed_writers = {
+            user_sid, "S-1-5-18", "S-1-5-32-544",
+            "S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464",
+        }
+        write_mask = (
+            0x00040000 | 0x00080000 | 0x10000000 | 0x40000000 |
+            0x00000002 | 0x00000004 | 0x00000010 | 0x00000040 | 0x00000100
+        )
+        for entry in (root, mode_path, config_path, path, path / "partyops.db"):
+            descriptor = win32security.GetFileSecurity(
+                str(entry),
+                win32security.OWNER_SECURITY_INFORMATION |
+                win32security.DACL_SECURITY_INFORMATION,
+            )
+            owner = win32security.ConvertSidToStringSid(
+                descriptor.GetSecurityDescriptorOwner()
+            )
+            if owner != user_sid:
+                return False
+            dacl = descriptor.GetSecurityDescriptorDacl()
+            if dacl is None:
+                return False
+            for index in range(dacl.GetAceCount()):
+                ace = dacl.GetAce(index)
+                ace_type, ace_flags = ace[0]
+                if ace_flags & 0x08:  # INHERIT_ONLY; not effective here.
+                    continue
+                if ace_type not in {
+                    win32security.ACCESS_ALLOWED_ACE_TYPE,
+                    getattr(win32security, "ACCESS_ALLOWED_OBJECT_ACE_TYPE", 5),
+                }:
+                    continue
+                sid = win32security.ConvertSidToStringSid(ace[-1])
+                if sid not in allowed_writers and int(ace[1]) & write_mask:
+                    return False
+        return True
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        return False
+
+
+
 def authorize_local_maintenance(db: Session, username: str, password: str) -> str:
     """在仍能验证现有管理员密码时，登记独立的本机维护授权。"""
     from sqlalchemy import select
@@ -119,7 +214,9 @@ def issue_local_admin_recovery(db: Session, proof: str) -> str:
 
 
 
-def issue_single_admin_emergency(db: Session, confirmation: str) -> str:
+def issue_single_admin_emergency(
+    db: Session, confirmation: str, *, method: str = "elevated-local-single-admin"
+) -> str:
     """Last-admin break-glass: elevated *local* operator, protected DB and exclusive lock.
 
     This action is NEVER exposed through HTTP. It is intentionally scoped to
@@ -149,15 +246,25 @@ def issue_single_admin_emergency(db: Session, confirmation: str) -> str:
     issued = issue_credential(db, admin, "admin_emergency", None, "local-emergency-console")
     write_audit(
         db, None, "auth.host_emergency_recovery_issue", "user", admin.id,
-        {"method": "elevated-local-single-admin", "credential_ttl_minutes": 30},
+        {"method": method, "credential_ttl_minutes": 30},
         "local-emergency-console",
     )
     return issued.credential
 
 
-def _run(path: Path, action: str, identity: str, proof: str) -> str:
+def _run(
+    path: Path, action: str, identity: str, proof: str, *, personal_scope: bool = False
+) -> str:
+    if personal_scope:
+        if action != "emergency" or not windows_personal_owner_scope(path):
+            raise RecoveryCLIError("个人模式目录归属或权限校验未通过。")
     os.environ["PARTYOPS_DATA_DIR"] = str(path)
     os.environ["PARTYOPS_ENVIRONMENT"] = "production"
+    if personal_scope:
+        os.environ["PARTYOPS_MODE"] = "personal"
+        from .config import get_settings
+
+        get_settings.cache_clear()
 
     from sqlalchemy import inspect
 
@@ -166,7 +273,7 @@ def _run(path: Path, action: str, identity: str, proof: str) -> str:
     from .main import DataDirectoryInstanceLock
 
     ensure_authoritative_host()
-    if os.name == "nt":
+    if os.name == "nt" and not personal_scope:
         from .setup_wizard import assert_windows_service_data_path_security
 
         assert_windows_service_data_path_security(path, verify_target=True)
@@ -179,7 +286,12 @@ def _run(path: Path, action: str, identity: str, proof: str) -> str:
             if action == "authorize":
                 return authorize_local_maintenance(db, identity, proof)
             if action == "emergency":
-                return issue_single_admin_emergency(db, proof)
+                return issue_single_admin_emergency(
+                    db, proof, method=(
+                        "windows-personal-owner-single-admin"
+                        if personal_scope else "elevated-local-single-admin"
+                    )
+                )
             return issue_local_admin_recovery(db, proof)
     finally:
         lock.release()
@@ -190,11 +302,19 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("action", choices=("authorize", "issue", "emergency"))
     parser.add_argument("--data-dir", required=True, type=Path)
     args = parser.parse_args(argv)
-    if not is_os_administrator() or not sys.stdin.isatty() or not sys.stdout.isatty():
-        print("此工具需在主机提升权限的本机交互终端中运行。", file=sys.stderr)
+    if not sys.stdin.isatty() or not sys.stdout.isatty():
+        print("此工具需在主机提升权限或个人目录所属账号的本机交互终端中运行。", file=sys.stderr)
         return 2
     try:
+        if os.name != "nt" and not is_os_administrator():
+            raise RecoveryCLIError("此工具需在主机提升权限的本机交互终端中运行。")
         path = trusted_data_directory(args.data_dir)
+        personal_scope = (
+            args.action == "emergency" and os.name == "nt"
+            and windows_personal_owner_scope(path)
+        )
+        if not is_os_administrator() and not personal_scope:
+            raise RecoveryCLIError("此工具需在主机提升权限的本机交互终端中运行。")
         identity = input("管理员用户名：").strip() if args.action == "authorize" else ""
         if args.action == "emergency":
             print(
@@ -207,7 +327,7 @@ def main(argv: list[str] | None = None) -> int:
             with warnings.catch_warnings():
                 warnings.simplefilter("error", getpass.GetPassWarning)
                 proof = getpass.getpass(prompt)
-        result = _run(path, args.action, identity, proof)
+        result = _run(path, args.action, identity, proof, personal_scope=personal_scope)
     except RecoveryCLIError as exc:
         print(str(exc), file=sys.stderr)
         return 2
