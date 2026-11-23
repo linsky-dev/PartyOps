@@ -61,7 +61,7 @@ def test_upgrade_finds_prior_install_in_32_and_64bit_registry_and_enforces_reuse
     assert "PARTYOPS_UPGRADE_USE_EXISTING_DIRECTORY" in iss
     assert "PARTYOPS_UPGRADE_PRESERVE_DATA_DIRECTORY" in iss
     assert "WizardForm.DirEdit.Text := PreviousAppInstallDir;" in iss
-    assert "不需要先卸载旧版" in iss
+    assert "无需卸载旧版" in iss
     assert "PreviousBusinessDataDir := PreviousDataDir;" in iss
     assert "Result := ValidateUpgradeLocations;" in iss
     assert iss.index("Result := ValidateUpgradeLocations;", iss.index(
