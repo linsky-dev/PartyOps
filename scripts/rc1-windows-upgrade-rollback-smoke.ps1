@@ -49,9 +49,15 @@ foreach ($name in @('PartyOpsHost','PartyOpsUpdateService')) {
 }
 New-Item -ItemType Directory -Path $logs -Force | Out-Null
 function Invoke-Setup {
-  param([string]$Path, [string]$LogPath, [string]$Stage)
+  param([string]$Path, [string]$LogPath, [string]$Stage,
+    [switch]$UsePreviousAppDir)
   $args = @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',
-    ('/DIR="' + $program + '"'),('/LOG="' + $LogPath + '"'))
+    ('/LOG="' + $LogPath + '"'))
+  # Only the FIRST RC6 install sets a custom /DIR. Subsequent installers
+  # must use previous Inno AppId for genuine same-directory upgrades.
+  if (-not $UsePreviousAppDir) {
+    $args += ('/DIR="' + $program + '"')
+  }
   $p = Start-Process -FilePath $Path -ArgumentList $args -PassThru
   try {
     if (-not $p.WaitForExit(900000)) {
@@ -91,6 +97,8 @@ $report = [ordered]@{
   new_installer_sha256 = $NewSha256.ToLowerInvariant()
   windows_10_11_real_client = $false
   native_wps_accepted = $false
+  rc1_in_place_without_dir_override = $false
+  rc6_rollback_without_dir_override = $false
   production_code_signing_accepted = $false
   database_schema_rollback_verified = $false
   synthetic_marker_preserved = $false
@@ -112,7 +120,7 @@ try {
   [IO.File]::WriteAllBytes($marker,$markerContent)
   $markerSha = (Get-FileHash -LiteralPath $marker -Algorithm SHA256).Hash.ToLowerInvariant()
   $report['synthetic_marker_sha256'] = $markerSha
-  Invoke-Setup -Path $new -LogPath (Join-Path $logs 'rc1-upgrade.log') -Stage 'RC1_UPGRADE'
+  Invoke-Setup -Path $new -LogPath (Join-Path $logs 'rc1-upgrade.log') -Stage 'RC1_UPGRADE' -UsePreviousAppDir
   $newExe = Read-Installed '1.4.6-rc.1'
   if ($newExe -eq $oldExe -or -not (Test-Path -LiteralPath $marker -PathType Leaf) -or
       (Get-FileHash -LiteralPath $marker -Algorithm SHA256).Hash.ToLowerInvariant() -ne $markerSha) {
@@ -120,9 +128,10 @@ try {
   }
   $report['rc1_exe_after_upgrade_sha256'] = $newExe
   $report['upgrade_passed'] = $true
+  $report['rc1_in_place_without_dir_override'] = $true
   # Only program-binary rollback on a throwaway synthetic-data host.
   # No claim that a migrated production SQLite DB can be downgraded.
-  Invoke-Setup -Path $old -LogPath (Join-Path $logs 'rc6-rollback.log') -Stage 'RC6_ROLLBACK'
+  Invoke-Setup -Path $old -LogPath (Join-Path $logs 'rc6-rollback.log') -Stage 'RC6_ROLLBACK' -UsePreviousAppDir
   $back = Read-Installed '1.4.5-rc.6'
   if ($back -ne $oldExe -or -not (Test-Path -LiteralPath $marker -PathType Leaf) -or
       (Get-FileHash -LiteralPath $marker -Algorithm SHA256).Hash.ToLowerInvariant() -ne $markerSha) {
@@ -130,6 +139,7 @@ try {
   }
   $report['rc6_exe_after_rollback_sha256'] = $back
   $report['synthetic_marker_preserved'] = $true
+  $report['rc6_rollback_without_dir_override'] = $true
   $report['status'] = 'PASS_HOSTED_PROGRAM_UPGRADE_AND_ROLLBACK_ONLY'
 } catch {
   $report['status'] = 'FAILED'
