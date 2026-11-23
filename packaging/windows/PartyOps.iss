@@ -801,8 +801,15 @@ begin
   end;
   if PreviousAppInstallDir = '' then
     exit;
-  if CompareText(ExpandFileName(WizardDirValue),
-      ExpandFileName(PreviousAppInstallDir)) <> 0 then
+  { Normalize legacy Inno's trailing separator before comparing a user-chosen
+    directory with the HKLM InstallLocation; both forms name the SAME folder.
+    An actual different /DIR remains rejected: never relocate a live service. }
+  Log('[PARTYOPS_UPGRADE_PATH_CHECK] selected=' + WizardDirValue +
+    '; registered=' + PreviousAppInstallDir);
+  if CompareText(
+      RemoveBackslashUnlessRoot(ExpandFileName(WizardDirValue)),
+      RemoveBackslashUnlessRoot(ExpandFileName(PreviousAppInstallDir))
+    ) <> 0 then
   begin
     Result := '[PARTYOPS_UPGRADE_USE_EXISTING_DIRECTORY] 检测到旧版 PartyOps ' +
       '安装在 ' + PreviousAppInstallDir + '。请保持此程序目录进行原位覆盖升级，' +
@@ -1357,6 +1364,16 @@ begin
   end;
 end;
 
+procedure ReportWizardError(Message: String);
+begin
+  { Inno /SUPPRESSMSGBOXES intentionally does not suppress [Code] MsgBox.
+    Never block an unattended install with an invisible modal error dialog. }
+  if WizardSilent then
+    Log('[PARTYOPS_SILENT_WIZARD_ERROR] ' + Message)
+  else
+    MsgBox(Message, mbError, MB_OK);
+end;
+
 function NextButtonClick(CurPageID: Integer): Boolean;
 var
   AppDir, Validator, PowerShell, Parameters, DiagnosticFile, Detail: String;
@@ -1368,13 +1385,30 @@ begin
     Detail := ValidateUpgradeLocations;
     if Detail <> '' then
     begin
-      MsgBox(Detail, mbError, MB_OK);
+      ReportWizardError(Detail);
       Result := False;
     end;
     if Result and (PreviousUnavailableBusinessDataDir <> '') and
        not UnavailableDataAcknowledged then
     begin
-      if MsgBox('[PARTYOPS_OLD_DATA_DISK_MISSING] 旧业务数据目录：' +
+      if WizardSilent then
+      begin
+        { Unattended installs must obtain EXPLICIT acknowledgement. Without
+          it, abort before extracting files or changing the data pointer. }
+        if CompareText(ExpandConstant('{param:ALLOWMISSINGDATA|0}'), '1') = 0 then
+        begin
+          UnavailableDataAcknowledged := True;
+          Log('[PARTYOPS_OLD_DATA_DISK_ACKNOWLEDGED] Explicit unattended ' +
+            'missing-data flag; old data is not recovered, deleted or migrated.');
+        end
+        else
+        begin
+          Log('[PARTYOPS_OLD_DATA_DISK_MISSING] 无人值守安装缺少 ' +
+            '/ALLOWMISSINGDATA=1 明确授权；旧业务数据不受影响，安装已停止。');
+          Result := False;
+        end;
+      end
+      else if MsgBox('[PARTYOPS_OLD_DATA_DISK_MISSING] 旧业务数据目录：' +
         PreviousUnavailableBusinessDataDir + #13#10 +
         '磁盘已不可访问，安装器无法从中恢复原账号、数据库、附件或证书。' +
         '可以选择新的本机数据目录继续安装，但旧数据不会被删除或迁移；' +
@@ -1391,7 +1425,7 @@ begin
   Detail := ValidateUpgradeLocations;
   if Detail <> '' then
   begin
-    MsgBox(Detail, mbError, MB_OK);
+    ReportWizardError(Detail);
     Result := False;
     exit;
   end;
@@ -1407,8 +1441,7 @@ begin
   DeleteFile(DiagnosticFile);
   if not FileExists(PowerShell) then
   begin
-    MsgBox('Windows PowerShell 不可用，无法安全验证程序目录；请检查 Windows 组件。',
-      mbError, MB_OK);
+    ReportWizardError('Windows PowerShell 不可用，无法安全验证程序目录；请检查 Windows 组件。');
     Result := False;
     exit;
   end;
@@ -1420,10 +1453,9 @@ begin
      (ResultCode <> 0) then
   begin
     Detail := ReadInstallPathDiagnostic(DiagnosticFile, ResultCode);
-    MsgBox('所选 PartyOps 程序目录无法使用：' + #13#10 +
+    ReportWizardError('所选 PartyOps 程序目录无法使用：' + #13#10 +
       Detail + #13#10 + #13#10 +
-      '请返回当前页面改选本机固定磁盘中的目录，例如 C:\Program Files\PartyOps。',
-      mbError, MB_OK);
+      '请返回当前页面改选本机固定磁盘中的目录，例如 C:\Program Files\PartyOps。');
     Result := False;
   end;
 end;
