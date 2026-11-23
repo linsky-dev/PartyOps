@@ -3290,7 +3290,7 @@ def _marked_runtime_file_is_trusted(root: Path, candidate: Path) -> bool:
     """核对安装根标记指向的可执行文件，防止用户可写标记被替换。"""
 
     try:
-        manifest = _read_small_json(root / "release-manifest.json")
+        manifest = _read_small_json(root / "release-manifest.json", limit=8 * 1024 * 1024)
         if manifest.get("product") != "PartyOps":
             return False
         relative = candidate.resolve().relative_to(root.resolve()).as_posix()
