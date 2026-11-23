@@ -15,7 +15,7 @@ permissions:
   contents: read
 concurrency:
   group: partyops-windows-buildonly-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 jobs:
   windows-preview:
     name: Actual Inno installer with isolated PyMuPDF 2.1 (unsigned)
