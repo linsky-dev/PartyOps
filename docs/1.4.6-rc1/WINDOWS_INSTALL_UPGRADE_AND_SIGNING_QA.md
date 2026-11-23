@@ -38,3 +38,19 @@ Get-CimInstance Win32_LogicalDisk | Select-Object DeviceID,DriveType,ProviderNam
 目前已成功的旧候选 EXE：`https://github.com/linsky-dev/PartyOps/actions/runs/45096682908/artifacts/14784506862`；这是截图报错发生时的先前版本，不含后续路径向导改进。修改后的程序需以新 GitHub CI 构建成功且 SHA-256 核对完成后另行分发。保留 `main`、RC6 原包、全部生产官网和未涉及的 WPS 源码不变。
 
 本轮所有内部候选均应继续显示 `BUILD_ONLY_UNVERIFIED_NATIVE_WPS`、`signed=false`、`release_ready=false`；不得将 Windows Server 的托管环境和历史 RC6 WPS 证据自动升级成新版 Windows 10/11 正式验收。
+
+## 六、原有用户覆盖升级操作与验收优先级（2026-11-23）
+
+**默认路线是直接安装新版覆盖旧版，不需要卸载。** 新旧 Inno `AppId` 保持一致，启用 `UsePreviousAppDir=yes`。新版安装向导进一步核对 64 位原安装记录以及 32 位注册表历史位置，将程序目录预填原路径，不允许不知情地换到第二套目录造成服务、快捷方式和旧数据失联。
+
+原数据目录按 `partyops.env`、`install-data-dir.txt` 的既有优先级恢复。升级时若用户选择不同数据目录，提示原路径与迁移要求，不自动把原数据库、证书或账号迁往新位置。检测到冲突的两套旧版安装注册时停止并留存旧版，不擅自删除任何一个安装。目录异常 ACL 仍拒绝在未知可写二进制上执行 LocalSystem 服务，不要求卸载作为修复前提。
+
+数据库恢复/失败回滚：本次补强了被强制终止时遗留的 `install-data-dir.txt.previous` 恢复机制。每次新事务先恢复未完成的原目录标记，再进行新事务切换；不能恢复即拒绝安装，不丢弃最后一份标记。
+
+**已证明**：在 GitHub 托管 Windows Server，真实 RC6 安装器经显式 `/DIR` 安装 → 真实 RC1 BUILD_ONLY 原位覆盖 → RC6 程序文件回滚、主程序 SHA-256 以及 ProgramData 合成标记未丢失，完整作业 `45101363940` 为 SUCCESS。
+
+**更严格的专项新增**：只在首次 RC6 安装指定 `/DIR`，后续 RC1 和 RC6 回滚不传 `/DIR`，验证默认旧路径查找；另在 RC6 初装后创建原业务数据目录的 SQLite 合成核验库及附件，检查升级/程序回滚后目录标记、SQLite 的 `PRAGMA quick_check`、内容和字节哈希都保留。合成 SQLite 并不是 PartyOps `0026→0028` 真正数据库迁移，此项仍需另行运行真实旧库夹具和服务/界面验收。
+
+**升级验收检查顺序**：旧版识别 → 原程序路径确认 → 原业务数据路径确认 → 备份校验 → 安全停止现有 PartyOps 服务 → 文件覆盖 → 主程序与旧用户桌面启动探针 → 服务恢复与账号权限 → 新版本数据库升级及健康状态 → 保存新的安装器缓存与回滚凭据。安装失败不意味着可以在生产数据库已经写入新版数据后任意重装旧版。
+
+为防止把 PascalScript 语法错误留到整包构建，另有快速 Windows Inno 编译专项，只使用明确标记的无功能 QA 载荷、不上传可执行样包，编译真实 `PartyOps.iss` 的目录向导、升级分支与中断恢复逻辑；此编译成功不代表正式 EXE 完整封装或真实用户测试。
