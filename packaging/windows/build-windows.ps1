@@ -589,6 +589,20 @@ Assert-NativeSuccess "原排版源码无窗口宿主写入安装包"
 $formatterStage = Join-Path $bundleRoot "formatter-host"
 $formatterParityEvidence = Join-Path $repoRoot ".release-gates\formatter-parity-$formatterPlatform.json"
 $formatterFeatureEvidence = Join-Path $repoRoot ".release-gates\formatter-features-e2e-$formatterPlatform.json"
+if ($BuildOnlyPreview) {
+  # A hosted CI builder cannot exercise the installed WPS GUI. Preserve the
+  # old signed-off receipt as HISTORICAL_REFERENCE_ONLY, never a fresh PASS.
+  $historicalFile = Join-Path $repoRoot 'artifacts/rc1-preview-historical-wps-reference.json'
+  if (-not (Test-Path -LiteralPath $historicalFile -PathType Leaf)) {
+    throw '[RC1_BUILD_ONLY_HISTORICAL_WPS_REFERENCE_MISSING]'
+  }
+  $reference = Get-Content -Raw -LiteralPath $historicalFile | ConvertFrom-Json
+  if ($reference.status -ne 'HISTORICAL_WPS_REFERENCE_ONLY' -or
+      $reference.current_version_native_wps_tested -or $reference.release_ready) {
+    throw '[RC1_BUILD_ONLY_HISTORICAL_WPS_REFERENCE_MISLABELED]'
+  }
+  Copy-Item -LiteralPath $historicalFile -Destination (Join-Path $formatterStage 'historical-wps-reference.json')
+} else {
 & $Python (Join-Path $repoRoot "scripts\verify-formatter-runtime-evidence.py") `
   --root $repoRoot `
   --runtime $formatterStage `
@@ -598,6 +612,7 @@ $formatterFeatureEvidence = Join-Path $repoRoot ".release-gates\formatter-featur
   --features-evidence $formatterFeatureEvidence `
   --output (Join-Path $formatterStage "runtime-evidence.json")
 Assert-NativeSuccess "Windows 原排版源码真实 WPS 金样与六功能证据写入安装包"
+}
 $bundledOfficeRuntime = Join-Path $bundleRoot "office-runtime"
 Copy-Item -LiteralPath $OfficeRuntime -Destination $bundledOfficeRuntime -Recurse -Force
 if ($isLegacy) {
@@ -611,6 +626,16 @@ foreach ($notice in @("README.md", "CHANGELOG.md", "LICENSE", "THIRD_PARTY_NOTIC
   $noticePath = Join-Path $repoRoot $notice
   if (-not (Test-Path -LiteralPath $noticePath)) { throw "发布包缺少开源声明文件：$notice" }
   Copy-Item -LiteralPath $noticePath -Destination $bundleRoot -Force
+}
+if ($BuildOnlyPreview) {
+  # Notice must describe the PDF library actually included in the binary.
+  $pdfNoticePath = Join-Path $bundleRoot 'THIRD_PARTY_NOTICES.md'
+  $pdfNotice = [IO.File]::ReadAllText($pdfNoticePath)
+  if (-not $pdfNotice.Contains('| PyMuPDF | 1.26.0 |')) {
+    throw '[RC1_BUILD_ONLY_PYMUPDF_LICENSE_NOTICE_UNEXPECTED]'
+  }
+  $pdfNotice = $pdfNotice.Replace('| PyMuPDF | 1.26.0 |', '| PyMuPDF | 2.1 |')
+  [IO.File]::WriteAllText($pdfNoticePath, $pdfNotice, [Text.UTF8Encoding]::new($false))
 }
 if ($runtimeProfile -eq "full") {
   Copy-Item -Path (Join-Path $localAiRoot "*") -Destination $bundleRoot -Force
@@ -652,7 +677,13 @@ if ($isLegacy) {
 if (-not (Test-Path -LiteralPath $InnoCompiler)) { throw "未找到 Inno Setup 6：$InnoCompiler" }
 $env:PARTYOPS_WINDOWS_BUILD_ROOT = $bundleRoot
 $env:PARTYOPS_WINDOWS_OUTPUT_ROOT = $outputRoot
-$installerBase = if ($isLegacy) { "PartyOps_1.4.6-rc.1_windows7_$targetArchitecture" } else { "PartyOps_1.4.6-rc.1_windows_amd64" }
+$installerBase = if ($isLegacy) {
+  "PartyOps_1.4.6-rc.1_windows7_$targetArchitecture"
+} elseif ($BuildOnlyPreview) {
+  "PartyOps_1.4.6-rc.1_windows_amd64_BUILD_ONLY_UNVERIFIED"
+} else {
+  "PartyOps_1.4.6-rc.1_windows_amd64"
+}
 $installer = Join-Path $outputRoot "$installerBase.exe"
 $hashPath = "$installer.sha256"
 $candidatePath = Join-Path $outputRoot "$installerBase.candidate.json"
@@ -679,7 +710,11 @@ try {
   }
   # LibreOffice 运行时包含大量文件；完整输出写入可审计日志，避免宿主输出通道
   # 截断或断开后误以为构建已结束。
-  & $InnoCompiler $innoScript *> $innoLog
+  if ($BuildOnlyPreview) {
+    & $InnoCompiler "/DPartyOpsOutputBase=$installerBase" $innoScript *> $innoLog
+  } else {
+    & $InnoCompiler $innoScript *> $innoLog
+  }
   $innoExitCode = $LASTEXITCODE
 } finally {
   $ErrorActionPreference = $previousEap
@@ -747,6 +782,26 @@ $candidateTemporary = "$candidatePath.tmp"
   ($candidate | ConvertTo-Json -Depth 5),
   (New-Object System.Text.UTF8Encoding($false))
 )
+if ($BuildOnlyPreview) {
+  $candidate.scope = 'BUILD_ONLY_UNVERIFIED_NATIVE_WPS'
+  $candidate.release_ready = $false
+  $candidate.current_version_native_wps_tested = $false
+  $candidate.full_function_gate_passed = $false
+  $candidate.production_pdf_lock_unchanged = $true
+  $candidate.embedded_pymupdf = '2.1'
+  $candidate.historical_wps_reference_sha256 = (
+    Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $formatterStage 'historical-wps-reference.json')
+  ).Hash.ToLowerInvariant()
+  $candidate.limitations = @(
+    '仅内部 Windows x64 候选包，不是正式更新',
+    '本版本 WPS 未在 Windows 10/11 重新验收',
+    '未完成新版安装、升级、回滚或数字签名',
+    'PyMuPDF 2.1 仅隔离 Windows x64，生产跨平台锁未修改'
+  )
+  [IO.File]::WriteAllText($candidateTemporary,
+    ($candidate | ConvertTo-Json -Depth 8),
+    [Text.UTF8Encoding]::new($false))
+}
 Move-Item -LiteralPath $hashTemporary -Destination $hashPath -Force
 Move-Item -LiteralPath $candidateTemporary -Destination $candidatePath -Force
 Write-Host "Windows 安装器已生成：$installer"
