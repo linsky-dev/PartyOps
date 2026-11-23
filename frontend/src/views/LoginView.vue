@@ -23,6 +23,7 @@ const loading = ref(false);
 const showPassword = ref(false);
 const showConnection = ref(false);
 const showRecovery = ref(false);
+const showHostRecoveryHelp = ref(false);
 const recoveryBusy = ref(false);
 const recoveryResult = ref("");
 const recoveryForm = reactive({ credential: "", username: "", newPassword: "" });
@@ -61,6 +62,7 @@ function clearFieldError(field: keyof LoginFieldErrors) {
 function closeRecovery() {
   if (!recoveryBusy.value) {
     showRecovery.value = false;
+    showHostRecoveryHelp.value = false;
     recoveryResult.value = "";
     Object.assign(recoveryForm, { credential: "", username: "", newPassword: "" });
   }
@@ -231,7 +233,20 @@ async function submit() {
         <a-button class="recovery-action" type="primary" @click="closeRecovery">返回登录</a-button>
       </div>
       <template v-else>
-        <p>请联系管理员核验身份后取得一次性恢复凭据。管理员可使用事先保存的离线恢复码。</p>
+        <p>普通成员请联系管理员核验身份后取得一次性恢复凭据；管理员可以使用事先离线保管的恢复码。</p>
+        <a-button type="text" class="host-recovery-help-toggle" @click="showHostRecoveryHelp = !showHostRecoveryHelp">
+          {{ showHostRecoveryHelp ? "收起主机应急恢复说明" : "我是唯一管理员，忘记密码且没有恢复码" }}
+        </a-button>
+        <div v-if="showHostRecoveryHelp" class="host-recovery-help">
+          <a-alert type="warning">没有预存恢复码时，不能仅凭网页或用户名重置密码。请在实际存放业务数据库的主机本机，使用操作系统管理员权限完成应急恢复；协同电脑和远程网页不能执行。</a-alert>
+          <p>先备份主机业务数据并停止 PartyOps 主机服务；在提升权限的本机交互终端执行以下命令。将数据目录替换为该主机实际使用的目录，不得指向新建空目录。</p>
+          <p><strong>UOS、麒麟及其他 Linux：</strong></p>
+          <code>sudo /opt/partyops/partyops --account-recovery emergency --data-dir /var/lib/partyops</code>
+          <p><strong>Windows：</strong>以管理员身份打开 PowerShell，在实际安装目录运行：</p>
+          <code>&amp; ".&#92;PartyOps.exe" --account-recovery emergency --data-dir "实际主机数据目录"</code>
+          <p>确认后工具只显示一次 30 分钟有效恢复凭据。重启主机服务后，在上方“恢复凭据”和“新密码”输入框完成重置；旧账号、业务数据及权限均保留，旧会话将失效。</p>
+          <p>如有其他有效管理员，应由该管理员使用正式后台流程操作，不应使用本机应急模式。</p>
+        </div>
         <a-form :model="recoveryForm" layout="vertical" class="recovery-form" @submit-success="recoverAccount">
           <a-form-item label="恢复凭据" required>
             <a-input-password v-model="recoveryForm.credential" autocomplete="off" />
@@ -507,6 +522,11 @@ form {
 .recovery-form { display: block; }
 .recovery-form :deep(.arco-input-wrapper) { height: auto; padding: 0 8px; font-size: 14px; }
 .recovery-action { margin-top: 16px; }
+.host-recovery-help-toggle { margin: 4px 0 12px; padding-left: 0; }
+.host-recovery-help { padding: 12px; border: 1px solid var(--line); background: rgba(247, 241, 231, 0.6); }
+.host-recovery-help p { margin: 10px 0 6px; font-size: 12px; line-height: 1.65; }
+.host-recovery-help code { display: block; padding: 8px; overflow-wrap: anywhere; user-select: all; background: rgba(255,255,255,0.76); font-size: 12px; }
+
 
 .connection-modal {
   display: flex;
