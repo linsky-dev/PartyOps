@@ -68,6 +68,108 @@ def _persist_user_runtime_root(runtime: Path, local: Path) -> None:
             pass
 
 
+def _registered_install_roots(registry=None) -> list[Path]:
+    """Read only the admin-owned HKLM Inno AppId registration.
+
+    The old copied launcher or pinned taskbar target can still run outside
+    the currently installed directory. Never trust the user-writable
+    install-root.txt marker or auto-launch arbitrary HKCU paths.
+    """
+    if registry is None:
+        if sys.platform != "win32":
+            return []
+        try:
+            import winreg as registry
+        except ImportError:
+            return []
+    roots: list[Path] = []
+    subkey = (
+        r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"
+        + "\\" + PARTYOPS_APP_ID + "_is1"
+    )
+    access = getattr(registry, "KEY_READ", 0)
+    flags = (
+        getattr(registry, "KEY_WOW64_64KEY", 0),
+        getattr(registry, "KEY_WOW64_32KEY", 0),
+    )
+    for view in dict.fromkeys(flags):
+        try:
+            with registry.OpenKey(
+                registry.HKEY_LOCAL_MACHINE, subkey, 0, access | view
+            ) as key:
+                value, _kind = registry.QueryValueEx(key, "InstallLocation")
+        except (OSError, AttributeError, TypeError):
+            continue
+        if not isinstance(value, str):
+            continue
+        # Only absolute local-drive paths. Never launch from UNC or device
+        # namespace. The real runtime preflight checks all critical hashes.
+        import re
+
+        if not re.match(r"^[a-zA-Z]:[\\/]", value):
+            continue
+        path = Path(value)
+        if path not in roots:
+            roots.append(path)
+    return roots
+
+
+def _recover_stale_launcher_via_installed_registration(
+    current_runtime: Path, log_path: Path, *, registry=None
+) -> bool:
+    """Redirect a stale desktop shortcut only to one verified installed app.
+
+    Do not 'repair' the security error by bypassing the release manifest.
+    Require the registered main EXE to match its manifest and all critical
+    runtime dependencies before starting the other launcher. Fail closed on
+    ambiguous installations; allow only one hop.
+    """
+    if os.getenv("PARTYOPS_LAUNCHER_REGISTRY_REDIRECTED") == "1":
+        return False
+    from app.windows_runtime_identity import read_installed_manifest
+
+    viable: list[tuple[Path, Path]] = []
+    for candidate in _registered_install_roots(registry):
+        try:
+            location = candidate.resolve(strict=True)
+            if location == current_runtime.resolve():
+                continue
+            main = location / "PartyOps.exe"
+            launch = location / "PartyOpsLauncher.exe"
+            if (main.is_symlink() or launch.is_symlink()
+                    or not main.is_file() or not launch.is_file()):
+                continue
+            manifest = read_installed_manifest(main)
+            if manifest.get("product") != "PartyOps":
+                continue
+            # Force inspection even in a source-level injected test.
+            _preflight_windows_runtime_dependencies(main, force=True)
+            viable.append((location, launch))
+        except (OSError, ValueError, HostStartupError):
+            continue
+    if len(viable) != 1:
+        return False
+    target_root, target_launcher = viable[0]
+    try:
+        environment = dict(os.environ)
+        environment["PARTYOPS_LAUNCHER_REGISTRY_REDIRECTED"] = "1"
+        subprocess.Popen(
+            [str(target_launcher), *sys.argv[1:]],
+            cwd=str(target_root),
+            close_fds=True,
+            env=environment,
+        )
+    except OSError:
+        return False
+    _append_launcher_diagnostic(
+        log_path,
+        "[PARTYOPS_STALE_SHORTCUT_REDIRECTED] "
+        f"旧快捷方式目录={current_runtime}；"
+        f"已改为 Windows 记录的有效安装目录={target_root}",
+    )
+    return True
+
+
 def ensure_user_protocols(runtime: Path, log_path: Path, registry=None) -> list[str]:
     """在原始桌面账号的 HKCU 注册协议；失败只降级功能，不回滚整套软件。"""
 
@@ -485,10 +587,18 @@ def main() -> int:
         # 每次桌面入口先按安装清单复核，避免把损坏包写成有效模式配置后才失败。
         _preflight_windows_runtime_dependencies(runtime / "PartyOps.exe")
     except HostStartupError as exc:
+        if (exc.code == RUNTIME_DEPENDENCY_MISSING
+                and not (runtime / "release-manifest.json").is_file()
+                and _recover_stale_launcher_via_installed_registration(
+                    runtime, local / "launcher.log"
+                )):
+            return 0
         detail = f"\n故障详情：{exc.detail[-800:]}" if exc.detail else ""
         message = (
             f"PartyOps 安装运行时未通过启动前检查（诊断码 {exc.code}）。\n\n"
             f"{exc}{detail}\n"
+            f"当前启动器所在目录：{runtime}\n"
+            "如果已把程序安装到新的磁盘，请优先从新的开始菜单快捷方式启动；"
             "请使用官网下载的同平台、同位数当前版本安装包执行修复安装；"
             "业务数据不会被删除。"
         )

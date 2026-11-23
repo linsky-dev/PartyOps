@@ -479,3 +479,86 @@ def test_host_launcher_preserves_explicit_lan_health_probe(monkeypatch, tmp_path
     assert launcher.main() == 0
     assert probes[0]["bind_host"] == "192.168.1.8"
     assert probes[0]["tls"] is True
+
+
+
+def test_stale_shortcut_migrates_only_to_hklm_appid_verified_runtime(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    launcher = load_launcher()
+    old = tmp_path / "old"
+    new = tmp_path / "new"
+    old.mkdir()
+    new.mkdir()
+    main = new / "PartyOps.exe"
+    main.write_bytes(b"test main binary")
+    (new / "PartyOpsLauncher.exe").write_bytes(b"test new launcher")
+    import hashlib
+    import json
+    manifest = {
+        "product": "PartyOps",
+        "schema_version": 1,
+        "files": [{
+            "path": "PartyOps.exe",
+            "sha256": hashlib.sha256(main.read_bytes()).hexdigest(),
+            "size": main.stat().st_size,
+        }],
+    }
+    (new / "release-manifest.json").write_text(json.dumps(manifest))
+    class Registry:
+        HKEY_LOCAL_MACHINE = "HKLM"
+        KEY_READ = 1
+        KEY_WOW64_64KEY = 256
+        KEY_WOW64_32KEY = 512
+        class Context:
+            def __enter__(self):
+                return self
+            def __exit__(self, *_args):
+                return None
+        @classmethod
+        def OpenKey(cls, root, path, _reserved, access):
+            assert root == cls.HKEY_LOCAL_MACHINE
+            assert launcher.PARTYOPS_APP_ID in path
+            if access & cls.KEY_WOW64_64KEY:
+                return cls.Context()
+            raise FileNotFoundError()
+        @staticmethod
+        def QueryValueEx(_key, name):
+            assert name == "InstallLocation"
+            return (str(new), 1)
+
+    monkeypatch.delenv("PARTYOPS_LAUNCHER_REGISTRY_REDIRECTED", raising=False)
+    monkeypatch.setattr(launcher, "_preflight_windows_runtime_dependencies",
+                        lambda *_args, **_kwargs: None)
+    captured = []
+    monkeypatch.setattr(launcher.subprocess, "Popen",
+                        lambda command, **kwargs: captured.append((command, kwargs)))
+    monkeypatch.setattr(launcher.sys, "argv",
+                        [str(old / "PartyOpsLauncher.exe"), "--background"])
+    assert launcher._recover_stale_launcher_via_installed_registration(
+        old, tmp_path / "launcher.log", registry=Registry
+    )
+    assert captured[0][0] == [str(new / "PartyOpsLauncher.exe"), "--background"]
+    assert captured[0][1]["env"]["PARTYOPS_LAUNCHER_REGISTRY_REDIRECTED"] == "1"
+    assert "PARTYOPS_STALE_SHORTCUT_REDIRECTED" in (
+        tmp_path / "launcher.log"
+    ).read_text()
+
+
+def test_stale_shortcut_never_redirects_without_manifest_or_on_ambiguity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    launcher = load_launcher()
+    new = tmp_path / "new"
+    new.mkdir()
+    (new / "PartyOps.exe").write_bytes(b"partial")
+    (new / "PartyOpsLauncher.exe").write_bytes(b"partial")
+    monkeypatch.delenv("PARTYOPS_LAUNCHER_REGISTRY_REDIRECTED", raising=False)
+    monkeypatch.setattr(launcher, "_registered_install_roots",
+                        lambda _registry=None: [new])
+    invoked = []
+    monkeypatch.setattr(launcher.subprocess, "Popen", lambda *_args, **_kwargs: invoked.append(1))
+    assert not launcher._recover_stale_launcher_via_installed_registration(
+        tmp_path / "old", tmp_path / "diagnostic.log"
+    )
+    assert not invoked
