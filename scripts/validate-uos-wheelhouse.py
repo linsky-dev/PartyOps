@@ -26,12 +26,15 @@ class WheelMetadata:
 
 
 GLIBC_BASELINE = (2, 17)
+# UOS Desktop V20 has glibc 2.28; this is an opt-in, OS-specific ABI ceiling.
+# Keep the broad Linux/麒麟 full profile pinned to glibc 2.17.
+UOS_V20_GLIBC = (2, 28)
 REQUIRED_SMART_RUNTIME = {"numpy", "onnxruntime", "tokenizers"}
 LOONG_CORE_GLIBC = (2, 38)
 
 
 def validate_wheel_platform(path: Path, architecture: str, profile: str = "full") -> None:
-    """拒绝错误架构及最低 glibc 高于 2.17 的原生轮子。"""
+    """拒绝错误架构及最低 glibc 高于指定发布档的原生轮子。"""
 
     try:
         _, _, _, tags = parse_wheel_filename(path.name)
@@ -41,7 +44,11 @@ def validate_wheel_platform(path: Path, architecture: str, profile: str = "full"
     if platforms == {"any"}:
         return
     machine = {"amd64": "x86_64", "arm64": "aarch64", "loong64": "loongarch64"}[architecture]
-    baseline = LOONG_CORE_GLIBC if profile == "core" else GLIBC_BASELINE
+    baseline = (
+        LOONG_CORE_GLIBC if profile == "core"
+        else UOS_V20_GLIBC if profile == "uos-v20"
+        else GLIBC_BASELINE
+    )
     compatible: list[tuple[int, int]] = []
     for platform_tag in platforms:
         if platform_tag == f"linux_{machine}":
@@ -50,7 +57,7 @@ def validate_wheel_platform(path: Path, architecture: str, profile: str = "full"
                 compatible.append(baseline)
                 continue
             raise ValueError(
-                f"{path.name} 只有通用 linux 标签，无法证明 glibc 2.17 ABI；"
+                f"{path.name} 只有通用 linux 标签，无法证明 glibc {baseline[0]}.{baseline[1]} ABI；"
                 "必须用 auditwheel 生成 manylinux2014 标签。"
             )
         if machine not in platform_tag:
@@ -235,7 +242,7 @@ def main() -> int:
     parser.add_argument(
         "--architecture", choices=("amd64", "arm64", "loong64"), default="amd64"
     )
-    parser.add_argument("--runtime-profile", choices=("full", "core"), default="full")
+    parser.add_argument("--runtime-profile", choices=("full", "core", "uos-v20"), default="full")
     args = parser.parse_args()
     try:
         return validate(
