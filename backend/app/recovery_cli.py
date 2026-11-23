@@ -146,7 +146,7 @@ def issue_single_admin_emergency(db: Session, confirmation: str) -> str:
             "多管理员单位请由其他管理员核验身份后重置。"
         )
     admin = admins[0]
-    issued = issue_credential(db, admin, "admin_host", None, "local-emergency-console")
+    issued = issue_credential(db, admin, "admin_emergency", None, "local-emergency-console")
     write_audit(
         db, None, "auth.host_emergency_recovery_issue", "user", admin.id,
         {"method": "elevated-local-single-admin", "credential_ttl_minutes": 30},
