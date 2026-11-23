@@ -1,6 +1,7 @@
 param(
   [ValidateSet("amd64", "arm64", "all")]
-  [string]$Architecture = "all"
+  [string]$Architecture = "all",
+  [ValidateSet("full", "uos-v20")][string]$RuntimeProfile = "full"
 )
 
 $ErrorActionPreference = "Stop"
@@ -52,7 +53,14 @@ function Prepare-Architecture([string]$TargetArchitecture) {
     "--abi", "cp311",
     "--only-binary=:all:"
   )
-  foreach ($platform in $target.PipPlatforms) {
+  # UOS V20 is glibc 2.28; do not relax older Linux profile.
+  $targetMachine = if ($TargetArchitecture -eq "amd64") { "x86_64" } else { "aarch64" }
+  $pipPlatforms = if ($RuntimeProfile -eq "uos-v20") {
+    @("manylinux_2_28_$targetMachine") + $target.PipPlatforms
+  } else {
+    $target.PipPlatforms
+  }
+  foreach ($platform in $pipPlatforms) {
     $pipArgs += @("--platform", $platform)
   }
   $pipArgs += @(
@@ -67,6 +75,7 @@ function Prepare-Architecture([string]$TargetArchitecture) {
 
   & $python (Join-Path $root "scripts\validate-uos-wheelhouse.py") `
     --architecture $TargetArchitecture `
+    --runtime-profile $RuntimeProfile `
     --wheelhouse $wheelhouse `
     --requirements `
     (Join-Path $root "backend\requirements.txt") `
