@@ -305,3 +305,108 @@ def test_cli_refuses_windows_service_acl_before_locking_or_committing(cli_store,
     assert not (cli_store.path / ".partyops-instance.lock").exists()
     with cli_store.runtime.session_factory() as db:
         assert db.get(SystemSetting, cli_store.setting_key) is None
+
+
+
+def test_single_admin_emergency_without_password_or_previous_proof(cli_store, monkeypatch, capsys):
+    """A locked-out sole admin can recover without a previously issued code."""
+    monkeypatch.setattr(recovery_cli, "input", lambda _prompt: "本机应急恢复", raising=False)
+    assert recovery_cli.main(["emergency", "--data-dir", str(cli_store.path)]) == 0
+    result = capsys.readouterr()
+    assert result.err == ""
+    assert result.out.count("一次性管理员恢复凭据（仅显示一次）") == 1
+    token = result.out.strip().split("一次性管理员恢复凭据（仅显示一次）：", 1)[1]
+    assert len(token) == 43
+    assert ADMIN_PASSWORD not in result.out
+    with cli_store.runtime.session_factory() as db:
+        user = db.get(User, cli_store.admin_id)
+        assert user.password_hash == cli_store.password_hash
+        credential = db.scalar(select(RecoveryCredential).where(
+            RecoveryCredential.digest == account_recovery.sm3_digest(token.encode("ascii"))
+        ))
+        assert credential is not None and credential.user_id == cli_store.admin_id
+        assert credential.purpose == "admin_host" and credential.used_at is None
+        assert db.scalar(select(AuditLog).where(
+            AuditLog.action == "auth.host_emergency_recovery_issue"
+        )) is not None
+    # The same authenticated redeem transaction must still enforce one-time use.
+    with cli_store.runtime.session_factory.begin() as db:
+        account_recovery.redeem_credential(
+            db, account_recovery.RedeemCredential(
+                credential=token, new_password="Synthetic-New-Strong-Passphrase!"
+            ), "127.0.0.1"
+        )
+    with cli_store.runtime.session_factory() as db:
+        user = db.get(User, cli_store.admin_id)
+        from app.security import verify_password
+        assert verify_password("Synthetic-New-Strong-Passphrase!", user.password_hash)
+        assert not verify_password(ADMIN_PASSWORD, user.password_hash)
+        assert user.role == UserRole.ADMIN
+        assert db.scalar(select(RecoveryCredential).where(
+            RecoveryCredential.digest == account_recovery.sm3_digest(token.encode("ascii"))
+        )).used_at is not None
+
+
+def test_emergency_refuses_multiple_or_no_active_administrators(cli_store, monkeypatch, capsys):
+    monkeypatch.setattr(recovery_cli, "input", lambda _prompt: "本机应急恢复", raising=False)
+    with cli_store.runtime.session_factory.begin() as db:
+        db.add(User(username="second-admin", display_name="另一名管理员",
+                    role=UserRole.ADMIN, password_hash=hash_password("SyntheticOtherAdmin!23")))
+    assert recovery_cli.main(["emergency", "--data-dir", str(cli_store.path)]) == 2
+    result = capsys.readouterr()
+    assert "多管理员" in result.err
+    assert "一次性管理员恢复凭据" not in result.out
+    with cli_store.runtime.session_factory() as db:
+        assert db.scalar(select(RecoveryCredential)) is None
+    with cli_store.runtime.session_factory.begin() as db:
+        for user in db.scalars(select(User).where(User.role == UserRole.ADMIN)):
+            user.active = False
+    assert recovery_cli.main(["emergency", "--data-dir", str(cli_store.path)]) == 2
+    assert "仅当主机恰有一名有效管理员" in capsys.readouterr().err
+
+
+def test_emergency_refuses_missing_confirmation_and_locked_instance(cli_store, monkeypatch, capsys):
+    monkeypatch.setattr(recovery_cli, "input", lambda _prompt: "incorrect confirmation", raising=False)
+    assert recovery_cli.main(["emergency", "--data-dir", str(cli_store.path)]) == 2
+    assert "确认未通过" in capsys.readouterr().err
+    with cli_store.runtime.session_factory() as db:
+        assert db.scalar(select(RecoveryCredential)) is None
+    monkeypatch.setattr(recovery_cli, "input", lambda _prompt: "本机应急恢复", raising=False)
+    lock = DataDirectoryInstanceLock(cli_store.path)
+    lock.acquire()
+    try:
+        assert recovery_cli.main(["emergency", "--data-dir", str(cli_store.path)]) == 2
+        assert "一次性管理员恢复凭据" not in capsys.readouterr().out
+    finally:
+        lock.release()
+    with cli_store.runtime.session_factory() as db:
+        assert db.scalar(select(RecoveryCredential)) is None
+
+
+def test_emergency_refuses_non_admin_console_before_input(cli_store, monkeypatch, capsys):
+    _console(monkeypatch, elevated=False)
+    monkeypatch.setattr(
+        recovery_cli, "input",
+        lambda _prompt: pytest.fail("不得在未提权的会话请求本机恢复确认"),
+        raising=False,
+    )
+    assert recovery_cli.main(["emergency", "--data-dir", str(cli_store.path)]) == 2
+    assert "提升权限" in capsys.readouterr().err
+    with cli_store.runtime.session_factory() as db:
+        assert db.scalar(select(RecoveryCredential)) is None
+
+
+def test_emergency_audit_failure_rolls_back_unissued_token(cli_store, monkeypatch, capsys):
+    monkeypatch.setattr(recovery_cli, "input", lambda _prompt: "本机应急恢复", raising=False)
+    with monkeypatch.context() as bad:
+        def fail_audit(*_args, **_kwargs):
+            raise RuntimeError("synthetic audit failure")
+        bad.setattr(audit, "write_audit", fail_audit)
+        assert recovery_cli.main(["emergency", "--data-dir", str(cli_store.path)]) == 2
+    result = capsys.readouterr()
+    assert "一次性管理员恢复凭据" not in result.out
+    assert "主机恢复未完成" in result.err
+    with cli_store.runtime.session_factory() as db:
+        assert db.scalar(select(RecoveryCredential)) is None
+    assert recovery_cli.main(["emergency", "--data-dir", str(cli_store.path)]) == 0
+    assert "一次性管理员恢复凭据" in capsys.readouterr().out
