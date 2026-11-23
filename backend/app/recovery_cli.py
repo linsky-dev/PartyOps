@@ -133,7 +133,7 @@ def issue_single_admin_emergency(db: Session, confirmation: str) -> str:
     from .enums import UserRole
     from .models import User
 
-    if not secrets.compare_digest(confirmation, "本机应急恢复"):
+    if not secrets.compare_digest(confirmation.encode("utf-8"), "本机应急恢复".encode("utf-8")):
         raise RecoveryCLIError("本机应急恢复确认未通过。")
     admins = db.scalars(select(User).where(
         User.role == UserRole.ADMIN,
