@@ -533,3 +533,40 @@ def test_windows_personal_emergency_rechecks_saved_owner_before_lock(
     monkeypatch.setattr(recovery_cli, "windows_personal_owner_scope", lambda _path: False)
     with pytest.raises(recovery_cli.RecoveryCLIError, match="个人模式目录归属"):
         recovery_cli._run(data_dir, "emergency", "", "本机应急恢复", personal_scope=True)
+
+
+def test_personal_scope_issue_skips_system_acl_but_preserves_lock_and_audit(
+    cli_store, monkeypatch,
+):
+    """Personal-owner recovery uses its own verified DACL, not host SYSTEM DACL."""
+    monkeypatch.setattr(
+        recovery_cli, "windows_personal_owner_scope",
+        lambda path: path == cli_store.path,
+    )
+    monkeypatch.setattr(
+        setup_wizard, "assert_windows_service_data_path_security",
+        lambda *_a, **_k: pytest.fail("个人数据库不应该应用 SYSTEM 服务 ACL"),
+    )
+    monkeypatch.setattr(
+        recovery_cli, "os",
+        SimpleNamespace(name="nt", environ=cli_store.env),
+    )
+    token = recovery_cli._run(
+        cli_store.path, "emergency", "", "本机应急恢复", personal_scope=True
+    )
+    assert len(token) == 43
+    with cli_store.runtime.session_factory() as db:
+        credential = db.scalar(select(RecoveryCredential))
+        assert credential is not None and credential.purpose == "admin_emergency"
+        assert credential.user_id == cli_store.admin_id
+        audit_entry = db.scalar(
+            select(AuditLog).where(
+                AuditLog.action == "auth.host_emergency_recovery_issue"
+            )
+        )
+        assert audit_entry is not None
+        assert audit_entry.detail.get("method") == "windows-personal-owner-single-admin"
+    assert cli_store.env["PARTYOPS_MODE"] == "personal"
+    lock = DataDirectoryInstanceLock(cli_store.path)
+    lock.acquire()
+    lock.release()
