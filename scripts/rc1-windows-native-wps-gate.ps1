@@ -146,6 +146,7 @@ $report = [ordered]@{
   missing_native_wps_paths = $missingNativeWps
   blockers = @($blocked.ToArray())
   native_wps_passed = $false
+  wps_verified_evidence = @()
   native_full_function_passed = $false
   candidate_installer_built = $false
   signed = $false
@@ -193,12 +194,64 @@ function Save-Receipt {
     [Text.UTF8Encoding]::new($false)
   )
 }
+# Confirm BOTH original x64 and x86 WPS runs wrote fresh evidence
+# bound to the relocated host and canonical three-page golden. This invokes
+# the EXISTING Windows packaging verifier before any native PASS marker.
+function Assert-NativeWpsEvidence {
+  param([Parameter(Mandatory = $true)][datetime]$StartedUtc)
+
+  $verified = @()
+  foreach ($architecture in @('x64', 'x86')) {
+    $runtime = Join-Path $root ('.release-gates\formatter-relocated-' + $architecture)
+    $parity = Join-Path $root ('.release-gates\formatter-parity-' + $architecture + '.json')
+    $features = Join-Path $root ('.release-gates\formatter-features-e2e-' + $architecture + '.json')
+    foreach ($file in @($parity, $features)) {
+      if (-not (Test-Path -LiteralPath $file -PathType Leaf)) {
+        throw "[NATIVE_WPS_EVIDENCE_MISSING] $architecture evidence missing: $file"
+      }
+      if ((Get-Item -LiteralPath $file).LastWriteTimeUtc -lt $StartedUtc.AddSeconds(-2)) {
+        throw "[NATIVE_WPS_EVIDENCE_STALE] $architecture evidence not from this run: $file"
+      }
+    }
+    $verifiedPath = Join-Path $runDirectory ('verified-formatter-' + $architecture + '.json')
+    $arguments = @(
+      '--root', $root,
+      '--runtime', $runtime,
+      '--platform', 'windows',
+      '--architecture', $architecture,
+      '--parity-evidence', $parity,
+      '--features-evidence', $features,
+      '--output', $verifiedPath
+    )
+    & $Python (Join-Path $root 'scripts/verify-formatter-runtime-evidence.py') @arguments
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $verifiedPath -PathType Leaf)) {
+      throw "[NATIVE_WPS_EVIDENCE_VERIFICATION_FAILED] $architecture"
+    }
+    $result = Get-Content -Raw -LiteralPath $verifiedPath | ConvertFrom-Json
+    if ($result.status -ne 'passed' -or $result.platform -ne 'windows' -or
+        $result.architecture -ne $architecture -or $result.provider -ne 'wps' -or
+        $result.rendered_pages -ne 3 -or $result.feature_cases -ne 10) {
+      throw "[NATIVE_WPS_EVIDENCE_CONTRACT_INVALID] $architecture"
+    }
+    $verified += [ordered]@{
+      architecture = $architecture
+      host_sha256 = [string]$result.host_sha256
+      parity_evidence_sha256 = [string]$result.parity_evidence_sha256
+      feature_evidence_sha256 = [string]$result.feature_evidence_sha256
+      verified_record_sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $verifiedPath).Hash.ToLowerInvariant()
+    }
+  }
+  $report.wps_verified_evidence = $verified
+}
+
+$wpsRunStartedUtc = [DateTime]::UtcNow
 try {
   if ($Mode -eq 'NativeTests') {
     # Actual WPS goldens + original six-function E2E only. Never issue a
     # full-function receipt, start PyInstaller, or claim a release-ready EXE.
     & (Join-Path $root 'scripts/test.ps1') -Scope WpsOnly
     if ($LASTEXITCODE -ne 0) { throw '[WINDOWS_ORIGINAL_WPS_TESTS_FAILED]' }
+    Assert-NativeWpsEvidence -StartedUtc $wpsRunStartedUtc
     $report.native_wps_passed = $true
     $report.status = 'PASS_NATIVE_WPS_ONLY'
   } else {
@@ -208,6 +261,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw '[WINDOWS_ORIGINAL_FULL_FUNCTION_TESTS_FAILED]' }
     & $Python (Join-Path $root 'scripts/verify-full-function-gate.py') verify --root $root --scope package
     if ($LASTEXITCODE -ne 0) { throw '[WINDOWS_FULL_FUNCTION_RECORD_UNVERIFIED]' }
+    Assert-NativeWpsEvidence -StartedUtc $wpsRunStartedUtc
     $report.native_wps_passed = $true
     $report.native_full_function_passed = $true
     $report.status = 'PASS_NATIVE_TESTS_ONLY'

@@ -61,3 +61,10 @@ pwsh -NoProfile -File scripts/rc1-windows-native-wps-gate.ps1 -Mode BuildCandida
 
 **BuildCandidate 严格不变：** 继续要求生产 PyMuPDF 安全升级，调用原 `scripts/test.ps1 -Scope Package` 完成排版、前后端及所有安全审查并核验包级凭据，最后才能调用原始 Windows 打包脚本。最终网站和全量发布仍需原 `-Scope Full` 及双官网批准。未在真实 Windows 10/11+WPS 用户桌面运行时，不得把 CI 的拒绝型 PASS 或静态测试认定为 WPS 功能验收成功。
 
+## WPS 原生证据复核前移（2026-11-23）
+
+以前 `verify-formatter-runtime-evidence.py` 主要由 Windows 打包流程调用。现在 `NativeTests` 和 `BuildCandidate` 在设置任何真实 WPS 通过标志前，都会调用**现有证据复核器**独立检查 x64 与 x86 的金样、六功能以及对应的搬迁宿主。
+
+拒绝缺失/不是本轮测试生成的证据、宿主 SHA-256 或固定源码快照不一致、Windows 三页金样不能逐像素一致、六功能十项场景不全及非 WPS 场景。每架构成功后生成 `artifacts/rc1-native-wps-*/verified-formatter-x64.json` 与 `verified-formatter-x86.json`，并在 `native-wps-candidate.json` 中记录宿主和证据的 SHA-256。
+
+**这只提高真实验收凭据可信度，并不代表云端已有 WPS 通过记录。** WPS 业务算法未修改；生产 PDF 安全锁、安装/升级/回滚、签名、完整跨平台和双官网发布仍独立阻断。

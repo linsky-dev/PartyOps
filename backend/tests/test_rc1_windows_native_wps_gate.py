@@ -82,6 +82,31 @@ def test_native_wps_only_cannot_forge_full_suite_or_installer() -> None:
     assert "release_ready = $false" in SOURCE
 
 
+def test_both_native_modes_require_fresh_verified_wps_host_and_goldens() -> None:
+    assert "function Assert-NativeWpsEvidence {" in SOURCE
+    assert "formatter-relocated-" in SOURCE
+    assert "formatter-parity-" in SOURCE
+    assert "formatter-features-e2e-" in SOURCE
+    assert "LastWriteTimeUtc -lt $StartedUtc.AddSeconds(-2)" in SOURCE
+    assert "verify-formatter-runtime-evidence.py" in SOURCE
+    assert SOURCE.count("Assert-NativeWpsEvidence -StartedUtc $wpsRunStartedUtc") == 2
+    assert SOURCE.index("Assert-NativeWpsEvidence -StartedUtc $wpsRunStartedUtc") < SOURCE.index(
+        "report.native_wps_passed = $true"
+    )
+    assert SOURCE.rindex("Assert-NativeWpsEvidence -StartedUtc $wpsRunStartedUtc") < SOURCE.index(
+        "report.native_full_function_passed = $true"
+    )
+    assert SOURCE.count("report.native_wps_passed = $true") == 2
+    assert "wps_verified_evidence = @()" in SOURCE
+    for marker in (
+        "NATIVE_WPS_EVIDENCE_MISSING",
+        "NATIVE_WPS_EVIDENCE_STALE",
+        "NATIVE_WPS_EVIDENCE_VERIFICATION_FAILED",
+        "NATIVE_WPS_EVIDENCE_CONTRACT_INVALID",
+    ):
+        assert marker in SOURCE
+
+
 def test_x64_native_gate_checks_os_arch_not_just_64bit_process() -> None:
     # Windows ARM64 also reports Is64BitOperatingSystem=True. Never treat it
     # as equivalent to the genuine Windows x64 client release target.
