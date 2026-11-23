@@ -909,7 +909,11 @@ def test_windows_installer_is_chinese_branded_and_preserves_custom_paths() -> No
     assert 'DiagnosticFile = ""' in validator
     assert "安装位置由用户自由选择" in validator
     assert "祖先目录的通用 ACL" in validator
-    assert installer.count("ErrorMessage := ValidateAndSecureInstallDirectory") == 1
+    assert installer.count("ErrorMessage := ValidateAndSecureInstallDirectory") == 0
+    assert installer.count("ErrorMessage := VerifyExtractedInstallDirectory") == 1
+    assert "ProgramDirectorySecuredBeforeExtraction := True;" in installer
+    assert "if not ProgramDirectorySecuredBeforeExtraction then" in installer
+    assert " -VerifyTargetAcl" in installer
 
 
 def test_frozen_windows_wizard_has_real_gui_self_test_gate() -> None:

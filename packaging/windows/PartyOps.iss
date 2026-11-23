@@ -174,6 +174,7 @@ var
   PreviousUnavailableAppInstallDir: String;
   PreviousUnavailableBusinessDataDir: String;
   UnavailableDataAcknowledged: Boolean;
+  ProgramDirectorySecuredBeforeExtraction: Boolean;
 
 const
   PartyOpsAppId = '{1C8EFC63-CAFC-46EF-A5E3-D3D119B5BB3A}';
@@ -1572,6 +1573,47 @@ begin
     Result := ReadInstallPathDiagnostic(DiagnosticFile, ResultCode);
 end;
 
+function VerifyExtractedInstallDirectory: String;
+var
+  AppDir, Validator, PowerShell, Parameters, DiagnosticFile: String;
+  ResultCode: Integer;
+begin
+  Result := '';
+  { The full repair with recursive icacls /setowner, /reset and integrity
+    propagation was already performed before any payload was released.
+    Repeating those expensive 16k-file rewrites AFTER extraction causes
+    unnecessary per-file antivirus/I/O churn and overwrites correctly
+    inherited DACLs. Do a separate FAIL-CLOSED read-only post-extraction
+    check instead: fixed volume, every path component + payload reparse
+    protection, the installed main binary and protected root ownership/DACL.
+    New Inno files inherit the secure parent DACL and OI/CI high-integrity
+    label applied before extraction. Never skip the original preflight. }
+  if not ProgramDirectorySecuredBeforeExtraction then
+  begin
+    Result := '[INSTALL_DIR_PRE_SECURE_NOT_RUN] 安装前目录安全保护尚未完成。';
+    exit;
+  end;
+  AppDir := ExpandConstant('{app}');
+  if not FileExists(AddBackslash(AppDir) + 'PartyOps.exe') then
+  begin
+    Result := '[INSTALL_DIR_PAYLOAD_MISSING] 新版本主程序未被完整写入。';
+    exit;
+  end;
+  ExtractTemporaryFile('validate-install-path.ps1');
+  Validator := ExpandConstant('{tmp}\validate-install-path.ps1');
+  PowerShell := ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe');
+  DiagnosticFile := ExpandConstant('{tmp}\partyops-postinstall-path-diagnostic.txt');
+  DeleteFile(DiagnosticFile);
+  Parameters := '-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ' +
+    AddQuotes(Validator) + ' -Path ' + AddQuotes(AppDir) +
+    ' -DiagnosticFile ' + AddQuotes(DiagnosticFile) + ' -VerifyTargetAcl';
+  ResultCode := 5;
+  if (not FileExists(PowerShell)) or
+     (not RunInstallPathValidator(PowerShell, Parameters, ResultCode)) or
+     (ResultCode <> 0) then
+    Result := ReadInstallPathDiagnostic(DiagnosticFile, ResultCode);
+end;
+
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 #ifdef PartyOpsLegacy
 var
@@ -1605,6 +1647,7 @@ begin
   Result := ValidateAndSecureInstallDirectory;
   if Result <> '' then
     exit;
+  ProgramDirectorySecuredBeforeExtraction := True;
   HostServiceExistedBeforeInstall := ServiceExists('PartyOpsHost');
   UpdateServiceExistedBeforeInstall := ServiceExists('PartyOpsUpdateService');
   ConfiguredPersonalModeBeforeInstall := IsConfiguredPersonalMode;
@@ -2163,7 +2206,7 @@ begin
   try
     { 文件释放后再次检查重解析点与最终 ACL，再注册 LocalSystem 服务。 }
     WizardForm.StatusLabel.Caption := '正在复核自定义程序目录与安装文件…';
-    ErrorMessage := ValidateAndSecureInstallDirectory;
+    ErrorMessage := VerifyExtractedInstallDirectory;
     if ErrorMessage <> '' then
       RaiseException(ErrorMessage);
     RunRuntimeStartupSelfTest;

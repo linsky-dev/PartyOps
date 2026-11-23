@@ -131,3 +131,26 @@ def test_missing_data_confirmation_is_required_for_silent_install() -> None:
     assert "无法从中恢复原账号、数据库、附件或证书" in source
     assert "旧数据不会被删除或迁移" in source
     assert "没有" not in source[source.index("function GetSuggestedProgramDir"):source.index("function ValidateUpgradeLocations")]
+
+
+
+def test_installation_uses_one_full_acl_repair_then_a_readonly_post_extract_guard() -> None:
+    """Avoid scanning and changing ACLs of 16k files twice without relaxing gates."""
+    source = INSTALLER.read_text(encoding="utf-8-sig")
+    pre = source.split("function ValidateAndSecureInstallDirectory: String;", 1)[1]
+    pre = pre.split("function VerifyExtractedInstallDirectory: String;", 1)[0]
+    post = source.split("function VerifyExtractedInstallDirectory: String;", 1)[1]
+    post = post.split("function PrepareToInstall", 1)[0]
+    assert " /reset /T /C /Q" in pre
+    assert " /setintegritylevel (OI)(CI)H /T /C /Q" in pre
+    assert " -VerifyTargetAcl" in pre
+    assert " -VerifyTargetAcl" in post
+    assert "if not ProgramDirectorySecuredBeforeExtraction then" in post
+    assert "INSTALL_DIR_PAYLOAD_MISSING" in post
+    assert "RunInstallPathValidator(PowerShell, Parameters, ResultCode)" in post
+    assert " /reset /T /C /Q" not in post
+    assert " /setintegritylevel" not in post
+    assert "ProgramDirectorySecuredBeforeExtraction := True;" in source
+    assert "ErrorMessage := VerifyExtractedInstallDirectory;" in source
+    assert "RunRuntimeStartupSelfTest;" in source
+    assert "StopServiceBeforeUpgrade(" in source
