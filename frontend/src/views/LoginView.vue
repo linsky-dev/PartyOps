@@ -254,10 +254,10 @@ async function submit() {
           <a-form-item label="新用户名（选填）">
             <a-input v-model="recoveryForm.username" autocomplete="off" />
           </a-form-item>
-          <a-form-item label="新密码（选填）">
+          <a-form-item label="新密码（主机应急恢复时必填）">
             <a-input-password v-model="recoveryForm.newPassword" autocomplete="new-password" />
           </a-form-item>
-          <p>留空两项只找回用户名，同样会消耗恢复凭据。</p>
+          <p>普通恢复凭据留空两项只找回用户名，同样会消耗恢复凭据。主机应急恢复凭据必须设置新密码；漏填不会消耗凭据。</p>
           <a-button type="primary" html-type="submit" :disabled="!recoveryForm.credential.trim()" :loading="recoveryBusy">验证并恢复</a-button>
         </a-form>
       </template>
