@@ -97,7 +97,7 @@ jobs:
           for record in entries:
               rel=record['path']
               p=runtime/rel
-              assert not p.is_symlink() or p.resolve().is_relative_to(runtime)
+              assert not p.is_symlink() or p.resolve().is_relative_to(runtime), f'symlink outside runtime: {rel} -> {p.readlink()} (resolved {p.resolve()})'
               assert p.is_file() and p.stat().st_size==record['size'] and sha(p)==record['sha256'], rel
               manifest_index[rel]=record['sha256']
           for name,digest in native.items():
