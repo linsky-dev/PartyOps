@@ -5,6 +5,9 @@ on:
     paths:
       - '.github/workflows/cloud-windows-x64-build-only-preview.yml'
       - 'packaging/windows/build-windows.ps1'
+      - 'packaging/windows/validate-install-path.ps1'
+      - 'packaging/windows/PartyOps.iss'
+      - 'backend/tests/test_rc1_windows_install_path.py'
       - 'scripts/rc1_windows_historical_wps_reference.py'
       - 'backend/tests/test_rc1_windows_build_only_preview.py'
       - 'backend/tests/test_rc1_windows_historical_wps_reference.py'
