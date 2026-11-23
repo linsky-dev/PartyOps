@@ -46,7 +46,6 @@ jobs:
           $qaCopy = Join-Path $root 'QA_ONLY_NOT_FOR_DISTRIBUTION.exe'
           $tamper = Join-Path $root 'QA_ONLY_TAMPERED.exe'
           $cert = $null
-          $store = $null
           $report = [ordered]@{
             schema_version = 1
             scope = 'HOSTED_EPHEMERAL_SELF_SIGNED_AUTHENTICODE_MECHANISM_ONLY'
@@ -65,14 +64,10 @@ jobs:
             $cert = New-SelfSignedCertificate -Type CodeSigningCert -CertStoreLocation 'Cert:\CurrentUser\My' -Subject 'CN=PartyOps Ephemeral CI QA ONLY - NOT PUBLISHER' -NotAfter (Get-Date).AddDays(1)
             Write-Host 'QA_AUTHENTICODE_STAGE_CERT_CREATED'
             if (-not $cert.HasPrivateKey) { throw '[QA_SIGNING_CERT_PRIVATE_KEY_ABSENT]' }
-            $store = [Security.Cryptography.X509Certificates.X509Store]::new(
-              [Security.Cryptography.X509Certificates.StoreName]::Root,
-              [Security.Cryptography.X509Certificates.StoreLocation]::CurrentUser
-            )
-            $store.Open([Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
-            Write-Host 'QA_AUTHENTICODE_STAGE_TRUST_ADD_BEGIN'
-            $store.Add($cert)
-            Write-Host 'QA_AUTHENTICODE_STAGE_TRUST_ADDED'
+            # Deliberately DO NOT add ephemeral QA certificates to the Windows
+            # trusted Root store. Hosted runners can block this operation (and
+            # modifying host trust would be unnecessary for a digest test).
+            # An intact self-signed signature must be present but NotTrusted.
             # A production publisher certificate is unavailable. Sign a
             # tiny independently compiled PE only to validate WinVerifyTrust,
             # signer certificate identity and tamper refusal; do NOT pretend
@@ -90,10 +85,12 @@ jobs:
             Write-Host 'QA_AUTHENTICODE_STAGE_VERIFY_BEGIN'
             $valid = Get-AuthenticodeSignature -LiteralPath $qaCopy
             Write-Host "QA_AUTHENTICODE_STAGE_VERIFY_RETURNED=$($valid.Status)"
-            if ($valid.Status -ne 'Valid' -or $valid.SignerCertificate.Thumbprint -ne $cert.Thumbprint) {
-              throw "[QA_SIGNING_VALID_SIGNATURE_REQUIRED] $($valid.Status) / $($result.Status)"
+            if ($valid.Status -ne 'NotTrusted' -or -not $valid.SignerCertificate -or
+                $valid.SignerCertificate.Thumbprint -ne $cert.Thumbprint) {
+              throw "[QA_SIGNING_UNTRUSTED_BUT_INTACT_REQUIRED] $($valid.Status) / $($result.Status)"
             }
             $report['qa_signed_copy_verified'] = $true
+            $report['qa_signature_trusted_by_windows'] = $false
             $report['qa_certificate_public_thumbprint'] = $cert.Thumbprint
             Copy-Item -LiteralPath $qaCopy -Destination $tamper
             $f = [IO.File]::Open($tamper,[IO.FileMode]::Open,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None)
@@ -107,17 +104,15 @@ jobs:
               $f.WriteByte([byte]($value -bxor 1))
             } finally { $f.Dispose() }
             $altered = Get-AuthenticodeSignature -LiteralPath $tamper
-            if ($altered.Status -eq 'Valid') { throw '[QA_SIGNING_TAMPER_UNDETECTED]' }
+            if ($altered.Status -ne 'HashMismatch') {
+              throw "[QA_SIGNING_TAMPER_HASH_MISMATCH_REQUIRED] $($altered.Status)"
+            }
             $report['tampered_copy_rejected'] = $true
             Write-Host 'QA_AUTHENTICODE_STAGE_TAMPER_TEST_FINISHED'
             $report['status'] = 'PASS_QA_TEST_CERT_ONLY_NOT_PRODUCTION_SIGNED'
           } catch {
             $report['error'] = [string]$_.Exception.Message
           } finally {
-            if ($store) {
-              if ($cert) { try { $store.Remove($cert) } catch {} }
-              $store.Close()
-            }
             if ($cert) {
               Remove-Item -LiteralPath ("Cert:\CurrentUser\My\" + $cert.Thumbprint) -Force -ErrorAction SilentlyContinue
             }
