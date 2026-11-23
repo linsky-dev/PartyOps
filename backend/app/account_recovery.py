@@ -25,7 +25,7 @@ from .models import LoginSession, RecoveryCredential, SystemSetting, User, utcno
 from .problems import ProblemException
 from .security import hash_password, verify_password
 
-Purpose = Literal["staff", "admin_offline", "admin_host"]
+Purpose = Literal["staff", "admin_offline", "admin_host", "admin_emergency"]
 USERNAME_PATTERN = r"^[A-Za-z0-9_.-]+$"
 TOKEN_PATTERN = re.compile(r"[A-Za-z0-9_-]{43}\Z", re.ASCII)
 RECOVERY_TTL = timedelta(minutes=30)
@@ -140,7 +140,7 @@ def _check_throttle(throttle: LoginThrottle, key: str, address: str, *, failed: 
 def _purpose_matches_user(user: User, purpose: str) -> bool:
     if purpose == "staff":
         return user.role != UserRole.ADMIN
-    return purpose in {"admin_offline", "admin_host"} and user.role == UserRole.ADMIN
+    return purpose in {"admin_offline", "admin_host", "admin_emergency"} and user.role == UserRole.ADMIN
 
 
 def revoke_recovery_credentials(
@@ -249,6 +249,11 @@ def redeem_credential(db: Session, payload: RedeemCredential, address: str) -> U
     if not user or not user.active or user.archived_at is not None or not _purpose_matches_user(user, purpose):
         _check_throttle(recovery_throttle, key, address, failed=True)
         raise recovery_error()
+    if purpose == "admin_emergency" and payload.new_password is None:
+        raise ProblemException(
+            422, "RECOVERY_PASSWORD_REQUIRED", "应急恢复必须设置新密码",
+            "请输入新密码后重新提交；恢复凭据尚未消耗。", headers=NO_STORE,
+        )
     if payload.has_changes:
         apply_credential_changes(
             db, user, payload, actor=None, address=address, action="auth.recovery_credentials_changed"
