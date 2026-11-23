@@ -48,7 +48,7 @@ PINS = {
         "record": "95ba0649d3156ba655bed2ecf5ae084de8b5e11c75720de8a7b8fa899ff25f1a",
         "evidence": "cc9ab788ca58b98ae462b8d55e06ef5a4dec169f8cb0fcfe0b8799a93b2c8403",
         "office_archive": "a47d693dce67d5f5e15ee6f7ed2faaba5a2234fd21c3cd0227cf0567e63f95a4",
-        "office_packages": "82b2b3b8c65cc1fcd369b86b0ca0b3ed675304898354b8f15143ba57365e90",
+        "office_packages": "82b2b3b8c65cc1fcd369b86b0ca0b3b3ed675304898354b8f15143ba57365e90",
         "loader": "ld-linux-aarch64.so.1",
     },
 }
