@@ -89,6 +89,26 @@ function Read-Installed {
   }
   return $hash
 }
+function Test-ExistingBusinessDataCanaries {
+  param([string]$Stage)
+  $afterDataDir = [IO.File]::ReadAllText($dataMarkerPath).Trim()
+  if ([string]::Compare($afterDataDir,$originalDataDir,$true) -ne 0) {
+    throw "[RC1_UPGRADE_QA_DATA_DIRECTORY_MOVED] $Stage"
+  }
+  if ((Get-FileHash -LiteralPath $attachment -Algorithm SHA256).Hash.ToLowerInvariant() -ne
+      $attachmentSha) {
+    throw "[RC1_UPGRADE_QA_ATTACHMENT_CHANGED] $Stage"
+  }
+  if ((Get-FileHash -LiteralPath $sqliteCanary -Algorithm SHA256).Hash.ToLowerInvariant() -ne
+      $sqliteSha) {
+    throw "[RC1_UPGRADE_QA_SYNTHETIC_SQLITE_CHANGED] $Stage"
+  }
+  & python -c 'import sqlite3,sys; c=sqlite3.connect("file:"+sys.argv[1]+"?mode=ro",uri=True); assert c.execute("pragma quick_check").fetchone()[0]=="ok"; assert c.execute("select value from qa_probe").fetchone()[0]==sys.argv[2]; c.close()' $sqliteCanary $qaId
+  if ($LASTEXITCODE -ne 0) {
+    throw "[RC1_UPGRADE_QA_SQLITE_CONTENT_OR_INTEGRITY_FAILED] $Stage"
+  }
+}
+
 $report = [ordered]@{
   schema_version = 1
   scope = 'HOSTED_WINDOWS_SERVER_RC6_TO_RC1_TO_RC6_BINARY_ROLLBACK_SYNTHETIC_ONLY'
@@ -102,6 +122,9 @@ $report = [ordered]@{
   production_code_signing_accepted = $false
   database_schema_rollback_verified = $false
   synthetic_marker_preserved = $false
+  previous_data_directory_preserved = $false
+  synthetic_sqlite_and_attachment_preserved = $false
+  real_partyops_schema_migrated = $false
   error = $null
 }
 $marker = $null
@@ -110,6 +133,35 @@ try {
   Invoke-Setup -Path $old -LogPath (Join-Path $logs 'rc6-initial.log') -Stage 'RC6_INITIAL'
   $oldExe = Read-Installed '1.4.5-rc.6'
   $report['rc6_exe_before_sha256'] = $oldExe
+  # Real user scenario: the RC6 installation already chose its Business
+  # Data location; RC1 must keep it, all attachment bytes and the existing
+  # SQLite files in-place. This CANARY SQLite is not the PartyOps schema and
+  # does not claim a 0026->0028 application database migration.
+  $dataMarkerPath = Join-Path $env:ProgramData 'PartyOps/install-data-dir.txt'
+  if (-not (Test-Path -LiteralPath $dataMarkerPath -PathType Leaf)) {
+    throw '[RC1_UPGRADE_QA_RC6_DATA_MARKER_NOT_FOUND]'
+  }
+  $originalDataDir = [IO.File]::ReadAllText($dataMarkerPath).Trim()
+  $expectedDataDir = Join-Path $env:ProgramData 'PartyOps-Data'
+  if ([string]::Compare(
+    [IO.Path]::GetFullPath($originalDataDir),
+    [IO.Path]::GetFullPath($expectedDataDir), $true) -ne 0) {
+    throw '[RC1_UPGRADE_QA_RC6_UNEXPECTED_BUSINESS_DATA_DIRECTORY]'
+  }
+  $attachmentDir = Join-Path $originalDataDir 'attachments'
+  New-Item -ItemType Directory -Path $attachmentDir -Force | Out-Null
+  $attachment = Join-Path $attachmentDir "qa-preserve-$qaId.txt"
+  $sqliteCanary = Join-Path $originalDataDir "qa-preserve-$qaId.sqlite"
+  [IO.File]::WriteAllBytes($attachment,
+    [Text.Encoding]::UTF8.GetBytes("existing-user-attachment-$qaId"))
+  $attachmentSha = (Get-FileHash -LiteralPath $attachment -Algorithm SHA256).Hash.ToLowerInvariant()
+  & python -c 'import sqlite3,sys; c=sqlite3.connect(sys.argv[1]); c.execute("create table qa_probe (value text not null)"); c.execute("insert into qa_probe values (?)",(sys.argv[2],)); c.commit(); c.close()' $sqliteCanary $qaId
+  if ($LASTEXITCODE -ne 0) { throw '[RC1_UPGRADE_QA_CREATE_SYNTHETIC_SQLITE_FAILED]' }
+  $sqliteSha = (Get-FileHash -LiteralPath $sqliteCanary -Algorithm SHA256).Hash.ToLowerInvariant()
+  Test-ExistingBusinessDataCanaries -Stage 'RC6_BASELINE'
+  $report['existing_rc6_data_dir'] = $originalDataDir
+  $report['existing_attachment_sha256'] = $attachmentSha
+  $report['existing_synthetic_sqlite_sha256'] = $sqliteSha
   # A synthetic *data* marker in ProgramData, not an injected program DLL.
   $dataRoot = Join-Path $env:ProgramData 'PartyOps'
   if (-not (Test-Path -LiteralPath $dataRoot -PathType Container)) {
@@ -126,6 +178,7 @@ try {
       (Get-FileHash -LiteralPath $marker -Algorithm SHA256).Hash.ToLowerInvariant() -ne $markerSha) {
     throw '[RC1_UPGRADE_QA_UPGRADE_NOT_REPLACED_OR_MARKER_LOST]'
   }
+  Test-ExistingBusinessDataCanaries -Stage 'RC1_UPGRADE'
   $report['rc1_exe_after_upgrade_sha256'] = $newExe
   $report['upgrade_passed'] = $true
   $report['rc1_in_place_without_dir_override'] = $true
@@ -137,7 +190,10 @@ try {
       (Get-FileHash -LiteralPath $marker -Algorithm SHA256).Hash.ToLowerInvariant() -ne $markerSha) {
     throw '[RC1_UPGRADE_QA_ROLLBACK_BINARY_OR_MARKER_CHANGED]'
   }
+  Test-ExistingBusinessDataCanaries -Stage 'RC6_BINARY_ROLLBACK'
   $report['rc6_exe_after_rollback_sha256'] = $back
+  $report['previous_data_directory_preserved'] = $true
+  $report['synthetic_sqlite_and_attachment_preserved'] = $true
   $report['synthetic_marker_preserved'] = $true
   $report['rc6_rollback_without_dir_override'] = $true
   $report['status'] = 'PASS_HOSTED_PROGRAM_UPGRADE_AND_ROLLBACK_ONLY'
