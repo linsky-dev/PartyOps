@@ -1,0 +1,177 @@
+name: RC1 UOS AMD64 real DEB extraction & synthetic upgrade QA (HOSTED_ONLY)
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/cloud-uos-amd64-deb-qa.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  actual-deb-qa:
+    name: Audit pinned real UOS DEB, preserved native WPS, synthetic RC6 overlay
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      GH_TOKEN: ${{ github.token }}
+      CANDIDATE_SOURCE_SHA: 4e58012674d444455ceef4d542b9d69a7e87f63e
+      CANDIDATE_SHA256: 64d4313ccfd5d2ad4dcc1de6df4c118000741a884896f589075e0ebeecef2b6d
+      CANDIDATE_FILE: PartyOps_1.4.6-rc.1_uos_v20_amd64_BUILD_ONLY_UNVERIFIED.deb
+      CANDIDATE_RUN: '45169885887'
+      CANDIDATE_ARTIFACT: partyops-uos-v20-amd64-RC1-ACTUAL-DEB-BUILD_ONLY-UNVERIFIED-4e58012674d444455ceef4d542b9d69a7e87f63e
+
+    steps:
+      - name: Exact reviewed packaging source checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Download pinned genuine candidate DEB, not an app-only archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/real-uos-deb-qa/candidate
+          gh run download "$CANDIDATE_RUN" --repo "$GITHUB_REPOSITORY" \
+            --name "$CANDIDATE_ARTIFACT" \
+            --dir artifacts/real-uos-deb-qa/candidate
+          cd artifacts/real-uos-deb-qa/candidate
+          printf '%s  %s\n' "$CANDIDATE_SHA256" "$CANDIDATE_FILE" | sha256sum --check
+          sha256sum --check "$CANDIDATE_FILE.sha256"
+          test "$(dpkg-deb -f "$CANDIDATE_FILE" Package)" = partyops
+          test "$(dpkg-deb -f "$CANDIDATE_FILE" Architecture)" = amd64
+          test "$(dpkg-deb -f "$CANDIDATE_FILE" Version)" = '1.4.6~rc.1'
+          dpkg-deb --ctrl-tarfile "$CANDIDATE_FILE" | tar tf - > ../control-archive-members.txt
+          mkdir -p ../extracted ../DEBIAN
+          dpkg-deb -x "$CANDIDATE_FILE" ../extracted
+          dpkg-deb -e "$CANDIDATE_FILE" ../DEBIAN
+          for name in preinst postinst prerm postrm; do
+            sh -n "../DEBIAN/$name"
+          done
+          echo 'UOS_ACTUAL_DEB_EXTRACT_AND_MAINTAINER_SYNTAX=PASS'
+
+      - name: Verify every installed file SHA plus strict historical WPS provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib, json, os, re
+          root=Path('artifacts/real-uos-deb-qa/extracted')
+          runtime=root/'opt/partyops'
+          output=Path('artifacts/real-uos-deb-qa/receipt.json')
+          expected_source=os.environ['CANDIDATE_SOURCE_SHA']
+          def sha(p):
+              h=hashlib.sha256()
+              with p.open('rb') as f:
+                  for block in iter(lambda:f.read(1024*1024),b''):
+                      h.update(block)
+              return h.hexdigest()
+          release=json.loads((runtime/'release-manifest.json').read_text(encoding='utf-8'))
+          receipt=json.loads((runtime/'UOS-RC1-BUILD-ONLY.json').read_text(encoding='utf-8'))
+          assert release['source_commit']==expected_source
+          assert release['version']=='1.4.6-rc.1'
+          assert release['architecture']=='amd64'
+          assert release['runtime_profile']=='uos-v20'
+          assert release['signed'] is False
+          assert receipt['status']=='BUILD_ONLY_UNVERIFIED'
+          assert receipt['release_ready'] is False
+          assert receipt['wps_native_tests_rerun'] is False
+          assert receipt['source_sha']==expected_source
+          assert receipt['historical_donor_deb_sha256']=='4557129b9f081c1b525d6dd6c6d444f7e0d35d63021b4b1c20c8daeffd4c30ae'
+          assert receipt['real_uos_install_tested'] is False
+          native={
+            'formatter-host/partyops-document-formatter-host':'26fba25f527dc66c4ca5b6197e89c873d0397765d6e88e7fb739710374e3da4f',
+            'formatter-host/source-host.json':'b4fba6efaa24034f02aa242e4b41433e542bf9f6f681f8bdeae2e7c70310abf7',
+            'formatter-host/runtime-evidence.json':'77dcfc30c2244a18870c838c479a3f1ef32c0bb754c04e7e3604b087330f348f'
+          }
+          for name,digest in native.items():
+              assert sha(runtime/name)==digest, name
+          entries=release.get('files',[])
+          assert len(entries)>200
+          manifest_index={}
+          for record in entries:
+              rel=record['path']
+              p=runtime/rel
+              assert not p.is_symlink() or p.resolve().is_relative_to(runtime)
+              assert p.is_file() and p.stat().st_size==record['size'] and sha(p)==record['sha256'], rel
+              manifest_index[rel]=record['sha256']
+          for name,digest in native.items():
+              assert manifest_index[name]==digest
+          allfiles={p.relative_to(runtime).as_posix() for p in runtime.rglob('*') if p.is_file()}
+          assert allfiles==set(manifest_index)|{'release-manifest.json'}, 'Incomplete or extra manifest entries'
+          forbidden=root/'var/lib/partyops'
+          assert not any(forbidden.rglob('*')) if forbidden.is_dir() else True
+          result={
+             'status':'PASS_HOSTED_REAL_DEB_INTEGRITY',
+             'source_sha':expected_source,
+             'deb_sha256':os.environ['CANDIDATE_SHA256'],
+             'verified_payload_file_count':len(entries),
+             'native_wps_file_sha256':native,
+             'native_wps_tests_rerun':False,
+             'native_uos_install_tested':False,
+             'release_ready':False
+          }
+          output.write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+          print('UOS_REAL_DEB_FULL_FILE_AND_WPS_PIN_SHA=PASS')
+          print('UOS_REAL_DEB_VERIFIED_FILES='+str(len(entries)))
+          PY
+
+      - name: Simulate RC6 to RC1 file-overlay WITHOUT running host dpkg scripts
+        shell: bash
+        run: |
+          set -euo pipefail
+          base=artifacts/real-uos-deb-qa
+          gh release download v1.4.5-rc.6 --repo "$GITHUB_REPOSITORY" \
+            --pattern 'PartyOps_1.4.5-rc.6_linux_amd64.deb' \
+            --dir "$base" --clobber
+          printf '%s  %s\n' \
+            4557129b9f081c1b525d6dd6c6d444f7e0d35d63021b4b1c20c8daeffd4c30ae \
+            "$base/PartyOps_1.4.5-rc.6_linux_amd64.deb" | sha256sum --check
+          mkdir -p "$base/synthetic-rc6-to-rc1"
+          dpkg-deb -x "$base/PartyOps_1.4.5-rc.6_linux_amd64.deb" "$base/synthetic-rc6-to-rc1"
+          mkdir -p "$base/synthetic-rc6-to-rc1/var/lib/partyops"
+          printf '%s\n' 'isolated synthetic user data, no actual personal data' > \
+            "$base/synthetic-rc6-to-rc1/var/lib/partyops/keep-data.txt"
+          original_sha="$(sha256sum "$base/synthetic-rc6-to-rc1/var/lib/partyops/keep-data.txt" | cut -d ' ' -f1)"
+          dpkg-deb -x "$base/candidate/$CANDIDATE_FILE" "$base/synthetic-rc6-to-rc1"
+          test "$(sha256sum "$base/synthetic-rc6-to-rc1/var/lib/partyops/keep-data.txt" | cut -d ' ' -f1)" = "$original_sha"
+          test "$(cat "$base/synthetic-rc6-to-rc1/opt/partyops/VERSION")" = '1.4.6-rc.1'
+          test "$(sha256sum "$base/synthetic-rc6-to-rc1/opt/partyops/formatter-host/partyops-document-formatter-host" | cut -d ' ' -f1)" = \
+            26fba25f527dc66c4ca5b6197e89c873d0397765d6e88e7fb739710374e3da4f
+          echo 'UOS_HOSTED_SYNTHETIC_OVERLAY_DATA_PRESERVED=PASS'
+          echo 'THIS_DOES_NOT_COUNT_AS_DPKG_NATIVE_UPGRADE_OR_ROLLBACK'
+
+      - name: Run only new app wizard and updater help under glibc 2.28
+        shell: bash
+        run: |
+          set -euo pipefail
+          image=quay.io/pypa/manylinux_2_28_x86_64:latest
+          docker pull "$image"
+          digest="$(docker inspect --format '{{ index .RepoDigests 0 }}' "$image")"
+          test -n "$digest"
+          docker run --rm --network none \
+            --volume "$GITHUB_WORKSPACE/artifacts/real-uos-deb-qa/extracted:/candidate:ro" \
+            "$digest" /bin/bash -c '
+              set -euo pipefail
+              test "$(getconf GNU_LIBC_VERSION)" = "glibc 2.28"
+              timeout 45 /candidate/opt/partyops/partyops-wizard --help >/dev/null
+              timeout 45 /candidate/opt/partyops/partyops-updater --help >/dev/null
+              timeout 45 /candidate/opt/partyops/office-runtime/program/soffice --headless --version
+              echo "UOS_HOSTED_GLIBC_228_REEXTRACTED_ENTRYPOINTS=PASS"
+            '
+
+      - name: Upload scoped release candidate evidence (not installer again)
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: partyops-uos-amd64-RC1-HOSTED-REAL-DEB-QA-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            artifacts/real-uos-deb-qa/receipt.json
+            artifacts/real-uos-deb-qa/control-archive-members.txt
+          retention-days: 14
+          if-no-files-found: warn
