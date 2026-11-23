@@ -1,0 +1,211 @@
+name: RC1 UOS V20 source-matched executable freeze (APP_ONLY BUILD_ONLY)
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/cloud-uos-fresh-application-freeze.yml'
+      - 'scripts/rc1-uos-cloud-freeze.sh'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: partyops-rc1-uos-fresh-app-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fresh-native-app:
+    name: Actual RC1 fresh PyInstaller app only ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 105
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+            platform: x86_64
+            python_archive_sha: 0604cd029b142dc223e131f17f5941c0c8d2d5074997c8178b515b19eea2a6c2
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+            platform: aarch64
+            python_archive_sha: 9ac18c9a761e91e6c6452bc0ef0082922a00a3fdec734555635d57c3169309b7
+
+    env:
+      SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      PARTYOPS_BUILD_ARCH: ${{ matrix.arch }}
+      PARTYOPS_UOS_APP_ONLY: '1'
+      CPU_PLATFORM: ${{ matrix.platform }}
+      PY_ARCHIVE_SHA: ${{ matrix.python_archive_sha }}
+      PYTHONUTF8: '1'
+      PYTHONNOUSERSITE: '1'
+
+    steps:
+      - name: Checkout exact immutable RC1 source commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Setup native CPython host
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.11'
+          architecture: ${{ matrix.arch == 'amd64' && 'x64' || 'arm64' }}
+
+      - name: Build current RC1 Vue frontend, not historical RC6 files
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/verify-version-consistency.py --root . --expected 1.4.6-rc.1
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          corepack enable
+          corepack prepare 'pnpm@11.9.0' --activate
+          pnpm --dir frontend install --frozen-lockfile
+          pnpm --dir frontend run build
+          test -f frontend/dist/client/index.html
+
+      - name: Fetch native glibc 2.28 Python wheels and original pinned Python
+        shell: bash
+        run: |
+          set -euo pipefail
+          input="artifacts/uos-app-inputs/$PARTYOPS_BUILD_ARCH"
+          mkdir -p "$input/wheels" "$input/python"
+          python -m pip download --disable-pip-version-check \
+            --dest "$input/wheels" --python-version 311 --implementation cp \
+            --abi cp311 --only-binary=:all: \
+            --platform "manylinux_2_28_$CPU_PLATFORM" \
+            --platform "manylinux2014_$CPU_PLATFORM" \
+            -r backend/requirements.txt -r backend/requirements-local-ai.txt \
+            -r packaging/uos/requirements-build.txt
+          file="cpython-3.11.15+20260623-${CPU_PLATFORM}-unknown-linux-gnu-install_only_stripped.tar.gz"
+          curl --fail --location --retry 3 --proto '=https' --tlsv1.2 \
+            --output "$input/$file" \
+            "https://github.com/astral-sh/python-build-standalone/releases/download/20260623/cpython-3.11.15%2B20260623-${CPU_PLATFORM}-unknown-linux-gnu-install_only_stripped.tar.gz"
+          printf '%s  %s\n' "$PY_ARCHIVE_SHA" "$input/$file" | sha256sum --check
+          tar -xzf "$input/$file" -C "$input/python"
+          test -x "$input/python/python/bin/python3.11"
+
+      - name: Fetch unmodified SQLite source and pysqlite3 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          input="artifacts/uos-app-inputs/$PARTYOPS_BUILD_ARCH"
+          curl --fail --location --retry 3 --proto '=https' --tlsv1.2 \
+            --output "$input/sqlite-amalgamation-3510300.zip" \
+            https://www.sqlite.org/2026/sqlite-amalgamation-3510300.zip
+          python -m pip download --disable-pip-version-check \
+            --dest "$input" --no-deps --no-binary=:all: 'pysqlite3==0.5.4'
+          python - "$input" <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile
+          import sys
+          p=Path(sys.argv[1])
+          with ZipFile(p/'sqlite-amalgamation-3510300.zip') as z:
+              assert 'sqlite-amalgamation-3510300/sqlite3.c' in z.namelist()
+              assert 'sqlite-amalgamation-3510300/sqlite3.h' in z.namelist()
+          assert (p/'pysqlite3-0.5.4.tar.gz').is_file()
+          print('UOS_SQLITE_SOURCE_ARCHIVES=PASS')
+          PY
+
+      - name: Freeze real four-entry app within native glibc 2.28 Docker, completely offline
+        id: actual-freeze
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="quay.io/pypa/manylinux_2_28_$CPU_PLATFORM:latest"
+          docker pull "$image"
+          pinned="$(docker inspect --format '{{ index .RepoDigests 0 }}' "$image")"
+          [[ "$pinned" == *@sha256:* ]] || { echo 'UOS_IMAGE_DIGEST_UNPINNED'; exit 2; }
+          mkdir -p "artifacts/uos-app-freeze/$PARTYOPS_BUILD_ARCH"
+          printf '%s\n' "$pinned" > "artifacts/uos-app-freeze/$PARTYOPS_BUILD_ARCH/builder-image-digest.txt"
+          docker run --rm --network none \
+            --volume "$GITHUB_WORKSPACE:/workspace" --workdir /workspace \
+            --env PARTYOPS_UOS_APP_ONLY=1 --env PARTYOPS_BUILD_ARCH="$PARTYOPS_BUILD_ARCH" \
+            --env SOURCE_SHA="$SOURCE_SHA" --env PYTHONUTF8=1 \
+            "$pinned" /bin/bash -c \
+              'set -euo pipefail; git config --global --add safe.directory /workspace; bash scripts/rc1-uos-cloud-freeze.sh'
+          echo 'UOS_FRESH_RC1_SOURCE_EXECUTABLES=BUILT'
+
+      - name: Record SOURCE SHA, real executable hashes and explicit nonrelease scope
+        if: always()
+        shell: bash
+        env:
+          FREEZE_OUTCOME: ${{ steps.actual-freeze.outcome }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib,json,os,pathlib
+          arch=os.environ['PARTYOPS_BUILD_ARCH']
+          root=pathlib.Path('artifacts/uos-app-freeze')/arch
+          source=pathlib.Path('artifacts/uos-app-inputs')/arch
+          root.mkdir(parents=True,exist_ok=True)
+          def digest(p):
+              h=hashlib.sha256()
+              with p.open('rb') as f:
+                  for buf in iter(lambda:f.read(1024*1024),b''):
+                      h.update(buf)
+              return h.hexdigest()
+          exes=root/'dist'/'PartyOps'
+          executable_hashes={name:digest(exes/name) for name in
+              ['partyops','partyops-client','partyops-wizard','partyops-updater']
+              if (exes/name).is_file()}
+          input_hashes={p.name:digest(p) for p in source.glob('*.zip')} | {
+              p.name:digest(p) for p in source.glob('*.tar.gz')}
+          passed=os.environ['FREEZE_OUTCOME']=='success' and len(executable_hashes)==4
+          report={
+              'status':'PASS_FRESH_APP_ONLY' if passed else 'BLOCKED_FRESH_APP_BUILD',
+              'source_sha':os.environ['SOURCE_SHA'],
+              'version':'1.4.6-rc.1',
+              'target_os':'UOS Desktop V20 glibc 2.28',
+              'architecture':arch,
+              'source_matched_executable_sha256':executable_hashes,
+              'source_input_sha256':input_hashes,
+              'builder_image_digest':(root/'builder-image-digest.txt').read_text().strip()
+                  if (root/'builder-image-digest.txt').exists() else None,
+              'full_native_deb_built':False,
+              'original_wps_host_rebuilt_or_retested':False,
+              'formatter_historical_provenance_approved':False,
+              'native_uos_install_tested':False,
+              'release_ready':False,
+          }
+          (root/'result.json').write_text(json.dumps(report,indent=2,ensure_ascii=False)+'\n')
+          print('UOS_SOURCE_MATCHED_BINARIES='+str(len(executable_hashes)))
+          print('UOS_CLOUD_FREEZE_STATUS='+report['status'])
+          PY
+
+      - name: Upload explicit source-matched app freeze report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: partyops-uos-${{ matrix.arch }}-APP-FREEZE-RECEIPT-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            artifacts/uos-app-freeze/${{ matrix.arch }}/result.json
+            artifacts/uos-app-freeze/${{ matrix.arch }}/builder-image-digest.txt
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Archive ACTUAL new app payload, explicitly without historical native formatter
+        if: steps.actual-freeze.outcome == 'success'
+        shell: bash
+        run: |
+          set -euo pipefail
+          target="artifacts/uos-app-freeze/$PARTYOPS_BUILD_ARCH"
+          tar -C "$target/dist" -czf "$target/PartyOps_RC1_UOS_$PARTYOPS_BUILD_ARCH_APP_ONLY_NOT_DEB.tar.gz" PartyOps
+          sha256sum "$target/PartyOps_RC1_UOS_$PARTYOPS_BUILD_ARCH_APP_ONLY_NOT_DEB.tar.gz" |
+            tee "$target/application-payload.sha256"
+
+      - name: Upload real new RC1 app, NOT a user-installable DEB
+        if: steps.actual-freeze.outcome == 'success'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: partyops-uos-${{ matrix.arch }}-FRESH-APP-ONLY-NOT-DEB-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            artifacts/uos-app-freeze/${{ matrix.arch }}/PartyOps_RC1_UOS_*_APP_ONLY_NOT_DEB.tar.gz
+            artifacts/uos-app-freeze/${{ matrix.arch }}/application-payload.sha256
+            artifacts/uos-app-freeze/${{ matrix.arch }}/result.json
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
