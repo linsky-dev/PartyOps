@@ -86,6 +86,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          python -m pip install --no-index --find-links artifacts/uos-deps/wheels \
+            'packaging>=24,<27'
           python scripts/validate-uos-wheelhouse.py \
             --architecture "$TARGET_ARCH" --runtime-profile full \
             --wheelhouse artifacts/uos-deps/wheels --requirements \
@@ -104,7 +106,7 @@ jobs:
             --output "artifacts/uos-deps/$file" \
             "https://github.com/astral-sh/python-build-standalone/releases/download/20260623/cpython-3.11.15%2B20260623-${PYTHON_ARCH}-unknown-linux-gnu-install_only_stripped.tar.gz"
           printf '%s  %s\n' "$EXPECTED_PYTHON_SHA256" "artifacts/uos-deps/$file" | sha256sum --check --status
-          tar tzf "artifacts/uos-deps/$file" | grep -q '^python/bin/python3.11$'
+          tar tzf "artifacts/uos-deps/$file" | grep -Fx 'python/bin/python3.11' > /dev/null
 
       - name: Save genuine downloaded wheel hashes and truthful capability flags
         shell: bash
