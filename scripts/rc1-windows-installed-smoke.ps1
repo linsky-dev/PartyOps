@@ -139,6 +139,38 @@ try {
     }
     $report['launcher_preflight_exit_code'] = $launcherProcess.ExitCode
     if ($launcherProcess.ExitCode -ne 0) {
+      # Fail closed, but preserve a small, redacted reason rather than only an
+      # opaque GUI process exit code. This runs on an ephemeral hosted runner.
+      # Never upload arbitrary full user logs or configuration files.
+      $diagnosticFiles = @(
+        (Join-Path $env:LOCALAPPDATA 'PartyOps\launcher.log'),
+        (Join-Path $env:TEMP 'PartyOps-launcher-emergency.log')
+      )
+      $diagnosticCodes = @()
+      $diagnosticDetails = @()
+      foreach ($diagnosticFile in $diagnosticFiles) {
+        if (-not (Test-Path -LiteralPath $diagnosticFile -PathType Leaf)) { continue }
+        $recentLines = @(Get-Content -LiteralPath $diagnosticFile -Tail 100 -ErrorAction SilentlyContinue)
+        $diagnosticCodes += @(
+          [regex]::Matches(($recentLines -join "`n"), '(?:RUNTIME|LAUNCHER|PERSONAL|HOST)_[A-Z0-9_]+') |
+            ForEach-Object { $_.Value }
+        )
+        $diagnosticDetails += @(
+          $recentLines |
+            Where-Object { $_ -match '缺失=|哈希异常=|清单检查错误类型=|LAUNCHER_UNHANDLED_ERROR' } |
+            Select-Object -Last 6 |
+            ForEach-Object {
+              $safeLine = $_.Replace($env:USERPROFILE, '<USERPROFILE>')
+              $safeLine.Substring(0, [Math]::Min($safeLine.Length, 400))
+            }
+        )
+      }
+      $report['launcher_diagnostic_codes'] = @($diagnosticCodes | Select-Object -Unique)
+      $report['launcher_diagnostic_details'] = @($diagnosticDetails | Select-Object -Last 12)
+      Write-Host "RC1_QA_LAUNCHER_CODES=$($report['launcher_diagnostic_codes'] -join ',')"
+      foreach ($detail in $report['launcher_diagnostic_details']) {
+        Write-Host "RC1_QA_LAUNCHER_DETAIL=$detail"
+      }
       throw "[RC1_QA_LAUNCHER_RUNTIME_PREFLIGHT_FAILED] Exit $($launcherProcess.ExitCode)"
     }
     $report['launcher_release_manifest_preflight_passed'] = $true
