@@ -422,3 +422,114 @@ def test_emergency_audit_failure_rolls_back_unissued_token(cli_store, monkeypatc
         assert db.scalar(select(RecoveryCredential)) is None
     assert recovery_cli.main(["emergency", "--data-dir", str(cli_store.path)]) == 0
     assert "一次性管理员恢复凭据" in capsys.readouterr().out
+
+
+def _synthetic_windows_personal_owner_scope(tmp_path, monkeypatch):
+    """Mock only Windows SID/ACL APIs; use real local files and saved config parsing."""
+    import json
+
+    user_sid = "S-1-5-21-1111-2222-3333-1001"
+    data_dir = tmp_path / "owned-personal-data"
+    data_dir.mkdir()
+    (data_dir / "partyops.db").write_bytes(b"synthetic-sqlite-placeholder")
+    root = tmp_path / "user-local-config"
+    root.mkdir()
+    personal_env = root / "personal.env"
+    personal_env.write_text(
+        "PARTYOPS_MODE=personal\nPARTYOPS_DATA_DIR=" + repr(str(data_dir)) + "\n",
+        encoding="utf-8",
+    )
+    mode_file = root / "mode.json"
+    mode_file.write_text(
+        json.dumps({"mode": "personal", "config_path": str(personal_env)}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(setup_wizard, "config_root", lambda: root)
+    monkeypatch.setattr(recovery_cli, "os", SimpleNamespace(name="nt"))
+    state = {"owner": user_sid, "writer": user_sid}
+    class Handle:
+        def Close(self):
+            pass
+    class DACL:
+        def GetAceCount(self):
+            return 1
+        def GetAce(self, _index):
+            return ((0, 0), 0x40000000, state["writer"])
+    class Descriptor:
+        def GetSecurityDescriptorOwner(self):
+            return state["owner"]
+        def GetSecurityDescriptorDacl(self):
+            return DACL()
+    fake_security = SimpleNamespace(
+        TOKEN_QUERY=8,
+        TokenUser=1,
+        OWNER_SECURITY_INFORMATION=1,
+        DACL_SECURITY_INFORMATION=4,
+        ACCESS_ALLOWED_ACE_TYPE=0,
+        ACCESS_ALLOWED_OBJECT_ACE_TYPE=5,
+        OpenProcessToken=lambda *_args: Handle(),
+        GetTokenInformation=lambda *_args: (user_sid, 0),
+        ConvertSidToStringSid=lambda sid: sid,
+        GetFileSecurity=lambda *_args: Descriptor(),
+    )
+    monkeypatch.setitem(sys.modules, "win32api", SimpleNamespace(GetCurrentProcess=lambda: object()))
+    monkeypatch.setitem(sys.modules, "win32security", fake_security)
+    return SimpleNamespace(
+        root=root, path=data_dir, env=personal_env, mode=mode_file, state=state,
+    )
+
+
+def test_windows_personal_owner_scope_requires_saved_mode_acl_and_identity(tmp_path, monkeypatch):
+    files = _synthetic_windows_personal_owner_scope(tmp_path, monkeypatch)
+    assert recovery_cli.windows_personal_owner_scope(files.path)
+    files.mode.write_text('{"mode":"host"}', encoding="utf-8")
+    assert not recovery_cli.windows_personal_owner_scope(files.path)
+    files.mode.write_text(
+        '{"mode":"personal","config_path":' + __import__("json").dumps(str(files.env)) + '}',
+        encoding="utf-8",
+    )
+    files.env.write_text("PARTYOPS_MODE=personal\nPARTYOPS_DATA_DIR=/unrelated-db\n", encoding="utf-8")
+    assert not recovery_cli.windows_personal_owner_scope(files.path)
+    files.env.write_text(
+        "PARTYOPS_MODE=personal\nPARTYOPS_DATA_DIR=" + repr(str(files.path)) + "\n",
+        encoding="utf-8",
+    )
+    files.state["owner"] = "S-1-5-21-foreign-user"
+    assert not recovery_cli.windows_personal_owner_scope(files.path)
+    files.state["owner"] = "S-1-5-21-1111-2222-3333-1001"
+    files.state["writer"] = "S-1-5-11"  # Authenticated Users: Generic Write
+    assert not recovery_cli.windows_personal_owner_scope(files.path)
+    files.state["writer"] = "S-1-5-21-1111-2222-3333-1001"
+    assert recovery_cli.windows_personal_owner_scope(files.path)
+
+
+def test_windows_personal_emergency_allows_verified_owner_without_administrator(
+    tmp_path, monkeypatch, capsys,
+):
+    """Personal-only fallback must not require a SYSTEM service ACL or OS admin."""
+    data_dir = tmp_path.resolve() / "synthetic-personal-data"
+    _console(monkeypatch, elevated=False)
+    monkeypatch.setattr(recovery_cli, "os", SimpleNamespace(name="nt"))
+    monkeypatch.setattr(recovery_cli, "trusted_data_directory", lambda _path: data_dir)
+    monkeypatch.setattr(recovery_cli, "windows_personal_owner_scope", lambda path: path == data_dir)
+    monkeypatch.setattr(recovery_cli, "input", lambda _prompt: "本机应急恢复", raising=False)
+    calls = []
+
+    def capture_run(path, action, identity, proof, *, personal_scope=False):
+        calls.append((path, action, identity, proof, personal_scope))
+        return "T" * 43
+
+    monkeypatch.setattr(recovery_cli, "_run", capture_run)
+    assert recovery_cli.main(["emergency", "--data-dir", str(data_dir)]) == 0
+    assert calls == [(data_dir, "emergency", "", "本机应急恢复", True)]
+    assert "一次性管理员恢复凭据" in capsys.readouterr().out
+
+
+def test_windows_personal_emergency_rechecks_saved_owner_before_lock(
+    tmp_path, monkeypatch,
+):
+    """No stale preflight may allow an unowned DB to skip service ACL enforcement."""
+    data_dir = tmp_path.resolve() / "synthetic-personal"
+    monkeypatch.setattr(recovery_cli, "windows_personal_owner_scope", lambda _path: False)
+    with pytest.raises(recovery_cli.RecoveryCLIError, match="个人模式目录归属"):
+        recovery_cli._run(data_dir, "emergency", "", "本机应急恢复", personal_scope=True)
