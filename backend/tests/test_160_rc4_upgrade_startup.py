@@ -129,6 +129,73 @@ def test_upgrade_from_rc6_creates_verified_backup_and_preserves_identity(monkeyp
     assert upgrades.read_upgrade_transaction_state()["state"] == "completed"
 
 
+def test_rc6_0026_partial_migration_failure_restores_verified_rc6_snapshot(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """从真实 Alembic 0026 升级到 0028 若半途失败，恢复 RC6 旧库、身份和附件。
+
+    这是原生迁移及合成业务记录故障注入，不是 RC6 真实生产数据库
+    或已经发生 RC1 写入后的二进制回滚许可。
+    """
+
+    runtime, settings = _runtime_at_0023(tmp_path)
+    config = runtime._alembic_config()
+    with runtime.engine.begin() as connection:
+        config.attributes["connection"] = connection
+        command.upgrade(config, "0026")
+    assert _revision(runtime) == "0026"
+    assert "recovery_credentials" not in inspect(runtime.engine).get_table_names()
+    assert "target" not in {
+        col["name"] for col in inspect(runtime.engine).get_columns("notifications")
+    }
+    _bind_runtime(monkeypatch, runtime, settings)
+    apply_real_alembic = runtime.create_schema
+
+    def migrate_rc6_then_fail() -> None:
+        apply_real_alembic()
+        assert _revision(runtime) == backups.SCHEMA_VERSION
+        assert "recovery_credentials" in inspect(runtime.engine).get_table_names()
+        assert "target" in {
+            col["name"] for col in inspect(runtime.engine).get_columns("notifications")
+        }
+        with runtime.engine.begin() as connection:
+            connection.execute(text(
+                "UPDATE users SET display_name='不得留存的 RC1 半迁移状态' "
+                "WHERE id='rc4-upgrade-admin'"
+            ))
+        raise RuntimeError("injected_rc6_0026_to_rc1_0028_failure")
+
+    monkeypatch.setattr(runtime, "create_schema", migrate_rc6_then_fail)
+    with pytest.raises(RuntimeError, match=DATABASE_SCHEMA_FAILED):
+        app_main._initialize_runtime()
+
+    assert _revision(runtime) == "0026"
+    tables = inspect(runtime.engine).get_table_names()
+    assert "recovery_credentials" not in tables
+    assert "target" not in {
+        col["name"] for col in inspect(runtime.engine).get_columns("notifications")
+    }
+    with runtime.engine.connect() as connection:
+        assert connection.execute(text("PRAGMA quick_check")).scalar_one() == "ok"
+        assert connection.execute(text(
+            "SELECT username, display_name, password_hash FROM users "
+            "WHERE id='rc4-upgrade-admin'"
+        )).one() == ("rc4-admin", "原位升级管理员", "test-only")
+    assert (settings.attachments_dir / "preserved.txt").read_text(encoding="utf-8") == (
+        "升级前附件必须保持不变"
+    )
+    state = upgrades.read_upgrade_transaction_state()
+    assert state is not None and state["state"] == "rolled_back"
+    backup_path = settings.backups_dir / str(state["backup_filename"])
+    manifest = backups.verify_backup(backup_path)
+    assert manifest["schema_version"] == "0026"
+    expected_db = next(
+        item for item in manifest["files"] if item["path"] == "database/partyops.db"
+    )
+    runtime.dispose()
+    assert backups.sha256_file(settings.database_path) == expected_db["sha256"]
+
+
 def test_full_initialize_runtime_upgrades_real_0023_database(monkeypatch, tmp_path: Path) -> None:
     """精确复现 rc.3 的 backup_runs 缺列故障，并要求完整启动事务成功。"""
 
