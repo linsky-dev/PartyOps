@@ -76,12 +76,27 @@ $report = [ordered]@{
 New-Item -ItemType Directory -Path $logs -Force | Out-Null
 $installLog = Join-Path $logs 'inno-actual-install.log'
 $uninstallLog = Join-Path $logs 'inno-actual-uninstall.log'
+function Invoke-QAInstaller {
+  param([string]$FilePath, [string[]]$Arguments, [string]$Stage)
+  # Start-Process -Wait waits for every descendant process; a normally
+  # launched PartyOps background service can keep it waiting indefinitely.
+  $process = Start-Process -FilePath $FilePath -ArgumentList $Arguments -PassThru
+  try {
+    if (-not $process.WaitForExit(900000)) {
+      try { $process.Kill() } catch {}
+      throw "[RC1_QA_INSTALLER_TIMEOUT] $Stage process did not finish within 15 minutes."
+    }
+    return $process.ExitCode
+  } finally {
+    $process.Dispose()
+  }
+}
 try {
   $args = @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',
     ('/DIR="' + $program + '"'),('/LOG="' + $installLog + '"'))
-  $p = Start-Process -FilePath $installerPath -ArgumentList $args -Wait -PassThru
-  $report['install_exit_code'] = $p.ExitCode
-  if ($p.ExitCode -ne 0) { throw "[RC1_QA_INSTALL_FAILED] Exit $($p.ExitCode)" }
+  $installExit = Invoke-QAInstaller -FilePath $installerPath -Arguments $args -Stage 'INSTALL'
+  $report['install_exit_code'] = $installExit
+  if ($installExit -ne 0) { throw "[RC1_QA_INSTALL_FAILED] Exit $installExit" }
   $exePath = Join-Path $program 'PartyOps.exe'
   $manifestPath = Join-Path $program 'release-manifest.json'
   $formatterHistory = Join-Path $program 'formatter-host/historical-wps-reference.json'
@@ -113,11 +128,12 @@ try {
   if (-not (Test-Path -LiteralPath $uninstaller -PathType Leaf)) {
     throw '[RC1_QA_UNINSTALLER_MISSING]'
   }
-  $u = Start-Process -FilePath $uninstaller -ArgumentList @(
+  $uninstallArgs = @(
     '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',('/LOG="' + $uninstallLog + '"')
-  ) -Wait -PassThru
-  $report['uninstall_exit_code'] = $u.ExitCode
-  if ($u.ExitCode -ne 0 -or (Test-Path -LiteralPath $exePath)) {
+  )
+  $uninstallExit = Invoke-QAInstaller -FilePath $uninstaller -Arguments $uninstallArgs -Stage 'UNINSTALL'
+  $report['uninstall_exit_code'] = $uninstallExit
+  if ($uninstallExit -ne 0 -or (Test-Path -LiteralPath $exePath)) {
     throw '[RC1_QA_UNINSTALL_FAILED_OR_BINARY_REMAINS]'
   }
   $report['uninstall_passed'] = $true
