@@ -1,0 +1,157 @@
+name: RC1 four Linux native historical donor integrity inventory (READ_ONLY)
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/cloud-rc1-linux-donor-inspection.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect-pinned-release:
+    name: ${{ matrix.target }} original signed-release file and WPS source SHA
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        include:
+          - target: kylin-arm64
+            format: deb
+            arch: arm64
+            file: PartyOps_1.4.5-rc.6_linux_arm64_kylin-full-20261016.deb
+            sha256: 17d0e3a3acf060d3c65299c012078435bacc0da3f1f0a909fe3cc997cbbee69c
+          - target: openeuler-x86_64
+            format: rpm
+            arch: x86_64
+            file: PartyOps-1.4.5-0.rc.6.1.x86_64.rpm
+            sha256: e7c34a6090689f40dfae3aa3403b7b6ad0b5d4c3748e07005bb73ed1b32632ac
+          - target: openeuler-aarch64
+            format: rpm
+            arch: aarch64
+            file: PartyOps-1.4.5-0.rc.6.1.aarch64.rpm
+            sha256: f507da109c1110e2c553ac9cb44a7f05205156132fb241ba057028571344e4f4
+          - target: deepin-loong64
+            format: deb
+            arch: loong64
+            file: PartyOps_1.4.5-rc.6_linux_loong64.deb
+            sha256: bec5993a12a9a66800fa039045f45329ecc486934cd1d1106c10d5e2ecf78017
+
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PACKAGE_FILE: ${{ matrix.file }}
+      PACKAGE_SHA: ${{ matrix.sha256 }}
+      PACKAGE_ARCH: ${{ matrix.arch }}
+      PACKAGE_TARGET: ${{ matrix.target }}
+      FORMAT: ${{ matrix.format }}
+
+    steps:
+      - name: Checkout source for provenance analysis, no changes to WPS
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Fetch exact published RC6 native package and hash verify
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "artifacts/linux-donors/$PACKAGE_TARGET" "$RUNNER_TEMP/native-release"
+          gh release download 'v1.4.5-rc.6' --repo "$GITHUB_REPOSITORY" \
+            --pattern "$PACKAGE_FILE" \
+            --dir "$RUNNER_TEMP/native-release" --clobber
+          printf '%s  %s\n' "$PACKAGE_SHA" "$RUNNER_TEMP/native-release/$PACKAGE_FILE" |
+            sha256sum --check
+          test "$(stat -c '%s' "$RUNNER_TEMP/native-release/$PACKAGE_FILE")" -gt 100000000
+
+      - name: Extract package without installation or executing WPS
+        shell: bash
+        run: |
+          set -euo pipefail
+          package="$RUNNER_TEMP/native-release/$PACKAGE_FILE"
+          extracted="$RUNNER_TEMP/native-release/extracted"
+          mkdir -p "$extracted"
+          if [[ "$FORMAT" == deb ]]; then
+            dpkg-deb --extract "$package" "$extracted"
+            dpkg-deb --field "$package" Package Version Architecture |
+              tee "artifacts/linux-donors/$PACKAGE_TARGET/package-metadata.txt"
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq rpm cpio
+            rpm -qp --qf '%{NAME}\n%{VERSION}-%{RELEASE}\n%{ARCH}\n' "$package" |
+              tee "artifacts/linux-donors/$PACKAGE_TARGET/package-metadata.txt"
+            (cd "$extracted"; rpm2cpio "$package" | cpio -idm --quiet)
+          fi
+          test -d "$extracted/opt/partyops"
+          echo 'NATIVE_RC6_PACKAGE_EXTRACTION=PASS'
+
+      - name: Capture EXACT native WPS and libc archive evidence, NEVER assert new version WPS PASS
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib, json, os, re
+          target=os.environ['PACKAGE_TARGET']
+          expected_arch=os.environ['PACKAGE_ARCH']
+          root=Path(os.environ['RUNNER_TEMP'])/'native-release/extracted/opt/partyops'
+          host=root/'formatter-host/partyops-document-formatter-host'
+          source=root/'formatter-host/source-host.json'
+          evidence=root/'formatter-host/runtime-evidence.json'
+          output=Path('artifacts/linux-donors')/target/'inspection.json'
+          def sha(path):
+              h=hashlib.sha256()
+              with path.open('rb') as f:
+                  for buf in iter(lambda:f.read(1024*1024),b''):
+                      h.update(buf)
+              return h.hexdigest()
+          for p in (host, source, evidence):
+              if not p.is_file() or p.is_symlink():
+                  raise SystemExit('[NATIVE_DONOR_WPS_HOST_OR_EVIDENCE_MISSING] '+str(p))
+          record=json.loads(source.read_text(encoding='utf-8'))
+          acceptance=json.loads(evidence.read_text(encoding='utf-8'))
+          if record.get('host_sha256')!=sha(host) or acceptance.get('host_sha256')!=sha(host):
+              raise SystemExit('[NATIVE_DONOR_WPS_HASH_RECORD_MISMATCH]')
+          mapping={'arm64':'arm64','x86_64':'amd64','aarch64':'amd64','loong64':'loong64'}
+          if expected_arch=='aarch64': mapping['aarch64']='arm64'
+          expected_record_arch=mapping[expected_arch]
+          if record.get('architecture')!=expected_record_arch:
+              raise SystemExit('[NATIVE_DONOR_WPS_ARCH_MISMATCH]')
+          office=root/'office-runtime/SOURCE.json'
+          data={
+              'schema_version':1,'status':'READ_ONLY_HISTORICAL_DONOR_VERIFIED',
+              'target':target,
+              'architecture':expected_arch,
+              'original_package_file':os.environ['PACKAGE_FILE'],
+              'original_package_sha256':os.environ['PACKAGE_SHA'],
+              'historical_wps_host_sha256':sha(host),
+              'historical_wps_source_record_sha256':sha(source),
+              'historical_wps_evidence_sha256':sha(evidence),
+              'historical_wps_source_snapshot_sha256':record.get('source_snapshot_sha256'),
+              'historical_wps_evidence_status':acceptance.get('status'),
+              'historical_wps_host_record_bound':True,
+              'historical_wps_parity_count':acceptance.get('rendered_pages'),
+              'historical_wps_feature_cases':acceptance.get('feature_cases'),
+              'historical_wps_adapter':record.get('adapter'),
+              'original_office_source':json.loads(office.read_text(encoding='utf-8')) if office.is_file() else None,
+              'llama_present':(root/'llama-server').is_file(),
+              'ocr_present':(root/'ocr/bin/tesseract').is_file(),
+              'native_install_rc1_run':False,
+              'new_wps_validation_run':False,
+              'release_ready':False,
+          }
+          output.write_text(json.dumps(data,indent=2,ensure_ascii=False)+'\n',encoding='utf-8')
+          print('NATIVE_DONOR_INVENTORY='+json.dumps(data,ensure_ascii=False))
+          PY
+
+      - name: Upload only original file identities, NOT historical binary components
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: partyops-RC6-native-donor-${{ matrix.target }}-SHA-AUDIT-${{ github.event.pull_request.head.sha || github.sha }}
+          path: artifacts/linux-donors/${{ matrix.target }}
+          if-no-files-found: warn
+          retention-days: 14
