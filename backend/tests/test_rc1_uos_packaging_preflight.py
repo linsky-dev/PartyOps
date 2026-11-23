@@ -157,3 +157,18 @@ def test_uos_v20_wheel_abi_is_opt_in_and_never_relaxes_generic_linux() -> None:
             module.validate(Path("/nonexistent"), [], "loong64", "uos-v20")
     finally:
         sys.modules.pop(spec.name, None)
+
+def test_uos_v20_deb_profile_stays_full_function_and_explicit() -> None:
+    portable = (ROOT / "packaging/uos/build-portable.sh").read_text(encoding="utf-8")
+    native = (ROOT / "packaging/linux/build-native.sh").read_text(encoding="utf-8")
+    spec = (ROOT / "packaging/uos/partyops.spec").read_text(encoding="utf-8")
+    prep = (ROOT / "scripts/prepare-uos-offline.ps1").read_text(encoding="utf-8")
+    assert 'RUNTIME_PROFILE:-full' in portable
+    assert '"uos-v20" else (2, 17)' in portable
+    assert 'EXPECTED_GLIBC=2.17' in native
+    assert 'RUNTIME_PROFILE" == uos-v20 ]] && EXPECTED_GLIBC=2.28' in native
+    assert 'RUNTIME_PROFILE" == uos-v20 ]] && PACKAGE_LIBC_VERSION=2.28' in native
+    assert 'RUNTIME_PROFILE" == uos-v20 && "$FORMAT" != deb' in native
+    assert 'runtime_profile in {"full", "uos-v20"}' in spec
+    assert 'ai_excludes = ' in spec
+    assert '[ValidateSet("full", "uos-v20")]' in prep

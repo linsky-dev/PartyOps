@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 ARTIFACTS="$ROOT/artifacts"
 RUNTIME_PROFILE="${PARTYOPS_RUNTIME_PROFILE:-full}"
-[[ "$RUNTIME_PROFILE" == full || "$RUNTIME_PROFILE" == core ]] || {
+[[ "$RUNTIME_PROFILE" == full || "$RUNTIME_PROFILE" == core || "$RUNTIME_PROFILE" == uos-v20 ]] || {
   echo "未知 Linux 包档：$RUNTIME_PROFILE" >&2; exit 2;
 }
 if [[ -z "${PYTHON_BIN:-}" && -f "$ROOT/.partyops-build.env" ]]; then
@@ -171,11 +171,11 @@ if ! "$PYTHON_BIN" - "$GLIBC_VERSION" "$RUNTIME_PROFILE" <<'PY'
 import sys
 
 current = tuple(int(part) for part in sys.argv[1].split(".")[:2])
-expected = (2, 38) if sys.argv[2] == "core" else (2, 17)
+expected = (2, 38) if sys.argv[2] == "core" else (2, 28) if sys.argv[2] == "uos-v20" else (2, 17)
 raise SystemExit(0 if current == expected else 1)
 PY
 then
-  echo "构建机 glibc 与 $RUNTIME_PROFILE 档不匹配：当前 $GLIBC_VERSION，core 要求 2.38，full 要求 2.17。" >&2
+  echo "构建机 glibc 与 $RUNTIME_PROFILE 档不匹配：当前 $GLIBC_VERSION，core 要求 2.38，full 要求 2.17，uos-v20 要求 2.28。" >&2
   exit 2
 fi
 if [[ "$RUNTIME_PROFILE" == core ]] &&

@@ -9,7 +9,7 @@ root = Path(SPECPATH).parents[1]
 backend = root / "backend"
 frontend = root / "frontend" / "dist" / "client"
 runtime_profile = os.environ.get("PARTYOPS_RUNTIME_PROFILE", "full")
-if runtime_profile not in {"full", "core"}:
+if runtime_profile not in {"full", "core", "uos-v20"}:
     raise ValueError("未知 Linux 冻结包档")
 if runtime_profile == "core" and platform.machine().lower() not in {"loongarch64", "loong64"}:
     raise ValueError("core 冻结档仅允许原生 Loong64")
@@ -42,7 +42,7 @@ formatter_hidden = [
 ai_datas = []
 ai_binaries = []
 ai_hidden = []
-for package in ("numpy", "tokenizers") if runtime_profile == "full" else ("numpy",):
+for package in ("numpy", "tokenizers") if runtime_profile in {"full", "uos-v20"} else ("numpy",):
     datas, binaries, hidden = collect_all(package)
     ai_datas += datas
     ai_binaries += binaries
@@ -52,7 +52,7 @@ for package in ("numpy", "tokenizers") if runtime_profile == "full" else ("numpy
 # QEMU 或受限 /sys 环境中导入时会主动探测 CPU，可能在制品尚未生成前
 # 终止 PyInstaller 子进程。这里只按文件系统静态收集包源码、数据与共享
 # 库；运行时仍由应用自检真实导入，避免把构建机 CPU 探测变成发布前提。
-if runtime_profile == "full":
+if runtime_profile in {"full", "uos-v20"}:
     ai_datas += collect_data_files("onnxruntime", include_py_files=True)
     ai_binaries += collect_dynamic_libs("onnxruntime")
     ai_hidden += ["onnxruntime"]

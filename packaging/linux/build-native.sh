@@ -50,8 +50,11 @@ if [[ "$ARCH" == loong64 ]]; then
   [[ "$FORMAT" == deb && "$RUNTIME_PROFILE" == core ]] || {
     echo "Loong64 仅提供显式 core DEB 档。" >&2; exit 2;
   }
-elif [[ "$RUNTIME_PROFILE" != full ]]; then
+elif [[ "$RUNTIME_PROFILE" != full && "$RUNTIME_PROFILE" != uos-v20 ]]; then
   echo "core 档仅允许 Loong64。" >&2; exit 2
+fi
+if [[ "$RUNTIME_PROFILE" == uos-v20 && "$FORMAT" != deb ]]; then
+  echo "uos-v20 仅允许 UOS V20 专用 DEB 封装，其他 Linux 包仍保持 glibc 2.17。" >&2; exit 2
 fi
 EXPECTED_MACHINE=x86_64
 [[ "$ARCH" == arm64 ]] && EXPECTED_MACHINE=aarch64
@@ -242,6 +245,7 @@ fi
 GLIBC="$(getconf GNU_LIBC_VERSION | awk '{print $2}')"
 EXPECTED_GLIBC=2.17
 [[ "$ARCH" == loong64 ]] && EXPECTED_GLIBC=2.38
+[[ "$RUNTIME_PROFILE" == uos-v20 ]] && EXPECTED_GLIBC=2.28
 [[ "$GLIBC" == "$EXPECTED_GLIBC" ]] || {
   echo "正式包要求 glibc $EXPECTED_GLIBC 构建基线，当前为 $GLIBC；拒绝生成伪兼容制品。" >&2
   exit 2
@@ -493,6 +497,7 @@ if [[ "$FORMAT" == deb ]]; then
     PACKAGE_DESCRIPTION='原生离线主机、协同、中文 OCR、语义重排和本地 LLM。'
     PACKAGE_LIBC_VERSION=2.17
   fi
+  [[ "$RUNTIME_PROFILE" == uos-v20 ]] && PACKAGE_LIBC_VERSION=2.28
   mkdir -p "$PKG/DEBIAN"
   cat >"$PKG/DEBIAN/control" <<EOF
 Package: partyops
