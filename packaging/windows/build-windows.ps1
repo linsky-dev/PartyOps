@@ -657,6 +657,12 @@ Assert-NativeSuccess "读取源码提交"
   --architecture $targetArchitecture `
   --runtime-profile $runtimeProfile
 Assert-NativeSuccess "生成嵌入式发布清单"
+$generatedManifest = Join-Path $bundleRoot "release-manifest.json"
+$generatedManifestSize = (Get-Item -LiteralPath $generatedManifest -ErrorAction Stop).Length
+Write-Host "PARTYOPS_RELEASE_MANIFEST_BYTES=$generatedManifestSize"
+if ($generatedManifestSize -gt 8MB) {
+  throw "[WINDOWS_RELEASE_MANIFEST_TOO_LARGE] 完整清单超过启动器和安装身份校验统一的 8 MiB 上限，不得构建无法启动的安装包。"
+}
 
 # .NET Framework 4.8 是原排版源码宿主的运行时。官方离线安装程序在发布清单
 # 冻结后才进入 Inno 私有前置包区：它会随单文件安装器分发，但不会永久占用
