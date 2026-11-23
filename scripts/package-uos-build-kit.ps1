@@ -7,8 +7,8 @@ $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 $artifacts = Join-Path $root "artifacts"
 $stagingRoot = Join-Path $root ".build-kit"
-$releaseVersion = "1.4.3-rc.2"
-$releaseTag = "v1.4.3-rc.2"
+$releaseVersion = "1.4.6-rc.1"
+$releaseTag = "v1.4.6-rc.1"
 $staging = Join-Path $stagingRoot "PartyOps-$releaseVersion"
 $archive = Join-Path $artifacts "PartyOps-UOS-$releaseVersion-build-kit.zip"
 if (-not $Python) {
@@ -174,10 +174,10 @@ $capabilityLines = @(
   "党建智办 PartyOps UOS 原生构建套件能力说明",
   "版本：$releaseVersion",
   "标签：$releaseTag",
-  "发布基线日期：2026-08-13（内容采用可复现构建，不嵌入构建机当前时间）",
+  "构建基线：v1.4.6-rc.1（制品身份以源码 Git SHA 与 SHA-256 验证结果为准）",
   "",
   "已包含：",
-  "- PartyOps 1.4.3 后端源码、前端生产构建、UOS/Windows 安装与统一升级脚本。",
+  "- PartyOps 1.4.6-rc.1 后端源码、前端生产构建、UOS/Windows 安装与统一升级脚本。",
   "- amd64 与 ARM64 的 Python 3.11.15 基础运行时和核心离线轮子。",
   "- SQLite 3.53.4、FTS5 构建输入、OCR 集成脚本及双架构打包入口。",
   "- 规则推荐与已获批外部 AI 接口不依赖本地模型运行时。",
