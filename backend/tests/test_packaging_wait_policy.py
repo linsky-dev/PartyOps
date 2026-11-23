@@ -772,6 +772,17 @@ def test_windows_installer_is_chinese_branded_and_preserves_custom_paths() -> No
     assert "procedure ReportWizardError" in installer
     assert "if WizardSilent then" in installer
     assert "PARTYOPS_OLD_DATA_DISK_ACKNOWLEDGED" in installer
+    # The hidden wizard path page must not duplicate costly PowerShell probes.
+    # This is safe only because the mandatory pre-extraction security check
+    # still precedes service manipulation and payload replacement.
+    assert "PARTYOPS_SILENT_INSTALL_PRECHECK_DEFERRED" in installer
+    assert "Result := ValidateAndSecureInstallDirectory;" in installer
+    assert installer.index("PARTYOPS_SILENT_INSTALL_PRECHECK_DEFERRED") < (
+        installer.index("function ValidateAndSecureInstallDirectory")
+    )
+    assert installer.index("Result := ValidateAndSecureInstallDirectory;") < (
+        installer.index("HostServiceExistedBeforeInstall := ServiceExists")
+    )
     assert "CompareText(ExpandConstant('{param:ALLOWMISSINGDATA|0}'), '1')" in installer
     assert "DefaultDirName={code:GetSuggestedProgramDir}" in installer
     assert "function GetSuggestedProgramDir" in installer
