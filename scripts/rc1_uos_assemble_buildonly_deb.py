@@ -98,6 +98,97 @@ def validate_original_wps(runtime: Path) -> None:
         raise RuntimeError("[UOS_PREVIEW_WPS_VTABLE_HASH_INVALID]")
 
 
+def validate_original_private_office(runtime: Path) -> None:
+    """The old Office runs with an independently packaged glibc 2.34 loader.
+
+    Preserve and verify the source + every private library; these files have
+    a separate ABI namespace and must never be passed to host-glibc 2.28
+    checks or substituted with host libX11/ICE.
+    """
+    office = runtime / "office-runtime"
+    loader = office / "private-runtime/ld-linux-x86-64.so.2"
+    source_file = office / "SOURCE.json"
+    manifest = office / "PRIVATE_RUNTIME_LIBS.txt"
+    package_list = office / "PRIVATE_RUNTIME_PACKAGES.txt"
+    wrapper = office / "program/soffice"
+    for path in (loader, source_file, manifest, package_list, wrapper):
+        if path.is_symlink() or not path.is_file():
+            raise RuntimeError(f"[UOS_PREVIEW_OFFICE_PRIVATE_INPUT_MISSING] {path}")
+    source = json.loads(source_file.read_text(encoding="utf-8"))
+    expected = {
+        "version": "25.8.7.2",
+        "architecture": "amd64",
+        "origin": "The Document Foundation official archive",
+        "archive_sha256": "a893a4f37a8b3fe110da92bb0135f488f8d695cd40cb7ce59c65bb525849bb67",
+        "private_runtime_glibc": "2.34",
+        "minimum_host_glibc": "2.17",
+        "private_runtime_packages_sha256": "dd5ddb478f8863533b48baf2273411ab7c110f4609a74590223f7d9716dcb6cb",
+    }
+    if any(source.get(key) != value for key, value in expected.items()):
+        raise RuntimeError("[UOS_PREVIEW_OFFICE_SOURCE_MISMATCH]")
+    if sha256(package_list) != expected["private_runtime_packages_sha256"]:
+        raise RuntimeError("[UOS_PREVIEW_OFFICE_PACKAGE_LIST_HASH_MISMATCH]")
+    seen: set[str] = set()
+    for line in manifest.read_text(encoding="utf-8").splitlines():
+        fields = line.split("\t")
+        if len(fields) != 3:
+            raise RuntimeError("[UOS_PREVIEW_OFFICE_PRIVATE_MANIFEST_FORMAT_INVALID]")
+        name, _origin, digest = fields
+        if (
+            name in seen
+            or not name
+            or name != Path(name).name
+            or not SHA_PATTERN.fullmatch(digest)
+        ):
+            raise RuntimeError("[UOS_PREVIEW_OFFICE_PRIVATE_MANIFEST_PATH_INVALID]")
+        seen.add(name)
+        require_bytes(office / "private-runtime" / name, digest, "UOS_PREVIEW_OFFICE_PRIVATE_LIBRARY_CHANGED")
+    if "ld-linux-x86-64.so.2" not in seen or "libICE.so.6" not in seen:
+        raise RuntimeError("[UOS_PREVIEW_OFFICE_PRIVATE_ABI_INCOMPLETE]")
+    wrapper_text = wrapper.read_text(encoding="utf-8")
+    for phrase in ("../private-runtime", "--library-path", 'if [[ "$status" -eq 81 ]]'):
+        if phrase not in wrapper_text:
+            raise RuntimeError("[UOS_PREVIEW_OFFICE_LOADER_WRAPPER_MISMATCH]")
+    for path in office.rglob("*"):
+        if path.is_symlink():
+            target = path.resolve()
+            if not target.is_relative_to(office):
+                raise RuntimeError("[UOS_PREVIEW_OFFICE_LINK_OUTSIDE_PAYLOAD]")
+    print("UOS_PRIVATE_OFFICE_234_PROVENANCE=PASS_SOURCE_AND_ALL_LIB_HASHES")
+
+
+def verify_non_office_host_abi(runtime: Path) -> None:
+    """Only shared-namespace ELF files must stay within host glibc 2.28.
+
+    Rather than weakening the generic ABI verifier, create a temporary
+    hardlink view of non-Office ELF binaries. The separately verified Office
+    private runtime is proven with an actual glibc 2.28 --version smoke in CI.
+    """
+    with tempfile.TemporaryDirectory(prefix="uos-v20-shared-abi-") as work:
+        view = Path(work)
+        count = 0
+        for file in runtime.rglob("*"):
+            if file.is_symlink() or not file.is_file():
+                continue
+            relative = file.relative_to(runtime)
+            if relative.parts[0] == "office-runtime":
+                continue
+            with file.open("rb") as handle:
+                if handle.read(4) != b"\x7fELF":
+                    continue
+            target = view / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            os.link(file, target)
+            count += 1
+        if count < 4:
+            raise RuntimeError("[UOS_PREVIEW_SHARED_ABI_NOT_INSPECTED]")
+        command(
+            sys.executable, str(ROOT / "scripts/verify-linux-elf-glibc.py"),
+            "--root", str(view), "--max-glibc", "2.28",
+        )
+        print(f"UOS_HOST_ELF_ABI_228_PASS count={count}; Office uses separate pinned glibc 2.34 loader")
+
+
 def ensure_fresh_application(app: Path, receipt: Path, source_sha: str) -> dict[str, str]:
     if not app.is_dir() or not receipt.is_file():
         raise RuntimeError("[UOS_PREVIEW_NEW_APP_MISSING]")
@@ -134,6 +225,10 @@ def copy_new_application(runtime: Path, app: Path) -> None:
             raise RuntimeError("[UOS_PREVIEW_OLD_ENTRYPOINT_NOT_REGULAR]")
         if path.exists():
             path.unlink()
+    allowed_entries = set(ENTRYPOINTS) | {"_internal"}
+    extra_entries = sorted(p.name for p in app.iterdir() if p.name not in allowed_entries)
+    if extra_entries:
+        raise RuntimeError(f"[UOS_PREVIEW_NEW_APP_UNEXPECTED_ROOT_FILES] {extra_entries}")
     shutil.copytree(app, runtime, dirs_exist_ok=True, symlinks=True)
     for path in app.rglob("*"):
         if path.is_symlink() or not path.is_file():
@@ -298,6 +393,7 @@ def build(donor: Path, app: Path, receipt: Path, output: Path) -> Path:
         if (staging / "var/lib/partyops").exists():
             raise RuntimeError("[UOS_PREVIEW_DONOR_CONTAINS_BUSINESS_DATA]")
         validate_original_wps(runtime)
+        validate_original_private_office(runtime)
         original = {
             name: sha256(runtime / "formatter-host" / name)
             for name in (
@@ -314,8 +410,7 @@ def build(donor: Path, app: Path, receipt: Path, output: Path) -> Path:
         } != original:
             raise RuntimeError("[UOS_PREVIEW_NATIVE_WPS_BYTES_CHANGED]")
         build_manifest(runtime, head)
-        command(sys.executable, str(ROOT / "scripts/verify-linux-elf-glibc.py"),
-                "--root", str(runtime), "--max-glibc", "2.28")
+        verify_non_office_host_abi(runtime)
         command("dpkg-deb", "--root-owner-group", "--build", str(staging), str(output))
         if command("dpkg-deb", "--field", str(output), "Version", capture=True) != "1.4.6~rc.1":
             raise RuntimeError("[UOS_PREVIEW_INSTALLER_VERSION_MISMATCH]")

@@ -241,6 +241,21 @@ jobs:
             --app-receipt "$freeze/result.json" \
             --output "$out/PartyOps_1.4.6-rc.1_uos_v20_amd64_BUILD_ONLY_UNVERIFIED.deb"
           (cd "$out" && sha256sum --check PartyOps_1.4.6-rc.1_uos_v20_amd64_BUILD_ONLY_UNVERIFIED.deb.sha256)
+          # The upstream Office carries its own manifest-verified glibc 2.34
+          # private loader. Check real startup in the target glibc 2.28
+          # namespace; no WPS, user data, GUI, or conversion is run here.
+          mkdir -p "$out/probe-extracted"
+          dpkg-deb --extract "$out/PartyOps_1.4.6-rc.1_uos_v20_amd64_BUILD_ONLY_UNVERIFIED.deb" "$out/probe-extracted"
+          image="quay.io/pypa/manylinux_2_28_x86_64:latest"
+          docker pull "$image"
+          image_digest="$(docker inspect --format '{{ index .RepoDigests 0 }}' "$image")"
+          test -n "$image_digest"
+          docker run --rm --network none \
+            --volume "$GITHUB_WORKSPACE/$out/probe-extracted:/candidate:ro" \
+            "$image_digest" /bin/bash -c \
+            'set -euo pipefail; test "$(getconf GNU_LIBC_VERSION)" = "glibc 2.28"; timeout 60 /candidate/opt/partyops/office-runtime/program/soffice --headless --version'
+          echo 'UOS_OFFICE_PRIVATE_LOADER_GLIBC_228_SMOKE=PASS'
+          rm -rf -- "$out/probe-extracted"
           dpkg-deb --field "$out/PartyOps_1.4.6-rc.1_uos_v20_amd64_BUILD_ONLY_UNVERIFIED.deb" \
             Package Version Architecture
           echo 'UOS_HOSTED_NATIVE_DEB_ASSEMBLED=BUILD_ONLY_NOT_UOS_INSTALLED'
