@@ -126,7 +126,7 @@ foreach ($architecture in @("amd64", "arm64")) {
   $tarHash = (Get-FileHash -LiteralPath (Join-Path $artifacts $tarFile) -Algorithm SHA256).Hash.ToLowerInvariant()
   $stagedSha = Join-Path $staging "artifacts/SHA256SUMS.${architecture}"
   [IO.File]::WriteAllText(
-    $stagedSha, "$tarHash  $tarFile\`n$debHash  $debFile\`n", $utf8WithoutBom
+    $stagedSha, "$tarHash  $tarFile`n$debHash  $debFile`n", $utf8WithoutBom
   )
 }
 
@@ -143,7 +143,7 @@ $manifestLines = @(
     }
 )
 [IO.File]::WriteAllText(
-  $buildKitManifest, (($manifestLines -join "\`n") + "\`n"), $utf8WithoutBom
+  $buildKitManifest, (($manifestLines -join "`n") + "`n"), $utf8WithoutBom
 )
 
 if (Test-Path -LiteralPath $archive) {
