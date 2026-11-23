@@ -118,6 +118,43 @@ def issue_local_admin_recovery(db: Session, proof: str) -> str:
     raise RecoveryCLIError("本机维护授权无效、已使用或已撤销。")
 
 
+
+def issue_single_admin_emergency(db: Session, confirmation: str) -> str:
+    """Last-admin break-glass: elevated *local* operator, protected DB and exclusive lock.
+
+    This action is NEVER exposed through HTTP. It is intentionally scoped to
+    a single active administrator: when several admins exist, use another
+    authenticated administrator's normal reset workflow instead.
+    """
+    from sqlalchemy import select
+
+    from .account_recovery import issue_credential
+    from .audit import write_audit
+    from .enums import UserRole
+    from .models import User
+
+    if not secrets.compare_digest(confirmation, "本机应急恢复"):
+        raise RecoveryCLIError("本机应急恢复确认未通过。")
+    admins = db.scalars(select(User).where(
+        User.role == UserRole.ADMIN,
+        User.active.is_(True),
+        User.archived_at.is_(None),
+    )).all()
+    if len(admins) != 1:
+        raise RecoveryCLIError(
+            "仅当主机恰有一名有效管理员时可使用本机应急恢复；"
+            "多管理员单位请由其他管理员核验身份后重置。"
+        )
+    admin = admins[0]
+    issued = issue_credential(db, admin, "admin_host", None, "local-emergency-console")
+    write_audit(
+        db, None, "auth.host_emergency_recovery_issue", "user", admin.id,
+        {"method": "elevated-local-single-admin", "credential_ttl_minutes": 30},
+        "local-emergency-console",
+    )
+    return issued.credential
+
+
 def _run(path: Path, action: str, identity: str, proof: str) -> str:
     os.environ["PARTYOPS_DATA_DIR"] = str(path)
     os.environ["PARTYOPS_ENVIRONMENT"] = "production"
@@ -141,6 +178,8 @@ def _run(path: Path, action: str, identity: str, proof: str) -> str:
         with db_runtime.session_factory.begin() as db:
             if action == "authorize":
                 return authorize_local_maintenance(db, identity, proof)
+            if action == "emergency":
+                return issue_single_admin_emergency(db, proof)
             return issue_local_admin_recovery(db, proof)
     finally:
         lock.release()
@@ -148,7 +187,7 @@ def _run(path: Path, action: str, identity: str, proof: str) -> str:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="PartyOps 主机管理员账号恢复")
-    parser.add_argument("action", choices=("authorize", "issue"))
+    parser.add_argument("action", choices=("authorize", "issue", "emergency"))
     parser.add_argument("--data-dir", required=True, type=Path)
     args = parser.parse_args(argv)
     if not is_os_administrator() or not sys.stdin.isatty() or not sys.stdout.isatty():
@@ -157,10 +196,17 @@ def main(argv: list[str] | None = None) -> int:
     try:
         path = trusted_data_directory(args.data_dir)
         identity = input("管理员用户名：").strip() if args.action == "authorize" else ""
-        prompt = "管理员当前密码：" if args.action == "authorize" else "本机维护授权码："
-        with warnings.catch_warnings():
-            warnings.simplefilter("error", getpass.GetPassWarning)
-            proof = getpass.getpass(prompt)
+        if args.action == "emergency":
+            print(
+                "危险操作：仅适用于唯一管理员失去全部登录与离线恢复凭据的已安装主机。"
+                "应确认业务数据已备份、主机服务已停止；此操作会留下安全审计记录。"
+            )
+            proof = input("如确需恢复，请输入“本机应急恢复”以继续：").strip()
+        else:
+            prompt = "管理员当前密码：" if args.action == "authorize" else "本机维护授权码："
+            with warnings.catch_warnings():
+                warnings.simplefilter("error", getpass.GetPassWarning)
+                proof = getpass.getpass(prompt)
         result = _run(path, args.action, identity, proof)
     except RecoveryCLIError as exc:
         print(str(exc), file=sys.stderr)
