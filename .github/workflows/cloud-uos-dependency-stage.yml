@@ -73,7 +73,6 @@ jobs:
             --dest artifacts/uos-deps/wheels \
             --python-version 311 --implementation cp --abi cp311 \
             --only-binary=:all: \
-            --platform "manylinux_2_28_$PIP_ARCH" \
             --platform "manylinux2014_$PIP_ARCH" \
             -r backend/requirements.txt \
             -r backend/requirements-local-ai.txt \
