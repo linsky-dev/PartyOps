@@ -73,6 +73,7 @@ jobs:
             --dest artifacts/uos-deps/wheels \
             --python-version 311 --implementation cp --abi cp311 \
             --only-binary=:all: \
+            --platform "manylinux_2_28_$PIP_ARCH" \
             --platform "manylinux2014_$PIP_ARCH" \
             -r backend/requirements.txt \
             -r backend/requirements-local-ai.txt \
@@ -88,7 +89,7 @@ jobs:
           python -m pip install --no-index --find-links artifacts/uos-deps/wheels \
             'packaging>=24,<27'
           python scripts/validate-uos-wheelhouse.py \
-            --architecture "$TARGET_ARCH" --runtime-profile full \
+            --architecture "$TARGET_ARCH" --runtime-profile uos-v20 \
             --wheelhouse artifacts/uos-deps/wheels --requirements \
             backend/requirements.txt \
             backend/requirements-local-ai.txt \
@@ -135,6 +136,9 @@ jobs:
               "schema_version":1,
               "source_sha":os.environ["SOURCE_SHA"],
               "version":"1.4.6-rc.1",
+              "target_os":"UOS Desktop V20 1070 (native profile)",
+              "target_glibc_max":"2.28",
+              "generic_linux_glibc_217_profile_unchanged":True,
               "arch":os.environ["TARGET_ARCH"],
               "runner_cpu":platform.machine(),
               "python_upstream_sha256":os.environ["EXPECTED_PYTHON_SHA256"],
