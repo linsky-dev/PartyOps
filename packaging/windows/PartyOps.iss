@@ -17,7 +17,7 @@ AppPublisher={#MyAppPublisher}
 AppPublisherURL=https://www.partyops.cn/
 AppSupportURL=https://www.partyops.cn/guide
 AppUpdatesURL=https://www.partyops.cn/
-DefaultDirName={autopf}\PartyOps
+DefaultDirName={code:GetSuggestedProgramDir}
 DefaultGroupName=党建智办
 #ifdef PartyOpsX86
 ArchitecturesAllowed=x86compatible
@@ -40,7 +40,7 @@ WizardBackColor=#fff8ee
 WizardBackColorDynamicDark=#211816
 DisableWelcomePage=no
 DisableProgramGroupPage=yes
-UsePreviousAppDir=yes
+UsePreviousAppDir=no
 RestartApplications=no
 ShowLanguageDialog=no
 SetupLogging=yes
@@ -171,6 +171,9 @@ var
   PreviousAppInstallDir: String;
   PreviousAppInstallDirConflict: Boolean;
   PreviousBusinessDataDir: String;
+  PreviousUnavailableAppInstallDir: String;
+  PreviousUnavailableBusinessDataDir: String;
+  UnavailableDataAcknowledged: Boolean;
 
 const
   PartyOpsAppId = '{1C8EFC63-CAFC-46EF-A5E3-D3D119B5BB3A}';
@@ -695,21 +698,48 @@ begin
   end;
 end;
 
+function GetWindowsDriveType(RootPath: String): Integer;
+  external 'GetDriveTypeW@kernel32.dll stdcall';
+
+function IsAvailableFixedDiskPath(ChosenPath: String): Boolean;
+var
+  RootPath: String;
+begin
+  Result := False;
+  if Length(ChosenPath) < 4 then
+    exit;
+  if (ChosenPath[2] <> ':') or (ChosenPath[3] <> '\') then
+    exit;
+  RootPath := Copy(ChosenPath, 1, 3);
+  { DRIVE_FIXED = 3. A detached E: reports DRIVE_NO_ROOT_DIR = 1.
+    Always query Windows rather than hardcode a letter or assume mounted
+    media is internal. The directory itself need not yet exist for a new
+    installation, only its actual fixed-volume root. }
+  Result := DirExists(RootPath) and (GetWindowsDriveType(RootPath) = 3);
+end;
+
+function IsUsableExistingPartyOpsProgramDir(ChosenPath: String): Boolean;
+begin
+  Result := IsAvailableFixedDiskPath(ChosenPath) and
+    FileExists(AddBackslash(ChosenPath) + 'PartyOps.exe');
+end;
+
 function FindExistingPartyOpsInstallDirectory(var InstalledDir: String;
-  var Conflicting: Boolean): Boolean;
+  var Conflicting: Boolean; var UnavailableDir: String): Boolean;
 var
   Key, Win64Dir, Win32Dir: String;
 begin
   Result := False;
   InstalledDir := '';
+  UnavailableDir := '';
   Conflicting := False;
   Key := 'Software\Microsoft\Windows\CurrentVersion\Uninstall\' +
     PartyOpsAppId + '_is1';
   Win64Dir := '';
   Win32Dir := '';
-  { The prior native x64 installer and 32-bit Windows/Win7 installers
-    register the same AppId in different HKLM views. An x64 successor
-    must not silently create a second installation and service. }
+  { The prior native x64 and 32-bit installations may occupy distinct
+    registry views. Stale uninstall records from removed fixed drives MUST
+    NOT force the new install back to a non-existent root. }
   RegQueryStringValue(HKLM, Key, 'InstallLocation', Win64Dir);
   RegQueryStringValue(HKLM,
     'Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\' +
@@ -717,11 +747,18 @@ begin
   Win64Dir := Trim(Win64Dir);
   Win32Dir := Trim(Win32Dir);
   if (Win64Dir <> '') and
-     not FileExists(AddBackslash(Win64Dir) + 'PartyOps.exe') then
+     not IsUsableExistingPartyOpsProgramDir(Win64Dir) then
+  begin
+    UnavailableDir := Win64Dir;
     Win64Dir := '';
+  end;
   if (Win32Dir <> '') and
-     not FileExists(AddBackslash(Win32Dir) + 'PartyOps.exe') then
+     not IsUsableExistingPartyOpsProgramDir(Win32Dir) then
+  begin
+    if UnavailableDir = '' then
+      UnavailableDir := Win32Dir;
     Win32Dir := '';
+  end;
   if (Win64Dir <> '') and (Win32Dir <> '') and
      (CompareText(ExpandFileName(Win64Dir),
        ExpandFileName(Win32Dir)) <> 0) then
@@ -734,6 +771,21 @@ begin
   else if Win32Dir <> '' then
     InstalledDir := ExpandFileName(Win32Dir);
   Result := InstalledDir <> '';
+end;
+
+function GetSuggestedProgramDir(Param: String): String;
+var
+  Existing, Unavailable: String;
+  Conflicting: Boolean;
+begin
+  { Resolves both interactive and /VERYSILENT setups. Inno's native
+    UsePreviousAppDir cache is disabled because it blindly selects a
+    removed E: volume even after the app binary is no longer there. }
+  Result := ExpandConstant('{autopf}\PartyOps');
+  if FindExistingPartyOpsInstallDirectory(
+    Existing, Conflicting, Unavailable
+  ) and (not Conflicting) then
+    Result := Existing;
 end;
 
 function ValidateUpgradeLocations: String;
@@ -778,8 +830,12 @@ begin
   PreviousAppInstallDir := '';
   PreviousAppInstallDirConflict := False;
   PreviousBusinessDataDir := '';
+  PreviousUnavailableAppInstallDir := '';
+  PreviousUnavailableBusinessDataDir := '';
+  UnavailableDataAcknowledged := False;
   if FindExistingPartyOpsInstallDirectory(
-    PreviousAppInstallDir, PreviousAppInstallDirConflict
+    PreviousAppInstallDir, PreviousAppInstallDirConflict,
+    PreviousUnavailableAppInstallDir
   ) then
   begin
     { Keep original installation path even when old RC6 was in the 32-bit
@@ -789,6 +845,15 @@ begin
       '已检测到已安装的 PartyOps，安装位置：' + PreviousAppInstallDir + #13#10 + #13#10 +
       '无需卸载旧版。本向导将原位覆盖程序并保留原来的账号、' +
       '数据库、附件、证书和配置。升级前请完成业务数据备份。';
+  end
+  else if PreviousUnavailableAppInstallDir <> '' then
+  begin
+    WizardForm.DirEdit.Text := ExpandConstant('{autopf}\PartyOps');
+    WizardForm.WelcomeLabel2.Caption :=
+      '检测到旧版安装位置已不可使用：' + PreviousUnavailableAppInstallDir + #13#10 +
+      '该盘可能已拆除或不再是固定磁盘。安装程序已改选当前可用' +
+      '系统固定磁盘，不必先卸载失效的旧程序。' + #13#10 +
+      '旧盘内文件无法自动恢复；若业务数据仍在其他可用磁盘上，会继续沿用原数据路径。';
   end;
   DataDirPage := CreateInputDirPage(
     wpSelectDir,
@@ -810,11 +875,37 @@ begin
     ) and (GetArrayLength(PreviousDataDirLines) > 0) then
       PreviousDataDir := Trim(PreviousDataDirLines[0]);
   end;
+  { Do not keep a vanished E:\ data path just because partyops.env or the
+    install-data-dir.txt pointer mentions it. Recover an accessible marker
+    if it exists; otherwise propose a new *local* directory, but require a
+    visible user acknowledgement that the detached disk's data is NOT
+    present. Never silently claim to have restored lost data. }
+  if (PreviousDataDir <> '') and
+     (not IsAvailableFixedDiskPath(PreviousDataDir) or
+      not DirExists(PreviousDataDir)) then
+  begin
+    PreviousUnavailableBusinessDataDir := PreviousDataDir;
+    PreviousDataDir := '';
+    if LoadStringsFromFile(
+      ExpandConstant('{commonappdata}\PartyOps\install-data-dir.txt'),
+      PreviousDataDirLines
+    ) and (GetArrayLength(PreviousDataDirLines) > 0) then
+    begin
+      PreviousDataDir := Trim(PreviousDataDirLines[0]);
+      if (not IsAvailableFixedDiskPath(PreviousDataDir)) or
+         (not DirExists(PreviousDataDir)) then
+        PreviousDataDir := '';
+    end;
+  end;
   if PreviousDataDir = '' then
     PreviousDataDir := ExpandConstant('{commonappdata}\PartyOps-Data');
   DataDirPage.Values[0] := PreviousDataDir;
-  if PreviousAppInstallDir <> '' then
-    PreviousBusinessDataDir := PreviousDataDir;
+  if (PreviousAppInstallDir <> '') or
+     (PreviousUnavailableAppInstallDir <> '') then
+  begin
+    if PreviousUnavailableBusinessDataDir = '' then
+      PreviousBusinessDataDir := PreviousDataDir;
+  end;
 end;
 
 function ServiceExists(ServiceName: String): Boolean;
@@ -1277,6 +1368,19 @@ begin
       MsgBox(Detail, mbError, MB_OK);
       Result := False;
     end;
+    if Result and (PreviousUnavailableBusinessDataDir <> '') and
+       not UnavailableDataAcknowledged then
+    begin
+      if MsgBox('[PARTYOPS_OLD_DATA_DISK_MISSING] 旧业务数据目录：' +
+        PreviousUnavailableBusinessDataDir + #13#10 +
+        '磁盘已不可访问，安装器无法从中恢复原账号、数据库、附件或证书。' +
+        '可以选择新的本机数据目录继续安装，但旧数据不会被删除或迁移；' +
+        '以后重新接回磁盘或恢复备份时仍需单独导入。' + #13#10 +
+        '确认继续使用新数据目录吗？', mbConfirmation, MB_YESNO) = IDYES then
+        UnavailableDataAcknowledged := True
+      else
+        Result := False;
+    end;
     exit;
   end;
   if CurPageID <> wpSelectDir then
@@ -1475,6 +1579,16 @@ begin
   Result := ValidateUpgradeLocations;
   if Result <> '' then
     exit;
+  if (PreviousUnavailableBusinessDataDir <> '') and
+     not (UnavailableDataAcknowledged or
+       (CompareText(ExpandConstant('{param:ALLOWMISSINGDATA|0}'), '1') = 0)) then
+  begin
+    Result := '[PARTYOPS_OLD_DATA_DISK_MISSING] 旧数据盘已断开：' +
+      PreviousUnavailableBusinessDataDir +
+      '。请在安装向导确认选择新数据目录；无人值守安装须显式传入' +
+      ' /ALLOWMISSINGDATA=1，绝不能假装已恢复旧数据。';
+    exit;
+  end;
   Result := EnsureDotNet48(NeedsRestart);
   if Result <> '' then
     exit;
