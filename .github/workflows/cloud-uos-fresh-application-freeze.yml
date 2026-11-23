@@ -7,6 +7,7 @@ on:
       - '.github/workflows/cloud-uos-fresh-application-freeze.yml'
       - 'scripts/rc1-uos-cloud-freeze.sh'
       - 'scripts/rc1_linux_arm64_assemble_buildonly_deb.py'
+      - 'scripts/rc1_linux_rpm_assemble_buildonly.py'
       - 'backend/app/package_selftest.py'
   workflow_dispatch:
 
@@ -336,6 +337,76 @@ jobs:
             artifacts/rc1-arm64-deb-buildonly/*.deb
             artifacts/rc1-arm64-deb-buildonly/*.sha256
             artifacts/rc1-arm64-deb-buildonly/buildonly-receipt.json
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+
+      - name: Install RPM packaging and archive tools for target openEuler architecture
+        if: steps.actual-freeze.outcome == 'success'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq rpm cpio
+          command -v rpmbuild
+          command -v rpm2cpio
+          command -v cpio
+
+      - name: Fetch pinned public RC6 openEuler RPM donor with unchanged WPS
+        if: steps.actual-freeze.outcome == 'success'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p "artifacts/uos-app-inputs/$PARTYOPS_BUILD_ARCH"
+          if [[ "$PARTYOPS_BUILD_ARCH" == amd64 ]]; then
+            donor=PartyOps-1.4.5-0.rc.6.1.x86_64.rpm
+            expected=e7c34a6090689f40dfae3aa3403b7b6ad0b5d4c3748e07005bb73ed1b32632ac
+          else
+            donor=PartyOps-1.4.5-0.rc.6.1.aarch64.rpm
+            expected=f507da109c1110e2c553ac9cb44a7f05205156132fb241ba057028571344e4f4
+          fi
+          gh release download v1.4.5-rc.6 --repo "$GITHUB_REPOSITORY" \
+            --pattern "$donor" --dir "artifacts/uos-app-inputs/$PARTYOPS_BUILD_ARCH" --clobber
+          printf '%s  %s\n' "$expected" "artifacts/uos-app-inputs/$PARTYOPS_BUILD_ARCH/$donor" |
+            sha256sum --check
+
+      - name: Rebuild real source-matched RC1 RPM with original native WPS and explicit rollback seed
+        if: steps.actual-freeze.outcome == 'success'
+        id: actual-rpm
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m py_compile scripts/rc1_linux_rpm_assemble_buildonly.py
+          if [[ "$PARTYOPS_BUILD_ARCH" == amd64 ]]; then
+            donor=PartyOps-1.4.5-0.rc.6.1.x86_64.rpm
+            target=x86_64
+          else
+            donor=PartyOps-1.4.5-0.rc.6.1.aarch64.rpm
+            target=aarch64
+          fi
+          out="artifacts/rc1-rpm-buildonly/$PARTYOPS_BUILD_ARCH"
+          mkdir -p "$out"
+          python scripts/rc1_linux_rpm_assemble_buildonly.py \
+            --donor "artifacts/uos-app-inputs/$PARTYOPS_BUILD_ARCH/$donor" \
+            --app "artifacts/uos-app-freeze/$PARTYOPS_BUILD_ARCH/dist/PartyOps" \
+            --app-receipt "artifacts/uos-app-freeze/$PARTYOPS_BUILD_ARCH/result.json" \
+            --architecture "$PARTYOPS_BUILD_ARCH" \
+            --output "$out/PartyOps-1.4.6-0.rc.1.1.$target-BUILD_ONLY_UNVERIFIED.rpm"
+          (cd "$out" && sha256sum --check *.rpm.sha256)
+          rpm -qp --queryformat '%{NAME}|%{VERSION}|%{RELEASE}|%{ARCH}\n' "$out/"*.rpm
+          echo 'OPENEULER_RPM_BUILT=TRUE_UNSIGNED_HOSTED_ONLY'
+
+      - name: Upload real RC1 openEuler RPM for architecture-specific local acceptance
+        if: steps.actual-rpm.outcome == 'success'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: partyops-RC1-openeuler-${{ matrix.platform }}-RPM-BUILD_ONLY-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            artifacts/rc1-rpm-buildonly/${{ matrix.arch }}/*.rpm
+            artifacts/rc1-rpm-buildonly/${{ matrix.arch }}/*.sha256
+            artifacts/rc1-rpm-buildonly/${{ matrix.arch }}/buildonly-receipt.json
           if-no-files-found: error
           compression-level: 0
           retention-days: 14

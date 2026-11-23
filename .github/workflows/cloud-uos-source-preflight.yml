@@ -66,6 +66,8 @@ jobs:
           bash -n packaging/uos/build-portable.sh packaging/uos/one-click-install.sh \
             packaging/linux/build-native.sh packaging/linux/post-install-transaction.sh
           python -m py_compile scripts/rc1_uos_assemble_buildonly_deb.py
+          python -m py_compile scripts/rc1_linux_arm64_assemble_buildonly_deb.py
+          python -m py_compile scripts/rc1_linux_rpm_assemble_buildonly.py
           bash -n scripts/rc1-uos-cloud-freeze.sh
           PYTHONPATH=backend python -m pytest --noconftest -q \
             backend/tests/test_rc1_uos_packaging_preflight.py \
