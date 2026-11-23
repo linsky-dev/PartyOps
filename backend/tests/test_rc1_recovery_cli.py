@@ -325,10 +325,22 @@ def test_single_admin_emergency_without_password_or_previous_proof(cli_store, mo
             RecoveryCredential.digest == account_recovery.sm3_digest(token.encode("ascii"))
         ))
         assert credential is not None and credential.user_id == cli_store.admin_id
-        assert credential.purpose == "admin_host" and credential.used_at is None
+        assert credential.purpose == "admin_emergency" and credential.used_at is None
         assert db.scalar(select(AuditLog).where(
             AuditLog.action == "auth.host_emergency_recovery_issue"
         )) is not None
+    # Emergency credentials must not silently be spent on username-only lookup.
+    from app.problems import ProblemException
+    with pytest.raises(ProblemException) as denied:
+        with cli_store.runtime.session_factory.begin() as db:
+            account_recovery.redeem_credential(
+                db, account_recovery.RedeemCredential(credential=token), "127.0.0.1"
+            )
+    assert denied.value.code == "RECOVERY_PASSWORD_REQUIRED"
+    with cli_store.runtime.session_factory() as db:
+        assert db.scalar(select(RecoveryCredential).where(
+            RecoveryCredential.digest == account_recovery.sm3_digest(token.encode("ascii"))
+        )).used_at is None
     # The same authenticated redeem transaction must still enforce one-time use.
     with cli_store.runtime.session_factory.begin() as db:
         account_recovery.redeem_credential(
