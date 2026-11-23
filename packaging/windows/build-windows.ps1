@@ -4,7 +4,9 @@ param(
   [string]$SqliteSha256 = "",
   [string]$InnoCompiler = "",
   [string]$OfficeRuntime = "",
-  [ValidateSet("", "amd64", "x86")][string]$LegacyArchitecture = ""
+  [ValidateSet("", "amd64", "x86")][string]$LegacyArchitecture = "",
+  [switch]$BuildOnlyPreview,
+  [string]$PdfCandidateRoot = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -18,14 +20,52 @@ $releaseTag = "v1.4.6-rc.1"
 # A safe uv.lock value alone is insufficient while requirements.txt still
 # controls the packages PyInstaller actually bundles.
 $securePdfVerifier = Join-Path $repoRoot "scripts\verify_windows_secure_pdf_package.py"
-if (-not $LegacyArchitecture) {
-  & $Python $securePdfVerifier --root $repoRoot
+$previewPdfRoot = ""
+$pdfPackageRoot = $repoRoot
+if ($BuildOnlyPreview) {
+  if ($LegacyArchitecture -or -not $PdfCandidateRoot) {
+    throw "[RC1_BUILD_ONLY_X64_PDF_ROOT_REQUIRED] Only modern Windows x64 is supported."
+  }
+  $previewPdfRoot = (Resolve-Path -LiteralPath $PdfCandidateRoot -ErrorAction Stop).Path
+  $previewBoundary = [IO.Path]::GetFullPath((Join-Path $repoRoot 'artifacts')).TrimEnd('\','/') + [IO.Path]::DirectorySeparatorChar
+  if (-not $previewPdfRoot.StartsWith($previewBoundary, [StringComparison]::OrdinalIgnoreCase) -or
+      (Get-Item -LiteralPath $previewPdfRoot).Attributes -band [IO.FileAttributes]::ReparsePoint) {
+    throw "[RC1_BUILD_ONLY_PDF_ROOT_INVALID] PDF candidate must be isolated within artifacts."
+  }
+  $pdfPackageRoot = $previewPdfRoot
+  $deltaArguments = @(
+    '--baseline', (Join-Path $repoRoot 'backend/uv.lock'),
+    '--candidate', (Join-Path $previewPdfRoot 'backend/uv.lock'),
+    '--output', (Join-Path $previewPdfRoot 'lock-delta.json')
+  )
+  & $Python (Join-Path $repoRoot 'scripts/rc1_windows_pdf_lock_delta.py') @deltaArguments
   if ($LASTEXITCODE -ne 0) {
-    throw "[WINDOWS_X64_PDF_BUILD_INPUTS_UNSAFE] 生产锁、项目声明与安装依赖必须全部一致且已修复。"
+    throw "[RC1_BUILD_ONLY_PDF_LOCK_DELTA_INVALID] Existing dependencies must remain unchanged."
   }
 }
-& $Python (Join-Path $repoRoot "scripts\verify-full-function-gate.py") verify --root $repoRoot --scope package
-if ($LASTEXITCODE -ne 0) { throw "全功能测试门禁失败，拒绝生成 Windows 安装包。" }
+if (-not $LegacyArchitecture) {
+  if ($BuildOnlyPreview) {
+    $pdfResult = @(& $Python $securePdfVerifier --root $previewPdfRoot)
+    if ($LASTEXITCODE -ne 0 -or ($pdfResult -join ' ') -notmatch 'VERSION_FLOOR_ONLY: 2\.1$') {
+      throw "[RC1_BUILD_ONLY_SECURE_PYMUPDF_21_REQUIRED]"
+    }
+  } else {
+    & $Python $securePdfVerifier --root $repoRoot
+    if ($LASTEXITCODE -ne 0) {
+      throw "[WINDOWS_X64_PDF_BUILD_INPUTS_UNSAFE] 生产锁、项目声明与安装依赖必须全部一致且已修复。"
+    }
+  }
+}
+if ($BuildOnlyPreview) {
+  # Historical reference is NOT a new WPS/full-function PASS.
+  $previousEvidenceArgs = @('--root', $repoRoot,
+    '--output', (Join-Path $repoRoot 'artifacts/rc1-preview-historical-wps-reference.json'))
+  & $Python (Join-Path $repoRoot 'scripts/rc1_windows_historical_wps_reference.py') @previousEvidenceArgs
+  if ($LASTEXITCODE -ne 0) { throw "[RC1_BUILD_ONLY_PREVIOUS_WPS_REFERENCE_INVALID]" }
+} else {
+  & $Python (Join-Path $repoRoot "scripts\verify-full-function-gate.py") verify --root $repoRoot --scope package
+  if ($LASTEXITCODE -ne 0) { throw "全功能测试门禁失败，拒绝生成 Windows 安装包。" }
+}
 & $Python (Join-Path $repoRoot "scripts\verify-version-consistency.py") `
   --root $repoRoot --expected $releaseVersion
 if ($LASTEXITCODE -ne 0) { throw "版本一致性门禁失败，拒绝冻结 Windows 制品。" }
@@ -327,14 +367,19 @@ if (-not $isLegacy) {
   $previousEap = $ErrorActionPreference
   $ErrorActionPreference = "Continue"
   try {
-    & $Python -m pip install -r (Join-Path $repoRoot "backend\requirements.txt") -r (Join-Path $repoRoot "backend\requirements-local-ai.txt") -r (Join-Path $PSScriptRoot "requirements-build.txt")
+    $requirementsForBundle = if ($BuildOnlyPreview) {
+      Join-Path $previewPdfRoot "backend\requirements.txt"
+    } else {
+      Join-Path $repoRoot "backend\requirements.txt"
+    }
+    & $Python -m pip install -r $requirementsForBundle -r (Join-Path $repoRoot "backend\requirements-local-ai.txt") -r (Join-Path $PSScriptRoot "requirements-build.txt")
   } finally {
     $ErrorActionPreference = $previousEap
   }
   Assert-NativeSuccess "Windows Python 构建依赖安装"
   # The active PyInstaller interpreter must actually contain the safe version.
   # This catches pip reinstalling an old requirements.txt PDF package.
-  & $Python $securePdfVerifier --root $repoRoot --check-installed
+  & $Python $securePdfVerifier --root $pdfPackageRoot --check-installed
   if ($LASTEXITCODE -ne 0) {
     throw "[WINDOWS_X64_PDF_BUILD_ENV_UNSAFE] PyInstaller Python 里的 PDF 库与安全锁不一致。"
   }
