@@ -21,6 +21,7 @@ from app.startup_diagnostics import (
     DATA_DIR_FULL,
     DATABASE_IO_FAILED,
     DATABASE_SCHEMA_FAILED,
+    DATABASE_STARTUP_FAILED,
     INSTANCE_ALREADY_RUNNING,
     SQLITE_RUNTIME_FAILED,
     UPGRADE_BACKUP_FAILED,
@@ -166,7 +167,9 @@ def test_rc6_0026_partial_migration_failure_restores_verified_rc6_snapshot(
         raise RuntimeError("injected_rc6_0026_to_rc1_0028_failure")
 
     monkeypatch.setattr(runtime, "create_schema", migrate_rc6_then_fail)
-    with pytest.raises(RuntimeError, match=DATABASE_SCHEMA_FAILED):
+    # The injected RuntimeError has no SQLite/schema-specific message.  Keep the
+    # public diagnostic generic; verified rollback is asserted independently.
+    with pytest.raises(RuntimeError, match=DATABASE_STARTUP_FAILED):
         app_main._initialize_runtime()
 
     assert _revision(runtime) == "0026"
