@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 import platform
 import shutil
 import subprocess
@@ -72,6 +73,7 @@ def test_uos_source_gate_rejects_vendor_checksum_in_place_mutation(
     assert report["release_ready"] is False
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX sed/sha256sum pipeline is Linux-only")
 def test_crlf_supplier_checksum_is_validated_without_rewriting_input(
     tmp_path: Path,
 ) -> None:
