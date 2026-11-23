@@ -215,10 +215,13 @@ if [[ ! -f "$LOCAL_AI_RUNTIME/LICENSE" || ! -f "$LOCAL_AI_RUNTIME/SOURCE.json" ]
   exit 2
 fi
 fi
-# 部分 Windows 解压/重打包工具会把清单改成 CRLF。校验前只规范行尾，
-# 避免 sha256sum 把不可见的 \r 误认为文件名的一部分。
-sed -i 's/\r$//' "$ROOT/vendor/SHA256SUMS"
-(cd "$ROOT/vendor" && sha256sum -c SHA256SUMS)
+# 部分 Windows 解压/重打包工具会把清单改成 CRLF。只规范校验时的
+# 输入流，不得通过 sed -i 修改供应链清单原件，否则会在“只读源码 /
+# 签名构建套件”上失败，也会让正式源码 SHA 与构建时内容不一致。
+(
+  cd "$ROOT/vendor"
+  sed 's/\r$//' SHA256SUMS | sha256sum -c -
+)
 OCR_ARCHIVE_ROOT=tesseract-5.5.3
 if [[ "$RUNTIME_PROFILE" == core ]]; then
   OCR_ARCHIVE_ROOT=tesseract-5.5.0-deepin-loong64
