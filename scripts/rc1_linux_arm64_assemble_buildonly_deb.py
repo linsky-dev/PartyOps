@@ -122,7 +122,7 @@ def validate_original_private_office(runtime: Path) -> None:
         "archive_sha256": "a47d693dce67d5f5e15ee6f7ed2faaba5a2234fd21c3cd0227cf0567e63f95a4",
         "private_runtime_glibc": "2.34",
         "minimum_host_glibc": "2.17",
-        "private_runtime_packages_sha256": "82b2b3b8c65cc1fcd369b86b0ca0b3ed675304898354b8f15143ba57365e90",
+        "private_runtime_packages_sha256": "82b2b3b8c65cc1fcd369b86b0ca0b3b3ed675304898354b8f15143ba57365e90",
     }
     if any(source.get(key) != value for key, value in expected.items()):
         raise RuntimeError("[UOS_PREVIEW_OFFICE_SOURCE_MISMATCH]")
