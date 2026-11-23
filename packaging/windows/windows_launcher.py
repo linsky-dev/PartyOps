@@ -599,8 +599,8 @@ def main() -> int:
             f"{exc}{detail}\n"
             f"当前启动器所在目录：{runtime}\n"
             "如果已把程序安装到新的磁盘，请优先从新的开始菜单快捷方式启动；"
-            "请使用官网下载的同平台、同位数当前版本安装包执行修复安装；"
-            "业务数据不会被删除。"
+            "若当前目录内确实缺失清单，请使用同一版本、同位数且哈希已核验的完整安装包修复；"
+            "不要直接运行旧目录内复制出来的启动器，也不要卸载原有业务数据。"
         )
         _append_launcher_diagnostic(local / "launcher.log", message)
         if not background:

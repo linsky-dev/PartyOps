@@ -3593,7 +3593,7 @@ def _preflight_windows_runtime_dependencies(
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         raise HostStartupError(
             RUNTIME_DEPENDENCY_MISSING,
-            "安装包运行时清单缺失或损坏，请使用官网下载的完整安装包执行修复安装。",
+            "安装位置的发布清单缺失或损坏。请先检查是否启动了旧目录中的快捷方式；若当前目录确实缺失文件，请使用与目标版本一致、已校验 SHA-256 的完整安装包进行修复，不要混用其他版本。",
             detail=(
                 f"缺失或无效清单={manifest_path}；"
                 f"实际启动主程序={executable}；"
