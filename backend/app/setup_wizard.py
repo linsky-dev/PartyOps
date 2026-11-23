@@ -3594,7 +3594,12 @@ def _preflight_windows_runtime_dependencies(
         raise HostStartupError(
             RUNTIME_DEPENDENCY_MISSING,
             "安装包运行时清单缺失或损坏，请使用官网下载的完整安装包执行修复安装。",
-            detail=f"缺失或无效清单={manifest_path.name}",
+            detail=(
+                f"缺失或无效清单={manifest_path}；"
+                f"实际启动主程序={executable}；"
+                f"清单检查错误类型={type(exc).__name__}。"
+                "请先确认快捷方式指向的是最新安装目录，而非旧版残留启动器。"
+            ),
         ) from exc
 
     detected_version = windows_version or _windows_version_tuple()

@@ -1599,6 +1599,13 @@ begin
     Result := '[INSTALL_DIR_PAYLOAD_MISSING] 新版本主程序未被完整写入。';
     exit;
   end;
+  if not FileExists(AddBackslash(AppDir) + 'release-manifest.json') then
+  begin
+    Result := '[RUNTIME_DEPENDENCY_MISSING] 新版程序 release-manifest.json ' +
+      '未释放到目标安装目录，无法完成安全验收；安装将失败并回滚，而不是' +
+      '让用户首次启动时才发现清单缺失。程序目录：' + AppDir;
+    exit;
+  end;
   ExtractTemporaryFile('validate-install-path.ps1');
   Validator := ExpandConstant('{tmp}\validate-install-path.ps1');
   PowerShell := ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe');

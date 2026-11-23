@@ -124,6 +124,25 @@ try {
   $report['installed_exe_sha256'] = $actual
   $report['installed_manifest_version'] = $manifest.version
   $report['install_verified'] = $true
+  # Running the actual installed desktop launcher catches missing
+  # release-manifest.json and dependency mismatch that Inno file copy alone
+  # does not detect. First-run background mode does not change user config.
+  $launcher = Join-Path $program 'PartyOpsLauncher.exe'
+  if (-not (Test-Path -LiteralPath $launcher -PathType Leaf)) {
+    throw '[RC1_QA_INSTALLED_LAUNCHER_MISSING]'
+  }
+  $launcherProcess = Start-Process -FilePath $launcher -ArgumentList '--background' -PassThru
+  try {
+    if (-not $launcherProcess.WaitForExit(180000)) {
+      try { $launcherProcess.Kill() } catch {}
+      throw '[RC1_QA_LAUNCHER_RUNTIME_PREFLIGHT_TIMEOUT]'
+    }
+    $report['launcher_preflight_exit_code'] = $launcherProcess.ExitCode
+    if ($launcherProcess.ExitCode -ne 0) {
+      throw "[RC1_QA_LAUNCHER_RUNTIME_PREFLIGHT_FAILED] Exit $($launcherProcess.ExitCode)"
+    }
+    $report['launcher_release_manifest_preflight_passed'] = $true
+  } finally { $launcherProcess.Dispose() }
   $uninstaller = Join-Path $program 'unins000.exe'
   if (-not (Test-Path -LiteralPath $uninstaller -PathType Leaf)) {
     throw '[RC1_QA_UNINSTALLER_MISSING]'

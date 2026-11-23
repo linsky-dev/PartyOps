@@ -235,9 +235,41 @@ def _probe_frozen_server(runtime: Path, timeout: float) -> dict[str, object]:
                     process.wait(timeout=10)
 
 
+def _verify_frozen_installed_manifest(runtime: Path) -> None:
+    """Fail the REAL installer, not the first user launch, if its manifest is missing.
+
+    The Inno post-install runtime probe already starts the exact frozen
+    PartyOps.exe. It must also prove the release manifest exists and binds
+    this executable's bytes. Do not synthesize a manifest or bypass hashing.
+    This is intentionally a no-op for normal Python/source test runs.
+    """
+    if os.name != "nt" or not getattr(sys, "frozen", False):
+        return
+    from . import __version__
+    from .windows_runtime_identity import read_installed_manifest
+
+    installed_executable = Path(sys.executable).resolve()
+    if installed_executable.parent != runtime.resolve():
+        raise RuntimeError("[RUNTIME_INSTALL_ROOT_MISMATCH] 冻结程序目录与启动路径不一致")
+    try:
+        manifest = read_installed_manifest(installed_executable)
+    except (OSError, ValueError, TypeError) as exc:
+        raise RuntimeError(
+            "[RUNTIME_DEPENDENCY_MISSING] 安装后的 release-manifest.json 缺失、"
+            "损坏，或与 PartyOps.exe 内容不一致，安装不应标记成功；"
+            f"程序目录={runtime}"
+        ) from exc
+    if manifest.get("version") != __version__:
+        raise RuntimeError(
+            "[RUNTIME_PACKAGE_MISMATCH] 安装清单与当前主程序版本不匹配；"
+            f"程序目录={runtime}"
+        )
+
+
 def run_selftest(runtime: Path, timeout: float = 180.0) -> dict[str, object]:
     """执行无持久副作用的目标机加密与完整启动探针。"""
 
+    _verify_frozen_installed_manifest(runtime)
     _critical_crypto_roundtrip()
     sm_runtime = verify_sm_runtime()
     health = _probe_frozen_server(runtime.resolve(), timeout)
