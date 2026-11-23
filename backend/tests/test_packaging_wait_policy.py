@@ -767,6 +767,12 @@ def test_windows_installer_is_chinese_branded_and_preserves_custom_paths() -> No
     assert "欢迎使用党建智办 PartyOps 安装向导" in installer
     # Inno must not blindly reuse an installation on a detached E: drive.
     assert "UsePreviousAppDir=no" in installer
+    assert "RemoveBackslashUnlessRoot(ExpandFileName(WizardDirValue))" in installer
+    assert "RemoveBackslashUnlessRoot(ExpandFileName(PreviousAppInstallDir))" in installer
+    assert "procedure ReportWizardError" in installer
+    assert "if WizardSilent then" in installer
+    assert "PARTYOPS_OLD_DATA_DISK_ACKNOWLEDGED" in installer
+    assert "CompareText(ExpandConstant('{param:ALLOWMISSINGDATA|0}'), '1')" in installer
     assert "DefaultDirName={code:GetSuggestedProgramDir}" in installer
     assert "function GetSuggestedProgramDir" in installer
     assert "FindExistingPartyOpsInstallDirectory(" in installer
@@ -830,9 +836,16 @@ def test_windows_installer_is_chinese_branded_and_preserves_custom_paths() -> No
     assert "ExecAndLogOutput(" in installer
     install_path_flow = installer.split(
         "function ValidateAndSecureInstallDirectory", maxsplit=1
-    )[1].split("function PrepareToInstall", maxsplit=1)[0]
+    )[1].split("function VerifyExtractedInstallDirectory", maxsplit=1)[0]
     assert "Exec(PowerShell" not in install_path_flow
+    # Three preparatory checks run before payload extraction. The separately
+    # named post-extraction read-only verification is not a fourth rewrite.
     assert install_path_flow.count("RunInstallPathValidator(") == 3
+    post_extract = installer.split(
+        "function VerifyExtractedInstallDirectory", maxsplit=1
+    )[1].split("function PrepareToInstall", maxsplit=1)[0]
+    assert post_extract.count("RunInstallPathValidator(") == 1
+    assert "release-manifest.json" in post_extract
     assert "partyops-install-path-diagnostic.txt" in installer
     assert "*S-1-5-18:(OI)(CI)F" in installer
     assert "*S-1-5-32-544:(OI)(CI)F" in installer
