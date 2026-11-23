@@ -71,16 +71,17 @@ def windows_personal_owner_scope(path: Path) -> bool:
     if os.name != "nt":
         return False
     import json
+    import shlex
 
     import win32api  # type: ignore[import-untyped]
     import win32security  # type: ignore[import-untyped]
 
-    from .setup_wizard import config_root, load_host_environment
-
-    root = config_root()
-    mode_path = root / "mode.json"
-    config_path = root / "personal.env"
+    # Do not import setup_wizard here: its transitive imports may initialize
+    # app.database before PARTYOPS_DATA_DIR and PARTYOPS_MODE are bound.
     try:
+        root = Path(os.getenv("LOCALAPPDATA", Path.home() / "AppData" / "Local")) / "PartyOps"
+        mode_path = root / "mode.json"
+        config_path = root / "personal.env"
         for entry, limit in ((root, None), (mode_path, 8192), (config_path, 65536),
                              (path, None), (path / "partyops.db", None)):
             info = entry.lstat()
@@ -96,7 +97,18 @@ def windows_personal_owner_scope(path: Path) -> bool:
         configured_path = Path(str(mode.get("config_path") or config_path))
         if not configured_path.is_absolute() or configured_path.resolve(strict=True) != config_path.resolve(strict=True):
             return False
-        environment = load_host_environment(config_path, inherit_environment=False)
+        environment: dict[str, str] = {}
+        # Parse only the two needed keys as data; never execute saved content.
+        for line in config_path.read_text(encoding="utf-8").splitlines():
+            if not line.strip() or line.lstrip().startswith("#"):
+                continue
+            key, separator, raw_value = line.partition("=")
+            if not separator or key not in {"PARTYOPS_MODE", "PARTYOPS_DATA_DIR"}:
+                continue
+            values = shlex.split(raw_value)
+            if len(values) != 1 or key in environment:
+                return False
+            environment[key] = values[0]
         saved_path = environment.get("PARTYOPS_DATA_DIR", "").strip()
         if environment.get("PARTYOPS_MODE") != "personal" or not saved_path:
             return False
