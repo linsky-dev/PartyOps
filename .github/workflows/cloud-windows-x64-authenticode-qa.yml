@@ -65,6 +65,8 @@ jobs:
             official_installer_signed = $false
             qa_signed_copy_distributable = $false
             original_untouched = $true
+            qa_signature_only_on_harmless_tiny_pe = $true
+            actual_partyops_exe_signing_proven = $false
             source = 'original-BUILD_ONLY-7ed8367b'
           }
           try {
@@ -76,7 +78,15 @@ jobs:
             )
             $store.Open([Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
             $store.Add($cert)
-            Copy-Item -LiteralPath $env:QA_SIGNING_INPUT -Destination $qaCopy -Force
+            # A production publisher certificate is unavailable. Sign a
+            # tiny independently compiled PE only to validate WinVerifyTrust,
+            # signer certificate identity and tamper refusal; do NOT pretend
+            # that a self-signed QA test has signed the 584 MB PartyOps EXE.
+            $source = 'public static class QaOnly { public static int Main() { return 0; } }'
+            Add-Type -TypeDefinition $source -OutputAssembly $qaCopy -OutputType ConsoleApplication
+            if (-not (Test-Path -LiteralPath $qaCopy -PathType Leaf)) {
+              throw '[QA_SIGNING_VALID_TINY_PE_NOT_COMPILED]'
+            }
             $result = Set-AuthenticodeSignature -FilePath $qaCopy -Certificate $cert -HashAlgorithm SHA256
             $valid = Get-AuthenticodeSignature -LiteralPath $qaCopy
             if ($valid.Status -ne 'Valid' -or $valid.SignerCertificate.Thumbprint -ne $cert.Thumbprint) {
@@ -87,10 +97,12 @@ jobs:
             Copy-Item -LiteralPath $qaCopy -Destination $tamper
             $f = [IO.File]::Open($tamper,[IO.FileMode]::Open,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None)
             try {
-              $f.Position = 4096
+              $offset = [Math]::Min(1024, [Math]::Max(128, [int]($f.Length / 3)))
+              if ($offset -ge $f.Length) { throw '[QA_SIGNING_TEST_FILE_TRUNCATED]' }
+              $f.Position = $offset
               $value = $f.ReadByte()
               if ($value -lt 0) { throw '[QA_SIGNING_TEST_FILE_TRUNCATED]' }
-              $f.Position = 4096
+              $f.Position = $offset
               $f.WriteByte([byte]($value -bxor 1))
             } finally { $f.Dispose() }
             $altered = Get-AuthenticodeSignature -LiteralPath $tamper
