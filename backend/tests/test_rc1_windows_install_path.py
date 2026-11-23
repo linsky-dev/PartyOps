@@ -41,3 +41,11 @@ def test_protections_are_kept_for_privileged_installer_files() -> None:
     assert "RunInstallPathValidator(PowerShell, Parameters, ResultCode)" in iss
     assert "VerifyTargetAcl" in iss
     assert "icacls.exe" in iss
+    assert "function NextButtonClick(CurPageID: Integer): Boolean;" in iss
+    assert "if CurPageID <> wpSelectDir then" in iss
+    assert "AppDir := WizardDirValue;" in iss
+    assert "ReadInstallPathDiagnostic(DiagnosticFile, ResultCode)" in iss
+    assert "请返回当前页面改选本机固定磁盘中的目录" in iss
+    assert "Result := False;" in iss
+    assert "function PrepareToInstall(var NeedsRestart: Boolean): String;" in iss
+    assert "Result := ValidateAndSecureInstallDirectory;" in iss

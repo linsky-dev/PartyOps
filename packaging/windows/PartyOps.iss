@@ -1172,6 +1172,47 @@ begin
   end;
 end;
 
+function NextButtonClick(CurPageID: Integer): Boolean;
+var
+  AppDir, Validator, PowerShell, Parameters, DiagnosticFile, Detail: String;
+  ResultCode: Integer;
+begin
+  Result := True;
+  if CurPageID <> wpSelectDir then
+    exit;
+  { Validate the USER'S chosen program path before switching to the data
+    directory page. Invalid removable/network/relative paths stay editable
+    in the wizard instead of causing a fatal PrepareToInstall screen. This
+    check must not create paths, change ACLs or stop PartyOps services. }
+  AppDir := WizardDirValue;
+  ExtractTemporaryFile('validate-install-path.ps1');
+  Validator := ExpandConstant('{tmp}\validate-install-path.ps1');
+  PowerShell := ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe');
+  DiagnosticFile := ExpandConstant('{tmp}\partyops-wizard-path-diagnostic.txt');
+  DeleteFile(DiagnosticFile);
+  if not FileExists(PowerShell) then
+  begin
+    MsgBox('Windows PowerShell 不可用，无法安全验证程序目录；请检查 Windows 组件。',
+      mbError, MB_OK);
+    Result := False;
+    exit;
+  end;
+  Parameters := '-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ' +
+    AddQuotes(Validator) + ' -Path ' + AddQuotes(AppDir) +
+    ' -DiagnosticFile ' + AddQuotes(DiagnosticFile);
+  ResultCode := 5;
+  if (not RunInstallPathValidator(PowerShell, Parameters, ResultCode)) or
+     (ResultCode <> 0) then
+  begin
+    Detail := ReadInstallPathDiagnostic(DiagnosticFile, ResultCode);
+    MsgBox('所选 PartyOps 程序目录无法使用：' + #13#10 +
+      Detail + #13#10 + #13#10 +
+      '请返回当前页面改选本机固定磁盘中的目录，例如 C:\Program Files\PartyOps。',
+      mbError, MB_OK);
+    Result := False;
+  end;
+end;
+
 function SetAdministratorOwnerWithFallback(
   Target: String; Recursive: Boolean; var ResultCode: Integer
 ): Boolean;
