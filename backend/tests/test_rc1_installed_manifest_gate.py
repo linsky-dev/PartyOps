@@ -86,8 +86,14 @@ def test_installer_requires_manifest_before_service_install_and_desktop_launch()
     post_check = iss.split("function VerifyExtractedInstallDirectory", 1)[1]
     assert "release-manifest.json" in post_check.split("function PrepareToInstall", 1)[0]
     assert "RunRuntimeStartupSelfTest;" in iss
-    assert iss.index("ErrorMessage := VerifyExtractedInstallDirectory") < iss.index(
-        "RunRuntimeStartupSelfTest;"
+    # Compare actual calls within the post-install callback, not an earlier
+    # procedure declaration elsewhere in the PascalScript source.
+    post_install = iss.split("procedure CurStepChanged(CurStep: TSetupStep);", 1)[1]
+    assert post_install.index("ErrorMessage := VerifyExtractedInstallDirectory;") < (
+        post_install.index("RunRuntimeStartupSelfTest;")
+    )
+    assert post_install.index("RunRuntimeStartupSelfTest;") < (
+        post_install.index("ProtectSystemControlDirectories;")
     )
     startup = (root / "backend/app/startup_selftest.py").read_text(encoding="utf-8")
     assert "_verify_frozen_installed_manifest(runtime)" in startup
