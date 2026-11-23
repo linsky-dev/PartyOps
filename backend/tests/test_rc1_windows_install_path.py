@@ -49,3 +49,21 @@ def test_protections_are_kept_for_privileged_installer_files() -> None:
     assert "Result := False;" in iss
     assert "function PrepareToInstall(var NeedsRestart: Boolean): String;" in iss
     assert "Result := ValidateAndSecureInstallDirectory;" in iss
+
+
+def test_upgrade_finds_prior_install_in_32_and_64bit_registry_and_enforces_reuse() -> None:
+    """A normal end user upgrades over RC6; no second install tree or uninstall."""
+    iss = INSTALLER.read_text(encoding="utf-8-sig")
+    assert "UsePreviousAppDir=yes" in iss
+    assert "function FindExistingPartyOpsInstallDirectory" in iss
+    assert "Software\\WOW6432Node\\Microsoft" in iss
+    assert "PARTYOPS_UPGRADE_MULTIPLE_INSTALLATIONS" in iss
+    assert "PARTYOPS_UPGRADE_USE_EXISTING_DIRECTORY" in iss
+    assert "PARTYOPS_UPGRADE_PRESERVE_DATA_DIRECTORY" in iss
+    assert "WizardForm.DirEdit.Text := PreviousAppInstallDir;" in iss
+    assert "不需要先卸载旧版" in iss
+    assert "PreviousBusinessDataDir := PreviousDataDir;" in iss
+    assert "Result := ValidateUpgradeLocations;" in iss
+    assert iss.index("Result := ValidateUpgradeLocations;", iss.index(
+        "function PrepareToInstall")) < iss.index("Result := EnsureDotNet48(NeedsRestart);",
+        iss.index("function PrepareToInstall"))

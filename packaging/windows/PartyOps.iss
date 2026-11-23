@@ -168,6 +168,9 @@ var
   DataMarkerTransactionActive: Boolean;
   DeleteAllDataOnUninstall: Boolean;
   DotNet48RestartRequired: Boolean;
+  PreviousAppInstallDir: String;
+  PreviousAppInstallDirConflict: Boolean;
+  PreviousBusinessDataDir: String;
 
 const
   PartyOpsAppId = '{1C8EFC63-CAFC-46EF-A5E3-D3D119B5BB3A}';
@@ -692,6 +695,77 @@ begin
   end;
 end;
 
+function FindExistingPartyOpsInstallDirectory(var InstalledDir: String;
+  var Conflicting: Boolean): Boolean;
+var
+  Key, Win64Dir, Win32Dir: String;
+begin
+  Result := False;
+  InstalledDir := '';
+  Conflicting := False;
+  Key := 'Software\Microsoft\Windows\CurrentVersion\Uninstall\' +
+    PartyOpsAppId + '_is1';
+  Win64Dir := '';
+  Win32Dir := '';
+  { The prior native x64 installer and 32-bit Windows/Win7 installers
+    register the same AppId in different HKLM views. An x64 successor
+    must not silently create a second installation and service. }
+  RegQueryStringValue(HKLM, Key, 'InstallLocation', Win64Dir);
+  RegQueryStringValue(HKLM,
+    'Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\' +
+      PartyOpsAppId + '_is1', 'InstallLocation', Win32Dir);
+  Win64Dir := Trim(Win64Dir);
+  Win32Dir := Trim(Win32Dir);
+  if (Win64Dir <> '') and
+     not FileExists(AddBackslash(Win64Dir) + 'PartyOps.exe') then
+    Win64Dir := '';
+  if (Win32Dir <> '') and
+     not FileExists(AddBackslash(Win32Dir) + 'PartyOps.exe') then
+    Win32Dir := '';
+  if (Win64Dir <> '') and (Win32Dir <> '') and
+     (CompareText(ExpandFileName(Win64Dir),
+       ExpandFileName(Win32Dir)) <> 0) then
+  begin
+    Conflicting := True;
+    exit;
+  end;
+  if Win64Dir <> '' then
+    InstalledDir := ExpandFileName(Win64Dir)
+  else if Win32Dir <> '' then
+    InstalledDir := ExpandFileName(Win32Dir);
+  Result := InstalledDir <> '';
+end;
+
+function ValidateUpgradeLocations: String;
+begin
+  Result := '';
+  if PreviousAppInstallDirConflict then
+  begin
+    Result := '[PARTYOPS_UPGRADE_MULTIPLE_INSTALLATIONS] 检测到多个不同路径的旧版 ' +
+      'PartyOps 安装记录。为避免覆盖错误版本或接管第三方服务，请保留原安装和数据，' +
+      '将安装日志交给技术支持核对，不要先卸载旧版。';
+    exit;
+  end;
+  if PreviousAppInstallDir = '' then
+    exit;
+  if CompareText(ExpandFileName(WizardDirValue),
+      ExpandFileName(PreviousAppInstallDir)) <> 0 then
+  begin
+    Result := '[PARTYOPS_UPGRADE_USE_EXISTING_DIRECTORY] 检测到旧版 PartyOps ' +
+      '安装在 ' + PreviousAppInstallDir + '。请保持此程序目录进行原位覆盖升级，' +
+      '不需要先卸载旧版，且不会迁移或删除原数据。当前暂不支持安装到另一' +
+      '个目录后自动搬迁旧版服务，请返回修改程序路径。';
+    exit;
+  end;
+  if (PreviousBusinessDataDir <> '') and
+     (CompareText(ExpandFileName(DataDirPage.Values[0]),
+       ExpandFileName(PreviousBusinessDataDir)) <> 0) then
+    Result := '[PARTYOPS_UPGRADE_PRESERVE_DATA_DIRECTORY] 现有 PartyOps ' +
+      '业务数据目录为 ' + PreviousBusinessDataDir + '。覆盖升级必须保留' +
+      '原有数据目录，切换数据盘需单独执行受控备份与迁移。请返回修改' +
+      '业务数据目录，不必卸载或重置旧版账号和配置。';
+end;
+
 procedure InitializeWizard;
 var
   PreviousDataDir: String;
@@ -701,6 +775,22 @@ begin
     ExpandConstant('{param:INAPPUPDATE|0}'), '1'
   ) = 0;
   WizardForm.Caption := '党建智办 PartyOps 1.4.6-rc.1 安装向导';
+  PreviousAppInstallDir := '';
+  PreviousAppInstallDirConflict := False;
+  PreviousBusinessDataDir := '';
+  if FindExistingPartyOpsInstallDirectory(
+    PreviousAppInstallDir, PreviousAppInstallDirConflict
+  ) then
+  begin
+    { Keep original installation path even when old RC6 was in the 32-bit
+      registry view. The user can retain all applications and data. }
+    WizardForm.DirEdit.Text := PreviousAppInstallDir;
+    WizardForm.WelcomeLabel2.Caption :=
+      '已检测到已安装的 PartyOps，安装位置：' + PreviousAppInstallDir +
+      #13#10 + #13#10 +
+      '无需卸载旧版。本向导将原位覆盖程序并保留原来的账号、' +
+      '数据库、附件、证书和配置。升级前请完成业务数据备份。';
+  end;
   DataDirPage := CreateInputDirPage(
     wpSelectDir,
     '选择 PartyOps 业务数据目录',
@@ -724,6 +814,8 @@ begin
   if PreviousDataDir = '' then
     PreviousDataDir := ExpandConstant('{commonappdata}\PartyOps-Data');
   DataDirPage.Values[0] := PreviousDataDir;
+  if PreviousAppInstallDir <> '' then
+    PreviousBusinessDataDir := PreviousDataDir;
 end;
 
 function ServiceExists(ServiceName: String): Boolean;
@@ -1178,8 +1270,25 @@ var
   ResultCode: Integer;
 begin
   Result := True;
+  if CurPageID = DataDirPage.ID then
+  begin
+    Detail := ValidateUpgradeLocations;
+    if Detail <> '' then
+    begin
+      MsgBox(Detail, mbError, MB_OK);
+      Result := False;
+    end;
+    exit;
+  end;
   if CurPageID <> wpSelectDir then
     exit;
+  Detail := ValidateUpgradeLocations;
+  if Detail <> '' then
+  begin
+    MsgBox(Detail, mbError, MB_OK);
+    Result := False;
+    exit;
+  end;
   { Validate the USER'S chosen program path before switching to the data
     directory page. Invalid removable/network/relative paths stay editable
     in the wizard instead of causing a fatal PrepareToInstall screen. This
@@ -1364,6 +1473,9 @@ var
   RegistryError: String;
 #endif
 begin
+  Result := ValidateUpgradeLocations;
+  if Result <> '' then
+    exit;
   Result := EnsureDotNet48(NeedsRestart);
   if Result <> '' then
     exit;
