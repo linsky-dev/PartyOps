@@ -123,6 +123,35 @@ def test_rc1_recovery_is_single_use_and_preserves_identity(rc1_admin, caplog):
     assert all(secret not in (caplog.text + dump) for secret in (original, token, old_password, new_password))
 
 
+
+def test_rc1_emergency_http_redeem_never_spends_token_without_password(rc1_admin):
+    """The web form cannot consume a last-admin emergency token by omitting password."""
+    user, old_password = _create(rc1_admin, role="admin")
+    new_password = f"SyntheticEmergency!{uuid4().hex}"
+    with db_runtime.session_factory.begin() as db:
+        account = db.get(User, user["id"])
+        token = account_recovery.issue_credential(
+            db, account, "admin_emergency", None, "local-emergency-console"
+        ).credential
+    with _client() as browser:
+        refused = _redeem(browser, token)
+        assert refused.status_code == 422
+        assert refused.json()["code"] == "RECOVERY_PASSWORD_REQUIRED"
+        with db_runtime.session_factory() as db:
+            assert db.scalar(select(RecoveryCredential).where(
+                RecoveryCredential.digest == account_recovery.sm3_digest(token.encode("ascii"))
+            )).used_at is None
+        successful = _redeem(browser, token, new_password=new_password)
+        assert successful.status_code == 200, successful.text
+        assert successful.json() == {"username": user["username"]}
+        assert _redeem(browser, token, new_password=new_password).json()["code"] == "RECOVERY_INVALID"
+        assert _log_in(browser, user["username"], old_password).status_code == 401
+        authenticated = _log_in(browser, user["username"], new_password)
+        assert authenticated.status_code == 200
+        assert authenticated.json()["id"] == user["id"]
+        assert authenticated.json()["role"] == "admin"
+
+
 def test_rc1_username_only_recovery_revokes_existing_cookie_and_bearer_sessions(rc1_admin):
     """仅取回用户名也必须在消费凭据的事务中撤销已有会话。"""
     user, original_password = _create(rc1_admin)
