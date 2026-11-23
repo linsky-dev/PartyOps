@@ -432,7 +432,7 @@ def _synthetic_windows_personal_owner_scope(tmp_path, monkeypatch):
     data_dir = tmp_path / "owned-personal-data"
     data_dir.mkdir()
     (data_dir / "partyops.db").write_bytes(b"synthetic-sqlite-placeholder")
-    root = tmp_path / "user-local-config"
+    root = tmp_path / "PartyOps"
     root.mkdir()
     personal_env = root / "personal.env"
     personal_env.write_text(
@@ -444,8 +444,15 @@ def _synthetic_windows_personal_owner_scope(tmp_path, monkeypatch):
         json.dumps({"mode": "personal", "config_path": str(personal_env)}),
         encoding="utf-8",
     )
-    monkeypatch.setattr(setup_wizard, "config_root", lambda: root)
-    monkeypatch.setattr(recovery_cli, "os", SimpleNamespace(name="nt"))
+    # Simulate LOCALAPPDATA without importing setup_wizard (which can load DB).
+    monkeypatch.setattr(
+        recovery_cli, "os",
+        SimpleNamespace(
+            name="nt",
+            getenv=lambda name, default=None: str(tmp_path)
+            if name == "LOCALAPPDATA" else default,
+        ),
+    )
     state = {"owner": user_sid, "writer": user_sid}
     class Handle:
         def Close(self):
