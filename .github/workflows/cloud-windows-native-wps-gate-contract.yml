@@ -76,6 +76,44 @@ jobs:
           # The child deliberately exited 2; do not leak that expected code as this job result.
           exit 0
 
+      - name: Prove generated WPS receipts can change but tracked source cannot
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = (Get-Location).Path
+          $entry = Join-Path $root 'scripts/rc1-windows-native-wps-gate.ps1'
+          $sha = (git rev-parse HEAD).Trim()
+          $generated = Join-Path $root '.release-gates/formatter-parity-x64.json'
+          $trackedSource = Join-Path $root 'README.md'
+          $generatedOriginal = [IO.File]::ReadAllBytes($generated)
+          $trackedOriginal = [IO.File]::ReadAllBytes($trackedSource)
+          try {
+            # Real checkout: a generated, UNSTAGED receipt change must not
+            # be misclassified as a source edit in the next WPS QA run.
+            Add-Content -LiteralPath $generated -Value ' ' -Encoding utf8
+            $report = (& pwsh -NoProfile -File $entry -ExpectedSourceSha $sha -Mode Preflight |
+              Out-String | ConvertFrom-Json)
+            if ($report.blockers -contains 'SOURCE_TRACKED_WORKTREE_NOT_CLEAN' -or
+                $report.allowed_generated_evidence_changes -notcontains '.release-gates/formatter-parity-x64.json') {
+              throw '[RC1_WPS_RERUN_TRACKED_RECEIPT_FALSE_SOURCE_DIRTY]'
+            }
+            # Altering ANY tracked code/document outside the exact allowlist
+            # must still block, even when a generated receipt also changed.
+            Add-Content -LiteralPath $trackedSource -Value ' ' -Encoding utf8
+            $report = (& pwsh -NoProfile -File $entry -ExpectedSourceSha $sha -Mode Preflight |
+              Out-String | ConvertFrom-Json)
+            if ($report.blockers -notcontains 'SOURCE_TRACKED_WORKTREE_NOT_CLEAN') {
+              throw '[RC1_NATIVE_WPS_SOURCE_MODIFICATION_NOT_BLOCKED]'
+            }
+          } finally {
+            [IO.File]::WriteAllBytes($generated, $generatedOriginal)
+            [IO.File]::WriteAllBytes($trackedSource, $trackedOriginal)
+          }
+          # The Preflight deliberately returns 2 on Windows Server. We only
+          # assert source-cleanliness classification, never WPS readiness.
+          'PARTYOPS_RC1_WPS_RECEIPT_RERUN_SOURCE_BOUNDARY_PASS'
+          exit 0
+
       - name: Prepare a pinned Python interpreter for direct packager guard
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         with:

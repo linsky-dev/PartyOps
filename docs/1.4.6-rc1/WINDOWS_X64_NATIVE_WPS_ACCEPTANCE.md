@@ -68,3 +68,11 @@ pwsh -NoProfile -File scripts/rc1-windows-native-wps-gate.ps1 -Mode BuildCandida
 拒绝缺失/不是本轮测试生成的证据、宿主 SHA-256 或固定源码快照不一致、Windows 三页金样不能逐像素一致、六功能十项场景不全及非 WPS 场景。每架构成功后生成 `artifacts/rc1-native-wps-*/verified-formatter-x64.json` 与 `verified-formatter-x86.json`，并在 `native-wps-candidate.json` 中记录宿主和证据的 SHA-256。
 
 **这只提高真实验收凭据可信度，并不代表云端已有 WPS 通过记录。** WPS 业务算法未修改；生产 PDF 安全锁、安装/升级/回滚、签名、完整跨平台和双官网发布仍独立阻断。
+
+## 原生 WPS 复测工作区洁净检查（2026-11-23）
+
+真实 WPS 测试会更新 Git 已跟踪的 5 份 `.release-gates` 测试 JSON。原检查要求整个跟踪工作区零变化，导致首次 `NativeTests` 通过后，在同一源码工作区执行下一次 `BuildCandidate` 可能因合法证据更新被误拒。
+
+目前仅允许以下 5 份**确切路径的未暂存修改**：`formatter-parity-x64.json`、`formatter-parity-x86.json`、`formatter-features-e2e-x64.json`、`formatter-features-e2e-x86.json`、`full-function-tests.json`（均位于 `.release-gates/`）。已暂存修改、删除、重命名或任意其他受跟踪源码改动仍会触发 `SOURCE_TRACKED_WORKTREE_NOT_CLEAN`，原提交 SHA 也必须完全一致。
+
+该放行仅消除测试产物导致的误报，绝不豁免金样/功能验证；NativeTests 仍要求证据由本次运行生成，并用原证据复核器比对宿主与金样哈希。CI 将在 Windows Server 的真实 Git 检出上模拟合法证据变更及非法源码修改，验证这条边界，但不能据此声称真实 WPS 已通过。

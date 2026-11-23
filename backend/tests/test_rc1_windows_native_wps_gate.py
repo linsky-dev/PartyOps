@@ -69,6 +69,19 @@ def test_preflight_returns_blocked_without_starting_native_wps() -> None:
     assert "Test-Path -LiteralPath" in SOURCE
 
 
+def test_native_rerun_allows_only_five_unstaged_generated_wps_receipts() -> None:
+    """A native WPS run must not make the same source checkout unusable."""
+    assert "git -C $root status --porcelain --untracked-files=no" in SOURCE
+    assert SOURCE.count("'.release-gates/formatter-parity-") == 2
+    assert SOURCE.count("'.release-gates/formatter-features-e2e-") == 2
+    assert "'.release-gates/full-function-tests.json'" in SOURCE
+    assert "$line.Substring(0, 2) -ceq ' M'" in SOURCE
+    assert "$line.Substring(3) -cin $allowedGeneratedEvidence" in SOURCE
+    assert "allowed_generated_evidence_changes = @($generatedEvidenceChanges)" in SOURCE
+    assert "$gitStatusExit -ne 0 -or $unsafeChanges.Count" in SOURCE
+    assert "SOURCE_TRACKED_WORKTREE_NOT_CLEAN" in SOURCE
+
+
 def test_native_wps_only_cannot_forge_full_suite_or_installer() -> None:
     assert SOURCE.index("NATIVE_WPS_TEST_INPUTS_MISSING") < SOURCE.index(
         "if ($Mode -eq 'Preflight')"

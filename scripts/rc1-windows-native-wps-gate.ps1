@@ -37,9 +37,32 @@ try {
 if ($source -ne $ExpectedSourceSha.ToLowerInvariant()) {
   [void]$blocked.Add('SOURCE_COMMIT_NOT_APPROVED')
 }
+# Five existing, Git-tracked WPS receipt files are intentionally rewritten
+# by scripts/test.ps1. Allow ONLY unstaged modifications to these exact output
+# paths when rerunning NativeTests -> BuildCandidate on the same clean source.
+# Staged edits, additions, deletions, renames and every code change still block.
+$generatedEvidenceChanges = @()
 try {
   $modified = @(& git -C $root status --porcelain --untracked-files=no)
-  if ($LASTEXITCODE -ne 0 -or $modified.Count) {
+  $gitStatusExit = $LASTEXITCODE
+  $allowedGeneratedEvidence = @(
+    '.release-gates/formatter-parity-x64.json',
+    '.release-gates/formatter-parity-x86.json',
+    '.release-gates/formatter-features-e2e-x64.json',
+    '.release-gates/formatter-features-e2e-x86.json',
+    '.release-gates/full-function-tests.json'
+  )
+  $unsafeChanges = @(
+    foreach ($line in $modified) {
+      if ($line.Length -ge 4 -and $line.Substring(0, 2) -ceq ' M' -and
+          $line.Substring(3) -cin $allowedGeneratedEvidence) {
+        $generatedEvidenceChanges += $line.Substring(3)
+      } else {
+        $line
+      }
+    }
+  )
+  if ($gitStatusExit -ne 0 -or $unsafeChanges.Count) {
     [void]$blocked.Add('SOURCE_TRACKED_WORKTREE_NOT_CLEAN')
   }
 } catch {
@@ -140,6 +163,7 @@ $report = [ordered]@{
   os_build = $osBuild
   os_architecture = $osArchitecture
   wps_registered = $wpsRegistered
+  allowed_generated_evidence_changes = @($generatedEvidenceChanges)
   production_pymupdf_secured = [bool]$version
   python_secure_pdf_version = [string]$version
   missing_runtime_paths = $missingRuntime
