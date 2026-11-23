@@ -116,6 +116,36 @@ Get-ChildItem -LiteralPath $staging -File -Recurse |
     )
   }
 
+# Build the per-architecture manifest required by one-click-install.sh.
+# The portable build's SHA256SUMS only contains the TAR. Append the exact,
+# independently checked DEB hash in the STAGING COPY, not the original input.
+foreach ($architecture in @("amd64", "arm64")) {
+  $debFile = "PartyOps_${version}_linux_${architecture}.deb"
+  $tarFile = "PartyOps-linux-${architecture}.tar.zst"
+  $debHash = (Get-FileHash -LiteralPath (Join-Path $artifacts $debFile) -Algorithm SHA256).Hash.ToLowerInvariant()
+  $tarHash = (Get-FileHash -LiteralPath (Join-Path $artifacts $tarFile) -Algorithm SHA256).Hash.ToLowerInvariant()
+  $stagedSha = Join-Path $staging "artifacts/SHA256SUMS.${architecture}"
+  [IO.File]::WriteAllText(
+    $stagedSha, "$tarHash  $tarFile\`n$debHash  $debFile\`n", $utf8WithoutBom
+  )
+}
+
+# The installed one-click script refuses an archive without this exact
+# top-level manifest. Hash the FINAL staged bytes after newline normalization.
+$buildKitManifest = Join-Path $staging "BUILD-KIT-SHA256SUMS"
+$manifestLines = @(
+  Get-ChildItem -LiteralPath $staging -File -Recurse -Force |
+    Sort-Object FullName |
+    ForEach-Object {
+      $relative = $_.FullName.Substring($staging.Length).TrimStart('\', '/').Replace('\', '/')
+      $entryHash = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+      "$entryHash  $relative"
+    }
+)
+[IO.File]::WriteAllText(
+  $buildKitManifest, (($manifestLines -join "\`n") + "\`n"), $utf8WithoutBom
+)
+
 if (Test-Path -LiteralPath $archive) {
   Remove-Item -LiteralPath $archive -Force
 }
