@@ -125,3 +125,35 @@ def test_rc1_uos_release_kit_names_and_checksums_match_native_builders() -> None
     assert "[UOS_RELEASE_CHECKSUM_INVALID]" in release
     assert '"$tarHash  $tarFile`n$debHash  $debFile`n"' in release
     assert "release-notes-v1.4.6-rc.1.md" in release
+
+
+def test_uos_v20_wheel_abi_is_opt_in_and_never_relaxes_generic_linux() -> None:
+    """UOS V20 may use 2.28 ABI; existing broad Linux must still require 2.17."""
+    import sys
+
+    tool = ROOT / "scripts/validate-uos-wheelhouse.py"
+    spec = importlib.util.spec_from_file_location("partyops_wheel_abi_test", tool)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    try:
+        spec.loader.exec_module(module)
+        wheel_228 = Path(
+            "pillow-13.0.0-cp311-cp311-manylinux_2_28_x86_64.whl"
+        )
+        with pytest.raises(ValueError, match="glibc 2.28"):
+            module.validate_wheel_platform(wheel_228, "amd64", "full")
+        module.validate_wheel_platform(wheel_228, "amd64", "uos-v20")
+        wheel_229 = Path(
+            "pillow-13.0.0-cp311-cp311-manylinux_2_29_x86_64.whl"
+        )
+        with pytest.raises(ValueError, match="glibc 2.29"):
+            module.validate_wheel_platform(wheel_229, "amd64", "uos-v20")
+        original = Path(
+            "pillow-12.2.0-cp311-cp311-manylinux2014_x86_64.whl"
+        )
+        module.validate_wheel_platform(original, "amd64", "full")
+        with pytest.raises(ValueError, match="loong64"):
+            module.validate(Path("/nonexistent"), [], "loong64", "uos-v20")
+    finally:
+        sys.modules.pop(spec.name, None)
