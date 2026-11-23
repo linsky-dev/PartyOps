@@ -1366,10 +1366,15 @@ end;
 
 procedure ReportWizardError(Message: String);
 begin
-  { Inno /SUPPRESSMSGBOXES intentionally does not suppress [Code] MsgBox.
-    Never block an unattended install with an invisible modal error dialog. }
+  { Custom MsgBox is not suppressed by /SUPPRESSMSGBOXES. Returning False
+    without advancing an invisible wizard also risks waiting indefinitely.
+    Abort the unattended setup with the ORIGINAL failure code; interactive
+    mode stays on the editable page. No application data is touched here. }
   if WizardSilent then
-    Log('[PARTYOPS_SILENT_WIZARD_ERROR] ' + Message)
+  begin
+    Log('[PARTYOPS_SILENT_WIZARD_ERROR] ' + Message);
+    RaiseException(Message);
+  end
   else
     MsgBox(Message, mbError, MB_OK);
 end;
@@ -1403,7 +1408,7 @@ begin
         end
         else
         begin
-          Log('[PARTYOPS_OLD_DATA_DISK_MISSING] 无人值守安装缺少 ' +
+          ReportWizardError('[PARTYOPS_OLD_DATA_DISK_MISSING] 无人值守安装缺少 ' +
             '/ALLOWMISSINGDATA=1 明确授权；旧业务数据不受影响，安装已停止。');
           Result := False;
         end;
