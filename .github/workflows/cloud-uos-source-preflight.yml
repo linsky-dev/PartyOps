@@ -121,7 +121,7 @@ jobs:
             Copy-Item -LiteralPath (Join-Path $root 'scripts/package-uos-release.ps1') -Destination (Join-Path $fixture 'scripts')
             Copy-Item -LiteralPath (Join-Path $root 'packaging/uos/one-click-install.sh') -Destination (Join-Path $fixture 'packaging/uos')
             Copy-Item -LiteralPath (Join-Path $root 'docs') -Destination (Join-Path $fixture 'docs') -Recurse
-            foreach ($file in @('install.sh', '一键安装党建智办.sh', '安装说明.txt')) {
+            foreach ($file in @('install.sh', '一键安装党建智办.sh')) {
               Copy-Item -LiteralPath (Join-Path $root $file) -Destination $fixture
             }
             $version = '1.4.6-rc.1'
