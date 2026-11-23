@@ -45,6 +45,7 @@ jobs:
           New-Item -ItemType Directory -Path $root -Force | Out-Null
           $qaCopy = Join-Path $root 'QA_ONLY_NOT_FOR_DISTRIBUTION.exe'
           $tamper = Join-Path $root 'QA_ONLY_TAMPERED.exe'
+          $csSource = Join-Path $root 'QaOnly.cs'
           $cert = $null
           $report = [ordered]@{
             schema_version = 1
@@ -74,7 +75,17 @@ jobs:
             # that a self-signed QA test has signed the 584 MB PartyOps EXE.
             $source = 'public static class QaOnly { public static int Main() { return 0; } }'
             Write-Host 'QA_AUTHENTICODE_STAGE_TINY_PE_BUILD_BEGIN'
-            Add-Type -TypeDefinition $source -OutputAssembly $qaCopy -OutputType ConsoleApplication
+            # PowerShell 7 Add-Type does not support ConsoleApplication output.
+            # Use the Windows .NET Framework C# compiler for a real tiny EXE.
+            $compilers = @(
+              (Join-Path $env:WINDIR 'Microsoft.NET\\Framework64\\v4.0.30319\\csc.exe'),
+              (Join-Path $env:WINDIR 'Microsoft.NET\\Framework\\v4.0.30319\\csc.exe')
+            )
+            $csc = $compilers | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
+            if (-not $csc) { throw '[QA_SIGNING_TINY_PE_COMPILER_UNAVAILABLE]' }
+            [IO.File]::WriteAllText($csSource, $source, [Text.UTF8Encoding]::new($false))
+            & $csc '/nologo' '/target:exe' "/out:$qaCopy" $csSource
+            if ($LASTEXITCODE -ne 0) { throw '[QA_SIGNING_TINY_PE_COMPILATION_FAILED]' }
             Write-Host 'QA_AUTHENTICODE_STAGE_TINY_PE_BUILT'
             if (-not (Test-Path -LiteralPath $qaCopy -PathType Leaf)) {
               throw '[QA_SIGNING_VALID_TINY_PE_NOT_COMPILED]'
@@ -116,7 +127,7 @@ jobs:
             if ($cert) {
               Remove-Item -LiteralPath ("Cert:\CurrentUser\My\" + $cert.Thumbprint) -Force -ErrorAction SilentlyContinue
             }
-            Remove-Item -LiteralPath $qaCopy,$tamper -Force -ErrorAction SilentlyContinue
+            Remove-Item -LiteralPath $qaCopy,$tamper,$csSource -Force -ErrorAction SilentlyContinue
             $report['verified_at_utc'] = [DateTime]::UtcNow.ToString('o')
             [IO.File]::WriteAllText((Join-Path $root 'qa-authenticode-evidence.json'),
               ($report | ConvertTo-Json -Depth 5),
