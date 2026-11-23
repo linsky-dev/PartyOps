@@ -149,7 +149,7 @@ def windows_personal_owner_scope(path: Path) -> bool:
                 if sid not in allowed_writers and int(ace[1]) & write_mask:
                     return False
         return True
-    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+    except (OSError, ValueError, KeyError, TypeError, AttributeError, ImportError):
         return False
 
 
@@ -304,6 +304,9 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if not sys.stdin.isatty() or not sys.stdout.isatty():
         print("此工具需在主机提升权限或个人目录所属账号的本机交互终端中运行。", file=sys.stderr)
+        return 2
+    if not is_os_administrator() and (os.name != "nt" or args.action != "emergency"):
+        print("此工具需在主机提升权限的本机交互终端中运行。", file=sys.stderr)
         return 2
     try:
         if os.name != "nt" and not is_os_administrator():
