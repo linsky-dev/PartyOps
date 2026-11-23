@@ -8,7 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from app import __version__, startup_selftest
+from app import __version__, setup_wizard, startup_selftest
+from app.windows_runtime_identity import read_installed_manifest
 
 
 def _installed(tmp_path: Path) -> Path:
@@ -78,6 +79,50 @@ def test_dev_python_does_not_require_frozen_install_manifest(
 ) -> None:
     monkeypatch.setattr(startup_selftest.sys, "frozen", False, raising=False)
     startup_selftest._verify_frozen_installed_manifest(tmp_path)
+
+
+
+def test_large_release_manifest_is_not_misreported_as_missing(
+    tmp_path: Path,
+) -> None:
+    """Real onedir distributions can legitimately have >4 MiB of file inventory.
+
+    The launcher preflight must use the same bounded 8 MiB budget as the
+    verified executable identity reader. The other dependency checks remain
+    fail-closed when required binaries are not actually on disk.
+    """
+
+    import sys
+
+    exe = _installed(tmp_path)
+    manifest_path = tmp_path / "release-manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest.update(
+        platform="windows",
+        architecture="amd64",
+        runtime_profile="full",
+        description="x" * (5 * 1024 * 1024),
+    )
+    manifest["files"].append({
+        "path": f"_internal/python{sys.version_info.major}{sys.version_info.minor}.dll",
+        "size": 1,
+        "sha256": "0" * 64,
+    })
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    assert 4 * 1024 * 1024 < manifest_path.stat().st_size < 8 * 1024 * 1024
+    assert read_installed_manifest(exe)["product"] == "PartyOps"
+
+    with pytest.raises(setup_wizard.HostStartupError) as failure:
+        setup_wizard._preflight_windows_runtime_dependencies(
+            exe, force=True, windows_version=(10, 0)
+        )
+    assert "缺失或无效清单=" not in failure.value.detail
+    assert "缺失=" in failure.value.detail
+
+    # The same ceiling remains strict: enormous inventory must be rejected.
+    manifest_path.write_bytes(b" " * (8 * 1024 * 1024 + 1))
+    with pytest.raises(ValueError, match="WINDOWS_RELEASE_MANIFEST_TOO_LARGE"):
+        read_installed_manifest(exe)
 
 
 def test_installer_requires_manifest_before_service_install_and_desktop_launch() -> None:
