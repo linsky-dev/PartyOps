@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import importlib.util
-import json
 import platform
 import shutil
 import subprocess
@@ -43,7 +42,7 @@ def test_uos_source_gate_does_not_claim_native_uos_install_or_wps() -> None:
 
 
 def test_uos_source_gate_rejects_vendor_checksum_in_place_mutation(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
 ) -> None:
     paths = (
         "packaging/uos/build-portable.sh",
