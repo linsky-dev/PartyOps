@@ -786,8 +786,7 @@ begin
       registry view. The user can retain all applications and data. }
     WizardForm.DirEdit.Text := PreviousAppInstallDir;
     WizardForm.WelcomeLabel2.Caption :=
-      '已检测到已安装的 PartyOps，安装位置：' + PreviousAppInstallDir +
-      #13#10 + #13#10 +
+      '已检测到已安装的 PartyOps，安装位置：' + PreviousAppInstallDir + #13#10 + #13#10 +
       '无需卸载旧版。本向导将原位覆盖程序并保留原来的账号、' +
       '数据库、附件、证书和配置。升级前请完成业务数据备份。';
   end;
