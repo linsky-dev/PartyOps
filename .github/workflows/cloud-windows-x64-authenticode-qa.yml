@@ -1,0 +1,132 @@
+name: RC1 real Authenticode QA certificate verification (NOT PRODUCTION SIGNING)
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/cloud-windows-x64-authenticode-qa.yml'
+      - 'scripts/rc1-windows-upgrade-rollback-smoke.ps1'
+      - 'scripts/rc1-windows-installed-smoke.ps1'
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: rc1-authenticode-qa-${{ github.event.pull_request.head.sha }}
+  cancel-in-progress: false
+
+jobs:
+  qa-authenticode:
+    name: Verify original unsigned EXE, QA-only code-signing and tamper rejection
+    runs-on: windows-2025
+    timeout-minutes: 30
+    steps:
+      - name: Verify immutable already-built candidate installer SHA before signing QA copy
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = Join-Path $env:RUNNER_TEMP 'partyops-authenticode-qa'
+          New-Item -ItemType Directory -Path $root -Force | Out-Null
+          $artifact = 'partyops-windows-x64-BUILD_ONLY-7ed8367b7b6e7a36a4eee1db8e818d4643bf5f72'
+          & gh run download 45096682908 -R linsky-dev/PartyOps --name $artifact --dir $root
+          if ($LASTEXITCODE -ne 0) { throw '[QA_SIGNING_ARTIFACT_DOWNLOAD_FAILED]' }
+          $exe = @(Get-ChildItem -LiteralPath $root -Recurse -File -Filter 'PartyOps_1.4.6-rc.1_windows_amd64_BUILD_ONLY_UNVERIFIED.exe')
+          $shaPath = @(Get-ChildItem -LiteralPath $root -Recurse -File -Filter 'PartyOps_1.4.6-rc.1_windows_amd64_BUILD_ONLY_UNVERIFIED.exe.sha256')
+          if ($exe.Count -ne 1 -or $shaPath.Count -ne 1) { throw '[QA_SIGNING_INPUT_AMBIGUOUS]' }
+          $hashText = [IO.File]::ReadAllText($shaPath[0].FullName).Trim()
+          if ($hashText -notmatch '^([0-9a-fA-F]{64})\s+') { throw '[QA_SIGNING_SHA_FILE_INVALID]' }
+          $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $exe[0].FullName).Hash.ToLowerInvariant()
+          if ($actual -ne $Matches[1].ToLowerInvariant()) { throw '[QA_SIGNING_ORIGINAL_SHA_MISMATCH]' }
+          $original = Get-AuthenticodeSignature -LiteralPath $exe[0].FullName
+          if ($original.Status -ne 'NotSigned') { throw '[QA_SIGNING_UNEXPECTED_ORIGINAL_SIGNATURE]' }
+          "QA_SIGNING_INPUT=$($exe[0].FullName)" >> $env:GITHUB_ENV
+          "QA_SIGNING_ORIGINAL_SHA=$actual" >> $env:GITHUB_ENV
+          'ORIGINAL_UNSIGNED_CANDIDATE_EXACT_SHA_VERIFIED'
+
+      - name: Ephemeral QA-only Authenticode signing and cryptographic tamper rejection
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = Join-Path $env:RUNNER_TEMP 'partyops-authenticode-result'
+          New-Item -ItemType Directory -Path $root -Force | Out-Null
+          $qaCopy = Join-Path $root 'QA_ONLY_NOT_FOR_DISTRIBUTION.exe'
+          $tamper = Join-Path $root 'QA_ONLY_TAMPERED.exe'
+          $cert = $null
+          $store = $null
+          $report = [ordered]@{
+            schema_version = 1
+            scope = 'HOSTED_EPHEMERAL_SELF_SIGNED_AUTHENTICODE_MECHANISM_ONLY'
+            status = 'FAILED'
+            original_candidate_sha256 = $env:QA_SIGNING_ORIGINAL_SHA
+            production_certificate_used = $false
+            official_installer_signed = $false
+            qa_signed_copy_distributable = $false
+            original_untouched = $true
+            source = 'original-BUILD_ONLY-7ed8367b'
+          }
+          try {
+            $cert = New-SelfSignedCertificate -Type CodeSigningCert -CertStoreLocation 'Cert:\CurrentUser\My' -Subject 'CN=PartyOps Ephemeral CI QA ONLY - NOT PUBLISHER' -NotAfter (Get-Date).AddDays(1)
+            if (-not $cert.HasPrivateKey) { throw '[QA_SIGNING_CERT_PRIVATE_KEY_ABSENT]' }
+            $store = [Security.Cryptography.X509Certificates.X509Store]::new(
+              [Security.Cryptography.X509Certificates.StoreName]::Root,
+              [Security.Cryptography.X509Certificates.StoreLocation]::CurrentUser
+            )
+            $store.Open([Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
+            $store.Add($cert)
+            Copy-Item -LiteralPath $env:QA_SIGNING_INPUT -Destination $qaCopy -Force
+            $result = Set-AuthenticodeSignature -FilePath $qaCopy -Certificate $cert -HashAlgorithm SHA256
+            $valid = Get-AuthenticodeSignature -LiteralPath $qaCopy
+            if ($valid.Status -ne 'Valid' -or $valid.SignerCertificate.Thumbprint -ne $cert.Thumbprint) {
+              throw "[QA_SIGNING_VALID_SIGNATURE_REQUIRED] $($valid.Status) / $($result.Status)"
+            }
+            $report['qa_signed_copy_verified'] = $true
+            $report['qa_certificate_public_thumbprint'] = $cert.Thumbprint
+            Copy-Item -LiteralPath $qaCopy -Destination $tamper
+            $f = [IO.File]::Open($tamper,[IO.FileMode]::Open,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None)
+            try {
+              $f.Position = 4096
+              $value = $f.ReadByte()
+              if ($value -lt 0) { throw '[QA_SIGNING_TEST_FILE_TRUNCATED]' }
+              $f.Position = 4096
+              $f.WriteByte([byte]($value -bxor 1))
+            } finally { $f.Dispose() }
+            $altered = Get-AuthenticodeSignature -LiteralPath $tamper
+            if ($altered.Status -eq 'Valid') { throw '[QA_SIGNING_TAMPER_UNDETECTED]' }
+            $report['tampered_copy_rejected'] = $true
+            if ((Get-FileHash -LiteralPath $env:QA_SIGNING_INPUT -Algorithm SHA256).Hash.ToLowerInvariant() -ne
+                $env:QA_SIGNING_ORIGINAL_SHA) {
+              throw '[QA_SIGNING_ORIGINAL_CANDIDATE_CHANGED]'
+            }
+            $report['status'] = 'PASS_QA_TEST_CERT_ONLY_NOT_PRODUCTION_SIGNED'
+          } catch {
+            $report['error'] = [string]$_.Exception.Message
+          } finally {
+            if ($store) {
+              if ($cert) { try { $store.Remove($cert) } catch {} }
+              $store.Close()
+            }
+            if ($cert) {
+              Remove-Item -LiteralPath ("Cert:\CurrentUser\My\" + $cert.Thumbprint) -Force -ErrorAction SilentlyContinue
+            }
+            Remove-Item -LiteralPath $qaCopy,$tamper -Force -ErrorAction SilentlyContinue
+            $report['verified_at_utc'] = [DateTime]::UtcNow.ToString('o')
+            [IO.File]::WriteAllText((Join-Path $root 'qa-authenticode-evidence.json'),
+              ($report | ConvertTo-Json -Depth 5),
+              [Text.UTF8Encoding]::new($false))
+            Write-Host "QA_AUTHENTICODE_STATUS=$($report.status)"
+          }
+          if ($report.status -ne 'PASS_QA_TEST_CERT_ONLY_NOT_PRODUCTION_SIGNED') {
+            throw "[QA_AUTHENTICODE_FAILED] $($report.error)"
+          }
+
+      - name: Upload only QA signature verification evidence, NEVER the QA signed EXE or private key
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: partyops-authenticode-qa-mechanism-only-${{ github.event.pull_request.head.sha }}
+          path: ${{ runner.temp }}/partyops-authenticode-result/qa-authenticode-evidence.json
+          if-no-files-found: warn
+          retention-days: 14
