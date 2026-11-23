@@ -169,6 +169,13 @@ Add-VerifiedPartyOpsDotNet48Prerequisite `
   -RepoRoot $repoRoot `
   -Destination (Join-Path $bundleRoot "prerequisites")
 
+$generatedManifest = Join-Path $bundleRoot "release-manifest.json"
+$generatedManifestSize = (Get-Item -LiteralPath $generatedManifest -ErrorAction Stop).Length
+Write-Host "PARTYOPS_RELEASE_MANIFEST_BYTES=$generatedManifestSize"
+if ($generatedManifestSize -gt 8MB) {
+  throw "[WINDOWS_RELEASE_MANIFEST_TOO_LARGE] 运行时清单超过 8 MiB 安全读取上限，拒绝输出无法启动的安装包。"
+}
+
 $expectedSqliteHash = $expectedSqliteSha256
 $bundledSqliteHash = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $internalRoot "sqlite3.dll")).Hash
 if ($expectedSqliteHash -ne $bundledSqliteHash) {
