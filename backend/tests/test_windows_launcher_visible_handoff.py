@@ -528,6 +528,8 @@ def test_stale_shortcut_migrates_only_to_hklm_appid_verified_runtime(
             return (str(new), 1)
 
     monkeypatch.delenv("PARTYOPS_LAUNCHER_REGISTRY_REDIRECTED", raising=False)
+    monkeypatch.setattr(launcher, "_registered_install_roots",
+                        lambda _registry=None: [new])
     monkeypatch.setattr(launcher, "_preflight_windows_runtime_dependencies",
                         lambda *_args, **_kwargs: None)
     captured = []
