@@ -894,7 +894,9 @@ begin
       PreviousDataDir := Trim(PreviousDataDirLines[0]);
       if (not IsAvailableFixedDiskPath(PreviousDataDir)) or
          (not DirExists(PreviousDataDir)) then
-        PreviousDataDir := '';
+        PreviousDataDir := ''
+      else
+        PreviousUnavailableBusinessDataDir := '';
     end;
   end;
   if PreviousDataDir = '' then

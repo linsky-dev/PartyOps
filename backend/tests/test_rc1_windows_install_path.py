@@ -54,7 +54,8 @@ def test_protections_are_kept_for_privileged_installer_files() -> None:
 def test_upgrade_finds_prior_install_in_32_and_64bit_registry_and_enforces_reuse() -> None:
     """A normal end user upgrades over RC6; no second install tree or uninstall."""
     iss = INSTALLER.read_text(encoding="utf-8-sig")
-    assert "UsePreviousAppDir=yes" in iss
+    assert "UsePreviousAppDir=no" in iss
+    assert "DefaultDirName={code:GetSuggestedProgramDir}" in iss
     assert "function FindExistingPartyOpsInstallDirectory" in iss
     assert "Software\\WOW6432Node\\Microsoft" in iss
     assert "PARTYOPS_UPGRADE_MULTIPLE_INSTALLATIONS" in iss
@@ -92,3 +93,41 @@ def test_unsafe_legacy_acl_does_not_instruct_destructive_uninstall() -> None:
     assert "请先卸载旧版本" not in content
     assert "请保留旧版安装及数据" in content
     assert "Assert-SecureDirectoryAcl $fullPath -ForProgramDirectory" in content
+
+
+
+def test_detached_disk_stale_uninstall_record_never_forces_original_path() -> None:
+    """Removed E: is not a valid program installation; fall back dynamically."""
+    source = INSTALLER.read_text(encoding="utf-8-sig")
+    assert "function GetWindowsDriveType(RootPath: String): Integer;" in source
+    assert "GetDriveTypeW@kernel32.dll stdcall" in source
+    assert "function IsAvailableFixedDiskPath" in source
+    assert "GetWindowsDriveType(RootPath) = 3" in source
+    assert "DirExists(RootPath)" in source
+    assert "not IsUsableExistingPartyOpsProgramDir(Win64Dir)" in source
+    assert "not IsUsableExistingPartyOpsProgramDir(Win32Dir)" in source
+    assert "function GetSuggestedProgramDir(Param: String): String;" in source
+    assert "Result := ExpandConstant('{autopf}\\PartyOps');" in source
+    assert "WizardForm.DirEdit.Text := ExpandConstant('{autopf}\\PartyOps');" in source
+    assert "PreviousUnavailableAppInstallDir" in source
+    assert "UsePreviousAppDir=no" in source
+    assert "PartyOps.exe" in source
+    assert "PARTYOPS_OLD_DATA_DISK_MISSING" in source
+    assert "{param:ALLOWMISSINGDATA|0}" in source
+    assert "not UnavailableDataAcknowledged" in source
+    assert "请在安装向导确认选择新数据目录" in source
+    assert "PreviousUnavailableBusinessDataDir := '';" in source
+    assert "PreviousBusinessDataDir := PreviousDataDir" in source
+    assert "PARTYOPS_UPGRADE_PRESERVE_DATA_DIRECTORY" in source
+
+
+def test_missing_data_confirmation_is_required_for_silent_install() -> None:
+    """Don't claim an offline business database was migrated automatically."""
+    source = INSTALLER.read_text(encoding="utf-8-sig")
+    prepare = source[source.index("function PrepareToInstall"): ]
+    assert "PreviousUnavailableBusinessDataDir <> ''" in prepare
+    assert "UnavailableDataAcknowledged or" in prepare
+    assert "param:ALLOWMISSINGDATA|0" in prepare
+    assert "无法从中恢复原账号、数据库、附件或证书" in source
+    assert "旧数据不会被删除或迁移" in source
+    assert "没有" not in source[source.index("function GetSuggestedProgramDir"):source.index("function ValidateUpgradeLocations")]
