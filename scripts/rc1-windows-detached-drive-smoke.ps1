@@ -87,7 +87,7 @@ $report = [ordered]@{
 }
 try {
   New-Item -Path $registryKey -Force | Out-Null
-  New-ItemProperty -LiteralPath $registryKey -Name 'InstallLocation' -PropertyType String -Value $staleApp -Force | Out-Null
+  New-ItemProperty -Path $registryKey -Name 'InstallLocation' -PropertyType String -Value $staleApp -Force | Out-Null
   New-Item -ItemType Directory -Path $markerDir -Force | Out-Null
   [IO.File]::WriteAllText($marker,$staleData,[Text.UTF8Encoding]::new($false))
   if ([IO.DriveInfo]::new($missingRoot).DriveType -ne [IO.DriveType]::NoRootDirectory) {

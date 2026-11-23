@@ -8,6 +8,7 @@ on:
       - 'packaging/windows/validate-install-path.ps1'
       - 'packaging/windows/PartyOps.iss'
       - 'backend/tests/test_rc1_windows_install_path.py'
+      - 'scripts/rc1-windows-detached-drive-smoke.ps1'
       - 'scripts/rc1_windows_historical_wps_reference.py'
       - 'backend/tests/test_rc1_windows_build_only_preview.py'
       - 'backend/tests/test_rc1_windows_historical_wps_reference.py'
@@ -369,5 +370,75 @@ jobs:
         with:
           name: partyops-current-source-inplace-upgrade-${{ github.event.pull_request.head.sha }}
           path: ${{ runner.temp }}/partyops-same-source-upgrade-report
+          if-no-files-found: warn
+          retention-days: 14
+
+  qa-detached-historical-drive:
+    name: ACTUAL installer with stale E drive and detached previous data disk
+    needs: windows-preview
+    runs-on: windows-2025
+    timeout-minutes: 45
+    steps:
+      - name: Checkout exact candidate source for detached E drive scenario
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Download new EXE from THIS SAME commit and workflow
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: partyops-windows-x64-BUILD_ONLY-${{ github.event.pull_request.head.sha }}
+          path: ${{ runner.temp }}/partyops-detached-drive-input
+      - name: Verify program SHA, original source SHA and PowerShell test syntax
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $source = (git rev-parse HEAD).Trim()
+          if ($source -ne '${{ github.event.pull_request.head.sha }}') { throw '[DETACHED_DRIVE_QA_SOURCE_COMMIT_MISMATCH]' }
+          $root = Join-Path $env:RUNNER_TEMP 'partyops-detached-drive-input'
+          $exe = @(Get-ChildItem -LiteralPath $root -Recurse -File -Filter 'PartyOps_1.4.6-rc.1_windows_amd64_BUILD_ONLY_UNVERIFIED.exe')
+          $hashFile = @(Get-ChildItem -LiteralPath $root -Recurse -File -Filter 'PartyOps_1.4.6-rc.1_windows_amd64_BUILD_ONLY_UNVERIFIED.exe.sha256')
+          $receipt = @(Get-ChildItem -LiteralPath $root -Recurse -File -Filter 'PartyOps_1.4.6-rc.1_windows_amd64_BUILD_ONLY_UNVERIFIED.candidate.json')
+          if ($exe.Count -ne 1 -or $hashFile.Count -ne 1 -or $receipt.Count -ne 1) {
+            throw '[DETACHED_DRIVE_QA_MISSING_ARTIFACT_OR_RECEIPT]'
+          }
+          $actual = (Get-FileHash -LiteralPath $exe[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          $line = [IO.File]::ReadAllText($hashFile[0].FullName).Trim()
+          $record = Get-Content -Raw -LiteralPath $receipt[0].FullName | ConvertFrom-Json
+          if ($line -notmatch '^([0-9a-fA-F]{64})\s+' -or
+              $Matches[1].ToLowerInvariant() -ne $actual -or
+              $record.sha256 -ne $actual -or
+              $record.source_commit -ne $source -or
+              $record.release_ready -or $record.signed -or
+              $record.scope -ne 'BUILD_ONLY_UNVERIFIED_NATIVE_WPS') {
+            throw '[DETACHED_DRIVE_QA_PROVENANCE_INVALID]'
+          }
+          $tokens = $null
+          $errors = $null
+          [Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path -LiteralPath 'scripts/rc1-windows-detached-drive-smoke.ps1').Path,
+            [ref]$tokens,[ref]$errors
+          ) | Out-Null
+          if ($errors.Count) { throw '[DETACHED_DRIVE_QA_SCRIPT_INVALID] ' + ($errors -join ',') }
+          "DETACHED_DRIVE_QA_EXE=$($exe[0].FullName)" >> $env:GITHUB_ENV
+          "DETACHED_DRIVE_QA_SHA=$actual" >> $env:GITHUB_ENV
+      - name: Actually install with detached E and stale uninstall/data pointers, no /DIR
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $args = @{
+            Installer = $env:DETACHED_DRIVE_QA_EXE
+            ExpectedSha256 = $env:DETACHED_DRIVE_QA_SHA
+            OutputDirectory = (Join-Path $env:RUNNER_TEMP 'partyops-detached-drive-results')
+            ConfirmEphemeralHostedRunner = $true
+          }
+          & ./scripts/rc1-windows-detached-drive-smoke.ps1 @args
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Upload only detached drive setup trace and receipt
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: partyops-rc1-detached-drive-real-install-evidence-${{ github.event.pull_request.head.sha }}
+          path: ${{ runner.temp }}/partyops-detached-drive-results
           if-no-files-found: warn
           retention-days: 14
