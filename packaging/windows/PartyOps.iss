@@ -1429,6 +1429,17 @@ begin
     Result := False;
     exit;
   end;
+  if WizardSilent then
+  begin
+    { The unattended wizard has no editable path page. Do not execute the
+      redundant slow PowerShell UI-only validator here: the mandatory
+      ValidateAndSecureInstallDirectory still executes in PrepareToInstall
+      BEFORE stopping services, extracting payload or writing program files.
+      Interactive installs retain the early feedback check. }
+    Log('[PARTYOPS_SILENT_INSTALL_PRECHECK_DEFERRED] Mandatory pre-extraction ' +
+      'path, reparse and ACL checks remain enabled in PrepareToInstall.');
+    exit;
+  end;
   { Validate the USER'S chosen program path before switching to the data
     directory page. Invalid removable/network/relative paths stay editable
     in the wizard instead of causing a fatal PrepareToInstall screen. This
