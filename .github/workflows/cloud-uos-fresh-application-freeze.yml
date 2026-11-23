@@ -193,8 +193,8 @@ jobs:
         run: |
           set -euo pipefail
           target="artifacts/uos-app-freeze/$PARTYOPS_BUILD_ARCH"
-          tar -C "$target/dist" -czf "$target/PartyOps_RC1_UOS_$PARTYOPS_BUILD_ARCH_APP_ONLY_NOT_DEB.tar.gz" PartyOps
-          sha256sum "$target/PartyOps_RC1_UOS_$PARTYOPS_BUILD_ARCH_APP_ONLY_NOT_DEB.tar.gz" |
+          tar -C "$target/dist" -czf "$target/PartyOps_RC1_UOS_${PARTYOPS_BUILD_ARCH}_APP_ONLY_NOT_DEB.tar.gz" PartyOps
+          sha256sum "$target/PartyOps_RC1_UOS_${PARTYOPS_BUILD_ARCH}_APP_ONLY_NOT_DEB.tar.gz" |
             tee "$target/application-payload.sha256"
 
       - name: Upload real new RC1 app, NOT a user-installable DEB
