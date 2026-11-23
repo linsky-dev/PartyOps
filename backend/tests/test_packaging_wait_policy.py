@@ -765,7 +765,11 @@ def test_windows_installer_is_chinese_branded_and_preserves_custom_paths() -> No
     assert 'Name: "chinesesimp"' in installer
     assert "ChineseSimplified.isl" in installer
     assert "欢迎使用党建智办 PartyOps 安装向导" in installer
-    assert "UsePreviousAppDir=yes" in installer
+    # Inno must not blindly reuse an installation on a detached E: drive.
+    assert "UsePreviousAppDir=no" in installer
+    assert "DefaultDirName={code:GetSuggestedProgramDir}" in installer
+    assert "function GetSuggestedProgramDir" in installer
+    assert "FindExistingPartyOpsInstallDirectory(" in installer
     assert "LoadStringsFromFile(" in installer
     assert "SaveStringsToUTF8File(" in installer
     assert "function LoadConfiguredDataDir" in installer
