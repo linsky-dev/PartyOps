@@ -3589,7 +3589,10 @@ def _preflight_windows_runtime_dependencies(
     runtime = executable.resolve().parent
     manifest_path = runtime / "release-manifest.json"
     try:
-        manifest = _read_small_json(manifest_path)
+        # The complete onedir installer may contain 20k+ runtime assets.
+        # Match the bounded 8 MiB identity reader, rather than incorrectly
+        # calling an intact >4 MiB release manifest missing or corrupt.
+        manifest = _read_small_json(manifest_path, limit=8 * 1024 * 1024)
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         raise HostStartupError(
             RUNTIME_DEPENDENCY_MISSING,
