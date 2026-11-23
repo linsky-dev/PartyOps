@@ -98,3 +98,28 @@ def test_crlf_supplier_checksum_is_validated_without_rewriting_input(
 def test_preflight_rejects_invalid_architecture() -> None:
     with pytest.raises(ValueError, match="Unsupported UOS target architecture"):
         preflight.check_architecture("loong64")
+
+
+def test_rc1_uos_release_kit_names_and_checksums_match_native_builders() -> None:
+    """Release script must package the real RC1 names and both manifest layers."""
+    release = (ROOT / "scripts/package-uos-release.ps1").read_text(encoding="utf-8")
+    kit = (ROOT / "scripts/package-uos-build-kit.ps1").read_text(encoding="utf-8")
+    native = (ROOT / "packaging/linux/build-native.sh").read_text(encoding="utf-8")
+    portable = (ROOT / "packaging/uos/build-portable.sh").read_text(encoding="utf-8")
+    installer = (ROOT / "packaging/uos/one-click-install.sh").read_text(encoding="utf-8")
+
+    assert '$releaseVersion = "1.4.6-rc.1"' in kit
+    assert '$releaseTag = "v1.4.6-rc.1"' in kit
+    assert '$version -ne "1.4.6-rc.1"' in release
+    assert 'PartyOps_${version}_linux_amd64.deb' in release
+    assert 'PartyOps_${version}_linux_arm64.deb' in release
+    assert 'PartyOps_1.4.6-rc.1_linux_${ARCH}.deb' in native
+    assert 'PartyOps-linux-$ARCH.tar.zst' in portable
+    assert "BUILD-KIT-SHA256SUMS" in release
+    assert "BUILD-KIT-SHA256SUMS" in installer
+    assert "SHA256SUMS.${architecture}" in release
+    assert "sha256sum -c" in installer
+    assert "[UOS_RELEASE_HASH_MISMATCH]" in release
+    assert "[UOS_RELEASE_CHECKSUM_INVALID]" in release
+    assert '"$tarHash  $tarFile`n$debHash  $debFile`n"' in release
+    assert "release-notes-v1.4.6-rc.1.md" in release
