@@ -783,16 +783,16 @@ $candidateTemporary = "$candidatePath.tmp"
   (New-Object System.Text.UTF8Encoding($false))
 )
 if ($BuildOnlyPreview) {
-  $candidate.scope = 'BUILD_ONLY_UNVERIFIED_NATIVE_WPS'
-  $candidate.release_ready = $false
-  $candidate.current_version_native_wps_tested = $false
-  $candidate.full_function_gate_passed = $false
-  $candidate.production_pdf_lock_unchanged = $true
-  $candidate.embedded_pymupdf = '2.1'
-  $candidate.historical_wps_reference_sha256 = (
+  $candidate['scope'] = 'BUILD_ONLY_UNVERIFIED_NATIVE_WPS'
+  $candidate['release_ready'] = $false
+  $candidate['current_version_native_wps_tested'] = $false
+  $candidate['full_function_gate_passed'] = $false
+  $candidate['production_pdf_lock_unchanged'] = $true
+  $candidate['embedded_pymupdf'] = '2.1'
+  $candidate['historical_wps_reference_sha256'] = (
     Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $formatterStage 'historical-wps-reference.json')
   ).Hash.ToLowerInvariant()
-  $candidate.limitations = @(
+  $candidate['limitations'] = @(
     '仅内部 Windows x64 候选包，不是正式更新',
     '本版本 WPS 未在 Windows 10/11 重新验收',
     '未完成新版安装、升级、回滚或数字签名',
