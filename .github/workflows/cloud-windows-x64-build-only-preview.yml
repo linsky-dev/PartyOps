@@ -13,6 +13,7 @@ on:
       - 'backend/tests/test_rc1_windows_historical_wps_reference.py'
 permissions:
   contents: read
+  actions: read
 concurrency:
   group: partyops-windows-buildonly-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: false
@@ -218,5 +219,155 @@ jobs:
             artifacts/windows-build-only-pdf/wheel-matrix.json
             artifacts/rc1-preview-historical-wps-reference.json
             artifacts/windows-x64-input-closure-evidence.json
+          if-no-files-found: warn
+          retention-days: 14
+
+  qa-fresh-install:
+    name: ACTUAL install/uninstall of same-source unsigned Windows x64 candidate
+    needs: windows-preview
+    runs-on: windows-2025
+    timeout-minutes: 50
+    steps:
+      - name: Checkout exact matching candidate source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Download THIS RUN's immutable unsigned installer
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: partyops-windows-x64-BUILD_ONLY-${{ github.event.pull_request.head.sha }}
+          path: ${{ runner.temp }}/partyops-new-candidate-exact
+      - name: Verify build source, installer bytes and nonrelease receipt
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $sourceSha = (git rev-parse HEAD).Trim()
+          if ($LASTEXITCODE -ne 0 -or $sourceSha -ne '${{ github.event.pull_request.head.sha }}') {
+            throw '[RC1_SAME_RUN_SOURCE_MISMATCH]'
+          }
+          $root = Join-Path $env:RUNNER_TEMP 'partyops-new-candidate-exact'
+          $exe = @(Get-ChildItem -LiteralPath $root -Recurse -File -Filter 'PartyOps_1.4.6-rc.1_windows_amd64_BUILD_ONLY_UNVERIFIED.exe')
+          $receipt = @(Get-ChildItem -LiteralPath $root -Recurse -File -Filter 'PartyOps_1.4.6-rc.1_windows_amd64_BUILD_ONLY_UNVERIFIED.candidate.json')
+          $sha = @(Get-ChildItem -LiteralPath $root -Recurse -File -Filter 'PartyOps_1.4.6-rc.1_windows_amd64_BUILD_ONLY_UNVERIFIED.exe.sha256')
+          if ($exe.Count -ne 1 -or $receipt.Count -ne 1 -or $sha.Count -ne 1) {
+            throw '[RC1_SAME_RUN_ARTIFACTS_INCOMPLETE_OR_AMBIGUOUS]'
+          }
+          $actual = (Get-FileHash -LiteralPath $exe[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          $line = [IO.File]::ReadAllText($sha[0].FullName).Trim()
+          if ($line -notmatch '^([0-9a-fA-F]{64})\s+' -or $actual -ne $Matches[1].ToLowerInvariant()) {
+            throw '[RC1_SAME_RUN_EXE_HASH_MISMATCH]'
+          }
+          $record = Get-Content -LiteralPath $receipt[0].FullName -Raw | ConvertFrom-Json
+          if ($record.source_commit -ne $sourceSha -or $record.sha256 -ne $actual -or
+              $record.scope -ne 'BUILD_ONLY_UNVERIFIED_NATIVE_WPS' -or
+              $record.signed -or $record.release_ready -or
+              $record.current_version_native_wps_tested) {
+            throw '[RC1_SAME_RUN_RECEIPT_FALSE_SOURCE_OR_NATIVE_APPROVAL]'
+          }
+          "RC1_NEW_EXE=$($exe[0].FullName)" >> $env:GITHUB_ENV
+          "RC1_NEW_SHA=$actual" >> $env:GITHUB_ENV
+          'RC1_INSTALL_CURRENT_EXACT_SOURCE_AND_EXE_SHA_VERIFIED'
+      - name: Actually install, verify program hash, and uninstall latest candidate
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $args = @{
+            Installer = $env:RC1_NEW_EXE
+            ExpectedSha256 = $env:RC1_NEW_SHA
+            OutputDirectory = (Join-Path $env:RUNNER_TEMP 'partyops-current-installed-qa')
+            ConfirmEphemeralHostedRunner = $true
+          }
+          & ./scripts/rc1-windows-installed-smoke.ps1 @args
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Preserve fresh-install logs and receipt, not the EXE
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: partyops-current-source-fresh-installed-${{ github.event.pull_request.head.sha }}
+          path: ${{ runner.temp }}/partyops-current-installed-qa
+          if-no-files-found: warn
+          retention-days: 14
+
+  qa-existing-user-upgrade:
+    name: ACTUAL RC6 -> same-source RC1 without DIR override, keep files, program rollback
+    needs: windows-preview
+    runs-on: windows-2025
+    timeout-minutes: 90
+    steps:
+      - name: Checkout same-source QA code and in-place upgrade rules
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Setup Python 3.12 for synthetic SQLite data-retention checks
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+          architecture: x64
+      - name: Download THIS RUN's exact source installer bytes
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: partyops-windows-x64-BUILD_ONLY-${{ github.event.pull_request.head.sha }}
+          path: ${{ runner.temp }}/partyops-same-run-qa
+      - name: Download SHA-pinned original RC6 installer and bind fresh RC1 candidate
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $sha = (git rev-parse HEAD).Trim()
+          if ($LASTEXITCODE -ne 0 -or $sha -ne '${{ github.event.pull_request.head.sha }}') {
+            throw '[RC1_UPGRADE_CURRENT_SOURCE_SHA_MISMATCH]'
+          }
+          $root = Join-Path $env:RUNNER_TEMP 'partyops-same-run-qa'
+          $new = @(Get-ChildItem -LiteralPath $root -Recurse -File -Filter 'PartyOps_1.4.6-rc.1_windows_amd64_BUILD_ONLY_UNVERIFIED.exe')
+          $receipt = @(Get-ChildItem -LiteralPath $root -Recurse -File -Filter 'PartyOps_1.4.6-rc.1_windows_amd64_BUILD_ONLY_UNVERIFIED.candidate.json')
+          $shaFile = @(Get-ChildItem -LiteralPath $root -Recurse -File -Filter 'PartyOps_1.4.6-rc.1_windows_amd64_BUILD_ONLY_UNVERIFIED.exe.sha256')
+          if ($new.Count -ne 1 -or $receipt.Count -ne 1 -or $shaFile.Count -ne 1) {
+            throw '[RC1_UPGRADE_CURRENT_INSTALLER_FILES_MISSING]'
+          }
+          $hash = (Get-FileHash -LiteralPath $new[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          $line = [IO.File]::ReadAllText($shaFile[0].FullName).Trim()
+          $record = Get-Content -LiteralPath $receipt[0].FullName -Raw | ConvertFrom-Json
+          if ($line -notmatch '^([0-9a-fA-F]{64})\s+' -or
+              $hash -ne $Matches[1].ToLowerInvariant() -or
+              $record.sha256 -ne $hash -or $record.source_commit -ne $sha -or
+              $record.scope -ne 'BUILD_ONLY_UNVERIFIED_NATIVE_WPS' -or
+              $record.signed -or $record.release_ready -or
+              $record.current_version_native_wps_tested) {
+            throw '[RC1_UPGRADE_CURRENT_ARTIFACT_IDENTITY_INVALID]'
+          }
+          $old = Join-Path $root 'PartyOps_1.4.5-rc.6_windows_amd64_startup-20261018.exe'
+          $url = 'https://github.com/linsky-dev/PartyOps/releases/download/v1.4.5-rc.6/PartyOps_1.4.5-rc.6_windows_amd64_startup-20261018.exe'
+          & curl.exe --fail --location --retry 3 --retry-all-errors --connect-timeout 45 --max-time 1800 --output $old $url
+          if ($LASTEXITCODE -ne 0) { throw '[RC1_UPGRADE_RC6_SOURCE_DOWNLOAD_FAILED]' }
+          $oldSha = 'e3e2ea45ccd38acff059b5713826a78f998a56ccef75341633f67bd4e17e57da'
+          if ((Get-Item -LiteralPath $old).Length -ne 449988807 -or
+              (Get-FileHash -LiteralPath $old -Algorithm SHA256).Hash.ToLowerInvariant() -ne $oldSha) {
+            throw '[RC1_UPGRADE_RC6_SOURCE_HASH_INVALID]'
+          }
+          "RC1_MATCHING_NEW=$($new[0].FullName)" >> $env:GITHUB_ENV
+          "RC1_MATCHING_NEW_SHA=$hash" >> $env:GITHUB_ENV
+          "RC1_MATCHING_OLD=$old" >> $env:GITHUB_ENV
+          "RC1_MATCHING_OLD_SHA=$oldSha" >> $env:GITHUB_ENV
+      - name: Install RC6, overlay upgraded RC1 without DIR option, preserve SQLite and attachments, program rollback
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $args = @{
+            OldInstaller = $env:RC1_MATCHING_OLD
+            OldSha256 = $env:RC1_MATCHING_OLD_SHA
+            NewInstaller = $env:RC1_MATCHING_NEW
+            NewSha256 = $env:RC1_MATCHING_NEW_SHA
+            OutputDirectory = (Join-Path $env:RUNNER_TEMP 'partyops-same-source-upgrade-report')
+            ConfirmEphemeralHostedRunner = $true
+          }
+          & ./scripts/rc1-windows-upgrade-rollback-smoke.ps1 @args
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Upload exact same-source upgrade results, never app private keys
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: partyops-current-source-inplace-upgrade-${{ github.event.pull_request.head.sha }}
+          path: ${{ runner.temp }}/partyops-same-source-upgrade-report
           if-no-files-found: warn
           retention-days: 14
