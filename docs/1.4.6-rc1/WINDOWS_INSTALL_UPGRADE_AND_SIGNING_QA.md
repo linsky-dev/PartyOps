@@ -54,3 +54,12 @@ Get-CimInstance Win32_LogicalDisk | Select-Object DeviceID,DriveType,ProviderNam
 **升级验收检查顺序**：旧版识别 → 原程序路径确认 → 原业务数据路径确认 → 备份校验 → 安全停止现有 PartyOps 服务 → 文件覆盖 → 主程序与旧用户桌面启动探针 → 服务恢复与账号权限 → 新版本数据库升级及健康状态 → 保存新的安装器缓存与回滚凭据。安装失败不意味着可以在生产数据库已经写入新版数据后任意重装旧版。
 
 为防止把 PascalScript 语法错误留到整包构建，另有快速 Windows Inno 编译专项，只使用明确标记的无功能 QA 载荷、不上传可执行样包，编译真实 `PartyOps.iss` 的目录向导、升级分支与中断恢复逻辑；此编译成功不代表正式 EXE 完整封装或真实用户测试。
+
+
+**当前 Windows x64 有效结论（2026-11-23，更新优先于上文历史记录）：**
+
+- 源码 `204f62b2e3c7a0a194e3367fb11606772e0de680`、同次构建的 Windows x64 未签名安装包 SHA-256 `1e70e677adbc0de1f338d0daaa0d845d04bde90447f286c31209355154cb59eb`，GitHub Actions [45126787399](https://github.com/linsky-dev/PartyOps/actions/runs/45126787399) 已在托管 Windows Server 2025 真实执行全新安装/启动/卸载、E: 旧数据盘失联回退、RC6 原位覆盖及 RC6 程序二进制回滚，四项全部 PASS。
+- 安装流程独立验收 JSON：安装 103.98 秒、安装后启动器检查 0.69 秒、卸载 6.54 秒；`release-manifest.json` 实际 4,216,553 字节，安装后清单及主 EXE SHA-256 核验通过，启动器退出码 0。旧日志约 144.52 秒，跨 CI 运行批次的 28% 缩短仅属观察值，不代表任何实体 Windows 10/11 电脑性能承诺。
+- 同源码 RC6→RC1→RC6 证据：`PASS_HOSTED_PROGRAM_UPGRADE_AND_ROLLBACK_ONLY`，原数据目录、合成 SQLite、附件和合成标记均保留，RC6 EXE 回滚后哈希与原始一致。**未验证真实生产库经迁移及后续写入时能安全降级**，不得据此直接降级真实数据。
+- 之前正文关于 `UsePreviousAppDir=yes` 的描述属于历史记录；最新实际设置为 `UsePreviousAppDir=no`，由 `GetSuggestedProgramDir` 读取并验证注册表原安装路径，拒绝失效 E: 与目录冲突，真实 RC6 覆盖已通过。
+- 独立临时 Authenticode QA 流程 [45126787170](https://github.com/linsky-dev/PartyOps/actions/runs/45126787170) 于 30 分钟限时取消，不能计作 PASS。临时证书测试只是 WinVerifyTrust 机制检查；生产签名证书、当前 Windows 10/11 有图形桌面实际 WPS 验收、完整业务数据库迁移与故障恢复和正式发布审批仍为独立发布阻塞项。后续关于 QA 签名流程的改动必须重新通过专项测试。
