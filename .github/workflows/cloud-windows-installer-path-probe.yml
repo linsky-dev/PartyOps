@@ -34,7 +34,9 @@ jobs:
             @{name='fixed-new'; path='C:\Program Files\PartyOps-Preview-QA-No-Create'; expected=0},
             @{name='fixed-chinese'; path='C:\PartyOps-Install-中文 空格-Nonexistent'; expected=0},
             @{name='root'; path='C:\'; expected=2},
-            @{name='unc'; path='\\example.invalid\share\PartyOps'; expected=2}
+            @{name='unc'; path='\\example.invalid\share\PartyOps'; expected=2},
+            @{name='drive-relative'; path='C:relative-partyops'; expected=2},
+            @{name='relative'; path='relative-partyops'; expected=2}
           )
           foreach ($case in $cases) {
             $diag = Join-Path $env:RUNNER_TEMP ('partyops-'+$case.name+'.txt')
@@ -42,13 +44,17 @@ jobs:
             $code = $LASTEXITCODE
             $detail = if (Test-Path -LiteralPath $diag) { [IO.File]::ReadAllText($diag) } else { '' }
             Write-Host "CASE=$($case.name) EXIT=$code DETAIL=$detail"
-            if ($case.name -eq 'unc') {
-              if ($code -eq 0 -or $detail -notmatch 'INSTALL_DIR_NOT_FIXED|INSTALL_DIR_CHECK_FAILED|INSTALL_DIR_INVALID') {
-                throw '[UNC_INSTALL_PATH_UNEXPECTEDLY_ACCEPTED]'
-              }
-            } elseif ($code -ne $case.expected) {
+            if ($code -ne $case.expected) {
               throw "[INSTALL_PATH_REGRESSION] $($case.name): $code != $($case.expected); $detail"
+            }
+            if ($case.name -eq 'unc' -and $detail -notmatch 'INSTALL_DIR_NOT_FIXED') {
+              throw '[UNC_INSTALL_PATH_ERROR_MUST_BE_EXPLICIT]'
+            }
+            if ($case.name -in @('drive-relative','relative') -and
+                $detail -notmatch 'INSTALL_DIR_INVALID') {
+              throw '[RELATIVE_INSTALL_PATH_MUST_BE_REJECTED]'
             }
             Remove-Item -LiteralPath $diag -Force -ErrorAction SilentlyContinue
           }
           'WINDOWS_INSTALL_PATH_POWERSHELL_51_REAL_PROBE_PASS'
+          exit 0
