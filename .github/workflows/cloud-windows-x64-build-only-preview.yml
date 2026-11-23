@@ -42,7 +42,7 @@ jobs:
           $ErrorActionPreference = 'Stop'
           python -m pip install --disable-pip-version-check 'pytest==9.1.1' 'uv==0.11.7'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python -m pytest -q backend/tests/test_rc1_windows_build_only_preview.py backend/tests/test_rc1_windows_historical_wps_reference.py backend/tests/test_rc1_windows_secure_pdf_package.py
+          python -m pytest --noconftest -q backend/tests/test_rc1_windows_build_only_preview.py backend/tests/test_rc1_windows_historical_wps_reference.py backend/tests/test_rc1_windows_secure_pdf_package.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           New-Item -ItemType Directory -Path artifacts -Force | Out-Null
           python scripts/rc1_windows_historical_wps_reference.py --root . --output artifacts/rc1-preview-historical-wps-reference.json
