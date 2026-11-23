@@ -1798,10 +1798,13 @@ begin
   if (DataAction <> '') and (DataAction <> 'preserve') and
      (DataAction <> 'delete') then
   begin
-    MsgBox(
-      '[UNINSTALL_DATAACTION_INVALID] /DATAACTION 只能使用 preserve 或 delete。',
-      mbError, MB_OK
-    );
+    if UninstallSilent then
+      Log('[UNINSTALL_DATAACTION_INVALID] /DATAACTION 只能使用 preserve 或 delete。')
+    else
+      MsgBox(
+        '[UNINSTALL_DATAACTION_INVALID] /DATAACTION 只能使用 preserve 或 delete。',
+        mbError, MB_OK
+      );
     Result := False;
     exit;
   end;
@@ -1833,11 +1836,15 @@ begin
     if not RunDataCleanup('all', True) then
     begin
       DeleteAllDataOnUninstall := False;
-      MsgBox(
-        '[UNINSTALL_DATA_PREFLIGHT_FAILED] 本机 PartyOps 数据目录未通过完整安全检查。' +
-        '为防止误删，本次已自动改为“仅删除程序并保留数据”；程序卸载将继续，业务数据不会被删除。',
-        mbInformation, MB_OK
-      );
+      if UninstallSilent then
+        Log('[UNINSTALL_DATA_PREFLIGHT_FAILED] 数据清理安全检查未通过，' +
+          '自动保留全部业务数据并继续卸载程序。')
+      else
+        MsgBox(
+          '[UNINSTALL_DATA_PREFLIGHT_FAILED] 本机 PartyOps 数据目录未通过完整安全检查。' +
+          '为防止误删，本次已自动改为“仅删除程序并保留数据”；程序卸载将继续，业务数据不会被删除。',
+          mbInformation, MB_OK
+        );
     end;
   end;
   Result := True;

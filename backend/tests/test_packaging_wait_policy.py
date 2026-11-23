@@ -770,6 +770,9 @@ def test_windows_installer_is_chinese_branded_and_preserves_custom_paths() -> No
     assert "RemoveBackslashUnlessRoot(ExpandFileName(WizardDirValue))" in installer
     assert "RemoveBackslashUnlessRoot(ExpandFileName(PreviousAppInstallDir))" in installer
     assert "procedure ReportWizardError" in installer
+    assert "Log('[UNINSTALL_DATAACTION_INVALID]" in installer
+    assert "Log('[UNINSTALL_DATA_PREFLIGHT_FAILED]" in installer
+    assert "if UninstallSilent then" in installer
     assert "RaiseException(Message);" in installer
     # /VERYSILENT has no editable page: false-return alone must not stall.
     assert "ReportWizardError('[PARTYOPS_OLD_DATA_DISK_MISSING]" in installer

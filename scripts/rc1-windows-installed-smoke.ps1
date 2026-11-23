@@ -94,7 +94,13 @@ function Invoke-QAInstaller {
 try {
   $args = @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',
     ('/DIR="' + $program + '"'),('/LOG="' + $installLog + '"'))
-  $installExit = Invoke-QAInstaller -FilePath $installerPath -Arguments $args -Stage 'INSTALL'
+  $installTimer = [Diagnostics.Stopwatch]::StartNew()
+  try {
+    $installExit = Invoke-QAInstaller -FilePath $installerPath -Arguments $args -Stage 'INSTALL'
+  } finally {
+    $installTimer.Stop()
+    $report['install_elapsed_seconds'] = [Math]::Round($installTimer.Elapsed.TotalSeconds, 2)
+  }
   $report['install_exit_code'] = $installExit
   if ($installExit -ne 0) { throw "[RC1_QA_INSTALL_FAILED] Exit $installExit" }
   $exePath = Join-Path $program 'PartyOps.exe'
@@ -105,6 +111,7 @@ try {
       throw "[RC1_QA_INSTALLED_FILE_MISSING] $([IO.Path]::GetFileName($file))"
     }
   }
+  $report['installed_manifest_size_bytes'] = (Get-Item -LiteralPath $manifestPath).Length
   $manifest = Get-Content -Raw -LiteralPath $manifestPath | ConvertFrom-Json
   if ($manifest.version -ne '1.4.6-rc.1' -or
       $manifest.architecture -ne 'amd64' -or $manifest.platform -ne 'windows') {
@@ -131,6 +138,7 @@ try {
   if (-not (Test-Path -LiteralPath $launcher -PathType Leaf)) {
     throw '[RC1_QA_INSTALLED_LAUNCHER_MISSING]'
   }
+  $launcherTimer = [Diagnostics.Stopwatch]::StartNew()
   $launcherProcess = Start-Process -FilePath $launcher -ArgumentList '--background' -PassThru
   try {
     if (-not $launcherProcess.WaitForExit(180000)) {
@@ -174,7 +182,11 @@ try {
       throw "[RC1_QA_LAUNCHER_RUNTIME_PREFLIGHT_FAILED] Exit $($launcherProcess.ExitCode)"
     }
     $report['launcher_release_manifest_preflight_passed'] = $true
-  } finally { $launcherProcess.Dispose() }
+  } finally {
+    $launcherTimer.Stop()
+    $report['launcher_preflight_elapsed_seconds'] = [Math]::Round($launcherTimer.Elapsed.TotalSeconds, 2)
+    $launcherProcess.Dispose()
+  }
   $uninstaller = Join-Path $program 'unins000.exe'
   if (-not (Test-Path -LiteralPath $uninstaller -PathType Leaf)) {
     throw '[RC1_QA_UNINSTALLER_MISSING]'
@@ -182,7 +194,13 @@ try {
   $uninstallArgs = @(
     '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',('/LOG="' + $uninstallLog + '"')
   )
-  $uninstallExit = Invoke-QAInstaller -FilePath $uninstaller -Arguments $uninstallArgs -Stage 'UNINSTALL'
+  $uninstallTimer = [Diagnostics.Stopwatch]::StartNew()
+  try {
+    $uninstallExit = Invoke-QAInstaller -FilePath $uninstaller -Arguments $uninstallArgs -Stage 'UNINSTALL'
+  } finally {
+    $uninstallTimer.Stop()
+    $report['uninstall_elapsed_seconds'] = [Math]::Round($uninstallTimer.Elapsed.TotalSeconds, 2)
+  }
   $report['uninstall_exit_code'] = $uninstallExit
   if ($uninstallExit -ne 0 -or (Test-Path -LiteralPath $exePath)) {
     throw '[RC1_QA_UNINSTALL_FAILED_OR_BINARY_REMAINS]'
