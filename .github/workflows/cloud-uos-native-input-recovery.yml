@@ -31,6 +31,7 @@ jobs:
             donor_os: UOS V20 1070 x86_64
             donor_kind: SAME_UOS_PLATFORM
             container_image: quay.io/pypa/manylinux2014_x86_64:latest
+            uos_container_image: quay.io/pypa/manylinux_2_28_x86_64:latest
           - arch: arm64
             runner: ubuntu-24.04-arm
             release_tag: v1.4.5-rc.6
@@ -39,6 +40,7 @@ jobs:
             donor_os: Kylin V10 SP1 ARM64
             donor_kind: CROSS_DISTRIBUTION_NOT_VERIFIED_UOS
             container_image: quay.io/pypa/manylinux2014_aarch64:latest
+            uos_container_image: quay.io/pypa/manylinux_2_28_aarch64:latest
 
     env:
       GH_TOKEN: ${{ github.token }}
@@ -50,6 +52,7 @@ jobs:
       DONOR_OS: ${{ matrix.donor_os }}
       DONOR_KIND: ${{ matrix.donor_kind }}
       CONTAINER_IMAGE: ${{ matrix.container_image }}
+      UOS_CONTAINER_IMAGE: ${{ matrix.uos_container_image }}
       PYTHONUTF8: '1'
 
     steps:
@@ -119,6 +122,35 @@ jobs:
           for key,rel in entries.items():
               path=extracted/rel
               previous[key]={"present":path.is_file(),"sha256":sha(path) if path.is_file() else None}
+          # Read-only binding audit of the ORIGINAL WPS host and historical record.
+          # This does not regenerate, replay or assert native WPS gold tests.
+          donor_host=extracted/"formatter-host/partyops-document-formatter-host"
+          donor_source=extracted/"formatter-host/source-host.json"
+          donor_record=extracted/"formatter-host/runtime-evidence.json"
+          donor_map=extracted/"formatter-host/word-vtable-map.json"
+          try:
+              raw_source=json.loads(donor_source.read_text(encoding="utf-8"))
+              raw_record=json.loads(donor_record.read_text(encoding="utf-8"))
+              source_host_binding=(raw_source.get("host_sha256")==sha(donor_host))
+              record_host_binding=(raw_record.get("host_sha256")==sha(donor_host))
+              source_snapshot=raw_source.get("source_snapshot_sha256")
+              source_map_binding=(raw_source.get("word_vtable_map_sha256")==sha(donor_map))
+              donor_binding={
+                  "source_host_sha256_matches_file":source_host_binding,
+                  "historical_record_host_sha256_matches_file":record_host_binding,
+                  "source_snapshot_sha256":source_snapshot,
+                  "source_vtable_map_matches_file":source_map_binding,
+                  "source_record_schema":raw_source.get("schema"),
+                  "evidence_schema":raw_record.get("schema"),
+                  "source_features":raw_source.get("features"),
+                  "evidence_features":raw_record.get("features"),
+                  "evidence_status":raw_record.get("status"),
+                  "bound_to_current_formatter_source":source_snapshot=="7ae0eb67a0cb6a2d4a332cde74adf8977d93ae73541f864f01df214d39fefdf2",
+                  "evidence_available_as_original_parity_and_features":False,
+                  "new_native_wps_acceptance_executed":False,
+              }
+          except (ValueError,OSError,TypeError) as exc:
+              donor_binding={"readable":False,"error_type":type(exc).__name__,"new_native_wps_acceptance_executed":False}
           native_sources={
               "linux_wheelhouse":f"vendor/wheels/{os.environ['ARCHITECTURE']}",
               "linux_local_ai_archive":f"vendor/local-ai/{os.environ['ARCHITECTURE']}/llama-runtime.tar.gz",
@@ -147,6 +179,7 @@ jobs:
                   "provenance":os.environ["DONOR_KIND"],
                   "same_os_family":os_match,
                   "files":previous,
+                  "historical_wps_source_binding":donor_binding,
               },
               "current_source_build_inputs":available,
               "missing_native_build_inputs":[name for name,exists in available.items() if not exists],
@@ -163,6 +196,8 @@ jobs:
           print(f"UOS_DONOR_HASH_VERIFIED={report['historical_donor']['sha256_matches_release']}")
           print(f"UOS_OLD_WPS_HOST_PRESENT={previous['wps_native_host']['present']}")
           print(f"UOS_OLD_WPS_EVIDENCE_PRESENT={previous['wps_native_historical_evidence']['present']}")
+          print(f"UOS_HISTORIC_WPS_SOURCE_BINDING={donor_binding.get('bound_to_current_formatter_source')}")
+          print(f"UOS_HISTORIC_WPS_SHA_BINDING={donor_binding.get('source_host_sha256_matches_file')}")
           print(f"UOS_SAME_DISTRIBUTION={os_match}")
           print(f"UOS_CURRENT_SOURCE_MISSING_INPUTS={','.join(report['missing_native_build_inputs'])}")
           print("UOS_NATIVE_BINARY_STATUS=NOT_BUILT")
@@ -184,6 +219,22 @@ jobs:
           fi
           echo "UOS_MANYLINUX2014_TOOLCHAIN=$outcome" |
             tee "artifacts/uos-recovery/toolchain-$ARCHITECTURE.txt"
+
+      - name: Probe exact UOS V20 glibc 2.28 native build container
+        shell: bash
+        run: |
+          set -euo pipefail
+          status=UNAVAILABLE
+          if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+            if timeout 300 docker run --rm --network none "$UOS_CONTAINER_IMAGE" \
+                /bin/bash -c 'test "$(getconf GNU_LIBC_VERSION)" = "glibc 2.28" && \
+                              test -x /opt/python/cp311-cp311/bin/python && \
+                              /opt/python/cp311-cp311/bin/python --version'; then
+              status=AVAILABLE_UNPINNED_PROBE_ONLY
+            fi
+          fi
+          printf 'UOS_V20_NATIVE_GLIBC_228_TOOLCHAIN=%s\n' "$status" |
+            tee "artifacts/uos-recovery/uos-v20-toolchain-$ARCHITECTURE.txt"
 
       - name: Upload verified old-input inventory ONLY, not old package as new
         if: always()
