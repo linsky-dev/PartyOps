@@ -389,7 +389,7 @@ def test_uos_build_kit_normalizes_archive_metadata() -> None:
     ).read_text(encoding="utf-8")
 
     assert "[DateTimeOffset]::Now" not in script
-    assert '"发布基线日期：2026-08-13（内容采用可复现构建，不嵌入构建机当前时间）"' in script
+    assert '"构建基线：v1.4.6-rc.1（制品身份以源码 Git SHA 与 SHA-256 验证结果为准）"' in script
     assert "$entry.LastWriteTime = [DateTimeOffset]$normalizedTime" in script
 
 
