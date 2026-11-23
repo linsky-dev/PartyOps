@@ -453,7 +453,10 @@ def _synthetic_windows_personal_owner_scope(tmp_path, monkeypatch):
             if name == "LOCALAPPDATA" else default,
         ),
     )
-    state = {"owner": user_sid, "writer": user_sid}
+    state = {
+        "owner": user_sid, "writer": user_sid, "inherit_only": False,
+        "ace_type": 0, "null_dacl": False,
+    }
     class Handle:
         def Close(self):
             pass
@@ -461,12 +464,16 @@ def _synthetic_windows_personal_owner_scope(tmp_path, monkeypatch):
         def GetAceCount(self):
             return 1
         def GetAce(self, _index):
-            return ((0, 0), 0x40000000, state["writer"])
+            return (
+                (state["ace_type"], 0x08 if state["inherit_only"] else 0),
+                0x40000000,
+                state["writer"],
+            )
     class Descriptor:
         def GetSecurityDescriptorOwner(self):
             return state["owner"]
         def GetSecurityDescriptorDacl(self):
-            return DACL()
+            return None if state["null_dacl"] else DACL()
     fake_security = SimpleNamespace(
         TOKEN_QUERY=8,
         TokenUser=1,
@@ -577,3 +584,79 @@ def test_personal_scope_issue_skips_system_acl_but_preserves_lock_and_audit(
     lock = DataDirectoryInstanceLock(cli_store.path)
     lock.acquire()
     lock.release()
+
+
+
+def test_windows_personal_acl_rejects_null_dacl_and_ignores_nonallowing_aces(
+    tmp_path, monkeypatch,
+):
+    """Fail closed on a null DACL, but do not mistake DENY/inherit-only ACEs for grants."""
+    files = _synthetic_windows_personal_owner_scope(tmp_path, monkeypatch)
+    assert recovery_cli.windows_personal_owner_scope(files.path)
+    files.state["null_dacl"] = True
+    assert not recovery_cli.windows_personal_owner_scope(files.path)
+    files.state["null_dacl"] = False
+    files.state["writer"] = "S-1-5-11"  # Authenticated Users, not trusted to write.
+    files.state["inherit_only"] = True
+    assert recovery_cli.windows_personal_owner_scope(files.path)
+    files.state["inherit_only"] = False
+    files.state["ace_type"] = 1  # ACCESS_DENIED_ACE_TYPE never grants write.
+    assert recovery_cli.windows_personal_owner_scope(files.path)
+    files.state["ace_type"] = 0
+    assert not recovery_cli.windows_personal_owner_scope(files.path)
+
+
+def test_windows_personal_profile_rejects_reparse_oversize_and_mismatched_binding(
+    tmp_path, monkeypatch,
+):
+    """Host operators cannot substitute arbitrary config and storage paths."""
+    import json
+
+    files = _synthetic_windows_personal_owner_scope(tmp_path, monkeypatch)
+    assert recovery_cli.windows_personal_owner_scope(files.path)
+    original_lstat = Path.lstat
+
+    def reparse_personal_env(path):
+        if path == files.env:
+            return SimpleNamespace(
+                st_mode=stat.S_IFREG | 0o600,
+                st_file_attributes=stat.FILE_ATTRIBUTE_REPARSE_POINT,
+                st_size=22,
+            )
+        return original_lstat(path)
+
+    monkeypatch.setattr(Path, "lstat", reparse_personal_env)
+    assert not recovery_cli.windows_personal_owner_scope(files.path)
+    monkeypatch.setattr(Path, "lstat", original_lstat)
+    files.mode.write_text(" " * 8193, encoding="utf-8")
+    assert not recovery_cli.windows_personal_owner_scope(files.path)
+    files.mode.write_text(
+        json.dumps({"mode": "personal", "config_path": "relative-personal.env"}),
+        encoding="utf-8",
+    )
+    assert not recovery_cli.windows_personal_owner_scope(files.path)
+    files.mode.write_text(
+        json.dumps({"mode": "personal", "config_path": str(files.env)}),
+        encoding="utf-8",
+    )
+    assert recovery_cli.windows_personal_owner_scope(files.path)
+
+
+def test_windows_personal_config_strict_keys_duplicates_and_comments(
+    tmp_path, monkeypatch,
+):
+    """Never trust unbound or repeated MODE/DATA_DIR; ignore unrelated config keys."""
+    files = _synthetic_windows_personal_owner_scope(tmp_path, monkeypatch)
+    good = files.env.read_text(encoding="utf-8")
+    assert recovery_cli.windows_personal_owner_scope(files.path)
+    files.env.write_text("# note\n\nUNKNOWN_SETTING=allowed\n" + good, encoding="utf-8")
+    assert recovery_cli.windows_personal_owner_scope(files.path)
+    files.env.write_text(good + "PARTYOPS_MODE=personal\n", encoding="utf-8")
+    assert not recovery_cli.windows_personal_owner_scope(files.path)
+    files.env.write_text(
+        good.replace("PARTYOPS_MODE=personal", "PARTYOPS_MODE=host"),
+        encoding="utf-8",
+    )
+    assert not recovery_cli.windows_personal_owner_scope(files.path)
+    files.env.write_text(good, encoding="utf-8")
+    assert recovery_cli.windows_personal_owner_scope(files.path)
