@@ -243,7 +243,7 @@ def _verify_frozen_installed_manifest(runtime: Path) -> None:
     this executable's bytes. Do not synthesize a manifest or bypass hashing.
     This is intentionally a no-op for normal Python/source test runs.
     """
-    if os.name != "nt" or not getattr(sys, "frozen", False):
+    if sys.platform != "win32" or not getattr(sys, "frozen", False):
         return
     from . import __version__
     from .windows_runtime_identity import read_installed_manifest
