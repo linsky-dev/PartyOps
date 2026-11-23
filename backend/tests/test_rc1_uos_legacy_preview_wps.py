@@ -117,3 +117,63 @@ def test_legacy_preview_refuses_symlinked_source_record(preview):
     source.unlink()
     source.symlink_to(host)
     assert not pkg._allow_pinned_uos_rc6_formatter_preview(host, source, record)
+
+
+@pytest.mark.parametrize("package_format,arch", [
+    ("linux-deb", "arm64"),
+    ("linux-rpm", "amd64"),
+    ("linux-rpm", "arm64"),
+])
+def test_pinned_cross_distro_wps_preview_rejects_tampering(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, package_format: str, arch: str
+) -> None:
+    """Only old unchanged RC6 native bytes with both receipt and full manifest."""
+    if os.name == "nt":
+        pytest.skip("Linux-specific source and ABI preview")
+    monkeypatch.setattr(pkg, "_source_formatter_architecture", lambda: arch)
+    pin = pkg._PINNED_RC6_LINUX_PREVIEWS[(package_format, arch)]
+    root = tmp_path / "PartyOps"
+    folder = root / "formatter-host"
+    folder.mkdir(parents=True)
+    host = folder / "partyops-document-formatter-host"
+    source = folder / "source-host.json"
+    evidence = folder / "runtime-evidence.json"
+    for p in (host, source, evidence):
+        p.write_bytes(b"synthetic-preview-test")
+    hashes = {
+        host.name: pin["host_sha"],
+        source.name: pin["source_sha"],
+        evidence.name: pin["evidence_sha"],
+    }
+    monkeypatch.setattr(pkg, "_sha256", lambda p: hashes.get(p.name, "0" * 64))
+    head = "d" * 40
+    snapshot = pkg._UOS_RC6_LEGACY_SOURCE_SNAPSHOT
+    record = {"source_snapshot_sha256": snapshot}
+    receipt = {
+        "schema_version": 1, "status": "BUILD_ONLY_UNVERIFIED",
+        "version": "1.4.6-rc.1", "architecture": arch,
+        "target_os": pin["target_os"], "source_sha": head,
+        "original_package_sha256": pin["donor_sha"],
+        "historical_wps_host_sha256": pin["host_sha"],
+        "historical_wps_source_record_sha256": pin["source_sha"],
+        "historical_wps_evidence_sha256": pin["evidence_sha"],
+        "historical_wps_snapshot_sha256": snapshot,
+        "historical_wps_host_unchanged": True,
+        "wps_native_tests_rerun": False, "release_ready": False,
+    }
+    manifest = {
+        "schema_version": 1, "product": "PartyOps",
+        "version": "1.4.6-rc.1", "platform": package_format,
+        "architecture": arch, "runtime_profile": "uos-v20",
+        "source_commit": head, "signed": False,
+        "files": [
+            {"path": f"formatter-host/{name}", "sha256": digest}
+            for name, digest in hashes.items()
+        ],
+    }
+    (root / "RC1-LINUX-BUILD-ONLY.json").write_text(json.dumps(receipt))
+    (root / "release-manifest.json").write_text(json.dumps(manifest))
+    assert pkg._allow_pinned_rc6_linux_preview(host, source, record)
+    receipt["historical_wps_host_sha256"] = "0" * 64
+    (root / "RC1-LINUX-BUILD-ONLY.json").write_text(json.dumps(receipt))
+    assert not pkg._allow_pinned_rc6_linux_preview(host, source, record)

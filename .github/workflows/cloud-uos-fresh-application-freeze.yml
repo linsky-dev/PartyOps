@@ -6,6 +6,8 @@ on:
     paths:
       - '.github/workflows/cloud-uos-fresh-application-freeze.yml'
       - 'scripts/rc1-uos-cloud-freeze.sh'
+      - 'scripts/rc1_linux_arm64_assemble_buildonly_deb.py'
+      - 'backend/app/package_selftest.py'
   workflow_dispatch:
 
 permissions:
@@ -272,3 +274,68 @@ jobs:
           compression-level: 0
           retention-days: 14
           if-no-files-found: error
+
+      - name: Download exact Kylin ARM64 original package for shared Kylin/UOS ARM64 candidate
+        if: matrix.arch == 'arm64' && steps.actual-freeze.outcome == 'success'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/uos-app-inputs/arm64
+          gh release download v1.4.5-rc.6 --repo "$GITHUB_REPOSITORY" \
+            --pattern 'PartyOps_1.4.5-rc.6_linux_arm64_kylin-full-20261016.deb' \
+            --dir artifacts/uos-app-inputs/arm64 --clobber
+          printf '%s  %s\n' \
+            17d0e3a3acf060d3c65299c012078435bacc0da3f1f0a909fe3cc997cbbee69c \
+            artifacts/uos-app-inputs/arm64/PartyOps_1.4.5-rc.6_linux_arm64_kylin-full-20261016.deb |
+            sha256sum --check
+
+      - name: Build real Kylin/UOS ARM64 DEB candidate from fresh RC1 arm64 source
+        if: matrix.arch == 'arm64' && steps.actual-freeze.outcome == 'success'
+        id: actual-arm64-deb
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m py_compile scripts/rc1_linux_arm64_assemble_buildonly_deb.py
+          mkdir -p artifacts/rc1-arm64-deb-buildonly
+          python scripts/rc1_linux_arm64_assemble_buildonly_deb.py \
+            --donor artifacts/uos-app-inputs/arm64/PartyOps_1.4.5-rc.6_linux_arm64_kylin-full-20261016.deb \
+            --app artifacts/uos-app-freeze/arm64/dist/PartyOps \
+            --app-receipt artifacts/uos-app-freeze/arm64/result.json \
+            --output artifacts/rc1-arm64-deb-buildonly/PartyOps_1.4.6-rc.1_kylin_uos_arm64_BUILD_ONLY_UNVERIFIED.deb
+          cd artifacts/rc1-arm64-deb-buildonly
+          sha256sum --check PartyOps_1.4.6-rc.1_kylin_uos_arm64_BUILD_ONLY_UNVERIFIED.deb.sha256
+          test "$(dpkg-deb --field PartyOps_1.4.6-rc.1_kylin_uos_arm64_BUILD_ONLY_UNVERIFIED.deb Architecture)" = arm64
+          echo 'Kylin/UOS ARM64 real DEB BUILD_ONLY=PASS_NOT_NATIVE_INSTALLED'
+
+      - name: Check native arm64 LibreOffice private loader in glibc 2.28 target
+        if: matrix.arch == 'arm64' && steps.actual-arm64-deb.outcome == 'success'
+        shell: bash
+        run: |
+          set -euo pipefail
+          out=artifacts/rc1-arm64-deb-buildonly
+          mkdir -p "$out/probe"
+          dpkg-deb -x "$out/PartyOps_1.4.6-rc.1_kylin_uos_arm64_BUILD_ONLY_UNVERIFIED.deb" "$out/probe"
+          image=quay.io/pypa/manylinux_2_28_aarch64:latest
+          docker pull "$image"
+          pinned="$(docker inspect --format '{{ index .RepoDigests 0 }}' "$image")"
+          test -n "$pinned"
+          docker run --rm --network none \
+            --volume "$GITHUB_WORKSPACE/$out/probe:/candidate:ro" "$pinned" /bin/bash -c \
+            'set -euo pipefail; test "$(getconf GNU_LIBC_VERSION)" = "glibc 2.28"; timeout 90 /candidate/opt/partyops/office-runtime/program/soffice --headless --version'
+          echo 'Kylin/UOS arm64 private Office loader smoke=PASS'
+          rm -rf "$out/probe"
+
+      - name: Upload genuine new ARM64 DEB for Kylin/UOS non-production install QA
+        if: matrix.arch == 'arm64' && steps.actual-arm64-deb.outcome == 'success'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: partyops-RC1-kylin-uos-arm64-ACTUAL-DEB-BUILD_ONLY-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            artifacts/rc1-arm64-deb-buildonly/*.deb
+            artifacts/rc1-arm64-deb-buildonly/*.sha256
+            artifacts/rc1-arm64-deb-buildonly/buildonly-receipt.json
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
