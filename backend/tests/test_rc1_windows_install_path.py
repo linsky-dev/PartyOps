@@ -67,3 +67,28 @@ def test_upgrade_finds_prior_install_in_32_and_64bit_registry_and_enforces_reuse
     assert iss.index("Result := ValidateUpgradeLocations;", iss.index(
         "function PrepareToInstall")) < iss.index("Result := EnsureDotNet48(NeedsRestart);",
         iss.index("function PrepareToInstall"))
+
+
+def test_interrupted_upgrade_recovers_previous_business_data_pointer_without_uninstall() -> None:
+    iss = INSTALLER.read_text(encoding="utf-8-sig")
+    start = iss.index("procedure BeginDataMarkerTransaction;")
+    end = iss.index("procedure CommitPostInstallTransactions;", start)
+    segment = iss[start:end]
+    assert "if FileExists(DataMarkerPreviousPath) then" in segment
+    assert "not DeleteFile(DataMarkerPath)" in segment
+    assert "RenameFile(DataMarkerPreviousPath, DataMarkerPath)" in segment
+    assert "DATA_MARKER_INTERRUPTED_RECOVERY_FAILED" in segment
+    assert segment.index("RenameFile(DataMarkerPreviousPath, DataMarkerPath)") < segment.index(
+        "DataMarkerHadPrevious := FileExists(DataMarkerPath)"
+    )
+    assert "DeleteFile(DataMarkerPreviousPath);" not in segment
+    assert "RollbackDataMarker;" in iss
+    assert "未完成的升级" in segment
+
+
+def test_unsafe_legacy_acl_does_not_instruct_destructive_uninstall() -> None:
+    content = VALIDATOR.read_text(encoding="utf-8-sig")
+    assert "INSTALL_DIR_EXISTING_ACL_UNSAFE" in content
+    assert "请先卸载旧版本" not in content
+    assert "请保留旧版安装及数据" in content
+    assert "Assert-SecureDirectoryAcl $fullPath -ForProgramDirectory" in content

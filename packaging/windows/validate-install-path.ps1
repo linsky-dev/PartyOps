@@ -87,7 +87,7 @@ function Assert-SecureDirectoryAcl {
     if ($canDeleteChild -or
         (-not $isVolumeRoot -and $canDeleteObject) -or
         $canChangeProgramContent) {
-      Stop-InstallPathValidation "INSTALL_DIR_EXISTING_ACL_UNSAFE" "现有 PartyOps 程序目录允许其他普通用户修改内容：$DirectoryPath（主体 $sid）。安装器无法确认其中旧文件可信；请先卸载旧版本或选择空目录。" 6
+      Stop-InstallPathValidation "INSTALL_DIR_EXISTING_ACL_UNSAFE" "现有 PartyOps 程序目录允许其他普通用户修改内容：$DirectoryPath（主体 $sid）。安装器无法确认其中旧文件可信；为保护原业务数据，请保留旧版安装及数据，联系管理员核对旧安装文件并修复异常目录权限后重试，不要直接卸载。" 6
     }
   }
 }

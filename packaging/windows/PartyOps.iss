@@ -1862,7 +1862,20 @@ begin
     RaiseException('[DATA_MARKER_DENIED] 无法创建 PartyOps 系统引导目录。');
   DataMarkerPath := ExpandConstant('{commonappdata}\PartyOps\install-data-dir.txt');
   DataMarkerPreviousPath := DataMarkerPath + '.previous';
-  DeleteFile(DataMarkerPreviousPath);
+  { An interrupted previous upgrade may have left the original business
+    data pointer in .previous. Never discard the only valid old location.
+    Recover that value BEFORE beginning a new transaction. A previous file
+    remaining after a crash means the last change was not cleanly committed. }
+  if FileExists(DataMarkerPreviousPath) then
+  begin
+    if FileExists(DataMarkerPath) and
+       (not DeleteFile(DataMarkerPath)) then
+      RaiseException('[DATA_MARKER_INTERRUPTED_RECOVERY_FAILED] ' +
+        '无法保护上次升级前的数据目录标记，安装已停止，原数据未修改。');
+    if not RenameFile(DataMarkerPreviousPath, DataMarkerPath) then
+      RaiseException('[DATA_MARKER_INTERRUPTED_RECOVERY_FAILED] ' +
+        '无法从上次未完成的升级恢复原数据目录标记，安装已停止。');
+  end;
   DataMarkerHadPrevious := FileExists(DataMarkerPath);
   if DataMarkerHadPrevious and
      (not RenameFile(DataMarkerPath, DataMarkerPreviousPath)) then
