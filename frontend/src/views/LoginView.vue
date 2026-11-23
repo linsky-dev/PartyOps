@@ -238,12 +238,15 @@ async function submit() {
           {{ showHostRecoveryHelp ? "收起主机应急恢复说明" : "我是唯一管理员，忘记密码且没有恢复码" }}
         </a-button>
         <div v-if="showHostRecoveryHelp" class="host-recovery-help">
-          <a-alert type="warning">没有预存恢复码时，不能仅凭网页或用户名重置密码。请在实际存放业务数据库的主机本机，使用操作系统管理员权限完成应急恢复；协同电脑和远程网页不能执行。</a-alert>
+          <a-alert type="warning">没有预存恢复码时，不能仅凭网页或用户名重置密码。团队主机须由操作系统管理员执行；Windows 个人模式仅允许当前配置和数据库所属的 Windows 账户操作。协同电脑与远程网页不能执行。</a-alert>
           <p>先备份主机业务数据并停止 PartyOps 主机服务；在提升权限的本机交互终端执行以下命令。将数据目录替换为该主机实际使用的目录，不得指向新建空目录。</p>
           <p><strong>UOS、麒麟及其他 Linux：</strong></p>
           <code>sudo /opt/partyops/partyops --account-recovery emergency --data-dir /var/lib/partyops</code>
-          <p><strong>Windows：</strong>以管理员身份打开 PowerShell，在实际安装目录运行：</p>
-          <code>&amp; ".&#92;PartyOps.exe" --account-recovery emergency --data-dir "实际主机数据目录"</code>
+          <p><strong>Windows 团队主机：</strong>在管理员 PowerShell 中，从主机安装配置确认实际业务数据目录（默认 C:&#92;ProgramData&#92;PartyOps-Data），进入程序安装目录后执行：</p>
+          <code>&amp; ".&#92;PartyOps.exe" --account-recovery emergency --data-dir "C:&#92;ProgramData&#92;PartyOps-Data"</code>
+          <p><strong>Windows 个人使用：</strong>在原 Windows 登录账户的普通 PowerShell 中执行，无须系统管理员提权。先核对当前账户的 %LOCALAPPDATA%&#92;PartyOps&#92;personal.env 中 PARTYOPS_DATA_DIR；默认示例如下：</p>
+          <code>&amp; ".&#92;PartyOps.exe" --account-recovery emergency --data-dir "$env:LOCALAPPDATA&#92;PartyOps-个人数据"</code>
+          <p>以上 Windows 路径均为默认示例；自定义目录必须按原配置填写。个人模式若换用其他 Windows 账户或目录 ACL 不安全，工具会拒绝操作，不能通过新建目录规避。</p>
           <p>确认后工具只显示一次 30 分钟有效恢复凭据。重启主机服务后，在上方“恢复凭据”和“新密码”输入框完成重置；旧账号、业务数据及权限均保留，旧会话将失效。</p>
           <p>如有其他有效管理员，应由该管理员使用正式后台流程操作，不应使用本机应急模式。</p>
         </div>
