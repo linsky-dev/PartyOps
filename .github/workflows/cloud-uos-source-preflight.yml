@@ -14,6 +14,10 @@ on:
       - 'packaging/uos/desktop-launcher.sh'
       - 'scripts/package-uos-release.ps1'
       - 'scripts/package-uos-build-kit.ps1'
+      - 'backend/app/package_selftest.py'
+      - 'backend/tests/test_rc1_uos_legacy_preview_wps.py'
+      - 'scripts/rc1_uos_assemble_buildonly_deb.py'
+      - 'scripts/rc1-uos-cloud-freeze.sh'
   workflow_dispatch:
 
 permissions:
@@ -61,7 +65,11 @@ jobs:
           python scripts/verify-version-consistency.py --root . --expected 1.4.6-rc.1
           bash -n packaging/uos/build-portable.sh packaging/uos/one-click-install.sh \
             packaging/linux/build-native.sh packaging/linux/post-install-transaction.sh
-          python -m pytest --noconftest -q backend/tests/test_rc1_uos_packaging_preflight.py
+          python -m py_compile scripts/rc1_uos_assemble_buildonly_deb.py
+          bash -n scripts/rc1-uos-cloud-freeze.sh
+          PYTHONPATH=backend python -m pytest --noconftest -q \
+            backend/tests/test_rc1_uos_packaging_preflight.py \
+            backend/tests/test_rc1_uos_legacy_preview_wps.py
           mkdir -p artifacts/uos-source
           python scripts/rc1_uos_preflight.py --architecture "$TARGET_ARCH" \
             --output "artifacts/uos-source/preflight-$TARGET_ARCH.json"

@@ -209,3 +209,51 @@ jobs:
           if-no-files-found: error
           compression-level: 0
           retention-days: 7
+
+      - name: Download authentic RC6 UOS V20 AMD64 donor, byte-verify before staging
+        if: matrix.arch == 'amd64' && steps.actual-freeze.outcome == 'success'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          input="artifacts/uos-app-inputs/amd64"
+          gh release download v1.4.5-rc.6 --repo "$GITHUB_REPOSITORY" \
+            --pattern 'PartyOps_1.4.5-rc.6_linux_amd64.deb' --dir "$input" --clobber
+          printf '%s  %s\n' \
+            4557129b9f081c1b525d6dd6c6d444f7e0d35d63021b4b1c20c8daeffd4c30ae \
+            "$input/PartyOps_1.4.5-rc.6_linux_amd64.deb" | sha256sum --check
+
+      - name: Assemble REAL new RC1 UOS AMD64 DEB using byte-identical prior native WPS
+        if: matrix.arch == 'amd64' && steps.actual-freeze.outcome == 'success'
+        id: actual-preview-deb
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m py_compile scripts/rc1_uos_assemble_buildonly_deb.py
+          input="artifacts/uos-app-inputs/amd64"
+          freeze="artifacts/uos-app-freeze/amd64"
+          out="artifacts/uos-deb-buildonly"
+          mkdir -p "$out"
+          python scripts/rc1_uos_assemble_buildonly_deb.py \
+            --donor "$input/PartyOps_1.4.5-rc.6_linux_amd64.deb" \
+            --app "$freeze/dist/PartyOps" \
+            --app-receipt "$freeze/result.json" \
+            --output "$out/PartyOps_1.4.6-rc.1_uos_v20_amd64_BUILD_ONLY_UNVERIFIED.deb"
+          (cd "$out" && sha256sum --check PartyOps_1.4.6-rc.1_uos_v20_amd64_BUILD_ONLY_UNVERIFIED.deb.sha256)
+          dpkg-deb --field "$out/PartyOps_1.4.6-rc.1_uos_v20_amd64_BUILD_ONLY_UNVERIFIED.deb" \
+            Package Version Architecture
+          echo 'UOS_HOSTED_NATIVE_DEB_ASSEMBLED=BUILD_ONLY_NOT_UOS_INSTALLED'
+
+      - name: Upload genuine RC1 UOS AMD64 DEB installer for local upgrade QA
+        if: matrix.arch == 'amd64' && steps.actual-preview-deb.outcome == 'success'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: partyops-uos-v20-amd64-RC1-ACTUAL-DEB-BUILD_ONLY-UNVERIFIED-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            artifacts/uos-deb-buildonly/*.deb
+            artifacts/uos-deb-buildonly/*.sha256
+            artifacts/uos-deb-buildonly/buildonly-receipt.json
+          compression-level: 0
+          retention-days: 14
+          if-no-files-found: error
