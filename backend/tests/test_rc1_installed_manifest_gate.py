@@ -111,6 +111,7 @@ def test_large_release_manifest_is_not_misreported_as_missing(
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
     assert 4 * 1024 * 1024 < manifest_path.stat().st_size < 8 * 1024 * 1024
     assert read_installed_manifest(exe)["product"] == "PartyOps"
+    assert setup_wizard._marked_runtime_file_is_trusted(tmp_path, exe)
 
     with pytest.raises(setup_wizard.HostStartupError) as failure:
         setup_wizard._preflight_windows_runtime_dependencies(
