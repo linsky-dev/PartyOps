@@ -11,6 +11,8 @@ on:
       - 'backend/tests/test_rc1_installed_manifest_gate.py'
       - 'backend/app/startup_selftest.py'
       - 'backend/app/setup_wizard.py'
+      - 'packaging/windows/windows_launcher.py'
+      - 'backend/tests/test_windows_launcher_visible_handoff.py'
       - 'scripts/rc1-windows-installed-smoke.ps1'
       - 'scripts/rc1-windows-detached-drive-smoke.ps1'
       - 'scripts/rc1_windows_historical_wps_reference.py'
