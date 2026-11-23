@@ -68,7 +68,9 @@ jobs:
             # Deliberately DO NOT add ephemeral QA certificates to the Windows
             # trusted Root store. Hosted runners can block this operation (and
             # modifying host trust would be unnecessary for a digest test).
-            # An intact self-signed signature must be present but NotTrusted.
+            # Windows may classify an untrusted self-signed signer as
+            # NotTrusted or UnknownError. Neither is evidence of publisher
+            # trust: require the exact signer plus independent tamper rejection.
             # A production publisher certificate is unavailable. Sign a
             # tiny independently compiled PE only to validate WinVerifyTrust,
             # signer certificate identity and tamper refusal; do NOT pretend
@@ -96,12 +98,13 @@ jobs:
             Write-Host 'QA_AUTHENTICODE_STAGE_VERIFY_BEGIN'
             $valid = Get-AuthenticodeSignature -LiteralPath $qaCopy
             Write-Host "QA_AUTHENTICODE_STAGE_VERIFY_RETURNED=$($valid.Status)"
-            if ($valid.Status -ne 'NotTrusted' -or -not $valid.SignerCertificate -or
+            if ($valid.Status -notin @('NotTrusted','UnknownError') -or -not $valid.SignerCertificate -or
                 $valid.SignerCertificate.Thumbprint -ne $cert.Thumbprint) {
               throw "[QA_SIGNING_UNTRUSTED_BUT_INTACT_REQUIRED] $($valid.Status) / $($result.Status)"
             }
             $report['qa_signed_copy_verified'] = $true
             $report['qa_signature_trusted_by_windows'] = $false
+            $report['untrusted_signer_status'] = [string]$valid.Status
             $report['qa_certificate_public_thumbprint'] = $cert.Thumbprint
             Copy-Item -LiteralPath $qaCopy -Destination $tamper
             $f = [IO.File]::Open($tamper,[IO.FileMode]::Open,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None)
@@ -115,6 +118,7 @@ jobs:
               $f.WriteByte([byte]($value -bxor 1))
             } finally { $f.Dispose() }
             $altered = Get-AuthenticodeSignature -LiteralPath $tamper
+            Write-Host "QA_AUTHENTICODE_STAGE_TAMPER_VERIFY_RETURNED=$($altered.Status)"
             if ($altered.Status -ne 'HashMismatch') {
               throw "[QA_SIGNING_TAMPER_HASH_MISMATCH_REQUIRED] $($altered.Status)"
             }
