@@ -1,0 +1,141 @@
+name: RC1 Windows ARM64 native OCR and local AI inputs
+on:
+  pull_request:
+    branches: [feature/1.4.6-rc1-cloud-rebuild]
+    paths:
+      - '.github/workflows/cloud-rc1-arm64-ocr-ai.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  ai:
+    runs-on: windows-11-arm
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Verify exact upstream b10331 CPU ARM64 archive and execute real llama-server
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $out=Join-Path $PWD 'artifacts/arm64-ai'
+          New-Item -ItemType Directory -Force $out | Out-Null
+          $archive=Join-Path $env:RUNNER_TEMP 'llama-b10331-bin-win-cpu-arm64.zip'
+          curl.exe --fail --location --retry 3 --output $archive 'https://github.com/ggml-org/llama.cpp/releases/download/b10331/llama-b10331-bin-win-cpu-arm64.zip'
+          if ($LASTEXITCODE -ne 0 -or (Get-Item $archive).Length -ne 12236214 -or (Get-FileHash $archive).Hash.ToLowerInvariant() -ne '58249dd20fe4b4bda186c17f093f45d1310ac8ce98c046fe2b8fa5c43b85f08d') { throw 'LLAMA_UPSTREAM_ARCHIVE_INVALID' }
+          Expand-Archive $archive "$out/upstream"
+          $server=@(Get-ChildItem "$out/upstream" -Recurse -File -Filter 'llama-server.exe')
+          if ($server.Count -ne 1) { throw 'LLAMA_SERVER_MISSING' }
+          $rows=@()
+          foreach ($file in (Get-ChildItem $server[0].Directory.FullName -File | Where-Object { $_.Extension -in '.dll','.exe' })) {
+            $s=[IO.File]::OpenRead($file.FullName)
+            try {
+              $rd=[IO.BinaryReader]::new($s)
+              if ($rd.ReadUInt16() -ne 0x5A4D) { throw 'INVALID_PE' }
+              $s.Position=60; $offset=$rd.ReadInt32()
+              if ($offset -lt 64 -or $offset -gt $s.Length-6) { throw 'INVALID_PE_OFFSET' }
+              $s.Position=$offset
+              if ($rd.ReadUInt32() -ne 0x4550 -or $rd.ReadUInt16() -ne 0xAA64) { throw "NON_NATIVE_AI_BINARY $($file.Name)" }
+            } finally { $s.Dispose() }
+            $rows+=@{name=$file.Name;sha256=(Get-FileHash $file.FullName).Hash.ToLowerInvariant()}
+          }
+          & $server[0].FullName --version *> "$out/version.txt"
+          if ($LASTEXITCODE -ne 0) { throw 'LLAMA_NATIVE_VERSION_FAILED' }
+          & $server[0].FullName --help *> "$out/help.txt"
+          if ($LASTEXITCODE -ne 0 -or -not (Select-String -LiteralPath "$out/help.txt" -Pattern '--model' -Quiet)) { throw 'LLAMA_NATIVE_HELP_FAILED' }
+          @{tag='b10331';architecture='arm64';archive_sha256='58249dd20fe4b4bda186c17f093f45d1310ac8ce98c046fe2b8fa5c43b85f08d';files=$rows;status='NATIVE_RUNTIME_VERSION_HELP_PASS';model_inference_tested=$false;installer_created=$false;release_ready=$false} | ConvertTo-Json -Depth 5 | Set-Content "$out/SOURCE.json"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: RC1-ARM64-llama-b10331-NATIVE-INPUT-NOT-INSTALLER-${{ github.event.pull_request.head.sha || github.sha }}
+          path: artifacts/arm64-ai
+          if-no-files-found: warn
+          retention-days: 14
+  ocr:
+    runs-on: windows-11-arm
+    timeout-minutes: 120
+    env:
+      VCPKG_BINARY_SOURCES: clear
+      VCPKG_COMMIT: 2f8bf7a5bad48aaef99d80b221fca712f016ab8f
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: 'e0f3b23c0359ff2d7509b669077db13e75ae713f'
+          persist-credentials: false
+      - name: Build pinned Tesseract 5.5.4 ARM64 static CPU runtime from upstream vcpkg source
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $v=Join-Path $env:RUNNER_TEMP 'vcpkg-ocr'
+          git init $v
+          git -C $v remote add origin https://github.com/microsoft/vcpkg.git
+          git -C $v fetch --depth=1 origin $env:VCPKG_COMMIT
+          if ($LASTEXITCODE -ne 0) { throw 'VCPKG_FETCH_FAILED' }
+          git -C $v checkout --detach FETCH_HEAD
+          if ((git -C $v rev-parse HEAD).Trim() -ne $env:VCPKG_COMMIT) { throw 'VCPKG_SOURCE_MISMATCH' }
+          if ((Get-Content "$v/ports/tesseract/vcpkg.json" -Raw | ConvertFrom-Json).version -ne '5.5.4') { throw 'OCR_VERSION_MISMATCH' }
+          & "$v/bootstrap-vcpkg.bat" -disableMetrics
+          if ($LASTEXITCODE -ne 0) { throw 'VCPKG_BOOTSTRAP_FAILED' }
+          $trip=Join-Path $env:RUNNER_TEMP 'partyops-triplets'
+          New-Item -ItemType Directory -Force $trip | Out-Null
+          @('set(VCPKG_TARGET_ARCHITECTURE arm64)','set(VCPKG_CRT_LINKAGE static)','set(VCPKG_LIBRARY_LINKAGE static)','set(VCPKG_BUILD_TYPE release)') | Set-Content "$trip/arm64-partyops-static.cmake"
+          $out=Join-Path $PWD 'artifacts/arm64-ocr'
+          New-Item -ItemType Directory -Force $out | Out-Null
+          & "$v/vcpkg.exe" install 'tesseract[core]:arm64-partyops-static' "--overlay-triplets=$trip" '--host-triplet=arm64-windows' '--classic' *> "$out/build.log"
+          if ($LASTEXITCODE -ne 0) { Get-Content "$out/build.log" -Tail 80; throw 'ARM64_NATIVE_OCR_BUILD_FAILED' }
+          $installed=Join-Path $v 'installed/arm64-partyops-static'
+          $engine=Join-Path $installed 'tools/tesseract/tesseract.exe'
+          if (-not (Test-Path $engine -PathType Leaf)) { throw 'OCR_ENGINE_MISSING' }
+          $stream=[IO.File]::OpenRead($engine)
+          try {
+            $rd=[IO.BinaryReader]::new($stream)
+            if ($rd.ReadUInt16() -ne 0x5A4D) { throw 'INVALID_PE' }
+            $stream.Position=60; $offset=$rd.ReadInt32()
+            if ($offset -lt 64 -or $offset -gt $stream.Length-6) { throw 'INVALID_PE_OFFSET' }
+            $stream.Position=$offset
+            if ($rd.ReadUInt32() -ne 0x4550 -or $rd.ReadUInt16() -ne 0xAA64) { throw 'OCR_NOT_NATIVE_ARM64' }
+          } finally { $stream.Dispose() }
+          $runtime=Join-Path $out 'runtime'
+          New-Item -ItemType Directory -Force "$runtime/bin","$runtime/tessdata","$runtime/licenses" | Out-Null
+          Copy-Item $engine "$runtime/bin/tesseract.exe"
+          $original='vendor/windows/ocr/tesseract-5.5.2-win7-amd64-runtime'
+          $source=Get-Content "$original/SOURCE.json" -Raw | ConvertFrom-Json
+          foreach ($property in $source.models.PSObject.Properties) {
+            $path=Join-Path "$original/tessdata" $property.Name
+            if ((Get-FileHash $path).Hash.ToLowerInvariant() -ne $property.Value) { throw 'OCR_MODEL_HASH_MISMATCH' }
+            Copy-Item $path "$runtime/tessdata/"
+          }
+          Copy-Item "$original/licenses/LICENSE-tessdata-fast.txt" "$runtime/licenses/"
+          foreach ($dir in (Get-ChildItem "$installed/share" -Directory)) {
+            if (Test-Path "$($dir.FullName)/copyright") { Copy-Item "$($dir.FullName)/copyright" "$runtime/licenses/LICENSE-$($dir.Name).txt" }
+          }
+          if (-not (Test-Path "$runtime/licenses/LICENSE-tesseract.txt")) { throw 'OCR_LICENSE_MISSING' }
+          $env:TESSDATA_PREFIX="$runtime/tessdata"
+          & "$runtime/bin/tesseract.exe" --version *> "$out/version.txt"
+          if ($LASTEXITCODE -ne 0 -or -not (Select-String "$out/version.txt" -Pattern '5\.5\.4' -Quiet)) { throw 'OCR_NATIVE_VERSION_FAILED' }
+          & "$runtime/bin/tesseract.exe" --list-langs *> "$out/languages.txt"
+          if ($LASTEXITCODE -ne 0) { throw 'OCR_LANGUAGES_FAILED' }
+          foreach ($language in @('chi_sim','eng','osd')) {
+            if (-not (Select-String "$out/languages.txt" -Pattern "^$language$" -Quiet)) { throw "OCR_LANGUAGE_MISSING $language" }
+          }
+          Add-Type -AssemblyName System.Drawing
+          $image=[Drawing.Bitmap]::new(900,220)
+          $g=[Drawing.Graphics]::FromImage($image)
+          $font=[Drawing.Font]::new('Arial',48)
+          try {
+            $g.Clear([Drawing.Color]::White)
+            $g.DrawString('PartyOps 123', $font, [Drawing.Brushes]::Black, 20, 30)
+            $image.Save("$out/fixture.png",[Drawing.Imaging.ImageFormat]::Png)
+          } finally { $font.Dispose(); $g.Dispose(); $image.Dispose() }
+          & "$runtime/bin/tesseract.exe" "$out/fixture.png" stdout -l eng --psm 7 *> "$out/recognition.txt"
+          if ($LASTEXITCODE -ne 0 -or -not (Select-String "$out/recognition.txt" -Pattern 'PartyOps\s+123' -Quiet)) { throw 'OCR_ACTUAL_RECOGNITION_FAILED' }
+          @{architecture='arm64';version='5.5.4';vcpkg_commit=$env:VCPKG_COMMIT;engine_sha256=(Get-FileHash "$runtime/bin/tesseract.exe").Hash.ToLowerInvariant();models=$source.models;status='NATIVE_OCR_ENGLISH_RECOGNITION_PASS';chinese_model_present=$true;chinese_recognition_tested=$false;installer_created=$false;release_ready=$false} | ConvertTo-Json -Depth 6 | Set-Content "$runtime/SOURCE.json"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: RC1-ARM64-Tesseract-NATIVE-INPUT-NOT-INSTALLER-${{ github.event.pull_request.head.sha || github.sha }}
+          path: artifacts/arm64-ocr
+          if-no-files-found: warn
+          retention-days: 14
