@@ -95,8 +95,9 @@ jobs:
           $repo=(Resolve-Path packaging-source).Path
           $arch=if ($env:ARCH -eq 'amd64') {'x64'} else {'x86'}
           $python=(python -c 'import sys;print(sys.executable)').Trim()
-          & "$repo/scripts/build-document-formatter-host.ps1" -Platform $arch -StageDirectory "$bundle/formatter-host" -PythonPath $python
+          & "$repo/scripts/build-document-formatter-host.ps1" -Platform $arch -StageDirectory "$repo/artifacts/win7-formatter-host" -PythonPath $python
           if ($LASTEXITCODE -ne 0) { throw 'FORMATTER_BUILD_FAILED' }
+          Copy-Item -LiteralPath "$repo/artifacts/win7-formatter-host" -Destination "$bundle/formatter-host" -Recurse
           # The helper intentionally restricts its destination to the exact source repo.
           . "$repo/packaging/windows/prepare-dotnet48-runtime.ps1"
           Add-VerifiedPartyOpsDotNet48Prerequisite -RepoRoot $repo -Destination "$repo/artifacts/win7-prerequisites"
@@ -111,9 +112,13 @@ jobs:
           $bundle=(Resolve-Path 'artifacts/win7-package-preflight/app-with-prerequisites').Path
           python packaging-source/scripts/validate-win7-pe.py --root $bundle --architecture $env:ARCH
           if ($LASTEXITCODE -ne 0) { throw 'FULL_WIN7_PE_GATE_BLOCKED' }
+          # Match original packaging: the installer-only prerequisite must not enter the installed manifest.
+          $prerequisites=Join-Path $env:RUNNER_TEMP 'win7-manifest-prerequisites'
+          Move-Item -LiteralPath "$bundle/prerequisites" -Destination $prerequisites
           $profile=if ($env:ARCH -eq 'amd64') {'legacy-smart'} else {'legacy-core'}
           python packaging-source/scripts/generate-release-manifest.py --root $bundle --output "$bundle/release-manifest.json" --version '1.4.6-rc.1' --tag 'v1.4.6-rc.1' --commit '4cb9484f155635dd9bc1ca58fead00bb41b9cd0a' --platform windows7 --architecture $env:ARCH --runtime-profile $profile
           if ($LASTEXITCODE -ne 0 -or (Get-Item "$bundle/release-manifest.json").Length -gt 8MB) { throw 'RELEASE_MANIFEST_INVALID' }
+          Move-Item -LiteralPath $prerequisites -Destination "$bundle/prerequisites"
       - name: Compile actual original Win7 Inno installer as an unsigned QA candidate
         shell: pwsh
         run: |
