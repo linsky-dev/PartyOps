@@ -6,6 +6,8 @@ on:
       - 'backend/app/setup_wizard.py'
       - 'backend/app/desktop_recovery.py'
       - 'backend/tests/test_rc1_personal_source_preservation.py'
+      - 'backend/tests/test_rc1_desktop_recovery_dialog.py'
+      - 'backend/tests/test_setup_wizard_process_ownership_rc9.py'
       - '.github/workflows/cloud-rc1-personal-source-preservation.yml'
 permissions:
   contents: read
@@ -35,7 +37,7 @@ jobs:
       - name: Exercise actual source guard, recovery transaction, bind retries and prior ownership tests
         working-directory: backend
         run: |
-          uv run --frozen --no-sync python -m pytest tests/test_rc1_personal_source_preservation.py tests/test_rc1_personal_bind_retry.py tests/test_rc1_desktop_recovery.py tests/test_rc1_recovery_cli.py tests/test_setup_wizard_process_ownership_rc9.py -rs --junitxml=../personal-qa.xml
+          uv run --frozen --no-sync python -m pytest tests/test_rc1_personal_source_preservation.py tests/test_rc1_personal_bind_retry.py tests/test_rc1_desktop_recovery.py tests/test_rc1_desktop_recovery_dialog.py tests/test_rc1_recovery_cli.py tests/test_setup_wizard_process_ownership_rc9.py -rs --junitxml=../personal-qa.xml
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
