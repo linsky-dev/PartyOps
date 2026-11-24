@@ -1,0 +1,138 @@
+name: RC1 Win7 historical backport source recovery and candidate wheel rebuild (NOT INSTALLER)
+on:
+  pull_request:
+    branches: [main, feature/1.4.6-rc1-cloud-rebuild]
+    paths:
+      - '.github/workflows/cloud-rc1-win7-backport-history.yml'
+      - 'scripts/rc1_win7_historical_backport_audit.py'
+      - 'backend/legacy/historical-backports/**'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  audit:
+    runs-on: windows-2022
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+          architecture: x64
+      - name: Validate recovered historical patches and attempt isolated pure Python candidate wheels
+        shell: pwsh
+        run: python scripts/rc1_win7_historical_backport_audit.py --out artifacts/win7-backport-recovery
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: RC1-Win7-HISTORICAL-BACKPORT-CANDIDATES-NOT-INSTALLER-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            artifacts/win7-backport-recovery/receipt.json
+            artifacts/win7-backport-recovery/*/build.log
+            artifacts/win7-backport-recovery/*/candidate-wheels/*.whl
+          retention-days: 14
+          if-no-files-found: warn
+  candidate-runtime:
+    needs: audit
+    name: Win7 candidate pure Python dependencies on real CPython 3.8 ${{ matrix.arch }} (NOT WIN7 OS)
+    runs-on: windows-2022
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            python: x64
+            bits: 64
+          - arch: x86
+            python: x86
+            bits: 32
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SOURCE_SHA: 400dd924faaf3195aef69c24c160a2e6f109a5f0
+      BACKPORT_RUN: ${{ github.run_id }}
+      BACKPORT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      INPUT_RUN: '45303617001'
+      PYTHONUTF8: '1'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.8.10'
+          architecture: ${{ matrix.python }}
+      - name: Recover exact previous cloud artifacts for this architecture and validate provenance
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = Join-Path $env:RUNNER_TEMP 'win7-candidate-closure'
+          New-Item -ItemType Directory -Force $root | Out-Null
+          $back = gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/$env:BACKPORT_RUN" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $back.head_sha -ne $env:BACKPORT_SHA -or $back.head_repository.full_name -ne $env:GITHUB_REPOSITORY -or $back.path -ne '.github/workflows/cloud-rc1-win7-backport-history.yml') { throw 'WIN7_HISTORICAL_RUN_INVALID' }
+          $jobs = gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/$env:BACKPORT_RUN/jobs" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or @($jobs.jobs | Where-Object { $_.name -eq 'audit' -and $_.conclusion -eq 'success' }).Count -ne 1) { throw 'WIN7_SAME_RUN_AUDIT_NOT_SUCCESSFUL' }
+          $input = gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/$env:INPUT_RUN" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $input.head_sha -ne $env:SOURCE_SHA -or $input.head_repository.full_name -ne $env:GITHUB_REPOSITORY -or $input.conclusion -ne 'success' -or $input.path -ne '.github/workflows/cloud-rc1-legacy-inputs.yml') { throw 'WIN7_PUBLIC_RUN_INVALID' }
+          gh run download $env:BACKPORT_RUN --repo $env:GITHUB_REPOSITORY --name "RC1-Win7-HISTORICAL-BACKPORT-CANDIDATES-NOT-INSTALLER-$env:BACKPORT_SHA" --dir "$root/backports"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          gh run download $env:INPUT_RUN --repo $env:GITHUB_REPOSITORY --name "partyops-RC1-Win7-${{ matrix.arch }}-INPUTS-ONLY-$env:SOURCE_SHA" --dir "$root/public"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify all wheel hashes and import candidate modules on target CPython bitness
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $out = Join-Path $PWD 'artifacts/win7-python38-smoke'
+          New-Item -ItemType Directory -Force $out | Out-Null
+          @'
+          import hashlib, json, pathlib, struct, subprocess, sys
+          root, out, arch, bits = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2]), sys.argv[3], int(sys.argv[4])
+          assert sys.version_info[:3] == (3,8,10) and struct.calcsize("P")*8 == bits
+          def digest(p): return hashlib.sha256(p.read_bytes()).hexdigest()
+          def single(base,name):
+              p=list(base.rglob(name))
+              assert len(p)==1, (name,len(p))
+              return p[0]
+          public=json.loads(single(root/"public","receipt.json").read_text(encoding="utf-8"))
+          historical=json.loads(single(root/"backports","receipt.json").read_text(encoding="utf-8"))
+          assert public["target"]=="windows7-"+arch and public["source_commit"]=="400dd924faaf3195aef69c24c160a2e6f109a5f0"
+          verified=[]
+          for r in public["public_wheels"]:
+              assert r["status"]=="HASH_VERIFIED"
+              p=single(root/"public",r["wheel"])
+              assert digest(p)==r["sha256"]
+              verified.append(p)
+          candidates=[]
+          rows=[]
+          for name,r in historical["components"].items():
+              if r["status"]!="REBUILT_CANDIDATE_NOT_APPROVED": continue
+              if r["matches_current_lock"][arch] is None: continue
+              p=single(root/"backports",r["candidate_wheel"])
+              assert digest(p)==r["candidate_sha256"]
+              candidates.append(p)
+              rows.append({"name":name,"sha256":digest(p),"historical_lock_match":r["matches_current_lock"][arch]})
+          assert len(candidates)==(8 if arch=="amd64" else 7), rows
+          (out/"inputs.json").write_text(json.dumps({"arch":arch,"bits":bits,"public_wheels":len(verified),"candidate_wheels":rows,"release_ready":False},indent=2),encoding="utf-8")
+          subprocess.check_call([sys.executable,"-m","pip","install","--no-deps","--no-index",*map(str,verified+candidates)])
+          modules=("click","fastapi","dotenv","python_multipart","requests","starlette","urllib3") + (("filelock",) if arch=="amd64" else ())
+          result={}
+          for name in modules:
+              p=subprocess.run([sys.executable,"-c","import "+name],capture_output=True,text=True)
+              result[name]={"exit_code":p.returncode,"stdout":p.stdout,"stderr":p.stderr}
+              print(name,p.returncode,p.stderr[-500:])
+          (out/"receipt.json").write_text(json.dumps({"status":"CPYTHON38_CANDIDATE_IMPORT_ONLY","arch":arch,"results":result,"native_win7_os_tested":False,"installer_created":False,"release_ready":False},indent=2),encoding="utf-8")
+          assert all(v["exit_code"]==0 for v in result.values())
+          '@ | python - (Join-Path $env:RUNNER_TEMP 'win7-candidate-closure') $out '${{ matrix.arch }}' '${{ matrix.bits }}'
+          if ($LASTEXITCODE -ne 0) { throw 'WIN7_CANDIDATE_CPYTHON38_IMPORT_BLOCKED' }
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: RC1-Win7-${{ matrix.arch }}-CPYTHON38-CANDIDATE-IMPORT-NOT-INSTALLER-${{ github.event.pull_request.head.sha || github.sha }}
+          path: artifacts/win7-python38-smoke
+          retention-days: 14
+          if-no-files-found: warn
