@@ -2465,11 +2465,30 @@ def write_host_config(
     return path
 
 
+def _assert_saved_personal_source_present(config_path: Path) -> None:
+    """Do not treat a disconnected personal data volume as a new empty installation."""
+    if not config_path.is_file():
+        return
+    saved = load_host_environment(config_path, inherit_environment=False)
+    if saved.get("PARTYOPS_MODE") != "personal":
+        return
+    raw = saved.get("PARTYOPS_DATA_DIR", "").strip()
+    source = Path(raw)
+    if not raw or not source.is_absolute():
+        raise ValueError("原个人数据目录配置不完整，系统没有切换目录。")
+    if not source.is_dir():
+        raise ValueError(
+            "原业务数据所在磁盘暂时不可用。请重新连接原磁盘或从备份恢复后再切换数据目录；"
+            "原有配置和业务数据未被删除。"
+        )
+
+
 def write_personal_config(data_dir: Path, port: int = 18775) -> Path:
     """创建仅当前账号可用的回环配置，全程不申请管理员权限。"""
 
     if not 1024 <= port <= 65534:
         raise ValueError("个人模式端口必须在 1024—65534 之间")
+    _assert_saved_personal_source_present(config_root() / "personal.env")
     resolved_data_dir = (
         _validate_personal_data_dir(data_dir)
         if os.name == "nt"

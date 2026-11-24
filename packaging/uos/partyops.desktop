@@ -11,7 +11,7 @@ Terminal=false
 StartupNotify=true
 Categories=Office;ProjectManagement;
 Keywords=党建;任务;材料;协同;PartyOps;
-Actions=Configure;ManageFolders;
+Actions=Configure;ManageFolders;RecoverAccount;
 
 [Desktop Action Configure]
 Name=重新配置主机或协同终端
@@ -20,3 +20,7 @@ Exec=/bin/bash /opt/partyops/desktop-launcher.sh --configure
 [Desktop Action ManageFolders]
 Name=管理本机共享文件夹
 Exec=/bin/bash /opt/partyops/desktop-launcher.sh --manage-shared-roots
+
+[Desktop Action RecoverAccount]
+Name=找回账号和密码
+Exec=/opt/partyops/partyops-wizard --recover-account
