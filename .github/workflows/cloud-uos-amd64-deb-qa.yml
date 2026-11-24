@@ -2,7 +2,7 @@ name: RC1 UOS AMD64 real DEB extraction & synthetic upgrade QA (HOSTED_ONLY)
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, feature/1.4.6-rc1-cloud-rebuild]
     paths:
       - '.github/workflows/cloud-uos-amd64-deb-qa.yml'
   workflow_dispatch:
@@ -31,11 +31,11 @@ jobs:
     timeout-minutes: 45
     env:
       GH_TOKEN: ${{ github.token }}
-      CANDIDATE_SOURCE_SHA: ${{ inputs.candidate_source_sha || '4e58012674d444455ceef4d542b9d69a7e87f63e' }}
-      CANDIDATE_SHA256: ${{ inputs.candidate_sha256 || '64d4313ccfd5d2ad4dcc1de6df4c118000741a884896f589075e0ebeecef2b6d' }}
+      CANDIDATE_SOURCE_SHA: ${{ inputs.candidate_source_sha || '400dd924faaf3195aef69c24c160a2e6f109a5f0' }}
+      CANDIDATE_SHA256: ${{ inputs.candidate_sha256 || '4513f840c154253117010ebcb5a8533efe11bf2fdea86f794c6f516c395eeb1b' }}
       CANDIDATE_FILE: PartyOps_1.4.6-rc.1_uos_v20_amd64_BUILD_ONLY_UNVERIFIED.deb
-      CANDIDATE_RUN: ${{ inputs.candidate_run || '45169885887' }}
-      CANDIDATE_ARTIFACT: ${{ format('partyops-uos-v20-amd64-RC1-ACTUAL-DEB-BUILD_ONLY-UNVERIFIED-{0}', inputs.candidate_source_sha || '4e58012674d444455ceef4d542b9d69a7e87f63e') }}
+      CANDIDATE_RUN: ${{ inputs.candidate_run || '45303617009' }}
+      CANDIDATE_ARTIFACT: ${{ format('partyops-uos-v20-amd64-RC1-ACTUAL-DEB-BUILD_ONLY-UNVERIFIED-{0}', inputs.candidate_source_sha || '400dd924faaf3195aef69c24c160a2e6f109a5f0') }}
 
     steps:
       - name: Exact reviewed packaging source checkout
