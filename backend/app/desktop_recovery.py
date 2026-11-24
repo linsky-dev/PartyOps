@@ -1,4 +1,5 @@
 """Local-only graphical recovery. The server does not expose a reset endpoint."""
+
 from __future__ import annotations
 
 import json
@@ -120,7 +121,7 @@ def run_desktop_recovery(*, host: bool = False) -> int:
             [str(executable), "--account-recovery", "desktop-reset", "--data-dir", str(data)],
             input=json.dumps({"password": password, "confirmation": "本机应急恢复"}),
             text=True, encoding="utf-8", capture_output=True, timeout=120, env=env,
-            **({"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {}),
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
         )
         if result.returncode != 0:
             raise ValueError("恢复未完成。若有其他管理员，请联系其重置；否则请重新打开软件后重试。原账号和业务数据未被删除。")
