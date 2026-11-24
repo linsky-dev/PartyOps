@@ -1,7 +1,7 @@
-name: RC1 macOS native application freeze (APP_ONLY NOT PKG)
+name: RC1 macOS native same-source freeze and unsigned PKG candidate
 on:
   pull_request:
-    branches: [main]
+    branches: [main, feature/1.4.6-rc1-cloud-rebuild]
     paths:
       - 'packaging/macos/**'
       - '.github/workflows/cloud-macos-rc1-application-freeze.yml'
@@ -10,6 +10,7 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+  actions: read
 concurrency:
   group: rc1-macos-app-only-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
@@ -68,3 +69,268 @@ jobs:
           path: artifacts/macos-application-only-${{ matrix.arch }}
           if-no-files-found: error
           retention-days: 7
+
+  audit:
+    needs: freeze
+    name: Audit original RC6 and fresh RC1 inputs ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-15
+            python: arm64
+            donor_sha: bcc370a22545c31ad789324d1d153a0d6faa30ec61fc0632e4b004f82c0ff736
+          - arch: x86_64
+            runner: macos-15-intel
+            python: x64
+            donor_sha: 8885eea0cfa3c23f58d14109c9a46be2bf762c923cb1be58b9c549628e05c955
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TARGET_ARCH: ${{ matrix.arch }}
+      DONOR_SHA: ${{ matrix.donor_sha }}
+      PKG_SOURCE: ${{ github.event.pull_request.head.sha || github.sha }}
+      CANDIDATE_RUN: ${{ github.run_id }}
+      CANDIDATE_SOURCE: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.11'
+          architecture: ${{ matrix.python }}
+      - name: Verify native runner and independently pinned original PKG
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -s)" = Darwin
+          test "$(uname -m)" = "$TARGET_ARCH"
+          mkdir -p artifacts/macos-input-audit "$RUNNER_TEMP/rc1-mac-audit/donor"
+          root="$RUNNER_TEMP/rc1-mac-audit"
+          name="PartyOps_1.4.5-rc.6_macos_${TARGET_ARCH}-UNSIGNED-UNNOTARIZED-CANDIDATE.pkg"
+          gh release download v1.4.5-rc.6 --repo "$GITHUB_REPOSITORY" --pattern "$name" --dir "$root/donor"
+          printf '%s  %s\n' "$DONOR_SHA" "$root/donor/$name" | shasum -a 256 -c -
+          pkgutil --expand-full "$root/donor/$name" "$root/expanded"
+          archive="$(python - "$root/expanded" <<'PY'
+          import pathlib, sys
+          matches = list(pathlib.Path(sys.argv[1]).rglob('PartyOps.app.zip'))
+          assert len(matches) == 1 and matches[0].is_file() and not matches[0].is_symlink(), matches
+          print(matches[0])
+          PY
+          )"
+          mkdir -p "$root/donor-app"
+          ditto -x -k "$archive" "$root/donor-app"
+          test -d "$root/donor-app/PartyOps.app"
+          codesign --verify --deep --strict --verbose=2 "$root/donor-app/PartyOps.app"
+      - name: Retrieve actual latest matching source application, not a previous PKG
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/rc1-mac-audit"
+          run_info="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$CANDIDATE_RUN")"
+          test "$(jq -r '.head_sha' <<< "$run_info")" = "$CANDIDATE_SOURCE"
+          test "$(jq -r '.head_repository.full_name' <<< "$run_info")" = "$GITHUB_REPOSITORY"
+          test "$(jq -r '.path | split("@")[0]' <<< "$run_info")" = '.github/workflows/cloud-macos-rc1-application-freeze.yml'
+          # Both native freeze jobs must succeed (needs: freeze); this run is still active.
+          test "$CANDIDATE_RUN" = "$GITHUB_RUN_ID"
+          mkdir -p "$root/new" "$root/new-app"
+          gh run download "$CANDIDATE_RUN" --repo "$GITHUB_REPOSITORY" --name "partyops-RC1-macos-${TARGET_ARCH}-APP-ONLY-NOT-PKG-${CANDIDATE_SOURCE}" --dir "$root/new"
+          archive="PartyOps_1.4.6-rc.1_macos_${TARGET_ARCH}-APP-ONLY-NOT-PKG.zip"
+          (cd "$root/new" && shasum -a 256 -c "$archive.sha256")
+          ditto -x -k "$root/new/$archive" "$root/new-app"
+      - name: Audit original WPS provenance and new app entrypoint hashes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib, json, os, pathlib, subprocess
+          root = pathlib.Path(os.environ['RUNNER_TEMP']) / 'rc1-mac-audit'
+          arch = os.environ['TARGET_ARCH']
+          old = root / 'donor-app/PartyOps.app/Contents'
+          new = root / 'new-app/PartyOps.app/Contents'
+          archive = root / 'new' / f'PartyOps_1.4.6-rc.1_macos_{arch}-APP-ONLY-NOT-PKG.zip'
+          rec = json.loads(archive.with_suffix('.receipt.json').read_text())
+          def sha(p):
+              h = hashlib.sha256()
+              with p.open('rb') as f:
+                  for block in iter(lambda: f.read(1024 * 1024), b''):
+                      h.update(block)
+              return h.hexdigest()
+          def native(p):
+              assert p.is_file() and os.access(p, os.X_OK), p
+              assert arch in subprocess.check_output(['lipo', '-archs', str(p)], text=True).split(), p
+              return sha(p)
+          assert rec['status'] == 'APP_ONLY_BUILD_ONLY_NOT_PKG'
+          assert rec['source_commit'] == os.environ['CANDIDATE_SOURCE']
+          assert rec['architecture'] == arch and rec['recovery_help_verified'] is True
+          assert rec['archive_sha256'] == sha(archive)
+          assert rec['native_formatter_included'] is False and rec['installer_created'] is False
+          assert rec['release_ready'] is False
+          entries = rec['entrypoint_sha256']
+          required = ['partyops', 'partyops-client', 'partyops-wizard', 'partyops-launch-agent', 'partyops-updater', 'partyops-desktop', 'partyops-desktop-bin']
+          for name in required:
+              assert entries[name] == native(new / 'MacOS' / name), name
+          formatter = old / 'Resources/formatter-host'
+          source = json.loads((formatter / 'source-host.json').read_text())
+          host_hash = native(formatter / 'partyops-document-formatter-host')
+          assert source['host_sha256'] == host_hash
+          office = old / 'Resources/office-runtime'
+          inventory = {
+              'formatter_host': host_hash,
+              'formatter_source_manifest': sha(formatter / 'source-host.json'),
+              'formatter_runtime_evidence': sha(formatter / 'runtime-evidence.json'),
+              'ocr': native(old / 'MacOS/tesseract'),
+              'ocr_chinese_data': sha(old / 'Resources/ocr/tessdata/chi_sim.traineddata'),
+              'local_llm': native(old / 'MacOS/llama-server'),
+              'office': native(office / 'LibreOffice.app/Contents/MacOS/soffice'),
+              'office_source_manifest': sha(office / 'SOURCE.json'),
+          }
+          out = pathlib.Path('artifacts/macos-input-audit')
+          check = subprocess.run(['python', 'scripts/validate-source-formatter-runtime.py',
+              '--runtime', str(formatter), '--platform', 'macos', '--architecture', arch],
+              text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False)
+          (out / 'current-formatter-validator.log').write_text(check.stdout)
+          record = {'status': 'BUILD_INPUTS_AUDITED_ONLY', 'source_commit': rec['source_commit'],
+              'architecture': arch, 'historical_donor_pkg_sha256': os.environ['DONOR_SHA'],
+              'candidate_run': os.environ['CANDIDATE_RUN'], 'new_app_archive_sha256': sha(archive),
+              'new_app_entrypoint_sha256': {name: entries[name] for name in required},
+              'historical_native_input_sha256': inventory, 'historical_formatter_adapter': source.get('adapter'),
+              'current_formatter_validator_passed': check.returncode == 0,
+              'production_dependency_security_review': 'NOT_RUN', 'native_wps_tests_rerun': False,
+              'installer_created': False, 'native_install_tested': False, 'release_ready': False}
+          (out / 'receipt.json').write_text(json.dumps(record, indent=2)+'\n')
+          if check.returncode:
+              print(check.stdout)
+              raise SystemExit('HISTORICAL_FORMATTER_CURRENT_PROVENANCE_BLOCKED')
+          print('MACOS_NATIVE_INPUT_AUDIT_PASS_NOT_INSTALLER')
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: partyops-rc1-macos-${{ matrix.arch }}-NATIVE-INPUT-AUDIT-${{ github.event.pull_request.head.sha || github.sha }}
+          path: artifacts/macos-input-audit
+          retention-days: 14
+          if-no-files-found: warn
+      - name: Check out exact RC1 application source separately from orchestration
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ env.PKG_SOURCE }}
+          path: candidate-src
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - name: Stage verified original native components and current locked LibreOffice
+        working-directory: candidate-src
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$PKG_SOURCE"
+          python3.11 -m pip install --disable-pip-version-check 'uv==0.11.7'
+          corepack enable
+          corepack prepare 'pnpm@11.9.0' --activate
+          root="$RUNNER_TEMP/rc1-mac-audit"
+          old="$root/donor-app/PartyOps.app/Contents"
+          stage="$root/staged"
+          mkdir -p "$stage/ocr/bin" "$stage/llama/licenses" "$stage/formatter"
+          ditto "$old/MacOS/tesseract" "$stage/ocr/bin/tesseract"
+          ditto "$old/Resources/ocr/tessdata" "$stage/ocr/tessdata"
+          ditto "$old/Resources/ocr/licenses" "$stage/ocr/licenses"
+          ditto "$old/MacOS/llama-server" "$stage/llama/llama-server"
+          ditto "$old/Resources/licenses/llama.cpp-LICENSE" "$stage/llama/licenses/llama.cpp-LICENSE"
+          ditto "$old/Resources/formatter-host" "$stage/formatter"
+          cmp "$old/Resources/formatter-host/partyops-document-formatter-host" "$stage/formatter/partyops-document-formatter-host"
+          python3.11 scripts/validate-source-formatter-runtime.py --runtime "$stage/formatter" --platform macos --architecture "$TARGET_ARCH"
+          bash scripts/prepare-libreoffice-macos.sh --architecture "$TARGET_ARCH" --output-root "$stage"
+          bash scripts/prepare-libreoffice-macos.sh --architecture "$TARGET_ARCH" --verify-source "$stage/office-$TARGET_ARCH/SOURCE.json"
+      - name: Freeze exact clean Git source manifest for existing unsigned candidate gate
+        working-directory: candidate-src
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3.11 - <<'PY'
+          import hashlib, json, os, pathlib, subprocess
+          root = pathlib.Path.cwd()
+          target = pathlib.Path(os.environ['RUNNER_TEMP']) / 'rc1-mac-audit/frozen-source'
+          target.mkdir()
+          def sha(b): return hashlib.sha256(b).hexdigest()
+          def git(*args): return subprocess.check_output(['git', *args])
+          head = git('rev-parse', 'HEAD').decode().strip()
+          assert head == os.environ['PKG_SOURCE']
+          assert not git('status', '--porcelain', '--untracked-files=no')
+          diff = git('diff', '--binary', 'HEAD')
+          assert not diff
+          (target/'tracked-before.diff').write_bytes(diff)
+          rows = []
+          for name in git('ls-files', '-z').decode('utf-8').split('\0'):
+              if not name: continue
+              p = root/name
+              assert p.is_file() and not p.is_symlink() and p.resolve().is_relative_to(root), name
+              b = p.read_bytes()
+              rows.append({'path':name, 'bytes':len(b), 'sha256':sha(b)})
+          assert rows and len({r['path'] for r in rows}) == len(rows)
+          manifest = {'schema':1,'kind':'complete-application-source-inputs-candidate-pending',
+                      'head':head,'dirty_diff_sha256':sha(diff),'file_count':len(rows),'files':rows}
+          p = target/'source-inputs.json'
+          p.write_text(json.dumps(manifest,ensure_ascii=False,sort_keys=True)+'\n',encoding='utf-8')
+          print('FROZEN_SOURCE_FILE_COUNT',len(rows),'MANIFEST_SHA256',sha(p.read_bytes()))
+          PY
+      - name: Build actual unsigned RC1 PKG with existing native packaging gates
+        working-directory: candidate-src
+        shell: bash
+        env:
+          PARTYOPS_BUILD_JOBS: '3'
+          PYTHONUTF8: '1'
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/rc1-mac-audit"
+          stage="$root/staged"
+          manifest="$root/frozen-source/source-inputs.json"
+          digest="$(shasum -a 256 "$manifest" | awk '{print $1}')"
+          count="$(python3.11 -c 'import json,sys;print(json.load(open(sys.argv[1]))["file_count"])' "$manifest")"
+          export PARTYOPS_MACOS_OCR_RUNTIME="$stage/ocr"
+          export PARTYOPS_MACOS_LLAMA_RUNTIME="$stage/llama"
+          export PARTYOPS_MACOS_OFFICE_RUNTIME="$stage/office-$TARGET_ARCH"
+          export PARTYOPS_MACOS_FORMATTER_RUNTIME="$stage/formatter"
+          out="$PWD/artifacts/release-1.4.6-rc.1-final"
+          adapter="$(python3.11 -c 'import json,sys;print(json.load(open(sys.argv[1]))["adapter"])' "$stage/formatter/source-host.json")"
+          args=()
+          if [[ "$adapter" == wps-macos-object-source-adapter ]]; then
+            args+=(--output-directory "$out")
+          fi
+          bash packaging/macos/build-pkg.sh --architecture "$TARGET_ARCH" --unsigned-candidate --source-inputs-manifest "$manifest" --source-inputs-sha256 "$digest" --source-inputs-file-count "$count" "${args[@]}"
+          name="PartyOps_1.4.6-rc.1_macos_${TARGET_ARCH}-UNSIGNED-UNNOTARIZED-CANDIDATE.pkg"
+          (cd "$out" && shasum -a 256 -c "$name.sha256")
+          test -s "$out/$name.attestation.json"
+          mkdir -p "$GITHUB_WORKSPACE/artifacts/macos-pkg"
+          cp "$out/$name" "$out/$name.sha256" "$out/$name.attestation.json" "$GITHUB_WORKSPACE/artifacts/macos-pkg/"
+          if [[ -f "$out/$name.mac-object-candidate.json" ]]; then
+            cp "$out/$name.mac-object-candidate.json" "$GITHUB_WORKSPACE/artifacts/macos-pkg/"
+          fi
+          echo 'MACOS_ACTUAL_UNSIGNED_PKG_BUILD_ONLY'
+      - name: Upload actual unsigned candidate, not a production release
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: partyops-rc1-macos-${{ matrix.arch }}-ACTUAL-UNSIGNED-PKG-${{ env.PKG_SOURCE }}
+          path: artifacts/macos-pkg
+          compression-level: 0
+          retention-days: 14
+          if-no-files-found: error
+      - name: Install on disposable native hosted Mac and exercise existing bundle checks
+        working-directory: candidate-src
+        shell: bash
+        run: |
+          set -euo pipefail
+          name="PartyOps_1.4.6-rc.1_macos_${TARGET_ARCH}-UNSIGNED-UNNOTARIZED-CANDIDATE.pkg"
+          sudo /usr/sbin/installer -pkg "$GITHUB_WORKSPACE/artifacts/macos-pkg/$name" -target /
+          app=/Applications/PartyOps.app
+          codesign --verify --deep --strict --verbose=2 "$app"
+          bash packaging/macos/validate-bundle.sh "$app" "$TARGET_ARCH"
+          "$app/Contents/MacOS/partyops" --account-recovery --help | grep 'emergency'
+          "$app/Contents/MacOS/partyops-desktop" --self-test
+          "$app/Contents/MacOS/partyops" --package-self-test
+          echo 'MACOS_HOSTED_NATIVE_INSTALL_SMOKE_PASS_NOT_PRODUCTION'

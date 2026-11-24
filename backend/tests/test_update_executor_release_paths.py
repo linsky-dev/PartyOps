@@ -153,6 +153,9 @@ def test_process_lock_environment_and_health_helpers(monkeypatch, tmp_path: Path
 
 
 def test_windows_host_update_success_and_rollback(monkeypatch, tmp_path: Path) -> None:
+    # This fixture exercises the existing x64 installer transaction, not a
+    # Windows ARM64 release channel. Explicitly bind the simulated x64 CPU.
+    monkeypatch.setattr(update_executor.platform, "machine", lambda: "AMD64")
     settings = _settings(tmp_path / "success")
     package_path = tmp_path / "release.partyops-update"
     package_path.write_bytes(b"package")

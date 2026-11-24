@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import getpass
+import json
 import os
 import secrets
 import stat
@@ -166,6 +167,43 @@ def windows_personal_owner_scope(path: Path) -> bool:
 
 
 
+def personal_owner_scope(path: Path) -> bool:
+    """Bind recovery to the current OS account and its saved personal configuration."""
+    if os.name == "nt":
+        return windows_personal_owner_scope(path)
+    import shlex
+
+    try:
+        root = (
+            Path.home() / "Library" / "Application Support" / "PartyOps" / "Config"
+            if sys.platform == "darwin"
+            else Path(os.getenv("XDG_CONFIG_HOME", Path.home() / ".config")) / "partyops"
+        )
+        mode_path, config = root / "mode.json", root / "personal.env"
+        for item in (root, mode_path, config, path, path / "partyops.db"):
+            info = item.lstat()
+            if stat.S_ISLNK(info.st_mode) or info.st_uid != getattr(os, "geteuid", lambda: -1)() or info.st_mode & 0o022:
+                return False
+        if mode_path.stat().st_size > 8192 or config.stat().st_size > 65536:
+            return False
+        mode = json.loads(mode_path.read_text(encoding="utf-8"))
+        if mode.get("mode") != "personal" or Path(mode.get("config_path") or config).resolve() != config.resolve():
+            return False
+        values = {}
+        for line in config.read_text(encoding="utf-8").splitlines():
+            key, separator, raw = line.partition("=")
+            if separator and key in {"PARTYOPS_MODE", "PARTYOPS_DATA_DIR"}:
+                parts = shlex.split(raw)
+                if len(parts) != 1 or key in values:
+                    return False
+                values[key] = parts[0]
+        declared = Path(values.get("PARTYOPS_DATA_DIR", ""))
+        return (values.get("PARTYOPS_MODE") == "personal" and declared.is_absolute()
+                and declared.resolve(strict=True) == path.resolve(strict=True))
+    except (OSError, ValueError, TypeError, AttributeError):
+        return False
+
+
 def authorize_local_maintenance(db: Session, username: str, password: str) -> str:
     """在仍能验证现有管理员密码时，登记独立的本机维护授权。"""
     from sqlalchemy import select
@@ -265,10 +303,12 @@ def issue_single_admin_emergency(
 
 
 def _run(
-    path: Path, action: str, identity: str, proof: str, *, personal_scope: bool = False
+    path: Path, action: str, identity: str, proof: str, *, personal_scope: bool = False,
+    new_password: str | None = None,
 ) -> str:
     if personal_scope:
-        if action != "emergency" or not windows_personal_owner_scope(path):
+        owner_ok = windows_personal_owner_scope(path) if action == "emergency" else personal_owner_scope(path)
+        if action not in {"emergency", "desktop-reset"} or not owner_ok:
             raise RecoveryCLIError("个人模式目录归属或权限校验未通过。")
     os.environ["PARTYOPS_DATA_DIR"] = str(path)
     os.environ["PARTYOPS_ENVIRONMENT"] = "production"
@@ -279,6 +319,14 @@ def _run(
         get_settings.cache_clear()
 
     from sqlalchemy import inspect
+
+    if action == "desktop-reset" and not personal_scope:
+        if not is_os_administrator():
+            raise RecoveryCLIError("团队主机需要操作系统管理员授权。")
+        os.environ["PARTYOPS_MODE"] = "host"
+        from .config import get_settings
+
+        get_settings.cache_clear()
 
     from .account_recovery import ensure_authoritative_host
     from .database import db_runtime
@@ -297,6 +345,21 @@ def _run(
         with db_runtime.session_factory.begin() as db:
             if action == "authorize":
                 return authorize_local_maintenance(db, identity, proof)
+            if action == "desktop-reset":
+                from pydantic import SecretStr
+
+                from .account_recovery import RedeemCredential, redeem_credential
+
+                if new_password is None or not 8 <= len(new_password) <= 128:
+                    raise RecoveryCLIError("新密码长度必须为 8—128 个字符。")
+                token = issue_single_admin_emergency(
+                    db, proof, method="desktop-personal-owner" if personal_scope else "desktop-elevated-host",
+                )
+                db.flush()
+                user = redeem_credential(db, RedeemCredential(
+                    credential=SecretStr(token), new_password=SecretStr(new_password),
+                ), "local-desktop-recovery")
+                return user.username
             if action == "emergency":
                 return issue_single_admin_emergency(
                     db, proof, method=(
@@ -311,9 +374,49 @@ def _run(
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="PartyOps 主机管理员账号恢复")
-    parser.add_argument("action", choices=("authorize", "issue", "emergency"))
+    parser.add_argument("action", choices=("authorize", "issue", "emergency", "desktop-reset"))
     parser.add_argument("--data-dir", required=True, type=Path)
     args = parser.parse_args(argv)
+    if args.action == "desktop-reset":
+        # This is a local executable entry, never an HTTP route. The desktop
+        # wizard sends the password on a private pipe, not argv, URL or log.
+        try:
+            path = trusted_data_directory(args.data_dir)
+            personal = personal_owner_scope(path)
+            if not personal:
+                if not is_os_administrator() or os.name != "nt":
+                    raise RecoveryCLIError("仅原个人系统账号或受支持的本机主机管理员可以恢复。")
+                import shlex
+
+                config = Path(os.getenv("PROGRAMDATA", "C:/ProgramData")) / "PartyOps" / "partyops.env"
+                if config.is_symlink() or not config.is_file() or config.stat().st_size > 65536:
+                    raise RecoveryCLIError("主机配置不可验证。")
+                values = {}
+                for line in config.read_text(encoding="utf-8").splitlines():
+                    key, sep, raw = line.partition("=")
+                    if sep and key in {"PARTYOPS_MODE", "PARTYOPS_DATA_DIR"}:
+                        parts = shlex.split(raw)
+                        if len(parts) != 1 or key in values:
+                            raise RecoveryCLIError("主机配置不可验证。")
+                        values[key] = parts[0]
+                declared = Path(values.get("PARTYOPS_DATA_DIR", ""))
+                if values.get("PARTYOPS_MODE") != "host" or not declared.is_absolute() or declared.resolve(strict=True) != path.resolve(strict=True):
+                    raise RecoveryCLIError("恢复目录不是当前已配置的主机业务目录。")
+            payload = json.loads(sys.stdin.read(8193))
+            if (not isinstance(payload, dict) or set(payload) != {"password", "confirmation"}
+                    or not isinstance(payload["password"], str)
+                    or payload["confirmation"] != "本机应急恢复"):
+                raise RecoveryCLIError("恢复请求无效。")
+            username = _run(path, args.action, "", payload["confirmation"],
+                            personal_scope=personal, new_password=payload["password"])
+            print(json.dumps({"username": username}, ensure_ascii=True))
+            return 0
+        except RecoveryCLIError as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
+        except Exception:
+            print("账号恢复未完成，请确认唯一管理员、数据目录权限及原进程已退出。", file=sys.stderr)
+            return 2
     if not sys.stdin.isatty() or not sys.stdout.isatty():
         print("此工具需在主机提升权限或个人目录所属账号的本机交互终端中运行。", file=sys.stderr)
         return 2

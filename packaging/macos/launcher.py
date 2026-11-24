@@ -303,6 +303,9 @@ def main() -> int:
         try:
             _append_log(f"启动 PartyOps {VERSION}")
             background = "--background" in sys.argv[1:]
+            if not background and any(value.rstrip("/") == "partyops-client://recover-account" for value in sys.argv[1:]):
+                _spawn_with_diagnostics([str(_runtime_root() / "partyops-wizard"), "--recover-account"])
+                return 0
             deep_link_reconfigure = any(
                 value.rstrip("/") == "partyops-client://reconfigure"
                 for value in sys.argv[1:]
