@@ -147,7 +147,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          python -m pip install --only-binary=:all: 'pytest==9.1.1' 'pytest-cov==6.2.1' 'pytest-asyncio==1.4.0' -r qa/vm-lab/requirements.txt
+          python -m pip install --only-binary=:all: 'pytest==9.1.1' 'pytest-cov==6.2.1' 'pytest-asyncio==1.4.0' 'pefile==2023.2.7' -r qa/vm-lab/requirements.txt
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -m pip check
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
