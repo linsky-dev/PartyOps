@@ -64,7 +64,7 @@ def main():
         (private if "+partyops." in requirement.lower() else public).append(item)
     def fetch(item):
         requirement = item["requirement"]
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory(dir=str(args.output.resolve())) as tmp:
             folder = pathlib.Path(tmp)
             req = folder / "requirement.txt"
             req.write_text(item["block"] + "\n", encoding="utf-8")
