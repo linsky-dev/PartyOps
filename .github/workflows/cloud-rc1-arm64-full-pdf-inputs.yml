@@ -1,0 +1,92 @@
+name: RC1 ARM64 full PDF exact upstream companion sources (BUILD_ONLY)
+on:
+  pull_request:
+    branches: [feature/1.4.6-rc1-cloud-rebuild]
+    paths:
+      - '.github/workflows/cloud-rc1-arm64-full-pdf-inputs.yml'
+      - 'scripts/rc1_arm64_full_pdf_inputs.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: rc1-arm64-full-pdf-inputs-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  native-full:
+    runs-on: windows-11-arm
+    timeout-minutes: 120
+    env:
+      SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      PYTHONUTF8: '1'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+          architecture: arm64
+      - name: Recover exact layout and 4LLM source commits from pinned x64 full wheel
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $out = Join-Path $PWD 'artifacts/arm64-full-pdf'
+          New-Item -ItemType Directory -Force $out | Out-Null
+          $root = Join-Path $env:RUNNER_TEMP 'full-pdf-exact-inputs'
+          python scripts/rc1_arm64_full_pdf_inputs.py prepare $root (Join-Path $out 'receipt.json')
+          if ($LASTEXITCODE -ne 0) { throw 'FULL_PDF_COMPANION_INPUTS_UNAVAILABLE' }
+      - name: Build actual full PyMuPDF 2.1 with ARM64 MSVC
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $out = Join-Path $PWD 'artifacts/arm64-full-pdf'
+          $root = Join-Path $env:RUNNER_TEMP 'full-pdf-exact-inputs'
+          $env:PYMUPDF_SETUP_PATH_LAYOUT = Join-Path $root 'layout'
+          $env:PYMUPDF_SETUP_PATH_4LLM = Join-Path $root '4llm'
+          $env:PYMUPDF_SETUP_MUPDF_VS_UPGRADE = '1'
+          $vswhere = Join-Path ([Environment]::GetFolderPath('ProgramFilesX86')) 'Microsoft Visual Studio/Installer/vswhere.exe'
+          $vs = & $vswhere -latest -products '*' -property installationPath | Select-Object -First 1
+          $vcvars = Join-Path $vs 'VC/Auxiliary/Build/vcvarsall.bat'
+          if (-not (Test-Path $vcvars)) { throw 'ARM64_MSVC_NOT_FOUND' }
+          $tar = Join-Path $root 'pymupdf-2.1.tar.gz'
+          $cmd = Join-Path $env:RUNNER_TEMP 'partyops-full-pdf-build.cmd'
+          @(
+            '@echo off',
+            "call ""$vcvars"" arm64",
+            'if errorlevel 1 exit /b 11',
+            'where cl || exit /b 12',
+            "python -m pip wheel -v --no-deps --no-cache-dir --wheel-dir ""$out"" ""$tar""",
+            'if errorlevel 1 exit /b 21'
+          ) | Set-Content -Encoding ascii $cmd
+          & cmd.exe /d /c $cmd *> (Join-Path $out 'build.log')
+          $rc = $LASTEXITCODE
+          Get-Content (Join-Path $out 'build.log') -Tail 80
+          if ($rc -ne 0) { throw "FULL_ARM64_PDF_BUILD_FAILED: $rc" }
+          python scripts/rc1_arm64_full_pdf_inputs.py verify $out (Join-Path $out 'receipt.json')
+          if ($LASTEXITCODE -ne 0) { throw 'FULL_ARM64_WHEEL_STRUCTURE_FAILED' }
+      - name: Install and exercise real full layout and Markdown APIs
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $out = Join-Path $PWD 'artifacts/arm64-full-pdf'
+          $wheel = @(Get-ChildItem $out -Filter 'pymupdf-2.1-*-win_arm64.whl')
+          if ($wheel.Count -ne 1) { throw 'FULL_WHEEL_MISSING' }
+          python -m pip install --only-binary=:all: $wheel[0].FullName
+          if ($LASTEXITCODE -ne 0) { throw 'FULL_WHEEL_INSTALL_FAILED' }
+          python -m pip check
+          if ($LASTEXITCODE -ne 0) { throw 'FULL_WHEEL_DEPENDENCY_CHECK_FAILED' }
+          python -c "import platform, pymupdf, pymupdf.layout, pymupdf4llm; assert platform.machine().lower() in ('arm64','aarch64'); d=pymupdf.open(); p=d.new_page(); p.insert_text((72,72),'PartyOps ARM64 layout test'); assert 'PartyOps ARM64' in pymupdf4llm.to_markdown(d); print('FULL_ARM64_PDF_MARKDOWN_PASS')"
+          if ($LASTEXITCODE -ne 0) { throw 'FULL_ARM64_PDF_LAYOUT_SMOKE_FAILED' }
+          python -m pip freeze | Set-Content (Join-Path $out 'candidate-dependencies.txt')
+          $receipt = Get-Content (Join-Path $out 'receipt.json') -Raw | ConvertFrom-Json
+          $receipt | Add-Member -NotePropertyName source_commit -NotePropertyValue $env:SOURCE_SHA
+          $receipt.status = 'FULL_ARM64_NATIVE_LAYOUT_SMOKE_BUILD_ONLY'
+          $receipt | ConvertTo-Json -Depth 10 | Set-Content (Join-Path $out 'receipt.json')
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: RC1-ARM64-full-PDF-exact-companions-${{ env.SOURCE_SHA }}
+          path: artifacts/arm64-full-pdf
+          if-no-files-found: warn
+          retention-days: 14
