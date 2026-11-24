@@ -1,6 +1,8 @@
 """Desktop reset must keep the original account and reject ambiguous local requests."""
 import io
 import json
+import shlex
+from types import SimpleNamespace
 
 import pytest
 
@@ -66,3 +68,61 @@ def test_desktop_reset_transaction_error_does_not_echo_password(monkeypatch, tmp
     result = capsys.readouterr()
     assert password not in result.out + result.err
     assert not result.out
+
+
+@pytest.mark.parametrize("case", [
+    "missing", "oversize", "duplicate", "empty-value", "relative",
+    "wrong-mode", "different-path", "valid",
+])
+def test_team_desktop_reset_is_bound_to_saved_host_config(monkeypatch, tmp_path, capsys, case):
+    data = tmp_path / "实际业务"
+    data.mkdir()
+    config = tmp_path / "PartyOps" / "partyops.env"
+    config.parent.mkdir()
+    content = (
+        "PARTYOPS_MODE=host\n"
+        + "PARTYOPS_DATA_DIR=" + shlex.quote(str(data)) + "\n"
+        + "# unrelated setting must not be executed\nUNRELATED=synthetic\n"
+    )
+    if case == "oversize":
+        content += "#" * 65537
+    elif case == "duplicate":
+        content += "PARTYOPS_MODE=host\n"
+    elif case == "empty-value":
+        content = "PARTYOPS_MODE=host\nPARTYOPS_DATA_DIR=\n"
+    elif case == "relative":
+        content = "PARTYOPS_MODE=host\nPARTYOPS_DATA_DIR=relative\n"
+    elif case == "wrong-mode":
+        content = content.replace("PARTYOPS_MODE=host", "PARTYOPS_MODE=personal")
+    elif case == "different-path":
+        other = tmp_path / "other"
+        other.mkdir()
+        content = "PARTYOPS_MODE=host\nPARTYOPS_DATA_DIR=" + shlex.quote(str(other)) + "\n"
+    if case != "missing":
+        config.write_text(content, encoding="utf-8")
+    monkeypatch.setattr(recovery_cli, "os", SimpleNamespace(
+        name="nt", getenv=lambda *args: str(tmp_path),
+    ))
+    monkeypatch.setattr(recovery_cli, "trusted_data_directory", lambda path: path)
+    monkeypatch.setattr(recovery_cli, "personal_owner_scope", lambda path: False)
+    monkeypatch.setattr(recovery_cli, "is_os_administrator", lambda: True)
+    monkeypatch.setattr(recovery_cli.sys, "stdin", io.StringIO(json.dumps({
+        "password": "Synthetic-Host-Password!",
+        "confirmation": "本机应急恢复",
+    })))
+    calls = []
+    def run(path, action, identity, proof, **kwargs):
+        calls.append((path, kwargs))
+        return "team-admin"
+    monkeypatch.setattr(recovery_cli, "_run", run)
+    result = recovery_cli.main(["desktop-reset", "--data-dir", str(data)])
+    output = capsys.readouterr()
+    if case == "valid":
+        assert result == 0
+        assert json.loads(output.out) == {"username": "team-admin"}
+        assert calls == [(data, {
+            "personal_scope": False, "new_password": "Synthetic-Host-Password!",
+        })]
+    else:
+        assert result == 2 and not calls and not output.out
+        assert "Synthetic-Host-Password!" not in output.err
