@@ -10,7 +10,7 @@ permissions:
 jobs:
   emulated-runtime:
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
+    timeout-minutes: 110
     env:
       GH_TOKEN: ${{ github.token }}
       SOURCE_SHA: 400dd924faaf3195aef69c24c160a2e6f109a5f0
@@ -104,6 +104,32 @@ jobs:
               'historical_donor':'RC6','historical_runtime_executed':True,'new_application_frozen':False,
               'native_deepin_tested':False,'installer_created':False,'release_ready':False},indent=2)+'\n')
           PY
+      - name: Probe current RC1 application dependency availability and import in emulated Loong64 Debian
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/loong64-root"
+          out="$PWD/artifacts/loong64-emulated"
+          packages=(python3-fastapi python3-starlette python3-uvicorn python3-sqlalchemy python3-alembic python3-pydantic-settings python3-argon2 python3-multipart python3-sse-starlette python3-docx python3-lxml python3-openpyxl python3-python-calamine python3-pil python3-pytesseract python3-defusedxml python3-httpx python3-packaging python3-tk python3-pysqlite3)
+          available=()
+          for name in "${packages[@]}"; do
+            candidate="$(sudo chroot "$root" apt-cache policy "$name" | awk '/Candidate:/ {print $2; exit}')"
+            printf '%s\t%s\n' "$name" "${candidate:-MISSING}" | tee -a "$out/current-app-dependencies.tsv"
+            if [[ -n "$candidate" && "$candidate" != '(none)' ]]; then available+=("$name"); fi
+          done
+          sudo chroot "$root" apt-get install -y --no-install-recommends "${available[@]}"
+          sudo mkdir -p "$root/tmp/rc1-app-data"
+          sudo chown 65534:65534 "$root/tmp/rc1-app-data"
+          set +e
+          sudo timeout 180 unshare --net chroot --userspec=65534:65534 "$root" /usr/bin/env -i HOME=/tmp/rc1-app-data PATH=/usr/bin:/bin LANG=C.UTF-8 PYTHONPATH=/partyops-source PARTYOPS_DATA_DIR=/tmp/rc1-app-data PARTYOPS_ENVIRONMENT=test PARTYOPS_MODE=personal /usr/bin/python3 -c 'import platform,sys; print(sys.version); assert platform.machine() in ("loongarch64","loong64"); import app.main; assert app.main.app.version=="1.4.6-rc.1"; print("RC1_LOONG64_DEBIAN_SOURCE_IMPORT_PASS")' > "$out/current-app-import.log" 2>&1
+          rc=$?
+          set -e
+          cat "$out/current-app-import.log"
+          printf '%s\n' "$rc" > "$out/current-app-import-exit.txt"
+          sudo chroot "$root" dpkg-query -W > "$out/current-app-sysroot-packages.tsv"
+          # Source dependency discovery only: Debian sid and its Python version
+          # are not the pinned Deepin core release build environment.
+          test "$rc" = 0
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
