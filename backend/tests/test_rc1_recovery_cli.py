@@ -793,3 +793,39 @@ def test_native_recovery_does_not_leak_settings_to_following_tests():
     settings = get_settings()
     assert settings.environment == "test"
     assert settings.data_dir == Path(os.environ["PARTYOPS_DATA_DIR"])
+
+
+def test_desktop_reset_transaction_preserves_account_and_consumes_credential(cli_store, monkeypatch):
+    from app.security import verify_password
+
+    monkeypatch.setattr(recovery_cli, "personal_owner_scope", lambda path: path == cli_store.path)
+    password = "Synthetic-Desktop-New-Password!"
+    username = recovery_cli._run(
+        cli_store.path, "desktop-reset", "", "本机应急恢复",
+        personal_scope=True, new_password=password,
+    )
+    assert username == ADMIN_NAME
+    with cli_store.runtime.session_factory() as db:
+        user = db.get(User, cli_store.admin_id)
+        assert user.username == ADMIN_NAME and user.role == UserRole.ADMIN
+        assert verify_password(password, user.password_hash)
+        assert not verify_password(ADMIN_PASSWORD, user.password_hash)
+        assert db.scalar(select(RecoveryCredential)).used_at is not None
+        assert db.scalar(select(AuditLog).where(
+            AuditLog.action == "auth.recovery_credentials_changed"
+        )) is not None
+
+
+def test_desktop_reset_audit_failure_does_not_change_password(cli_store, monkeypatch):
+    monkeypatch.setattr(recovery_cli, "personal_owner_scope", lambda path: path == cli_store.path)
+
+    def fail_audit(*args, **kwargs):
+        raise RuntimeError("synthetic audit failure")
+
+    monkeypatch.setattr(account_recovery, "write_audit", fail_audit)
+    with pytest.raises(RuntimeError, match="synthetic audit failure"):
+        recovery_cli._run(cli_store.path, "desktop-reset", "", "本机应急恢复",
+                          personal_scope=True, new_password="Synthetic-Desktop-New-Password!")
+    with cli_store.runtime.session_factory() as db:
+        assert db.get(User, cli_store.admin_id).password_hash == cli_store.password_hash
+        assert db.scalar(select(RecoveryCredential)) is None

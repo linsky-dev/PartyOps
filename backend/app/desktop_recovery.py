@@ -11,9 +11,60 @@ from .recovery_cli import is_os_administrator, personal_owner_scope, trusted_dat
 
 
 def run_desktop_recovery(*, host: bool = False) -> int:
-    from tkinter import Tk, messagebox, simpledialog
+    from tkinter import BooleanVar, StringVar, Tk, messagebox, simpledialog, ttk
 
     from . import setup_wizard as wizard
+
+    class ResetDialog(simpledialog.Dialog):
+        """One form, no recovery tokens or technical paths."""
+        def body(self, master):
+            self.title("党建智办 · 找回账号和密码")
+            self.password = StringVar()
+            self.confirmation = StringVar()
+            self.visible = BooleanVar(value=False)
+            self.error = StringVar(value="")
+            master.columnconfigure(0, weight=1)
+            ttk.Label(master, text="找回账号和密码", font=("TkDefaultFont", 16, "bold")).grid(row=0, column=0, sticky="w", pady=(8, 10))
+            ttk.Label(master, text="已进入本机恢复助手。请设置新的登录密码。\n原账号、业务资料及权限不会被删除，旧登录会话将失效。", wraplength=360, justify="left").grid(row=1, column=0, sticky="w", pady=(0, 12))
+            ttk.Label(master, text="新密码（8—128 个字符）").grid(row=2, column=0, sticky="w")
+            first = ttk.Entry(master, textvariable=self.password, show="*", width=38)
+            first.grid(row=3, column=0, sticky="ew", pady=(4, 10))
+            ttk.Label(master, text="再次输入新密码").grid(row=4, column=0, sticky="w")
+            second = ttk.Entry(master, textvariable=self.confirmation, show="*", width=38)
+            second.grid(row=5, column=0, sticky="ew", pady=(4, 8))
+            def toggle():
+                mask = "" if self.visible.get() else "*"
+                first.configure(show=mask)
+                second.configure(show=mask)
+            ttk.Checkbutton(master, text="显示密码", variable=self.visible, command=toggle).grid(row=6, column=0, sticky="w")
+            ttk.Label(master, textvariable=self.error, foreground="#a32020", wraplength=360).grid(row=7, column=0, sticky="w", pady=(8, 4))
+            ttk.Label(master, text="点击恢复后，软件将自动处理本机服务，无需手动操作。", wraplength=360).grid(row=8, column=0, sticky="w")
+            return first
+
+        def buttonbox(self):
+            from tkinter import ttk
+
+            box = ttk.Frame(self)
+            ttk.Button(box, text="取消", command=self.cancel).pack(side="right", padx=6)
+            ttk.Button(box, text="恢复账号和密码", command=self.ok).pack(side="right", padx=6)
+            box.pack(fill="x", padx=8, pady=12)
+            self.bind("<Return>", self.ok)
+            self.bind("<Escape>", self.cancel)
+
+        def validate(self):
+            value = self.password.get()
+            if not 8 <= len(value) <= 128:
+                self.error.set("请输入 8—128 个字符的新密码。")
+                return False
+            if value != self.confirmation.get():
+                self.error.set("两次密码不一致，请重新确认。")
+                return False
+            return True
+
+        def apply(self):
+            self.result = self.password.get()
+            self.password.set("")
+            self.confirmation.set("")
 
     root = Tk()
     root.withdraw()
@@ -49,14 +100,9 @@ def run_desktop_recovery(*, host: bool = False) -> int:
             wizard.assert_windows_service_data_path_security(data, verify_target=True)
         elif not personal_owner_scope(data):
             raise ValueError("当前操作系统账号不是已配置个人数据的安全所有者，恢复已停止。")
-        if not messagebox.askyesno("恢复账号", "仅用于唯一管理员忘记账号或密码。\n将短暂停止本机服务，保留原账号与业务数据，并使旧登录会话失效。\n确认继续？", parent=root):
-            return 0
-        password = simpledialog.askstring("设置新密码", "请输入新密码（至少 8 个字符）：", show="*", parent=root)
+        password = ResetDialog(root).result
         if password is None:
             return 0
-        confirm = simpledialog.askstring("确认新密码", "请再次输入新密码：", show="*", parent=root)
-        if confirm != password or not 8 <= len(password) <= 128:
-            raise ValueError("两次密码不一致，或密码长度不符合要求。")
         executable = wizard._executable("partyops")
         if host:
             lock_path = wizard._acquire_windows_data_migration_lock()
@@ -77,7 +123,7 @@ def run_desktop_recovery(*, host: bool = False) -> int:
             **({"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {}),
         )
         if result.returncode != 0:
-            raise ValueError("恢复未完成。请确认本机只有一位有效管理员、数据权限正确且原服务已经退出。")
+            raise ValueError("恢复未完成。若有其他管理员，请联系其重置；否则请重新打开软件后重试。原账号和业务数据未被删除。")
         username = json.loads(result.stdout)["username"]
         messagebox.showinfo("恢复成功", f"您的登录账号：{username}\n请使用刚设置的新密码登录。", parent=root)
         return 0

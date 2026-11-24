@@ -307,7 +307,8 @@ def _run(
     new_password: str | None = None,
 ) -> str:
     if personal_scope:
-        if action not in {"emergency", "desktop-reset"} or not personal_owner_scope(path):
+        owner_ok = windows_personal_owner_scope(path) if action == "emergency" else personal_owner_scope(path)
+        if action not in {"emergency", "desktop-reset"} or not owner_ok:
             raise RecoveryCLIError("个人模式目录归属或权限校验未通过。")
     os.environ["PARTYOPS_DATA_DIR"] = str(path)
     os.environ["PARTYOPS_ENVIRONMENT"] = "production"
@@ -380,8 +381,25 @@ def main(argv: list[str] | None = None) -> int:
         try:
             path = trusted_data_directory(args.data_dir)
             personal = personal_owner_scope(path)
-            if not personal and not is_os_administrator():
-                raise RecoveryCLIError("仅原个人系统账号或主机系统管理员可以恢复。")
+            if not personal:
+                if not is_os_administrator() or os.name != "nt":
+                    raise RecoveryCLIError("仅原个人系统账号或受支持的本机主机管理员可以恢复。")
+                import shlex
+
+                config = Path(os.getenv("PROGRAMDATA", "C:/ProgramData")) / "PartyOps" / "partyops.env"
+                if config.is_symlink() or not config.is_file() or config.stat().st_size > 65536:
+                    raise RecoveryCLIError("主机配置不可验证。")
+                values = {}
+                for line in config.read_text(encoding="utf-8").splitlines():
+                    key, sep, raw = line.partition("=")
+                    if sep and key in {"PARTYOPS_MODE", "PARTYOPS_DATA_DIR"}:
+                        parts = shlex.split(raw)
+                        if len(parts) != 1 or key in values:
+                            raise RecoveryCLIError("主机配置不可验证。")
+                        values[key] = parts[0]
+                declared = Path(values.get("PARTYOPS_DATA_DIR", ""))
+                if values.get("PARTYOPS_MODE") != "host" or not declared.is_absolute() or declared.resolve(strict=True) != path.resolve(strict=True):
+                    raise RecoveryCLIError("恢复目录不是当前已配置的主机业务目录。")
             payload = json.loads(sys.stdin.read(8193))
             if (not isinstance(payload, dict) or set(payload) != {"password", "confirmation"}
                     or not isinstance(payload["password"], str)
