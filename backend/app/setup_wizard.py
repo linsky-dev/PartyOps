@@ -2283,7 +2283,9 @@ def _rewrite_personal_port(config_path: Path, port: int) -> dict[str, str]:
         if key not in seen:
             updated.append(f"{key}={value}")
     _write_private(config_path, "\n".join(updated) + "\n")
-    return load_host_environment(config_path)
+    environment = os.environ.copy()
+    environment.update(load_host_environment(config_path, inherit_environment=False))
+    return environment
 
 
 def _restart_previous_personal_process(environment: dict[str, str]) -> None:
@@ -2500,7 +2502,7 @@ def write_personal_config(data_dir: Path, port: int = 18775) -> Path:
         previous_mode = json.loads(previous_mode_raw).get("mode") if previous_mode_raw else ""
     except (ValueError, TypeError, json.JSONDecodeError):
         previous_mode = ""
-    previous = load_host_environment(path) if path.is_file() else {}
+    previous = load_host_environment(path, inherit_environment=False) if path.is_file() else {}
     previous_process_stopped = False
     host_deactivated: str | bool | None = None
     previous_data_dir: Path | None = None
@@ -4200,6 +4202,31 @@ def launch_host(config_path: Path) -> str:
     return url
 
 
+def _launch_new_personal_process(
+    config_path: Path, executable: Path, data_dir: Path, port: int, env: dict[str, str]
+) -> str:
+    """Retry only a confirmed bind failure of our own exited child."""
+    for attempt in range(3):
+        if not _loopback_port_available(port):
+            port = _select_alternative_personal_port(port)
+            env = _rewrite_personal_port(config_path, port)
+        process = _spawn([str(executable)], data_dir / "launcher.log", env)
+        try:
+            url = wait_for_host_health(
+                "127.0.0.1", port, timeout=180.0, data_dir=data_dir,
+                service_managed=False, process=process,
+            )
+        except HostStartupError as exc:
+            if exc.code != PORT_IN_USE or process.poll() is None or attempt == 2:
+                raise
+            port = _select_alternative_personal_port(port)
+            env = _rewrite_personal_port(config_path, port)
+            continue
+        _record_personal_process(data_dir, process)
+        return url
+    raise AssertionError("unreachable personal startup retry")
+
+
 def launch_personal(config_path: Path) -> str:
     """按当前桌面账号启动本机专用进程，不注册服务、不开放局域网。"""
 
@@ -4290,39 +4317,15 @@ def launch_personal(config_path: Path) -> str:
                 if stopped:
                     if not config_rewritten:
                         env = _rewrite_personal_port(config_path, port)
-                    process = _spawn(
-                        [str(executable)],
-                        data_dir / "launcher.log",
-                        env,
+                    return _launch_new_personal_process(
+                        config_path, executable, data_dir, port, env
                     )
-                    url = wait_for_host_health(
-                        "127.0.0.1",
-                        port,
-                        timeout=180.0,
-                        data_dir=data_dir,
-                        service_managed=False,
-                        process=process,
-                    )
-                    _record_personal_process(data_dir, process)
-                    return url
-            raise HostStartupError(
-                PORT_IN_USE,
-                f"个人模式端口 {port} 已被其他程序占用，请更换端口后重试。",
-                detail=exc.detail,
-            ) from exc
+            # Keep the original diagnostic; a database/permission failure is
+            # not evidence that a third-party process owns this port.
+            raise
     if not config_rewritten and "PARTYOPS_OFFICIAL_FORMAT_PORT=" not in config_path.read_text(encoding="utf-8"):
         env = _rewrite_personal_port(config_path, port)
-    process = _spawn([str(executable)], data_dir / "launcher.log", env)
-    url = wait_for_host_health(
-        "127.0.0.1",
-        port,
-        timeout=180.0,
-        data_dir=data_dir,
-        service_managed=False,
-        process=process,
-    )
-    _record_personal_process(data_dir, process)
-    return url
+    return _launch_new_personal_process(config_path, executable, data_dir, port, env)
 
 
 MACOS_AGENT_LABELS = {
