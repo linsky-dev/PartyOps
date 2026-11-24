@@ -3631,6 +3631,22 @@ def _preflight_windows_runtime_dependencies(
     package_platform = str(manifest.get("platform") or "")
     package_arch = str(manifest.get("architecture") or "")
     process_arch = "amd64" if sys.maxsize > 2**32 else "x86"
+    # ARM64 is a distinct ISA, not a synonym for 64-bit x86. Only a local
+    # hash-bound PE/IsWow64Process2 identity may authorize this QA package.
+    if package_arch == "arm64":
+        from .windows_runtime_identity import installed_identity
+
+        identity = installed_identity(executable, stdlib_platform.version())
+        if (identity.get("package_identity_status") != "verified"
+                or identity.get("execution_kind") != "native"
+                or identity.get("process_architecture") != "arm64"
+                or identity.get("runtime_profile") != "arm64-qa"):
+            raise HostStartupError(
+                RUNTIME_BINARY_INCOMPATIBLE,
+                "此 ARM64 测试包仅支持原生 Windows 11 ARM64，请安装匹配版本。",
+                detail=f"identity={identity.get('package_identity_reason', '')}",
+            )
+        process_arch = "arm64"
     if package_arch != process_arch:
         raise HostStartupError(
             RUNTIME_BINARY_INCOMPATIBLE,
@@ -3739,7 +3755,7 @@ def _preflight_windows_runtime_dependencies(
         "_internal/_tk_data/tk.tcl",
         "_internal/frontend/index.html",
     }
-    if process_arch == "amd64":
+    if process_arch in {"amd64", "arm64"}:
         required_paths.add("_internal/vcruntime140_1.dll")
 
     if legacy_package:
