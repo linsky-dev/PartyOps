@@ -31,7 +31,7 @@ def sha(p):
 
 def lock_hashes(arch):
     result, name = {}, None
-    for line in (ROOT / ("backend/legacy/requirements-windows7-" + arch + ".lock")).read_text().splitlines():
+    for line in (ROOT / ("backend/legacy/requirements-windows7-" + arch + ".lock")).read_text(encoding="utf-8").splitlines():
         m = re.match(r"^([A-Za-z0-9_.-]+)==([^ ]+)", line)
         if m:
             name = m.group(1).lower().replace("_", "-")
@@ -75,7 +75,10 @@ def main():
         folder = out/name
         folder.mkdir()
         try:
-            patch = HISTORY/"patches"/(name+"-"+version+"-partyops-win7.patch")
+            relative = HISTORY.relative_to(ROOT)/"patches"/(name+"-"+version+"-partyops-win7.patch")
+            # Read Git blob bytes, not a checkout with platform newline conversions.
+            patch = folder/"original.patch"
+            patch.write_bytes(subprocess.check_output(["git","show","HEAD:"+relative.as_posix()],cwd=ROOT))
             row["patch_sha256"] = sha(patch)
             row["current_locked_hashes"] = {a:locks[a].get(name) for a in locks}
             historical = HISTORY/"evidence"/(name+".json")
@@ -108,11 +111,17 @@ def main():
             assert len(roots)==1, "unexpected sdist root"
             source_root=roots[0]
             log=folder/"build.log"
+            # Prevent git apply from interpreting the nested source as a path in
+            # the PartyOps repository and silently skipping every patch hunk.
+            if run(["git","init","--quiet"],source_root,log):
+                raise RuntimeError("isolated git init failed")
             if run(["git","apply","--check",str(patch)],source_root,log):
                 row["status"]="PATCH_CHECK_FAILED"
                 continue
             if run(["git","apply",str(patch)],source_root,log):
                 raise RuntimeError("patch apply failed")
+            import shutil
+            shutil.rmtree(source_root/".git")
             row["status"]="PATCH_APPLIED_SOURCE_ONLY"
             if name in NATIVE:
                 row["native_rebuild_required"]=True
