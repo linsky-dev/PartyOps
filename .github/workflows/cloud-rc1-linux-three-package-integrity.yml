@@ -1,0 +1,151 @@
+name: RC1 Linux ARM64 DEB and dual openEuler RPM actual package integrity (HOSTED_ONLY)
+on:
+  pull_request:
+    branches: [main, feature/1.4.6-rc1-cloud-rebuild]
+    paths:
+      - '.github/workflows/cloud-rc1-linux-three-package-integrity.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  integrity:
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: kylin-uos-arm64
+            arch: arm64
+            runner: ubuntu-24.04-arm
+            format: deb
+            artifact: partyops-RC1-kylin-uos-arm64-ACTUAL-DEB-BUILD_ONLY
+            package: PartyOps_1.4.6-rc.1_kylin_uos_arm64_BUILD_ONLY_UNVERIFIED.deb
+            sha: 730d841e82c68515cfd9b46c759fd3ac1398dd494fc530b05c0339ead55b90bd
+            wps: c84b21908e542218d1ac20c5f5e2f7b13f3f9e6f9f07ec3e08ebd103fa31ad22
+            wps_source: 754319a3095aa5646db337a0ba723603ec2394f4333da397904df96c444dd19d
+            wps_evidence: f1b48d33f6eb068ee3ce57b810722355c4b583f2da41cf47ca816856cc8f9247
+          - id: openeuler-x86_64
+            arch: amd64
+            runner: ubuntu-24.04
+            format: rpm
+            artifact: partyops-RC1-openeuler-x86_64-RPM-BUILD_ONLY
+            package: PartyOps-1.4.6-0.rc.1.1.x86_64-BUILD_ONLY_UNVERIFIED.rpm
+            sha: f808e722fe294948162a24031db9f5a11a9dbdc7c204da5856b53c29592b37f3
+            wps: 26fba25f527dc66c4ca5b6197e89c873d0397765d6e88e7fb739710374e3da4f
+            wps_source: b4fba6efaa24034f02aa242e4b41433e542bf9f6f681f8bdeae2e7c70310abf7
+            wps_evidence: 77dcfc30c2244a18870c838c479a3f1ef32c0bb754c04e7e3604b087330f348f
+          - id: openeuler-aarch64
+            arch: arm64
+            runner: ubuntu-24.04-arm
+            format: rpm
+            artifact: partyops-RC1-openeuler-aarch64-RPM-BUILD_ONLY
+            package: PartyOps-1.4.6-0.rc.1.1.aarch64-BUILD_ONLY_UNVERIFIED.rpm
+            sha: d7d5e31ad0377752d38378fe57cb9d68d145f95281ac51d7aa69379321990f5a
+            wps: 76ae4182c03e5cf7e7399379cee614b6055d01e170b4258f3d6b2493cb98adb7
+            wps_source: 95ba0649d3156ba655bed2ecf5ae084de8b5e11c75720de8a7b8fa899ff25f1a
+            wps_evidence: cc9ab788ca58b98ae462b8d55e06ef5a4dec169f8cb0fcfe0b8799a93b2c8403
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SOURCE: 400dd924faaf3195aef69c24c160a2e6f109a5f0
+      CANDIDATE_RUN: '45303617009'
+      ARCH: ${{ matrix.arch }}
+      FORMAT: ${{ matrix.format }}
+      PACKAGE: ${{ matrix.package }}
+      EXPECTED_SHA: ${{ matrix.sha }}
+      ARTIFACT: ${{ matrix.artifact }}
+      WPS_HOST: ${{ matrix.wps }}
+      WPS_SOURCE: ${{ matrix.wps_source }}
+      WPS_EVIDENCE: ${{ matrix.wps_evidence }}
+    steps:
+      - name: Download exact existing complete package, verify independent package SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p evidence candidate extracted
+          info="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$CANDIDATE_RUN")"
+          test "$(jq -r .head_sha <<< "$info")" = "$SOURCE"
+          test "$(jq -r .head_repository.full_name <<< "$info")" = "$GITHUB_REPOSITORY"
+          test "$(jq -r .conclusion <<< "$info")" = success
+          test "$(jq -r '.path | split("@")[0]' <<< "$info")" = '.github/workflows/cloud-uos-fresh-application-freeze.yml'
+          gh run download "$CANDIDATE_RUN" --repo "$GITHUB_REPOSITORY" --name "$ARTIFACT-$SOURCE" --dir candidate
+          printf '%s  %s\n' "$EXPECTED_SHA" "candidate/$PACKAGE" | sha256sum --check
+          (cd candidate && sha256sum --check "$PACKAGE.sha256")
+          if [ "$FORMAT" = deb ]; then
+            test "$(dpkg-deb -f "candidate/$PACKAGE" Architecture)" = "$ARCH"
+            test "$(dpkg-deb -f "candidate/$PACKAGE" Version)" = '1.4.6~rc.1'
+            dpkg-deb -x "candidate/$PACKAGE" extracted
+            dpkg-deb -e "candidate/$PACKAGE" evidence/DEBIAN
+            for name in preinst postinst prerm postrm; do sh -n "evidence/DEBIAN/$name"; done
+          else
+            sudo apt-get update -qq && sudo apt-get install -y -qq rpm cpio
+            target=x86_64; if [ "$ARCH" = arm64 ]; then target=aarch64; fi
+            rpm -qp --queryformat '%{NAME}|%{VERSION}|%{RELEASE}|%{ARCH}\n' "candidate/$PACKAGE" | tee evidence/package-metadata.txt
+            test "$(rpm -qp --queryformat '%{ARCH}' "candidate/$PACKAGE")" = "$target"
+            test "$(rpm -qp --queryformat '%{VERSION}' "candidate/$PACKAGE")" = '1.4.6'
+            rpm -qp --scripts "candidate/$PACKAGE" > evidence/rpm-scriptlets.txt
+            # Only extraction, no scriptlets, no package installation on runner.
+            (cd extracted && rpm2cpio "../candidate/$PACKAGE" | cpio -id --quiet --no-absolute-filenames)
+          fi
+      - name: Independently check complete release manifest and old WPS component pins
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib,json,os,struct
+          root=Path('extracted/opt/partyops').resolve()
+          def sha(p):
+              h=hashlib.sha256()
+              with p.open('rb') as f:
+                  for block in iter(lambda:f.read(1024*1024),b''):
+                      h.update(block)
+              return h.hexdigest()
+          m=json.loads((root/'release-manifest.json').read_text(encoding='utf-8'))
+          assert m['source_commit']==os.environ['SOURCE'] and m['version']=='1.4.6-rc.1'
+          assert m['architecture']==os.environ['ARCH'] and m['signed'] is False
+          entries=m['files']
+          index={}
+          for row in entries:
+              rel=row['path']
+              p=root/rel
+              assert not Path(rel).is_absolute() and p.resolve().is_relative_to(root) and rel not in index, rel
+              assert p.is_file() and p.stat().st_size==row['size'] and sha(p)==row['sha256'], rel
+              index[rel]=row['sha256']
+          allfiles={p.relative_to(root).as_posix() for p in root.rglob('*') if p.is_file()}
+          assert allfiles==set(index)|{'release-manifest.json'}, (sorted(allfiles-set(index))[:20],sorted(set(index)-allfiles)[:20])
+          pins={'formatter-host/partyops-document-formatter-host':os.environ['WPS_HOST'],
+                'formatter-host/source-host.json':os.environ['WPS_SOURCE'],
+                'formatter-host/runtime-evidence.json':os.environ['WPS_EVIDENCE']}
+          for p,h in pins.items(): assert index[p]==h and sha(root/p)==h,p
+          expected=183 if os.environ['ARCH']=='arm64' else 62
+          for entry in ('partyops','partyops-client','partyops-wizard','partyops-updater'):
+              with (root/entry).open('rb') as f: header=f.read(20)
+              assert header[:4]==b'\x7fELF' and header[4]==2 and header[5]==1
+              assert struct.unpack_from('<H',header,18)[0]==expected,entry
+          result={'scope':'ACTUAL_PACKAGE_HOSTED_INTEGRITY_ONLY','source':os.environ['SOURCE'],
+                  'sha256':os.environ['EXPECTED_SHA'],'architecture':os.environ['ARCH'],
+                  'format':os.environ['FORMAT'],'files_verified':len(index),
+                  'historical_wps_sha256':pins,'native_wps_rerun':False,'native_target_install_tested':False,'release_ready':False}
+          Path('evidence/receipt.json').write_text(json.dumps(result,indent=2)+'\n',encoding='utf-8')
+          print('RC1_ACTUAL_PACKAGE_FULL_MANIFEST_AND_WPS_PIN_PASS',len(index))
+          PY
+      - name: Execute re-extracted native wizard and updater on current hosted architecture
+        shell: bash
+        run: |
+          set -euo pipefail
+          runtime="$PWD/extracted/opt/partyops"
+          # Isolated unprivileged help invocations; no business startup or install.
+          timeout 60 "$runtime/partyops-wizard" --help > evidence/wizard-help.txt
+          timeout 60 "$runtime/partyops-updater" --help > evidence/updater-help.txt
+          test -s evidence/wizard-help.txt
+          test -s evidence/updater-help.txt
+          echo 'RC1_NATIVE_ARCH_ENTRYPOINTS_HOSTED_PASS_NOT_TARGET_DISTRO'
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: RC1-${{ matrix.id }}-ACTUAL-PACKAGE-INTEGRITY-${{ github.event.pull_request.head.sha || github.sha }}
+          path: evidence
+          retention-days: 14
+          if-no-files-found: warn
