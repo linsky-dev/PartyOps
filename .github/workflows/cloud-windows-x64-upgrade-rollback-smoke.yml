@@ -2,7 +2,7 @@ name: RC1 actual RC6 upgrade and synthetic-data rollback test (HOSTED_ONLY)
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, feature/1.4.6-rc1-cloud-rebuild]
     paths:
       - '.github/workflows/cloud-windows-x64-upgrade-rollback-smoke.yml'
       - 'scripts/rc1-windows-upgrade-rollback-smoke.ps1'
@@ -39,8 +39,12 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $work = Join-Path $env:RUNNER_TEMP 'partyops-rc1-upgrade-inputs'
           New-Item -ItemType Directory -Path $work -Force | Out-Null
-          $candidateName = 'partyops-windows-x64-BUILD_ONLY-7ed8367b7b6e7a36a4eee1db8e818d4643bf5f72'
-          & gh run download 45096682908 -R linsky-dev/PartyOps --name $candidateName --dir $work
+          $candidateName = 'partyops-windows-x64-BUILD_ONLY-400dd924faaf3195aef69c24c160a2e6f109a5f0'
+          $run = gh api repos/linsky-dev/PartyOps/actions/runs/45303616891 | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $run.head_sha -ne '400dd924faaf3195aef69c24c160a2e6f109a5f0' -or $run.head_repository.full_name -ne 'linsky-dev/PartyOps' -or $run.conclusion -ne 'success') {
+            throw '[UPGRADE_QA_CANDIDATE_RUN_IDENTITY_INVALID]'
+          }
+          & gh run download 45303616891 -R linsky-dev/PartyOps --name $candidateName --dir $work
           if ($LASTEXITCODE -ne 0) { throw '[UPGRADE_QA_NEW_EXE_DOWNLOAD_FAILED]' }
           $new = @(Get-ChildItem -LiteralPath $work -Recurse -File -Filter 'PartyOps_1.4.6-rc.1_windows_amd64_BUILD_ONLY_UNVERIFIED.exe')
           $receipt = @(Get-ChildItem -LiteralPath $work -Recurse -File -Filter 'PartyOps_1.4.6-rc.1_windows_amd64_BUILD_ONLY_UNVERIFIED.candidate.json')
@@ -52,7 +56,7 @@ jobs:
           $newSha = (Get-FileHash -Algorithm SHA256 -LiteralPath $new[0].FullName).Hash.ToLowerInvariant()
           $line = [IO.File]::ReadAllText($shaFile[0].FullName).Trim()
           if ($line -notmatch '^([0-9a-fA-F]{64})\s+' -or $newSha -ne $Matches[1].ToLowerInvariant() -or
-              $newSha -ne $record.sha256 -or $record.source_commit -ne '7ed8367b7b6e7a36a4eee1db8e818d4643bf5f72' -or
+              $newSha -ne $record.sha256 -or $record.source_commit -ne '400dd924faaf3195aef69c24c160a2e6f109a5f0' -or
               $record.release_ready -or $record.signed) {
             throw '[UPGRADE_QA_NEW_EXE_HASH_OR_PROVENANCE_INVALID]'
           }
@@ -70,6 +74,12 @@ jobs:
           "RC1_UPGRADE_NEW=$($new[0].FullName)" >> $env:GITHUB_ENV
           "RC1_UPGRADE_NEW_SHA=$newSha" >> $env:GITHUB_ENV
           'RC1_UPGRADE_BOTH_ORIGINAL_INSTALLERS_SHA_VERIFIED'
+      - name: Initialize diagnostic directory before any host mutation
+        shell: pwsh
+        run: |
+          $out = Join-Path $env:RUNNER_TEMP 'partyops-rc1-hosted-upgrade'
+          New-Item -ItemType Directory -Force $out | Out-Null
+          @{scope='HOSTED_ONLY'; candidate_source='400dd924faaf3195aef69c24c160a2e6f109a5f0'; run=45303616891; release_ready=$false; actual_database_downgrade_tested=$false} | ConvertTo-Json | Set-Content "$out/qa-inputs.json"
       - name: PowerShell syntax and administrative test-host check
         shell: pwsh
         run: |
@@ -94,8 +104,13 @@ jobs:
             OutputDirectory = (Join-Path $env:RUNNER_TEMP 'partyops-rc1-hosted-upgrade')
             ConfirmEphemeralHostedRunner = $true
           }
-          & ./scripts/rc1-windows-upgrade-rollback-smoke.ps1 @arguments
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          try {
+            & ./scripts/rc1-windows-upgrade-rollback-smoke.ps1 @arguments
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          } catch {
+            $_ | Out-String | Set-Content (Join-Path $arguments.OutputDirectory 'failure-before-or-during-test.txt')
+            throw
+          }
 
       - name: Upload exact hosted program upgrade and rollback evidence, no private data
         if: always()
