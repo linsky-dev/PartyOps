@@ -24,13 +24,13 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       PYTHONUTF8: '1'
-      SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      SOURCE_SHA: 4cb9484f155635dd9bc1ca58fead00bb41b9cd0a
       CLOSURE_RUN: '45370727222'
       CLOSURE_SHA: '2122c220fd3af2e8040f4b8ffab01c778c70da88'
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
-          ref: ${{ env.SOURCE_SHA }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         with:
@@ -39,6 +39,21 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: '22'
+      - name: Bind exact new recovery source, keeping candidate scripts separate
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $auth = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes("x-access-token:$env:GH_TOKEN"))
+          Write-Output "::add-mask::$auth"
+          $env:GIT_CONFIG_COUNT='1'
+          $env:GIT_CONFIG_KEY_0='http.https://github.com/.extraheader'
+          $env:GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $auth"
+          git fetch --no-tags origin $env:SOURCE_SHA
+          if ($LASTEXITCODE -ne 0) { throw 'BUSINESS_SOURCE_UNAVAILABLE' }
+          git checkout $env:SOURCE_SHA -- backend frontend packaging
+          if ($LASTEXITCODE -ne 0) { throw 'BUSINESS_SOURCE_CHECKOUT_FAILED' }
+          git diff --exit-code $env:SOURCE_SHA -- backend frontend packaging
+          if ($LASTEXITCODE -ne 0) { throw 'BUSINESS_SOURCE_MISMATCH' }
       - name: Reuse verified native closure without modifying original lock
         shell: pwsh
         run: |

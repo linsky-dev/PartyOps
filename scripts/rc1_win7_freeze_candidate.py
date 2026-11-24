@@ -101,8 +101,10 @@ def freeze(out, arch):
     subprocess.check_call([str(bundle / "PartyOpsWizard.exe"), "--self-test"], env=env, timeout=90)
     check(json.loads(report.read_text(encoding="utf-8"))["passed"] is True, "wizard GUI")
     help_result = subprocess.run([str(bundle / "PartyOps.exe"), "--account-recovery", "--help"], env=env, capture_output=True, timeout=90)
-    check(help_result.returncode == 0 and b"desktop-reset" in help_result.stdout, "frozen recovery entry")
     (out / "recovery-help.txt").write_bytes(help_result.stdout)
+    (out / "recovery-help-stderr.txt").write_bytes(help_result.stderr)
+    (out / "recovery-help-status.json").write_text(json.dumps({"returncode": help_result.returncode}), encoding="utf-8")
+    check(help_result.returncode == 0 and b"desktop-reset" in help_result.stdout, "frozen recovery entry: exit=" + str(help_result.returncode) + "; stderr=" + help_result.stderr.decode("utf-8", errors="replace")[-2000:])
     # Produce a complete inventory, including failures; production validator
     # still requires verified UCRT, VC142, .NET and full package closure.
     import importlib.util
