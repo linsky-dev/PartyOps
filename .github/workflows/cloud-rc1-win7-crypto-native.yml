@@ -140,7 +140,7 @@ jobs:
           if ($wheel.Count -ne 1) { throw 'MISSING_WHEEL' }
           & $env:TARGET_PY -m pip install --no-index --no-deps $wheel[0].FullName
           if ($LASTEXITCODE -ne 0) { throw 'OFFLINE_WHEEL_INSTALL_FAILED' }
-          & $env:TARGET_PY -c "from cryptography import __version__; from cryptography.hazmat.backends.openssl.backend import backend; assert __version__=='50.0.0+partyops.1'; assert backend.openssl_version_text().startswith('OpenSSL 3.5.7 '); print(backend.openssl_version_text())"
+          & $env:TARGET_PY -c "import importlib.metadata as m; from cryptography import __version__; from cryptography.hazmat.backends.openssl.backend import backend; print('metadata=',m.version('cryptography'),'module=',__version__,'openssl=',backend.openssl_version_text(),flush=True); assert m.version('cryptography')=='50.0.0+partyops.1'; assert __version__ in ('50.0.0','50.0.0+partyops.1'); assert backend.openssl_version_number() == 0x30500070; assert backend.openssl_version_text().split()[0:2] == ['OpenSSL','3.5.7']"
           if ($LASTEXITCODE -ne 0) { throw 'CRYPTO_RUNTIME_IDENTITY_FAILED' }
           & $env:TARGET_PY scripts/validate-win7-cryptography-runtime.py
           if ($LASTEXITCODE -ne 0) { throw 'ORIGINAL_CRYPTO_RUNTIME_GATE_FAILED' }
