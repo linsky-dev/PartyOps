@@ -1,7 +1,7 @@
 name: RC1 Windows 11 ARM64 actual unsigned EXE candidate (NOT RELEASE)
 on:
   pull_request:
-    branches: [feature/1.4.6-rc1-cloud-rebuild]
+    branches: [qa/rc1-arm64-full-pdf-inputs-20261124]
     paths:
       - '.github/workflows/cloud-rc1-arm64-unsigned-installer.yml'
       - 'scripts/rc1_arm64_assemble_installer.py'
@@ -21,8 +21,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          gh run watch 45417334158 --repo "$GH_REPO" --exit-status --interval 30
-          gh api "repos/$GH_REPO/actions/runs/45417334158" | jq -e --arg repo "$GH_REPO" '.head_repository.full_name==$repo and .head_sha=="33c609e9335eaeca813ec05a2ca546b22a8bbae2" and .conclusion=="success" and .path==".github/workflows/cloud-rc1-arm64-full-pdf-inputs.yml"'
+          gh run watch 45417578178 --repo "$GH_REPO" --exit-status --interval 30
+          gh api "repos/$GH_REPO/actions/runs/45417578178" | jq -e --arg repo "$GH_REPO" '.head_repository.full_name==$repo and .head_sha=="af803858c6ec73d615f5fc1a26111409d5eaac57" and .conclusion=="success" and .path==".github/workflows/cloud-rc1-arm64-full-pdf-inputs.yml"'
   package:
     needs: verify-source
     runs-on: windows-11-arm
@@ -51,7 +51,7 @@ jobs:
           $ErrorActionPreference='Stop'
           $root=Join-Path $env:RUNNER_TEMP 'arm64-package-inputs'
           $items=@(
-            @{run=45417334158;sha='33c609e9335eaeca813ec05a2ca546b22a8bbae2';workflow='cloud-rc1-arm64-full-pdf-inputs.yml';name="RC1-ARM64-nine-native-entry-APP-ONLY-NOT-INSTALLER-$env:SOURCE_SHA";dir='app'},
+            @{run=45417578178;sha='af803858c6ec73d615f5fc1a26111409d5eaac57';workflow='cloud-rc1-arm64-full-pdf-inputs.yml';name="RC1-ARM64-nine-native-entry-APP-ONLY-NOT-INSTALLER-$env:SOURCE_SHA";dir='app'},
             @{run=45339196816;sha='61a982d7b8fd2d9658a5bf700e2060d3fa571d14';workflow='cloud-windows-arm64-libreoffice-runtime.yml';name='partyops-rc1-win-arm64-OFFICE-INPUT-NOT-INSTALLER-bc9ff1be78aeb2bcfe190577762792928da5a665';dir='office'},
             @{run=45410093223;sha='39c5e0973634be6edd747b1fc875e91a9e8fbd6d';workflow='cloud-rc1-arm64-sqlite-runtime.yml';name='RC1-ARM64-SQLite-3.53.4-NATIVE-INPUT-NOT-INSTALLER-39c5e0973634be6edd747b1fc875e91a9e8fbd6d';dir='sqlite'},
             @{run=45410093572;sha='39c5e0973634be6edd747b1fc875e91a9e8fbd6d';workflow='cloud-rc1-arm64-ocr-ai.yml';name='RC1-ARM64-Tesseract-NATIVE-INPUT-NOT-INSTALLER-39c5e0973634be6edd747b1fc875e91a9e8fbd6d';dir='ocr'},
