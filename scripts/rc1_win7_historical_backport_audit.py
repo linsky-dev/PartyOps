@@ -123,6 +123,17 @@ def main():
             import shutil
             shutil.rmtree(source_root/".git")
             row["status"]="PATCH_APPLIED_SOURCE_ONLY"
+            if name == "urllib3":
+                # The historical patch disables hatch-vcs's version-file hook.
+                # Generate the equivalent static module explicitly, before wheel
+                # creation, without changing the HTTP or TLS implementation.
+                version_file = source_root/"src/urllib3/_version.py"
+                version_file.write_text(
+                    "__version__ = version = '2.7.0+partyops.1'\n"
+                    "__version_tuple__ = version_tuple = (2, 7, 0, 'partyops.1')\n",
+                    encoding="utf-8",
+                )
+                row["generated_version_module_sha256"] = sha(version_file)
             if name in NATIVE:
                 row["native_rebuild_required"]=True
                 continue
@@ -141,6 +152,8 @@ def main():
                 metadata=message_from_bytes(z.read(meta_names[0]))
                 assert metadata["Version"]==version+"+partyops.1", "backport version mismatch"
                 assert wheel.name.endswith("-none-any.whl"), "expected architecture independent wheel"
+                if name == "urllib3":
+                    assert "urllib3/_version.py" in z.namelist(), "generated version module omitted from wheel"
             wheel_digest=sha(wheel)
             row.update(status="REBUILT_CANDIDATE_NOT_APPROVED",candidate_wheel=wheel.name,candidate_sha256=wheel_digest,
                        matches_current_lock={a:wheel_digest in locks[a][name]["sha256"] for a in locks})
