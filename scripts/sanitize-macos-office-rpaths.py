@@ -33,6 +33,11 @@ def main():
         with p.open("rb") as f:
             if f.read(4) not in MAGICS:
                 continue
+        # Java class files and Mach-O universal binaries both start with
+        # CAFEBABE. Identify the actual object format before invoking otool.
+        kind = run("/usr/bin/file", "-b", str(p)).strip()
+        if not kind.startswith("Mach-O"):
+            continue
         original = commands(p)
         stale = sorted({r for r in original if r.startswith(PREFIX)})
         if not stale:
