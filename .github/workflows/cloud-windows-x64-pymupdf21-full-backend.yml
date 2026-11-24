@@ -2,7 +2,7 @@ name: RC1 Windows x64 PyMuPDF 2.1 FULL backend regressions (BUILD_ONLY)
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, feature/1.4.6-rc1-cloud-rebuild]
     paths:
       - '.github/workflows/cloud-windows-x64-pymupdf21-full-backend.yml'
       - 'scripts/rc1_windows_pdf_lock_review.py'
