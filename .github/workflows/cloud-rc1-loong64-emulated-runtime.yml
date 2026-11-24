@@ -60,8 +60,8 @@ jobs:
         run: |
           set -euo pipefail
           root="$RUNNER_TEMP/loong64-root"
-          sudo chroot "$root" apt-get install -y --no-install-recommends python3-cryptography python3-pymupdf python3-onnxruntime python3-tokenizers python3-numpy python3-pyinstaller
-          sudo unshare --net chroot --userspec=65534:65534 "$root" /usr/bin/python3 -c 'import platform,fitz,numpy,onnxruntime,tokenizers,cryptography; assert platform.machine() in ("loongarch64","loong64"); d=fitz.open(); p=d.new_page(); p.insert_text((72,72),"PartyOps LoongArch64"); assert "PartyOps LoongArch64" in p.get_text(); print("LOONG64_DEBIAN_DEPENDENCIES_IMPORT_PASS",fitz.VersionBind,numpy.__version__,onnxruntime.__version__,tokenizers.__version__,cryptography.__version__)' | tee artifacts/loong64-emulated/native-debian-dependency-smoke.txt
+          sudo chroot "$root" apt-get install -y --no-install-recommends python3-cryptography python3-pymupdf python3-fitz python3-onnxruntime python3-tokenizers python3-numpy python3-pyinstaller
+          sudo unshare --net chroot --userspec=65534:65534 "$root" /usr/bin/python3 -c 'import platform,fitz,pymupdf,numpy,onnxruntime,tokenizers,cryptography; assert fitz.open is pymupdf.open; assert platform.machine() in ("loongarch64","loong64"); d=fitz.open(); p=d.new_page(); p.insert_text((72,72),"PartyOps LoongArch64"); assert "PartyOps LoongArch64" in p.get_text(); print("LOONG64_DEBIAN_DEPENDENCIES_IMPORT_PASS",fitz.VersionBind,numpy.__version__,onnxruntime.__version__,tokenizers.__version__,cryptography.__version__)' | tee artifacts/loong64-emulated/native-debian-dependency-smoke.txt
           sudo chroot "$root" dpkg-query -W -f='\${Package}\t\${Version}\t\${Architecture}\n' > artifacts/loong64-emulated/installed-packages.tsv
       - name: Verify historical donor hash and execute original Loong64 wizard and updater offline
         shell: bash
