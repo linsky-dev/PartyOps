@@ -10,10 +10,10 @@ permissions:
 jobs:
   emulated-runtime:
     runs-on: ubuntu-24.04
-    timeout-minutes: 110
+    timeout-minutes: 180
     env:
       GH_TOKEN: ${{ github.token }}
-      SOURCE_SHA: 400dd924faaf3195aef69c24c160a2e6f109a5f0
+      SOURCE_SHA: 96d1c9bd553b70b0bef0c934b6196d8fee0a265f
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
@@ -150,6 +150,57 @@ jobs:
           # Source dependency discovery only: Debian sid and its Python version
           # are not the pinned Deepin core release build environment.
           test "$rc" = 0
+      - name: Run actual Alembic migration on synthetic data in isolated LoongArch64 environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/loong64-root"
+          sudo cp backend/alembic.ini "$root/partyops-source/"
+          sudo unshare --net chroot --userspec=65534:65534 "$root" /usr/bin/env -i HOME=/tmp/rc1-app-data PATH=/usr/bin:/bin LANG=C.UTF-8 PYTHONPATH=/partyops-source PARTYOPS_DATA_DIR=/tmp/rc1-app-data PARTYOPS_ENVIRONMENT=test PARTYOPS_MODE=personal /opt/rc1-source-env/bin/python -c 'import pathlib,sqlite3; from app.database import DatabaseRuntime; DatabaseRuntime().create_schema(); db=sqlite3.connect("/tmp/rc1-app-data/partyops.db"); assert db.execute("select version_num from alembic_version").fetchone()[0]=="0028"; assert db.execute("pragma integrity_check").fetchone()[0]=="ok"; print("LOONG64_SCHEMA_0028_INTEGRITY_PASS")' | tee artifacts/loong64-emulated/schema.log
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - name: Build current frontend and prepare existing Loong64 core freeze spec
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/loong64-root"
+          corepack enable
+          corepack prepare 'pnpm@11.9.0' --activate
+          (cd frontend && corepack pnpm install --frozen-lockfile && corepack pnpm run build)
+          test -f frontend/dist/client/index.html
+          sudo mkdir -p "$root/tmp/rc1-freeze/backend" "$root/tmp/rc1-freeze/packaging/uos" "$root/tmp/rc1-freeze/frontend/dist"
+          sudo cp -a backend/app backend/alembic backend/alembic.ini "$root/tmp/rc1-freeze/backend/"
+          sudo cp -a packaging/uos/*.py packaging/uos/partyops.spec "$root/tmp/rc1-freeze/packaging/uos/"
+          sudo cp -a frontend/dist/client "$root/tmp/rc1-freeze/frontend/dist/"
+          sudo chown -R 65534:65534 "$root/tmp/rc1-freeze"
+          sudo chroot "$root" apt-get install -y --no-install-recommends binutils xvfb xauth
+      - name: Freeze actual native LoongArch64 core executable and wizard (Debian ABI only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/loong64-root"
+          out="$PWD/artifacts/loong64-emulated"
+          sudo timeout 4800 unshare --net chroot --userspec=65534:65534 "$root" /usr/bin/env -i HOME=/tmp/rc1-freeze PATH=/opt/rc1-source-env/bin:/usr/bin:/bin LANG=C.UTF-8 PARTYOPS_RUNTIME_PROFILE=core /bin/sh -c 'cd /tmp/rc1-freeze && /opt/rc1-source-env/bin/python -m PyInstaller --noconfirm --clean --distpath dist --workpath work packaging/uos/partyops.spec' 2>&1 | tee "$out/actual-freeze.log"
+          bundle="$root/tmp/rc1-freeze/dist/PartyOps"
+          for name in partyops partyops-wizard partyops-client partyops-updater; do
+            test -x "$bundle/$name"
+            readelf -h "$bundle/$name" | tee "$out/frozen-$name-elf.txt"
+            grep -qi 'LoongArch' "$out/frozen-$name-elf.txt"
+          done
+          sudo find "$bundle/_internal" -type f -name '*.so*' -exec chmod a-x {} +
+          sudo unshare --net chroot --userspec=65534:65534 "$root" /usr/bin/env -i HOME=/tmp/rc1-freeze PATH=/usr/bin:/bin LANG=C.UTF-8 /tmp/rc1-freeze/dist/PartyOps/partyops --account-recovery --help | tee "$out/frozen-recovery-help.txt"
+          grep -q 'desktop-reset' "$out/frozen-recovery-help.txt"
+          sudo unshare --net chroot --userspec=65534:65534 "$root" /usr/bin/env -i HOME=/tmp/rc1-freeze PATH=/usr/bin:/bin LANG=C.UTF-8 /usr/bin/xvfb-run -a /tmp/rc1-freeze/dist/PartyOps/partyops-wizard --self-test | tee "$out/frozen-wizard-gui.txt"
+          sudo unshare --net chroot --userspec=65534:65534 "$root" /usr/bin/env -i HOME=/tmp/rc1-freeze PATH=/usr/bin:/bin LANG=C.UTF-8 /tmp/rc1-freeze/dist/PartyOps/partyops-wizard --runtime-layout-self-test | tee "$out/frozen-layout.txt"
+          sudo tar -C "$root/tmp/rc1-freeze/dist" -czf "$out/PartyOps-loong64-DEBIAN-SID-APP-ONLY.tar.gz" PartyOps
+          sudo chown "$(id -u):$(id -g)" "$out/PartyOps-loong64-DEBIAN-SID-APP-ONLY.tar.gz"
+          sha256sum "$out/PartyOps-loong64-DEBIAN-SID-APP-ONLY.tar.gz" > "$out/frozen-app-sha256.txt"
+          python - <<'PY'
+          import json,os,pathlib
+          p=pathlib.Path('artifacts/loong64-emulated')
+          (p/'freeze-receipt.json').write_text(json.dumps({'source_commit':os.environ['SOURCE_SHA'],'status':'DEBIAN_SID_EMULATED_CORE_FREEZE_ONLY','schema_0028':True,'new_application_frozen':True,'native_deepin_tested':False,'target_abi_approved':False,'installer_created':False,'release_ready':False},indent=2)+'\n')
+          PY
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
