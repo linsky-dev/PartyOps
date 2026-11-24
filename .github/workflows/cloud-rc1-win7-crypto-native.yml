@@ -1,0 +1,150 @@
+name: RC1 Win7 crypto native OpenSSL 3.5 candidate (NOT INSTALLER)
+on:
+  pull_request:
+    branches: [feature/1.4.6-rc1-cloud-rebuild]
+    paths:
+      - '.github/workflows/cloud-rc1-win7-crypto-native.yml'
+      - 'scripts/rc1_win7_crypto_native.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native:
+    runs-on: windows-2022
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            python: x64
+            bits: 64
+            vcarch: x64
+            rust: x86_64-win7-windows-msvc
+            openssl: VC-WIN64A
+          - arch: x86
+            python: x86
+            bits: 32
+            vcarch: x86
+            rust: i686-win7-windows-msvc
+            openssl: VC-WIN32
+    env:
+      PYTHONUTF8: '1'
+      RUSTUP_TOOLCHAIN: nightly-2026-08-16
+      CARGO_BUILD_JOBS: '1'
+      SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        id: host
+        with:
+          python-version: '3.12'
+          architecture: x64
+      - name: Verify upstream hashes and historical patch
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python -m pip install 'maturin==1.15.0' 'pefile==2024.8.26'
+          if ($LASTEXITCODE -ne 0) { throw 'BUILD_TOOLS_FAILED' }
+          python scripts/rc1_win7_crypto_native.py (Join-Path $env:RUNNER_TEMP 'crypto-input') '${{ matrix.arch }}'
+          if ($LASTEXITCODE -ne 0) { throw 'SOURCE_PREPARATION_FAILED' }
+          rustup toolchain install nightly-2026-08-16 --profile minimal --component rust-src
+          if ($LASTEXITCODE -ne 0) { throw 'RUST_TOOLCHAIN_FAILED' }
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        id: target
+        with:
+          python-version: '3.8.10'
+          architecture: ${{ matrix.python }}
+      - name: Compile static OpenSSL and patched cryptography with Win7 Rust target
+        shell: pwsh
+        env:
+          HOST_PY: ${{ steps.host.outputs.python-path }}
+          TARGET_PY: ${{ steps.target.outputs.python-path }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = Join-Path $env:RUNNER_TEMP 'crypto-input'
+          $out = Join-Path $PWD 'artifacts/win7-crypto'
+          New-Item -ItemType Directory -Force $out | Out-Null
+          Copy-Item "$root/source-receipt.json" $out
+          & $env:TARGET_PY -c "import sys,struct; assert sys.version_info[:3]==(3,8,10); assert struct.calcsize('P')*8==${{ matrix.bits }}"
+          if ($LASTEXITCODE -ne 0) { throw 'WRONG_TARGET_PYTHON' }
+          & $env:TARGET_PY -m pip install --only-binary=:all: --require-hashes -r "$root/runtime-deps.lock"
+          if ($LASTEXITCODE -ne 0) { throw 'LOCKED_RUNTIME_DEPS_FAILED' }
+          $env:PYO3_PYTHON = $env:TARGET_PY
+          $env:PYO3_CROSS_PYTHON_VERSION = '3.8'
+          $env:PYO3_CROSS_LIB_DIR = Join-Path (Split-Path $env:TARGET_PY) 'libs'
+          if (-not (Test-Path (Join-Path $env:PYO3_CROSS_LIB_DIR 'python38.lib'))) { throw 'PYTHON_IMPORT_LIBRARY_MISSING' }
+          $vswhere = Join-Path ([Environment]::GetFolderPath('ProgramFilesX86')) 'Microsoft Visual Studio/Installer/vswhere.exe'
+          $vs = & $vswhere -latest -products '*' -property installationPath | Select-Object -First 1
+          $vcvars = Join-Path $vs 'VC/Auxiliary/Build/vcvarsall.bat'
+          if (-not (Test-Path $vcvars)) { throw 'MSVC_MISSING' }
+          $prefix = (Join-Path $root 'openssl-static').Replace('\', '/')
+          $env:CL = '/D_WIN32_WINNT=0x0601 /DWINVER=0x0601'
+          $env:OPENSSL_DIR = $prefix
+          $env:OPENSSL_STATIC = '1'
+          $cmd = Join-Path $env:RUNNER_TEMP 'build-win7-crypto.cmd'
+          @(
+            '@echo off',
+            "call ""$vcvars"" ${{ matrix.vcarch }} -vcvars_ver=14.29",
+            'if errorlevel 1 exit /b 11',
+            "cd /d ""$root\openssl-3.5.7""",
+            "perl Configure ${{ matrix.openssl }} no-shared no-tests no-makedepend no-asm --prefix=""$prefix"" --openssldir=""$prefix/ssl""",
+            'if errorlevel 1 exit /b 21',
+            'nmake',
+            'if errorlevel 1 exit /b 22',
+            'nmake install_sw',
+            'if errorlevel 1 exit /b 23',
+            "cd /d ""$root\cryptography-50.0.0""",
+            """$env:HOST_PY"" -m maturin build --release --locked --target ${{ matrix.rust }} --interpreter 3.8 --out ""$out"" -Z build-std=std,panic_abort -j 1",
+            'if errorlevel 1 exit /b 31'
+          ) | Set-Content -Encoding ascii $cmd
+          & cmd.exe /d /c $cmd *> "$out/build.log"
+          $rc = $LASTEXITCODE
+          Get-Content "$out/build.log" -Tail 100
+          if ($rc -ne 0) { throw "WIN7_CRYPTO_NATIVE_BUILD_FAILED: $rc" }
+          @'
+          import importlib.util, pathlib, re, sys, zipfile
+          out, arch = pathlib.Path(sys.argv[1]), sys.argv[2]
+          wheels = list(out.glob("*.whl"))
+          plat = {"amd64":"win_amd64","x86":"win32"}[arch]
+          assert len(wheels)==1 and re.fullmatch(r"cryptography-50\.0\.0\+partyops\.1-cp38-(abi3|cp38)-"+plat+r"\.whl", wheels[0].name)
+          spec = importlib.util.spec_from_file_location("pe_gate", "scripts/validate-win7-pe.py")
+          mod = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(mod)
+          with zipfile.ZipFile(wheels[0]) as z:
+              files = [n for n in z.namelist() if n.endswith((".dll",".pyd"))]
+              assert any(n.endswith(".pyd") for n in files)
+              for i,n in enumerate(files):
+                  p=out/("native-"+str(i)+"-"+pathlib.Path(n).name)
+                  p.write_bytes(z.read(n))
+                  errors=mod.validate_pe(p,arch,{})
+                  assert not errors, errors
+          '@ | Set-Content -Encoding utf8 "$out/verify-pe.py"
+          & $env:HOST_PY "$out/verify-pe.py" $out '${{ matrix.arch }}'
+          if ($LASTEXITCODE -ne 0) { throw 'PE_GATE_FAILED' }
+      - name: Actual Python 3.8 RSA, Fernet and SM3/SM4-GCM runtime
+        shell: pwsh
+        env:
+          TARGET_PY: ${{ steps.target.outputs.python-path }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $out = Join-Path $PWD 'artifacts/win7-crypto'
+          $wheel = @(Get-ChildItem $out -Filter '*.whl')
+          if ($wheel.Count -ne 1) { throw 'MISSING_WHEEL' }
+          & $env:TARGET_PY -m pip install --no-index --no-deps $wheel[0].FullName
+          if ($LASTEXITCODE -ne 0) { throw 'OFFLINE_WHEEL_INSTALL_FAILED' }
+          & $env:TARGET_PY -c "from cryptography import __version__; from cryptography.hazmat.backends.openssl.backend import backend; assert __version__=='50.0.0+partyops.1'; assert backend.openssl_version_text().startswith('OpenSSL 3.5.7 '); print(backend.openssl_version_text())"
+          if ($LASTEXITCODE -ne 0) { throw 'CRYPTO_RUNTIME_IDENTITY_FAILED' }
+          & $env:TARGET_PY scripts/validate-win7-cryptography-runtime.py
+          if ($LASTEXITCODE -ne 0) { throw 'ORIGINAL_CRYPTO_RUNTIME_GATE_FAILED' }
+          @{status='HOSTED_PYTHON38_CRYPTO_PASS_NOT_WIN7_OS'; release_ready=$false; source_commit=$env:SOURCE_SHA; wheel=$wheel[0].Name; sha256=(Get-FileHash $wheel[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant()} | ConvertTo-Json | Set-Content "$out/wheel-receipt.json"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: RC1-Win7-${{ matrix.arch }}-crypto-BUILD-ONLY-${{ env.SOURCE_SHA }}
+          path: artifacts/win7-crypto
+          if-no-files-found: warn
+          retention-days: 14
