@@ -1,0 +1,91 @@
+name: RC1 Loong64 signed Debian rootfs and emulated runtime probe (NOT DEEPIN)
+on:
+  pull_request:
+    branches: [main, feature/1.4.6-rc1-cloud-rebuild]
+    paths:
+      - '.github/workflows/cloud-rc1-loong64-emulated-runtime.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  emulated-runtime:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SOURCE_SHA: 400dd924faaf3195aef69c24c160a2e6f109a5f0
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          persist-credentials: false
+      - name: Prepare Ubuntu signed QEMU and Debian bootstrap tooling
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/loong64-emulated
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends qemu-user-static binfmt-support debootstrap debian-archive-keyring
+          test -x /usr/bin/qemu-loongarch64-static
+          /usr/bin/qemu-loongarch64-static --version | tee artifacts/loong64-emulated/qemu-version.txt
+          sudo update-binfmts --enable qemu-loongarch64
+          cat /proc/sys/fs/binfmt_misc/qemu-loongarch64 | tee artifacts/loong64-emulated/binfmt.txt
+          test -r /usr/share/keyrings/debian-archive-keyring.gpg
+      - name: Bootstrap signed Debian LoongArch64 sysroot, not claimed as Deepin
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/loong64-root"
+          sudo debootstrap --foreign --arch=loong64 --variant=minbase --keyring=/usr/share/keyrings/debian-archive-keyring.gpg sid "$root" https://deb.debian.org/debian 2>&1 | tee artifacts/loong64-emulated/bootstrap.log
+          sudo install -m 0755 /usr/bin/qemu-loongarch64-static "$root/usr/bin/qemu-loongarch64-static"
+          sudo chroot "$root" /debootstrap/debootstrap --second-stage 2>&1 | tee artifacts/loong64-emulated/second-stage.log
+          sudo chroot "$root" dpkg --print-architecture | tee artifacts/loong64-emulated/architecture.txt
+          test "$(cat artifacts/loong64-emulated/architecture.txt)" = loong64
+          sudo chroot "$root" getconf GNU_LIBC_VERSION | tee artifacts/loong64-emulated/glibc.txt
+          sudo chroot "$root" apt-get update
+          sudo chroot "$root" apt-get install -y --no-install-recommends python3 ca-certificates
+          sudo chroot "$root" apt-cache policy python3 python3-venv python3-dev python3-cryptography python3-pymupdf python3-onnxruntime python3-tokenizers python3-numpy python3-pyinstaller tesseract-ocr libreoffice-writer | tee artifacts/loong64-emulated/package-availability.txt
+      - name: Exercise exact new source syntax and architecture Python, offline
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          root="$RUNNER_TEMP/loong64-root"
+          sudo mkdir -p "$root/partyops-source"
+          sudo cp -a backend/app backend/alembic "$root/partyops-source/"
+          sudo chmod -R a+rX "$root/partyops-source"
+          sudo unshare --net chroot --userspec=65534:65534 "$root" /usr/bin/python3 -c 'import platform,sqlite3,ssl,pathlib; assert platform.machine() in ("loongarch64","loong64"); files=list(pathlib.Path("/partyops-source").rglob("*.py")); assert files; [compile(f.read_bytes(),str(f),"exec") for f in files]; print(platform.machine(),sqlite3.sqlite_version,ssl.OPENSSL_VERSION,"RC1_SOURCE_COMPILED",len(files))' | tee artifacts/loong64-emulated/source-syntax.txt
+      - name: Verify historical donor hash and execute original Loong64 wizard and updater offline
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/loong64-root"
+          donor=PartyOps_1.4.5-rc.6_linux_loong64.deb
+          gh release download v1.4.5-rc.6 --repo "$GITHUB_REPOSITORY" --pattern "$donor" --dir "$RUNNER_TEMP"
+          printf '%s  %s\n' bec5993a12a9a66800fa039045f45329ecc486934cd1d1106c10d5e2ecf78017 "$RUNNER_TEMP/$donor" | sha256sum -c -
+          test "$(dpkg-deb -f "$RUNNER_TEMP/$donor" Architecture)" = loong64
+          mkdir -p "$RUNNER_TEMP/donor-extracted"
+          dpkg-deb -x "$RUNNER_TEMP/$donor" "$RUNNER_TEMP/donor-extracted"
+          sudo mkdir -p "$root/opt"
+          sudo cp -a "$RUNNER_TEMP/donor-extracted/opt/partyops" "$root/opt/"
+          sudo chmod -R a+rX "$root/opt/partyops"
+          for entry in partyops-wizard partyops-updater; do
+            readelf -h "$root/opt/partyops/$entry" > "artifacts/loong64-emulated/$entry-elf.txt"
+            sudo timeout 120 unshare --net chroot --userspec=65534:65534 "$root" "/opt/partyops/$entry" --help > "artifacts/loong64-emulated/$entry-help.txt" 2>&1
+            test -s "artifacts/loong64-emulated/$entry-help.txt"
+          done
+          python - <<'PY'
+          import json,os,pathlib
+          p=pathlib.Path('artifacts/loong64-emulated')
+          (p/'receipt.json').write_text(json.dumps({'status':'EMULATED_HISTORICAL_RUNTIME_AND_RC1_SOURCE_SYNTAX_ONLY',
+              'source_commit':os.environ['SOURCE_SHA'],'target_architecture':'loong64','system':'Debian sid QEMU user-mode',
+              'historical_donor':'RC6','historical_runtime_executed':True,'new_application_frozen':False,
+              'native_deepin_tested':False,'installer_created':False,'release_ready':False},indent=2)+'\n')
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: partyops-RC1-loong64-EMULATED-RUNTIME-PROBE-${{ env.SOURCE_SHA }}
+          path: artifacts/loong64-emulated
+          retention-days: 14
+          if-no-files-found: warn
