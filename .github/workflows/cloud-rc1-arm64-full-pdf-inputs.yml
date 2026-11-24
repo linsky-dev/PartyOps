@@ -98,7 +98,7 @@ jobs:
     runs-on: windows-11-arm
     timeout-minutes: 180
     env:
-      SOURCE_SHA: 5ea9c6a128f3d8aa71ff77e7e549f4fbd6115fdb
+      SOURCE_SHA: 1a554181429a073e7349d73f62e1ae766d4fb479
       GH_TOKEN: ${{ github.token }}
       PYTHONUTF8: '1'
       FULL_RUN: '45352811769'
