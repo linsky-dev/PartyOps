@@ -660,3 +660,118 @@ def test_windows_personal_config_strict_keys_duplicates_and_comments(
     assert not recovery_cli.windows_personal_owner_scope(files.path)
     files.env.write_text(good, encoding="utf-8")
     assert recovery_cli.windows_personal_owner_scope(files.path)
+
+
+@pytest.mark.skipif(os.name != "nt", reason="requires native Windows access token and NTFS DACL")
+def test_native_windows_personal_recovery_with_real_sid_and_dacl(
+    cli_store, tmp_path, monkeypatch, capsys,
+):
+    """Exercise real pywin32 SID/DACL reads on isolated files, not simulated ACL objects.
+
+    The hosted runner may itself be elevated. Only the console/privilege admission
+    is simulated here; the operating system's token, security descriptors, path
+    validation, existing SQLite DB, instance lock and recovery transaction are real.
+    """
+    import json
+    import shlex
+
+    import ntsecuritycon
+    import win32api
+    import win32con
+    import win32security
+
+    from app.security import verify_password
+
+    profile = tmp_path.resolve() / "isolated-localappdata"
+    root = profile / "PartyOps"
+    root.mkdir(parents=True)
+    data_dir = cli_store.path
+    config_path = root / "personal.env"
+    mode_path = root / "mode.json"
+    config_path.write_text(
+        "PARTYOPS_MODE=personal\n"
+        + "PARTYOPS_DATA_DIR=" + shlex.quote(str(data_dir)) + "\n",
+        encoding="utf-8",
+    )
+    mode_path.write_text(
+        json.dumps({"mode": "personal", "config_path": str(config_path)}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(recovery_cli, "os", os)
+    monkeypatch.setenv("LOCALAPPDATA", str(profile))
+    monkeypatch.setenv("PARTYOPS_DATA_DIR", str(data_dir))
+    monkeypatch.setenv("PARTYOPS_ENVIRONMENT", "test")
+    monkeypatch.setenv("PARTYOPS_MODE", "personal")
+    token = win32security.OpenProcessToken(win32api.GetCurrentProcess(), win32con.TOKEN_QUERY)
+    try:
+        owner = win32security.GetTokenInformation(token, win32security.TokenUser)[0]
+    finally:
+        token.Close()
+    system = win32security.ConvertStringSidToSid("S-1-5-18")
+    admins = win32security.ConvertStringSidToSid("S-1-5-32-544")
+    broad = win32security.ConvertStringSidToSid("S-1-5-11")
+
+    def protect(entry, *, broad_writer=False):
+        acl = win32security.ACL()
+        flags = (
+            win32con.OBJECT_INHERIT_ACE | win32con.CONTAINER_INHERIT_ACE
+            if entry.is_dir() else 0
+        )
+        for sid in (owner, system, admins):
+            acl.AddAccessAllowedAceEx(
+                win32security.ACL_REVISION_DS, flags, ntsecuritycon.FILE_ALL_ACCESS, sid
+            )
+        if broad_writer:
+            acl.AddAccessAllowedAceEx(
+                win32security.ACL_REVISION_DS, 0, ntsecuritycon.FILE_GENERIC_WRITE, broad
+            )
+        win32security.SetNamedSecurityInfo(
+            str(entry),
+            win32security.SE_FILE_OBJECT,
+            win32security.OWNER_SECURITY_INFORMATION
+            | win32security.DACL_SECURITY_INFORMATION
+            | win32security.PROTECTED_DACL_SECURITY_INFORMATION,
+            owner, None, acl, None,
+        )
+
+    for entry in (root, mode_path, config_path, data_dir, data_dir / "partyops.db"):
+        protect(entry)
+
+    assert recovery_cli.trusted_data_directory(data_dir) == data_dir
+    assert recovery_cli.windows_personal_owner_scope(data_dir)
+    protect(data_dir / "partyops.db", broad_writer=True)
+    try:
+        assert not recovery_cli.windows_personal_owner_scope(data_dir)
+    finally:
+        protect(data_dir / "partyops.db")
+    assert recovery_cli.windows_personal_owner_scope(data_dir)
+    _console(monkeypatch, elevated=False)
+    monkeypatch.setattr(
+        setup_wizard, "assert_windows_service_data_path_security",
+        lambda *_a, **_k: pytest.fail("personal-owner recovery must not use SYSTEM service DACL"),
+    )
+    monkeypatch.setattr(
+        recovery_cli, "input", lambda _prompt: "本机应急恢复", raising=False,
+    )
+    assert recovery_cli.main(["emergency", "--data-dir", str(data_dir)]) == 0
+    result = capsys.readouterr()
+    assert result.err == ""
+    credential = result.out.strip().split("一次性管理员恢复凭据（仅显示一次）：", 1)[1]
+    assert len(credential) == 43
+    with cli_store.runtime.session_factory.begin() as db:
+        account_recovery.redeem_credential(
+            db, account_recovery.RedeemCredential(
+                credential=credential,
+                new_password="Synthetic-Native-Personal-New-Password!",
+            ), "127.0.0.1",
+        )
+    with cli_store.runtime.session_factory() as db:
+        admin = db.get(User, cli_store.admin_id)
+        assert admin.id == cli_store.admin_id and admin.role == UserRole.ADMIN
+        assert not verify_password(ADMIN_PASSWORD, admin.password_hash)
+        assert verify_password("Synthetic-Native-Personal-New-Password!", admin.password_hash)
+        assert db.scalar(select(RecoveryCredential)).used_at is not None
+        event = db.scalar(select(AuditLog).where(
+            AuditLog.action == "auth.host_emergency_recovery_issue",
+        ))
+        assert event.detail["method"] == "windows-personal-owner-single-admin"
