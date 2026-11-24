@@ -28,10 +28,24 @@ jobs:
           out="$PWD/artifacts/loong64-deepin-baseline"
           mkdir -p "$out"
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends qemu-user-static binfmt-support mmdebstrap arch-test gpgv gnupg
+          sudo apt-get install -y --no-install-recommends qemu-user-static binfmt-support mmdebstrap arch-test gpgv gnupg debian-archive-keyring
           sudo update-binfmts --enable qemu-loongarch64
           test -x /usr/bin/qemu-loongarch64-static
-          arch-test loong64
+          # Ubuntu noble arch-test 0.21 cannot identify loong64 (Debian #1099638).
+          # Obtain only the all-architecture detector from signed Debian trixie,
+          # keeping Debian packages out of the Deepin target sysroot.
+          aptroot="$RUNNER_TEMP/arch-test-apt"
+          mkdir -p "$aptroot/lists/partial" "$aptroot/download"
+          printf 'deb [signed-by=/usr/share/keyrings/debian-archive-keyring.gpg] https://deb.debian.org/debian trixie main\n' > "$aptroot/sources.list"
+          opts=(-o "Dir::Etc::sourcelist=$aptroot/sources.list" -o "Dir::Etc::sourceparts=-" -o "Dir::State::lists=$aptroot/lists" -o "APT::Get::List-Cleanup=0")
+          sudo apt-get "${opts[@]}" update
+          (cd "$aptroot/download"; apt-get "${opts[@]}" download arch-test=0.22-1)
+          deb="$aptroot/download/arch-test_0.22-1_all.deb"
+          test "$(dpkg-deb -f "$deb" Package)" = arch-test
+          test "$(dpkg-deb -f "$deb" Architecture)" = all
+          sha256sum "$deb" | tee "$out/arch-test-package-sha256.txt"
+          sudo dpkg -i "$deb"
+          arch-test loong64 | tee "$out/arch-test-loong64.txt"
           curl --fail --location --retry 3 --max-time 90 "https://raw.githubusercontent.com/linuxdeepin/deepin-keyring/$DEEPIN_KEY_COMMIT/keyrings/deepin-archive-crimson-keyring.gpg" -o "$out/crimson.gpg"
           test "$(git hash-object "$out/crimson.gpg")" = "$DEEPIN_KEY_BLOB"
           gpg --batch --show-keys --with-fingerprint "$out/crimson.gpg" > "$out/key-fingerprints.txt"
