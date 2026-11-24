@@ -1,7 +1,7 @@
 name: RC1 native Windows ARM64 integrated application and full PDF source build
 on:
   pull_request:
-    branches: [main]
+    branches: [main, feature/1.4.6-rc1-cloud-rebuild]
     paths:
       - '.github/workflows/cloud-arm64-application-freeze.yml'
       - 'scripts/rc1_arm64_candidate_runtime.py'
@@ -10,6 +10,7 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+  actions: read
 concurrency:
   group: rc1-arm64-app-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
@@ -49,20 +50,36 @@ jobs:
           $vs = & $vswhere -latest -products '*' -property installationPath | Select-Object -First 1
           $vcvars = Join-Path $vs 'VC/Auxiliary/Build/vcvarsall.bat'
           if (-not (Test-Path $vcvars)) { throw 'ARM64_MSVC_NOT_FOUND' }
+          # MuPDF upstream defaults to older Visual Studio project files. Retarget
+          # via its documented upgrade mode rather than modifying SDK headers.
+          # https://github.com/actions/runner-images/issues/11684
+          # https://mupdf.readthedocs.io/en/1.28.6/reference/cxx-and-derived-bindings.html
+          $env:PYMUPDF_SETUP_MUPDF_VS_UPGRADE = '1'
           $cmd = Join-Path $env:RUNNER_TEMP 'partyops-pdf-build.cmd'
           @(
             '@echo off',
             "call ""$vcvars"" arm64",
             'if errorlevel 1 exit /b 11',
             'where cl || exit /b 12',
-            "python -m pip wheel --no-deps --no-cache-dir --wheel-dir ""$out"" ""$tar""",
+            "python -m pip wheel -v --no-deps --no-cache-dir --wheel-dir ""$out"" ""$tar""",
             'if errorlevel 1 exit /b 21'
           ) | Set-Content -Encoding ascii $cmd
           & cmd.exe /d /c $cmd *> (Join-Path $out 'build.log')
           $rc = $LASTEXITCODE
           Get-Content (Join-Path $out 'build.log') -Tail 60
-          if ($rc -ne 0) { throw "ARM64_FULL_PDF_SOURCE_BUILD_FAILED: $rc" }
+          if ($rc -ne 0) {
+            # Preserve upstream compiler diagnostics preceding secondary link errors.
+            Select-String -Path (Join-Path $out 'build.log') -Pattern 'error [A-Z]+[0-9]+|fatal error|MSB[0-9]+' | Select-Object -First 40 | ForEach-Object { Write-Host $_.Line }
+            throw "ARM64_FULL_PDF_SOURCE_BUILD_FAILED: $rc"
+          }
           $wheel = @(Get-ChildItem $out -Filter 'pymupdf-2.1-*-win_arm64.whl')
+          if ($wheel.Count -eq 0) {
+            $core = @(Get-ChildItem $out -Filter 'pymupdf_lite-2.1-*-win_arm64.whl')
+            if ($core.Count -eq 1) {
+              @{source_commit=$env:SOURCE_SHA; status='CORE_BUILT_FULL_LAYOUT_INPUTS_MISSING'; wheel=$core[0].Name; wheel_sha256=(Get-FileHash $core[0].FullName).Hash.ToLowerInvariant(); release_ready=$false} | ConvertTo-Json | Set-Content (Join-Path $out 'core-only-receipt.json')
+              throw 'ARM64_FULL_LAYOUT_4LLM_SOURCE_INPUTS_NOT_INCLUDED'
+            }
+          }
           if ($wheel.Count -ne 1) { throw 'ARM64_FULL_PDF_WHEEL_MISSING' }
           python -m pip install --only-binary=:all: $wheel[0].FullName
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -76,6 +93,83 @@ jobs:
           path: artifacts/arm64-full-pdf
           if-no-files-found: warn
           retention-days: 7
+  core-regression:
+    name: Native ARM64 source-built PDF core and complete backend candidate regression (NOT RELEASE)
+    runs-on: windows-11-arm
+    timeout-minutes: 90
+    env:
+      GH_TOKEN: ${{ github.token }}
+      CORE_RUN: '45308862118'
+      CORE_SOURCE: a54592c95f24610aa698e7163e6f2c97c44dc1a0
+      CORE_WHEEL_SHA: 2e47476ef90fa4de9a0013ac70d8cd8db5fe529c7229840aafe95f33d533954d
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+          architecture: arm64
+      - name: Download previously compiled original source core wheel and verify SHA
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $run = gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/$env:CORE_RUN" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $run.head_sha -ne $env:CORE_SOURCE -or $run.head_repository.full_name -ne $env:GITHUB_REPOSITORY -or $run.path -ne '.github/workflows/cloud-arm64-application-freeze.yml') { throw 'ARM64_CORE_RUN_IDENTITY_INVALID' }
+          $wheelhouse = Join-Path $env:RUNNER_TEMP 'source-built-pdf-core'
+          gh run download $env:CORE_RUN --repo $env:GITHUB_REPOSITORY --name "RC1-ARM64-full-PDF-source-build-$env:CORE_SOURCE" --dir $wheelhouse
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $wheel = @(Get-ChildItem $wheelhouse -Recurse -Filter 'pymupdf_lite-2.1-*-win_arm64.whl')
+          if ($wheel.Count -ne 1 -or (Get-FileHash $wheel[0].FullName).Hash.ToLowerInvariant() -ne $env:CORE_WHEEL_SHA) { throw 'ARM64_SOURCE_CORE_HASH_INVALID' }
+          $wheel[0].FullName | Out-File -FilePath (Join-Path $env:RUNNER_TEMP 'source-core-path.txt') -Encoding utf8
+      - name: Build pinned native crypto and install previous isolated candidate closure
+        shell: pwsh
+        run: |
+          ./scripts/build-windows-arm64-crypto-probe.ps1 -OutputDirectory (Join-Path $env:RUNNER_TEMP 'rc1-arm64-crypto')
+          python -m pip install --disable-pip-version-check 'packaging==25.0'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python scripts/rc1_arm64_candidate_runtime.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Replace only the core wheel in candidate environment and verify actual PDF API
+        shell: pwsh
+        run: |
+          $wheel = (Get-Content (Join-Path $env:RUNNER_TEMP 'source-core-path.txt') -Raw).Trim()
+          python -m pip install --force-reinstall --no-deps --no-index $wheel
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m pip check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python scripts/probe_arm64_pdf_lite.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python scripts/probe_arm64_partyops_intake.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Run native Windows ARM64 backend regression with original assertions
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python -m pip install --only-binary=:all: 'pytest==9.1.1' 'pytest-cov==6.2.1' 'pytest-asyncio==1.4.0' 'pefile==2023.2.7' -r qa/vm-lab/requirements.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m pip check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          New-Item -ItemType Directory -Force artifacts/arm64-core-regression | Out-Null
+          Push-Location backend
+          try {
+            python -m pytest tests -rs --cov=app --cov-branch --cov-report=json:../artifacts/arm64-core-regression/coverage.json --junitxml=../artifacts/arm64-core-regression/junit.xml 2>&1 | Tee-Object -FilePath ../artifacts/arm64-core-regression/pytest.log
+            if ($LASTEXITCODE -ne 0) { throw 'ARM64_CORE_FULL_BACKEND_REGRESSION_FAILED' }
+          } finally { Pop-Location }
+          python scripts/verify-coverage.py artifacts/arm64-core-regression/coverage.json --line 95 --branch 92
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          @{status='NATIVE_ARM64_CORE_BACKEND_REGRESSION_ONLY'; source_commit=$env:SOURCE_SHA; source_wheel_sha256=$env:CORE_WHEEL_SHA; full_layout_engine=$false; installer_created=$false; release_ready=$false} | ConvertTo-Json | Set-Content artifacts/arm64-core-regression/receipt.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: RC1-ARM64-source-core-regression-NOT-RELEASE-${{ env.SOURCE_SHA }}
+          path: |
+            artifacts/arm64-core-regression
+            artifacts/arm64-pdf-lite
+            artifacts/arm64-application-only/runtime-receipt.json
+          if-no-files-found: warn
+          retention-days: 14
   application:
     name: Native ARM64 PartyOps runtime and application-only EXE
     runs-on: windows-11-arm
@@ -131,13 +225,40 @@ jobs:
             corepack pnpm run build
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           } finally { Pop-Location }
-          python -m PyInstaller --noconfirm --clean --onedir --name PartyOps-ARM64-APP-ONLY --paths backend --distpath "$out/dist" --workpath "$env:RUNNER_TEMP/arm64-pyi-work" --specpath "$env:RUNNER_TEMP" --add-data 'frontend/dist/client;frontend' --add-data 'backend/alembic;alembic' --add-data 'backend/alembic.ini;.' --hidden-import win32timezone --hidden-import uvicorn.logging --hidden-import uvicorn.loops.asyncio --hidden-import uvicorn.protocols.http.h11_impl --collect-all pymupdf --collect-all tokenizers --collect-all numpy --collect-all onnxruntime packaging/uos/entrypoint.py
+          # PyInstaller resolves datas and pathex relative to the generated spec,
+          # which lives outside the checkout on RUNNER_TEMP.
+          $backend = (Resolve-Path -LiteralPath 'backend').Path
+          $frontend = (Resolve-Path -LiteralPath 'frontend/dist/client').Path
+          $alembic = (Resolve-Path -LiteralPath 'backend/alembic').Path
+          $alembicIni = (Resolve-Path -LiteralPath 'backend/alembic.ini').Path
+          $entry = (Resolve-Path -LiteralPath 'packaging/uos/entrypoint.py').Path
+          if (-not (Test-Path -LiteralPath (Join-Path $frontend 'index.html'))) { throw 'ARM64_FRONTEND_BUILD_MISSING' }
+          python -m PyInstaller --noconfirm --clean --onedir --python-option 'X utf8=1' --name PartyOps-ARM64-APP-ONLY --paths "$backend" --distpath "$out/dist" --workpath "$env:RUNNER_TEMP/arm64-pyi-work" --specpath "$env:RUNNER_TEMP" --add-data "$frontend;frontend" --add-data "$alembic;alembic" --add-data "$alembicIni;." --hidden-import win32timezone --hidden-import uvicorn.logging --hidden-import uvicorn.loops.asyncio --hidden-import uvicorn.protocols.http.h11_impl --collect-all pymupdf --collect-all tokenizers --collect-all numpy --collect-all onnxruntime "$entry"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $exe = Join-Path $out 'dist/PartyOps-ARM64-APP-ONLY/PartyOps-ARM64-APP-ONLY.exe'
           python -c "import pathlib,struct,sys; b=pathlib.Path(sys.argv[1]).read_bytes(); off=struct.unpack_from('<I',b,60)[0]; assert b[off:off+4]==b'PE\x00\x00'; assert struct.unpack_from('<H',b,off+4)[0]==0xaa64" $exe
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          & $exe --account-recovery --help | Tee-Object -FilePath "$out/recovery-help.txt"
-          if ($LASTEXITCODE -ne 0 -or -not (Select-String -Quiet -Path "$out/recovery-help.txt" -Pattern 'emergency')) { throw 'ARM64_FROZEN_RECOVERY_HELP_FAILED' }
+          # Frozen PyInstaller does not inherit PYTHONUTF8. Verify actual bytes
+          # when redirected, and that non-interactive credential issuance remains denied.
+          @'
+          import os, pathlib, subprocess, sys
+          exe, output = sys.argv[1:]
+          env = dict(os.environ)
+          env.pop("PYTHONUTF8", None)
+          env.pop("PYTHONIOENCODING", None)
+          root = pathlib.Path(output)
+          help_result = subprocess.run([exe, "--account-recovery", "--help"], env=env, stdin=subprocess.DEVNULL, capture_output=True, timeout=90)
+          text = help_result.stdout.decode("utf-8", errors="strict")
+          (root / "recovery-help.txt").write_text(text, encoding="utf-8")
+          assert help_result.returncode == 0 and "emergency" in text and "主机管理员账号恢复" in text, help_result.stderr
+          invalid = root / "nonexistent-recovery-data"
+          assert not invalid.exists()
+          denied = subprocess.run([exe, "--account-recovery", "emergency", "--data-dir", str(invalid)], env=env, stdin=subprocess.DEVNULL, capture_output=True, timeout=90)
+          assert denied.returncode == 2 and "交互终端" in denied.stderr.decode("utf-8", errors="strict")
+          assert not invalid.exists()
+          print("ARM64_FROZEN_RECOVERY_UTF8_AND_NONINTERACTIVE_DENIAL_PASS")
+          '@ | python - $exe $out
+          if ($LASTEXITCODE -ne 0) { throw 'ARM64_FROZEN_RECOVERY_HELP_FAILED' }
           @{source_commit=$env:SOURCE_SHA; status='APP_ONLY_BUILD_ONLY'; architecture='ARM64'; host_exe_sha256=(Get-FileHash $exe).Hash.ToLowerInvariant(); installer_created=$false; full_pdf_layout=$false; release_ready=$false} | ConvertTo-Json | Set-Content "$out/freeze-receipt.json"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
