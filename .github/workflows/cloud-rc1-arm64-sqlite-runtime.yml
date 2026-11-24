@@ -1,0 +1,38 @@
+name: RC1 Windows ARM64 official SQLite pinned runtime (NOT INSTALLER)
+on:
+  pull_request:
+    branches: [feature/1.4.6-rc1-cloud-rebuild]
+    paths:
+      - '.github/workflows/cloud-rc1-arm64-sqlite-runtime.yml'
+      - 'scripts/rc1_arm64_sqlite_runtime.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  sqlite:
+    runs-on: windows-11-arm
+    timeout-minutes: 20
+    env:
+      PYTHONUTF8: '1'
+      SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+          architecture: arm64
+      - name: Verify official archive SHA3 and run exact SQLite through isolated native CPython
+        shell: pwsh
+        run: |
+          python scripts/rc1_arm64_sqlite_runtime.py artifacts/arm64-sqlite
+          if ($LASTEXITCODE -ne 0) { throw 'ARM64_SQLITE_RUNTIME_BLOCKED' }
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: RC1-ARM64-SQLite-3.53.4-NATIVE-INPUT-NOT-INSTALLER-${{ env.SOURCE_SHA }}
+          path: artifacts/arm64-sqlite
+          if-no-files-found: warn
+          retention-days: 14
