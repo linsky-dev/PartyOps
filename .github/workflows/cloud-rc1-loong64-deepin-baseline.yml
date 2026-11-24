@@ -1,0 +1,86 @@
+name: RC1 Loong64 signed Deepin GLIBC 2.38 target build root
+on:
+  pull_request:
+    branches: [feature/1.4.6-rc1-cloud-rebuild]
+    paths:
+      - '.github/workflows/cloud-rc1-loong64-deepin-baseline.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  baseline:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      SOURCE_SHA: e0f3b23c0359ff2d7509b669077db13e75ae713f
+      DEEPIN_REPO: https://community-packages.deepin.com/deepin/beige/
+      DEEPIN_KEY_COMMIT: b0946c78978ecc567118254fa0ff7806a6406f99
+      DEEPIN_KEY_BLOB: 1c3772a66d9af84c99e0ffb46e8c07d1df71befc
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          persist-credentials: false
+      - name: Prepare signed Ubuntu emulator tools and pin upstream Deepin archive keyring
+        shell: bash
+        run: |
+          set -euo pipefail
+          out="$PWD/artifacts/loong64-deepin-baseline"
+          mkdir -p "$out"
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends qemu-user-static binfmt-support mmdebstrap gpgv gnupg
+          sudo update-binfmts --enable qemu-loongarch64
+          test -x /usr/bin/qemu-loongarch64-static
+          curl --fail --location --retry 3 --max-time 90 "https://raw.githubusercontent.com/linuxdeepin/deepin-keyring/$DEEPIN_KEY_COMMIT/keyrings/deepin-archive-crimson-keyring.gpg" -o "$out/crimson.gpg"
+          test "$(git hash-object "$out/crimson.gpg")" = "$DEEPIN_KEY_BLOB"
+          gpg --batch --show-keys --with-fingerprint "$out/crimson.gpg" > "$out/key-fingerprints.txt"
+          curl --fail --location --retry 3 --max-time 90 "$DEEPIN_REPO/dists/crimson/InRelease" -o "$out/InRelease"
+          gpgv --keyring "$out/crimson.gpg" --output "$out/Release" "$out/InRelease" 2>&1 | tee "$out/release-signature.log"
+          grep -Eq '^Architectures:.*\bloong64\b' "$out/Release"
+          sha256sum "$out/crimson.gpg" "$out/InRelease" > "$out/archive-input-sha256.txt"
+      - name: Bootstrap signed Deepin Crimson loong64 sysroot without disabling apt verification
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/deepin-loong64"
+          out="$PWD/artifacts/loong64-deepin-baseline"
+          key="$out/crimson.gpg"
+          sudo mmdebstrap --mode=root --architectures=loong64 --variant=minbase --keyring="$key" --include=ca-certificates,deepin-keyring,python3,build-essential,binutils '' "$root" "deb [signed-by=$key] $DEEPIN_REPO crimson main" 2>&1 | tee "$out/bootstrap.log"
+          sudo install -m 0755 /usr/bin/qemu-loongarch64-static "$root/usr/bin/qemu-loongarch64-static"
+          sudo install -D -m 0644 "$key" "$root/usr/share/keyrings/partyops-deepin-crimson-pinned.gpg"
+          printf 'deb [signed-by=/usr/share/keyrings/partyops-deepin-crimson-pinned.gpg] %s crimson main\n' "$DEEPIN_REPO" | sudo tee "$root/etc/apt/sources.list"
+          sudo chroot "$root" dpkg --print-architecture | tee "$out/architecture.txt"
+          test "$(cat "$out/architecture.txt")" = loong64
+          sudo chroot "$root" getconf GNU_LIBC_VERSION | tee "$out/glibc.txt"
+          test "$(cat "$out/glibc.txt")" = 'glibc 2.38'
+          sudo chroot "$root" cat /etc/os-release | tee "$out/os-release.txt"
+          sudo chroot "$root" python3 -c 'import platform,ssl,sqlite3; assert platform.machine() in ("loongarch64","loong64"); print(platform.python_version(),ssl.OPENSSL_VERSION,sqlite3.sqlite_version)' | tee "$out/native-python.txt"
+          sudo chroot "$root" apt-get update
+          sudo chroot "$root" apt-cache policy libc6 libc6-dev python3 python3.12 python3.12-dev python3-tk python3-pip python3-venv gcc rustc cargo python3-numpy python3-pyinstaller python3-pymupdf python3-cryptography python3-pydantic python3-calamine libmupdf-dev tesseract-ocr | tee "$out/native-package-availability.txt"
+          sudo chroot "$root" dpkg-query -W > "$out/installed-packages.tsv"
+      - name: Native compiler smoke and exact current business source syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/deepin-loong64"
+          out="$PWD/artifacts/loong64-deepin-baseline"
+          sudo mkdir -p "$root/tmp/partyops-qa"
+          sudo cp -a backend/app "$root/tmp/partyops-qa/"
+          printf '#include <stdio.h>\nint main(void){puts("DEEPIN_LOONG64_GLIBC_238_NATIVE_CC_PASS");return 0;}\n' | sudo tee "$root/tmp/partyops-qa/probe.c" >/dev/null
+          sudo chroot "$root" gcc /tmp/partyops-qa/probe.c -o /tmp/partyops-qa/probe
+          readelf -h -V "$root/tmp/partyops-qa/probe" | tee "$out/native-compiler-elf.txt"
+          grep -qi 'LoongArch' "$out/native-compiler-elf.txt"
+          sudo unshare --net chroot --userspec=65534:65534 "$root" /tmp/partyops-qa/probe | tee "$out/compiler-smoke.txt"
+          sudo unshare --net chroot --userspec=65534:65534 "$root" python3 -c 'import pathlib; f=list(pathlib.Path("/tmp/partyops-qa/app").rglob("*.py")); assert f; [compile(x.read_bytes(),str(x),"exec") for x in f]; print("SOURCE_SYNTAX_PASS",len(f))' | tee "$out/source-syntax.txt"
+          python - <<'PY'
+          import json,os,pathlib
+          p=pathlib.Path('artifacts/loong64-deepin-baseline')
+          (p/'receipt.json').write_text(json.dumps({'source_commit':os.environ['SOURCE_SHA'],'status':'SIGNED_DEEPIN_238_EMULATED_BUILD_ROOT_PASS','archive_key_blob':os.environ['DEEPIN_KEY_BLOB'],'target_glibc':'2.38','native_compiler_pass':True,'target_os_real_machine_tested':False,'python_3_12_13_exact_verified':False,'new_application_frozen':False,'installer_created':False,'release_ready':False},indent=2)+'\n')
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: RC1-loong64-Deepin-GLIBC238-build-root-evidence-${{ github.event.pull_request.head.sha || github.sha }}
+          path: artifacts/loong64-deepin-baseline
+          if-no-files-found: warn
+          retention-days: 14
