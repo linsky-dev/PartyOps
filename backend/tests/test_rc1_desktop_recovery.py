@@ -153,3 +153,75 @@ def test_recovery_utf8_redirected_input_and_interactive_stream(monkeypatch):
     recovery_cli._configure_recovery_stdio()
     assert stream.read() == value
     assert calls == []
+
+
+@pytest.mark.parametrize("case,expected", [
+    ("valid", True), ("mac", True), ("windows", True), ("missing", False),
+    ("wrong-owner", False), ("world-writable", False), ("link", False),
+    ("oversize-mode", False), ("oversize-config", False), ("wrong-mode", False),
+    ("wrong-config", False), ("duplicate", False), ("empty-value", False),
+    ("relative", False), ("wrong-data", False), ("malformed", False),
+])
+def test_personal_scope_binds_config_and_private_owner_on_each_os(monkeypatch, tmp_path, case, expected):
+    import stat
+    from pathlib import Path
+
+    data = tmp_path / "业务 数据"
+    data.mkdir()
+    (data / "partyops.db").write_bytes(b"synthetic")
+    platform = "darwin" if case == "mac" else "linux"
+    root = (tmp_path / "Library" / "Application Support" / "PartyOps" / "Config"
+            if platform == "darwin" else tmp_path / ".config" / "partyops")
+    root.mkdir(parents=True)
+    mode, config = root / "mode.json", root / "personal.env"
+    mode_text = json.dumps({"mode": "personal", "config_path": str(config)})
+    config_text = "PARTYOPS_MODE=personal\nPARTYOPS_DATA_DIR=" + shlex.quote(str(data)) + "\n"
+    if case == "wrong-mode":
+        mode_text = '{"mode":"host"}'
+    elif case == "wrong-config":
+        mode_text = json.dumps({"mode": "personal", "config_path": str(root / "other.env")})
+    elif case == "malformed":
+        mode_text = "[]"
+    elif case == "oversize-mode":
+        mode_text += " " * 8193
+    elif case == "oversize-config":
+        config_text += " " * 65537
+    elif case == "duplicate":
+        config_text += "PARTYOPS_MODE=personal\n"
+    elif case == "empty-value":
+        config_text = "PARTYOPS_MODE=personal\nPARTYOPS_DATA_DIR=\n"
+    elif case == "relative":
+        config_text = "PARTYOPS_MODE=personal\nPARTYOPS_DATA_DIR=relative\n"
+    elif case == "wrong-data":
+        other = tmp_path / "other"
+        other.mkdir()
+        config_text = "PARTYOPS_MODE=personal\nPARTYOPS_DATA_DIR=" + shlex.quote(str(other)) + "\n"
+    if case != "missing":
+        mode.write_text(mode_text, encoding="utf-8")
+    config.write_text(config_text, encoding="utf-8")
+    original_lstat = Path.lstat
+    owned = {root, mode, config, data, data / "partyops.db"}
+
+    def synthetic_lstat(p, *args, **kwargs):
+        result = original_lstat(p, *args, **kwargs)
+        if p not in owned:
+            return result
+        # Windows cannot reproduce POSIX mode bits; keep real existence/size
+        # while simulating only Unix ownership and file type.
+        bits = (stat.S_IFDIR if p in {root, data} else stat.S_IFREG) | 0o700
+        if p == data and case == "world-writable":
+            bits |= 0o002
+        if p == data and case == "link":
+            bits = stat.S_IFLNK | 0o700
+        return SimpleNamespace(st_mode=bits, st_uid=123 if p == data and case == "wrong-owner" else 456,
+                               st_size=result.st_size)
+
+    monkeypatch.setattr(recovery_cli, "os", SimpleNamespace(
+        name="nt" if case == "windows" else "posix", getenv=lambda key, default: default,
+        geteuid=lambda: 456,
+    ))
+    monkeypatch.setattr(recovery_cli, "sys", SimpleNamespace(platform=platform))
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
+    monkeypatch.setattr(Path, "lstat", synthetic_lstat)
+    monkeypatch.setattr(recovery_cli, "windows_personal_owner_scope", lambda p: p == data)
+    assert recovery_cli.personal_owner_scope(data) is expected
