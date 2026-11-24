@@ -722,6 +722,11 @@ fi
 /usr/bin/install -m 0644 "$LLAMA_RUNTIME/licenses/llama.cpp-LICENSE" \
   "$APP/Contents/Resources/licenses/llama.cpp-LICENSE"
 /usr/bin/ditto "$OFFICE_RUNTIME" "$APP/Contents/Resources/office-runtime"
+# The official LibreOffice archive has build-host-only LC_RPATH entries.
+# Remove only these exact stale search paths on the staged copy before final signing.
+python3.11 "$ROOT/scripts/sanitize-macos-office-rpaths.py" \
+  "$APP/Contents/Resources/office-runtime/LibreOffice.app" \
+  "$BUILD_ROOT/office-rpath-receipt.json"
 /bin/mkdir -p "$APP/Contents/Resources/formatter-host"
 /usr/bin/ditto "$FORMATTER_RUNTIME" "$APP/Contents/Resources/formatter-host"
 /bin/chmod 0755 "$APP/Contents/Resources/formatter-host/partyops-document-formatter-host"

@@ -1,4 +1,4 @@
-name: RC1 macOS native donor and fresh application input audit (NOT PKG)
+name: RC1 macOS relocatable unsigned PKG candidate and hosted install
 on:
   pull_request:
     branches: [main, feature/1.4.6-rc1-cloud-rebuild]
@@ -32,6 +32,7 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       TARGET_ARCH: ${{ matrix.arch }}
       DONOR_SHA: ${{ matrix.donor_sha }}
+      PKG_SOURCE: ${{ github.event.pull_request.head.sha || github.sha }}
       CANDIDATE_RUN: '45303616987'
       CANDIDATE_SOURCE: 400dd924faaf3195aef69c24c160a2e6f109a5f0
     steps:
@@ -157,7 +158,7 @@ jobs:
       - name: Check out exact RC1 application source separately from orchestration
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
-          ref: ${{ env.CANDIDATE_SOURCE }}
+          ref: ${{ env.PKG_SOURCE }}
           path: candidate-src
           persist-credentials: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
@@ -168,7 +169,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = "$CANDIDATE_SOURCE"
+          test "$(git rev-parse HEAD)" = "$PKG_SOURCE"
           python3.11 -m pip install --disable-pip-version-check 'uv==0.11.7'
           corepack enable
           corepack prepare 'pnpm@11.9.0' --activate
@@ -199,7 +200,7 @@ jobs:
           def sha(b): return hashlib.sha256(b).hexdigest()
           def git(*args): return subprocess.check_output(['git', *args])
           head = git('rev-parse', 'HEAD').decode().strip()
-          assert head == os.environ['CANDIDATE_SOURCE']
+          assert head == os.environ['PKG_SOURCE']
           assert not git('status', '--porcelain', '--untracked-files=no')
           diff = git('diff', '--binary', 'HEAD')
           assert not diff
@@ -254,7 +255,7 @@ jobs:
       - name: Upload actual unsigned candidate, not a production release
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: partyops-rc1-macos-${{ matrix.arch }}-ACTUAL-UNSIGNED-PKG-${{ env.CANDIDATE_SOURCE }}
+          name: partyops-rc1-macos-${{ matrix.arch }}-ACTUAL-UNSIGNED-PKG-${{ env.PKG_SOURCE }}
           path: artifacts/macos-pkg
           compression-level: 0
           retention-days: 14
