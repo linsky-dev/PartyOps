@@ -1,0 +1,119 @@
+name: RC1 Win7 and Loong64 build inputs (NOT INSTALLERS)
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/cloud-rc1-legacy-inputs.yml'
+      - 'scripts/rc1_win7_input_audit.py'
+      - 'backend/legacy/**'
+      - 'packaging/windows/build-windows7.ps1'
+      - 'packaging/uos/**'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: rc1-legacy-inputs-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  win7:
+    name: Win7 ${{ matrix.arch }} real CPython 3.8 build inputs
+    runs-on: windows-2022
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            python: x64
+          - arch: x86
+            python: x86
+    env:
+      SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      PYTHONUTF8: '1'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.8.10'
+          architecture: ${{ matrix.python }}
+      - name: Inspect new source and recover exact public wheels without installing
+        shell: pwsh
+        run: python scripts/rc1_win7_input_audit.py --arch ${{ matrix.arch }} --output artifacts/win7-${{ matrix.arch }}-inputs
+      - name: Retain inputs and missing-wheel evidence only
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: partyops-RC1-Win7-${{ matrix.arch }}-INPUTS-ONLY-${{ env.SOURCE_SHA }}
+          path: artifacts/win7-${{ matrix.arch }}-inputs
+          if-no-files-found: warn
+          retention-days: 7
+  loong64:
+    name: Loong64 original runtime ABI and current source handoff
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          persist-credentials: false
+      - name: Audit exact original native Loong64 DEB without running it
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          out="$PWD/artifacts/loong64-inputs"
+          mkdir -p "$out" "$RUNNER_TEMP/loong64-donor"
+          donor=PartyOps_1.4.5-rc.6_linux_loong64.deb
+          gh release download v1.4.5-rc.6 --repo "$GITHUB_REPOSITORY" --pattern "$donor" --dir "$RUNNER_TEMP/loong64-donor"
+          cd "$RUNNER_TEMP/loong64-donor"
+          printf '%s  %s\n' bec5993a12a9a66800fa039045f45329ecc486934cd1d1106c10d5e2ecf78017 "$donor" | sha256sum --check
+          test "$(dpkg-deb -f "$donor" Architecture)" = loong64
+          dpkg-deb --field "$donor" > "$out/rc6-package-control.txt"
+          dpkg-deb -x "$donor" extracted
+          python - "$out" <<'PY'
+          import hashlib,json,os,pathlib,struct,subprocess,sys
+          out=pathlib.Path(sys.argv[1])
+          root=pathlib.Path("extracted/opt/partyops")
+          def sha(p):
+              h=hashlib.sha256()
+              with p.open("rb") as f:
+                  for b in iter(lambda:f.read(1024*1024),b""): h.update(b)
+              return h.hexdigest()
+          rows=[]
+          for path in sorted(root.rglob("*")):
+              if path.is_symlink() or not path.is_file(): continue
+              with path.open("rb") as f: header=f.read(20)
+              if header[:4] != b"\x7fELF": continue
+              if header[4:6] != b"\x02\x01": continue
+              machine=struct.unpack_from("<H",header,18)[0]
+              rows.append({"path":str(path.relative_to(root)),"elf_machine":machine,"sha256":sha(path)})
+          by_path={r["path"]:r for r in rows}
+          for entry in ("partyops","formatter-host/partyops-document-formatter-host"):
+              assert by_path[entry]["elf_machine"] == 258, entry
+          main=root/"partyops"
+          for flags,name in [(["-h","-l","-d","-V"],"rc6-host-abi.txt")]:
+              (out/name).write_text(subprocess.check_output(["readelf",*flags,str(main)],text=True),encoding="utf-8")
+          receipt={"status":"NATIVE_INPUTS_AUDITED_NOT_NEW_DEB","source_commit":os.environ["SOURCE_SHA"],
+                   "old_deb_sha256":"bec5993a12a9a66800fa039045f45329ecc486934cd1d1106c10d5e2ecf78017",
+                   "elf_inventory":rows,"native_rc1_execution":False,"new_installer":False,"release_ready":False,
+                   "remaining":"native LoongArch64 Deepin application freeze and runtime/security/installer gates"}
+          (out/"receipt.json").write_text(json.dumps(receipt,indent=2)+"\n",encoding="utf-8")
+          print("LOONG64_DONOR_ELF_COUNT",len(rows))
+          PY
+          cd "$GITHUB_WORKSPACE"
+          git archive --format=tar --prefix=PartyOps-1.4.6-rc.1/ "$SOURCE_SHA" | gzip -n > "$out/RC1-native-build-source.tar.gz"
+          (cd "$out"; sha256sum RC1-native-build-source.tar.gz receipt.json > SHA256SUMS.txt)
+      - name: Upload frozen source and ABI input inventory, not a new DEB
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: partyops-RC1-loong64-INPUTS-ONLY-${{ env.SOURCE_SHA }}
+          path: artifacts/loong64-inputs
+          if-no-files-found: warn
+          retention-days: 7
