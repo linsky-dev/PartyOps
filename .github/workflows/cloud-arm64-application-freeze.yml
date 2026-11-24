@@ -1,7 +1,7 @@
 name: RC1 native Windows ARM64 integrated application and full PDF source build
 on:
   pull_request:
-    branches: [main]
+    branches: [main, feature/1.4.6-rc1-cloud-rebuild]
     paths:
       - '.github/workflows/cloud-arm64-application-freeze.yml'
       - 'scripts/rc1_arm64_candidate_runtime.py'
@@ -55,13 +55,17 @@ jobs:
             "call ""$vcvars"" arm64",
             'if errorlevel 1 exit /b 11',
             'where cl || exit /b 12',
-            "python -m pip wheel --no-deps --no-cache-dir --wheel-dir ""$out"" ""$tar""",
+            "python -m pip wheel -v --no-deps --no-cache-dir --wheel-dir ""$out"" ""$tar""",
             'if errorlevel 1 exit /b 21'
           ) | Set-Content -Encoding ascii $cmd
           & cmd.exe /d /c $cmd *> (Join-Path $out 'build.log')
           $rc = $LASTEXITCODE
           Get-Content (Join-Path $out 'build.log') -Tail 60
-          if ($rc -ne 0) { throw "ARM64_FULL_PDF_SOURCE_BUILD_FAILED: $rc" }
+          if ($rc -ne 0) {
+            # Preserve upstream compiler diagnostics preceding secondary link errors.
+            Select-String -Path (Join-Path $out 'build.log') -Pattern 'error [A-Z]+[0-9]+|fatal error|MSB[0-9]+' | Select-Object -First 40 | ForEach-Object { Write-Host $_.Line }
+            throw "ARM64_FULL_PDF_SOURCE_BUILD_FAILED: $rc"
+          }
           $wheel = @(Get-ChildItem $out -Filter 'pymupdf-2.1-*-win_arm64.whl')
           if ($wheel.Count -ne 1) { throw 'ARM64_FULL_PDF_WHEEL_MISSING' }
           python -m pip install --only-binary=:all: $wheel[0].FullName
@@ -131,7 +135,15 @@ jobs:
             corepack pnpm run build
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           } finally { Pop-Location }
-          python -m PyInstaller --noconfirm --clean --onedir --name PartyOps-ARM64-APP-ONLY --paths backend --distpath "$out/dist" --workpath "$env:RUNNER_TEMP/arm64-pyi-work" --specpath "$env:RUNNER_TEMP" --add-data 'frontend/dist/client;frontend' --add-data 'backend/alembic;alembic' --add-data 'backend/alembic.ini;.' --hidden-import win32timezone --hidden-import uvicorn.logging --hidden-import uvicorn.loops.asyncio --hidden-import uvicorn.protocols.http.h11_impl --collect-all pymupdf --collect-all tokenizers --collect-all numpy --collect-all onnxruntime packaging/uos/entrypoint.py
+          # PyInstaller resolves datas and pathex relative to the generated spec,
+          # which lives outside the checkout on RUNNER_TEMP.
+          $backend = (Resolve-Path -LiteralPath 'backend').Path
+          $frontend = (Resolve-Path -LiteralPath 'frontend/dist/client').Path
+          $alembic = (Resolve-Path -LiteralPath 'backend/alembic').Path
+          $alembicIni = (Resolve-Path -LiteralPath 'backend/alembic.ini').Path
+          $entry = (Resolve-Path -LiteralPath 'packaging/uos/entrypoint.py').Path
+          if (-not (Test-Path -LiteralPath (Join-Path $frontend 'index.html'))) { throw 'ARM64_FRONTEND_BUILD_MISSING' }
+          python -m PyInstaller --noconfirm --clean --onedir --name PartyOps-ARM64-APP-ONLY --paths "$backend" --distpath "$out/dist" --workpath "$env:RUNNER_TEMP/arm64-pyi-work" --specpath "$env:RUNNER_TEMP" --add-data "$frontend;frontend" --add-data "$alembic;alembic" --add-data "$alembicIni;." --hidden-import win32timezone --hidden-import uvicorn.logging --hidden-import uvicorn.loops.asyncio --hidden-import uvicorn.protocols.http.h11_impl --collect-all pymupdf --collect-all tokenizers --collect-all numpy --collect-all onnxruntime "$entry"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $exe = Join-Path $out 'dist/PartyOps-ARM64-APP-ONLY/PartyOps-ARM64-APP-ONLY.exe'
           python -c "import pathlib,struct,sys; b=pathlib.Path(sys.argv[1]).read_bytes(); off=struct.unpack_from('<I',b,60)[0]; assert b[off:off+4]==b'PE\x00\x00'; assert struct.unpack_from('<H',b,off+4)[0]==0xaa64" $exe
