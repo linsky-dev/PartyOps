@@ -8,7 +8,11 @@ import subprocess
 import sys
 from pathlib import Path
 
-from .recovery_cli import is_os_administrator, personal_owner_scope, trusted_data_directory
+from .recovery_cli import (
+    is_os_administrator,
+    personal_owner_scope,
+    trusted_data_directory,
+)
 
 
 def run_desktop_recovery(*, host: bool = False) -> int:
