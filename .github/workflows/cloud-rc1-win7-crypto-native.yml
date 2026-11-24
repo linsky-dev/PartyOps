@@ -75,8 +75,11 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'LOCKED_RUNTIME_DEPS_FAILED' }
           $env:PYO3_PYTHON = $env:TARGET_PY
           $env:PYO3_CROSS_PYTHON_VERSION = '3.8'
-          $env:PYO3_CROSS_LIB_DIR = Join-Path (Split-Path $env:TARGET_PY) 'libs'
-          if (-not (Test-Path (Join-Path $env:PYO3_CROSS_LIB_DIR 'python38.lib'))) { throw 'PYTHON_IMPORT_LIBRARY_MISSING' }
+          # Windows CPython has no Unix _sysconfigdata.py; let Maturin
+          # resolve the Windows ABI from the explicit version and verified interpreter.
+          Remove-Item Env:PYO3_CROSS_LIB_DIR -ErrorAction SilentlyContinue
+          $targetLibDir = Join-Path (Split-Path $env:TARGET_PY) 'libs'
+          if (-not (Test-Path (Join-Path $targetLibDir 'python38.lib'))) { throw 'PYTHON_IMPORT_LIBRARY_MISSING' }
           $vswhere = Join-Path ([Environment]::GetFolderPath('ProgramFilesX86')) 'Microsoft Visual Studio/Installer/vswhere.exe'
           $vs = & $vswhere -latest -products '*' -property installationPath | Select-Object -First 1
           $vcvars = Join-Path $vs 'VC/Auxiliary/Build/vcvarsall.bat'
@@ -90,6 +93,7 @@ jobs:
             '@echo off',
             "call ""$vcvars"" ${{ matrix.vcarch }} -vcvars_ver=14.29",
             'if errorlevel 1 exit /b 11',
+            "set LIB=$targetLibDir;%LIB%",
             "cd /d ""$root\openssl-3.5.7""",
             "perl Configure ${{ matrix.openssl }} no-shared no-tests no-makedepend no-asm --prefix=""$prefix"" --openssldir=""$prefix/ssl""",
             'if errorlevel 1 exit /b 21',
