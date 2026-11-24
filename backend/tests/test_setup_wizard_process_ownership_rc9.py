@@ -361,7 +361,7 @@ def test_record_port_selection_and_atomic_rewrite(
     monkeypatch.setattr(
         setup_wizard,
         "load_host_environment",
-        lambda path: {"content": path.read_text(encoding="utf-8")},
+        lambda path, **_kwargs: {"content": path.read_text(encoding="utf-8")},
     )
     result = setup_wizard._rewrite_personal_port(config, 18779)
     assert "PARTYOPS_PORT=18779" in result["content"]

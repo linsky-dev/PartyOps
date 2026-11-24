@@ -53,3 +53,51 @@ def test_personal_retry_never_restarts_live_child_or_unrelated_error(tmp_path, m
     with pytest.raises(wizard.HostStartupError) as error:
         wizard._launch_new_personal_process(tmp_path / "personal.env", Path("partyops"), tmp_path, 18775, {})
     assert error.value.code == code
+
+
+def test_port_rewrite_does_not_use_inherited_data_directory(tmp_path, monkeypatch):
+    import shlex
+
+    data = tmp_path / "中文 新目录"
+    stale = tmp_path / "old-data"
+    config = tmp_path / "personal.env"
+    config.write_text(
+        "PARTYOPS_MODE=personal\nPARTYOPS_PORT=18775\n"
+        + "PARTYOPS_DATA_DIR=" + shlex.quote(str(data)) + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("PARTYOPS_DATA_DIR", str(stale))
+    env = wizard._rewrite_personal_port(config, 18779)
+    assert env["PARTYOPS_DATA_DIR"] == str(data)
+    assert env["PARTYOPS_PORT"] == "18779"
+    assert env["PARTYOPS_AGENT_PORT"] == "18780"
+
+
+def test_retry_uses_available_port_before_start(tmp_path, monkeypatch):
+    child = SimpleNamespace(pid=42, poll=lambda: 0)
+    calls = []
+    monkeypatch.setattr(wizard, "_loopback_port_available", lambda port: port != 18775)
+    monkeypatch.setattr(wizard, "_select_alternative_personal_port", lambda _: 18779)
+    monkeypatch.setattr(wizard, "_rewrite_personal_port", lambda _, port: {"PARTYOPS_PORT": str(port)})
+    monkeypatch.setattr(wizard, "_spawn", lambda cmd, log, env: calls.append(env["PARTYOPS_PORT"]) or child)
+    monkeypatch.setattr(wizard, "_record_personal_process", lambda *_: None)
+    monkeypatch.setattr(wizard, "wait_for_host_health", lambda host, port, **_: f"http://{host}:{port}")
+    assert wizard._launch_new_personal_process(tmp_path / "personal.env", Path("partyops"), tmp_path, 18775, {}) == "http://127.0.0.1:18779"
+    assert calls == ["18779"]
+
+
+def test_retry_exhaustion_keeps_original_diagnostic(tmp_path, monkeypatch):
+    child = SimpleNamespace(pid=42, poll=lambda: 1)
+    calls = []
+    monkeypatch.setattr(wizard, "_loopback_port_available", lambda _: True)
+    monkeypatch.setattr(wizard, "_select_alternative_personal_port", lambda port: port + 1)
+    monkeypatch.setattr(wizard, "_rewrite_personal_port", lambda _, port: {"PARTYOPS_PORT": str(port)})
+    monkeypatch.setattr(wizard, "_spawn", lambda cmd, log, env: calls.append(env["PARTYOPS_PORT"]) or child)
+    monkeypatch.setattr(wizard, "_record_personal_process", lambda *_: pytest.fail("unhealthy child recorded"))
+    def failed(*args, **kwargs):
+        raise wizard.HostStartupError(wizard.PORT_IN_USE, "occupied")
+    monkeypatch.setattr(wizard, "wait_for_host_health", failed)
+    with pytest.raises(wizard.HostStartupError) as error:
+        wizard._launch_new_personal_process(tmp_path / "personal.env", Path("partyops"), tmp_path, 18775, {"PARTYOPS_PORT": "18775"})
+    assert error.value.code == wizard.PORT_IN_USE
+    assert calls == ["18775", "18776", "18777"]
