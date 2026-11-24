@@ -80,13 +80,17 @@ jobs:
           # Maturin treats the win7 Rust triples as cross targets. Supply the
           # target interpreter version explicitly, and its verified import libs.
           $env:PYO3_CROSS_PYTHON_VERSION = '3.8'
-          $env:PYO3_CROSS_LIB_DIR = Join-Path (Split-Path $env:TARGET_PY) 'libs'
-          if (-not (Test-Path (Join-Path $env:PYO3_CROSS_LIB_DIR 'python38.lib'))) { throw 'TARGET_PYTHON_IMPORT_LIBRARY_MISSING' }
+          # Windows CPython has no Unix _sysconfigdata.py; let Maturin
+          # resolve the Windows ABI from the explicit version and verified interpreter.
+          Remove-Item Env:PYO3_CROSS_LIB_DIR -ErrorAction SilentlyContinue
+          $targetLibDir = Join-Path (Split-Path $env:TARGET_PY) 'libs'
+          if (-not (Test-Path (Join-Path $targetLibDir 'python38.lib'))) { throw 'TARGET_PYTHON_IMPORT_LIBRARY_MISSING' }
           $cmd = Join-Path $env:RUNNER_TEMP 'build-calamine.cmd'
           @(
             '@echo off',
             "call ""$vcvars"" ${{ matrix.vcarch }} -vcvars_ver=14.29",
             'if errorlevel 1 exit /b 11',
+            "set LIB=$targetLibDir;%LIB%",
             'echo VCToolsVersion=%VCToolsVersion%',
             'where cl || exit /b 12',
             "cd /d ""$src""",
