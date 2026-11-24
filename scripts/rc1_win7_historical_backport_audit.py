@@ -134,6 +134,16 @@ def main():
                     encoding="utf-8",
                 )
                 row["generated_version_module_sha256"] = sha(version_file)
+                # Hatch can exclude generated VCS files via the source's
+                # ignore rules even when the file is present. Explicitly include
+                # the version file in the candidate wheel using its supported map.
+                project = source_root/"pyproject.toml"
+                config = project.read_text(encoding="utf-8")
+                heading = "[tool.hatch.build.targets.wheel.force-include]"
+                if heading in config:
+                    raise RuntimeError("inspect existing upstream force-include map")
+                with project.open("a", encoding="utf-8") as handle:
+                    handle.write('\n'+heading+'\n"src/urllib3/_version.py" = "urllib3/_version.py"\n')
             if name in NATIVE:
                 row["native_rebuild_required"]=True
                 continue
@@ -159,6 +169,7 @@ def main():
                        matches_current_lock={a:wheel_digest in locks[a][name]["sha256"] for a in locks})
         except Exception as e:
             row["error"]=str(e)
+            print(name, type(e).__name__, str(e), flush=True)
         finally:
             (out/"receipt.json").write_text(json.dumps(receipt,indent=2)+"\n",encoding="utf-8")
     missing=sorted({name for lock in locks.values() for name,row in lock.items() if "+partyops." in row["version"] and name not in COMPONENTS})
@@ -166,6 +177,7 @@ def main():
     (out/"receipt.json").write_text(json.dumps(receipt,indent=2)+"\n",encoding="utf-8")
     print(json.dumps({n:r["status"] for n,r in receipt["components"].items()},indent=2))
     print("WIN7_HISTORICAL_INPUT_AUDIT_COMPLETE_NOT_INSTALLER",missing)
+    print(json.dumps({n:{"status":r["status"],"error":r.get("error"),"candidate_sha256":r.get("candidate_sha256"),"matches_current_lock":r.get("matches_current_lock")} for n,r in receipt["components"].items()},indent=2))
 
 if __name__=="__main__":
     main()
