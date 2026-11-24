@@ -2,10 +2,23 @@ name: RC1 UOS AMD64 real DEB extraction & synthetic upgrade QA (HOSTED_ONLY)
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, feature/1.4.6-rc1-cloud-rebuild]
     paths:
       - '.github/workflows/cloud-uos-amd64-deb-qa.yml'
   workflow_dispatch:
+    inputs:
+      candidate_run:
+        description: GitHub Actions run ID that produced the AMD64 DEB
+        required: true
+        type: string
+      candidate_source_sha:
+        description: Exact 40-character source commit of the candidate
+        required: true
+        type: string
+      candidate_sha256:
+        description: Independently recorded SHA-256 of the candidate DEB
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -18,11 +31,11 @@ jobs:
     timeout-minutes: 45
     env:
       GH_TOKEN: ${{ github.token }}
-      CANDIDATE_SOURCE_SHA: 4e58012674d444455ceef4d542b9d69a7e87f63e
-      CANDIDATE_SHA256: 64d4313ccfd5d2ad4dcc1de6df4c118000741a884896f589075e0ebeecef2b6d
+      CANDIDATE_SOURCE_SHA: ${{ inputs.candidate_source_sha || '400dd924faaf3195aef69c24c160a2e6f109a5f0' }}
+      CANDIDATE_SHA256: ${{ inputs.candidate_sha256 || '4513f840c154253117010ebcb5a8533efe11bf2fdea86f794c6f516c395eeb1b' }}
       CANDIDATE_FILE: PartyOps_1.4.6-rc.1_uos_v20_amd64_BUILD_ONLY_UNVERIFIED.deb
-      CANDIDATE_RUN: '45169885887'
-      CANDIDATE_ARTIFACT: partyops-uos-v20-amd64-RC1-ACTUAL-DEB-BUILD_ONLY-UNVERIFIED-4e58012674d444455ceef4d542b9d69a7e87f63e
+      CANDIDATE_RUN: ${{ inputs.candidate_run || '45303617009' }}
+      CANDIDATE_ARTIFACT: ${{ format('partyops-uos-v20-amd64-RC1-ACTUAL-DEB-BUILD_ONLY-UNVERIFIED-{0}', inputs.candidate_source_sha || '400dd924faaf3195aef69c24c160a2e6f109a5f0') }}
 
     steps:
       - name: Exact reviewed packaging source checkout
@@ -35,6 +48,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          [[ "$CANDIDATE_RUN" =~ ^[1-9][0-9]*$ ]]
+          [[ "$CANDIDATE_SOURCE_SHA" =~ ^[a-f0-9]{40}$ ]]
+          [[ "$CANDIDATE_SHA256" =~ ^[a-f0-9]{64}$ ]]
+          # Never accept an artifact identified only by its display name.
+          run_info="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$CANDIDATE_RUN")"
+          test "$(jq -r '.head_sha' <<< "$run_info")" = "$CANDIDATE_SOURCE_SHA"
+          test "$(jq -r '.head_repository.full_name' <<< "$run_info")" = "$GITHUB_REPOSITORY"
+          test "$(jq -r '.path | split("@")[0]' <<< "$run_info")" = '.github/workflows/cloud-uos-fresh-application-freeze.yml'
           mkdir -p artifacts/real-uos-deb-qa/candidate
           gh run download "$CANDIDATE_RUN" --repo "$GITHUB_REPOSITORY" \
             --name "$CANDIDATE_ARTIFACT" \
@@ -109,6 +130,8 @@ jobs:
           result={
              'status':'PASS_HOSTED_REAL_DEB_INTEGRITY',
              'source_sha':expected_source,
+             'candidate_run_id':os.environ['CANDIDATE_RUN'],
+             'qa_source_sha':os.environ.get('GITHUB_SHA'),
              'deb_sha256':os.environ['CANDIDATE_SHA256'],
              'verified_payload_file_count':len(entries),
              'native_wps_file_sha256':native,
