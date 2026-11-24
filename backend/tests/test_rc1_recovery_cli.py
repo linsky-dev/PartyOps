@@ -46,6 +46,16 @@ def _invoke(monkeypatch, path: Path, action: str, proof: str) -> int:
     return recovery_cli.main([action, "--data-dir", str(path)])
 
 
+@pytest.fixture(autouse=True)
+def isolate_cli_settings_cache():
+    # Recovery runs as a separate process in production; these in-process
+    # tests can populate the global cache with production/personal settings.
+    # Autouse teardown runs after the explicitly requested monkeypatch fixture
+    # has restored the process environment, including on assertion failure.
+    yield
+    get_settings.cache_clear()
+
+
 @pytest.fixture
 def cli_store(tmp_path, monkeypatch):
     path = tmp_path.resolve() / "synthetic-host"
@@ -775,3 +785,11 @@ def test_native_windows_personal_recovery_with_real_sid_and_dacl(
             AuditLog.action == "auth.host_emergency_recovery_issue",
         ))
         assert event.detail["method"] == "windows-personal-owner-single-admin"
+
+
+@pytest.mark.skipif(os.name != "nt", reason="native recovery runs only on Windows")
+def test_native_recovery_does_not_leak_settings_to_following_tests():
+    assert os.environ["PARTYOPS_ENVIRONMENT"] == "test"
+    settings = get_settings()
+    assert settings.environment == "test"
+    assert settings.data_dir == Path(os.environ["PARTYOPS_DATA_DIR"])
