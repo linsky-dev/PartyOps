@@ -49,6 +49,11 @@ jobs:
           $vs = & $vswhere -latest -products '*' -property installationPath | Select-Object -First 1
           $vcvars = Join-Path $vs 'VC/Auxiliary/Build/vcvarsall.bat'
           if (-not (Test-Path $vcvars)) { throw 'ARM64_MSVC_NOT_FOUND' }
+          # MuPDF upstream defaults to older Visual Studio project files. Retarget
+          # via its documented upgrade mode rather than modifying SDK headers.
+          # https://github.com/actions/runner-images/issues/11684
+          # https://mupdf.readthedocs.io/en/1.28.6/reference/cxx-and-derived-bindings.html
+          $env:PYMUPDF_SETUP_MUPDF_VS_UPGRADE = '1'
           $cmd = Join-Path $env:RUNNER_TEMP 'partyops-pdf-build.cmd'
           @(
             '@echo off',
@@ -143,13 +148,32 @@ jobs:
           $alembicIni = (Resolve-Path -LiteralPath 'backend/alembic.ini').Path
           $entry = (Resolve-Path -LiteralPath 'packaging/uos/entrypoint.py').Path
           if (-not (Test-Path -LiteralPath (Join-Path $frontend 'index.html'))) { throw 'ARM64_FRONTEND_BUILD_MISSING' }
-          python -m PyInstaller --noconfirm --clean --onedir --name PartyOps-ARM64-APP-ONLY --paths "$backend" --distpath "$out/dist" --workpath "$env:RUNNER_TEMP/arm64-pyi-work" --specpath "$env:RUNNER_TEMP" --add-data "$frontend;frontend" --add-data "$alembic;alembic" --add-data "$alembicIni;." --hidden-import win32timezone --hidden-import uvicorn.logging --hidden-import uvicorn.loops.asyncio --hidden-import uvicorn.protocols.http.h11_impl --collect-all pymupdf --collect-all tokenizers --collect-all numpy --collect-all onnxruntime "$entry"
+          python -m PyInstaller --noconfirm --clean --onedir --python-option 'X utf8=1' --name PartyOps-ARM64-APP-ONLY --paths "$backend" --distpath "$out/dist" --workpath "$env:RUNNER_TEMP/arm64-pyi-work" --specpath "$env:RUNNER_TEMP" --add-data "$frontend;frontend" --add-data "$alembic;alembic" --add-data "$alembicIni;." --hidden-import win32timezone --hidden-import uvicorn.logging --hidden-import uvicorn.loops.asyncio --hidden-import uvicorn.protocols.http.h11_impl --collect-all pymupdf --collect-all tokenizers --collect-all numpy --collect-all onnxruntime "$entry"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $exe = Join-Path $out 'dist/PartyOps-ARM64-APP-ONLY/PartyOps-ARM64-APP-ONLY.exe'
           python -c "import pathlib,struct,sys; b=pathlib.Path(sys.argv[1]).read_bytes(); off=struct.unpack_from('<I',b,60)[0]; assert b[off:off+4]==b'PE\x00\x00'; assert struct.unpack_from('<H',b,off+4)[0]==0xaa64" $exe
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          & $exe --account-recovery --help | Tee-Object -FilePath "$out/recovery-help.txt"
-          if ($LASTEXITCODE -ne 0 -or -not (Select-String -Quiet -Path "$out/recovery-help.txt" -Pattern 'emergency')) { throw 'ARM64_FROZEN_RECOVERY_HELP_FAILED' }
+          # Frozen PyInstaller does not inherit PYTHONUTF8. Verify actual bytes
+          # when redirected, and that non-interactive credential issuance remains denied.
+          @'
+          import os, pathlib, subprocess, sys
+          exe, output = sys.argv[1:]
+          env = dict(os.environ)
+          env.pop("PYTHONUTF8", None)
+          env.pop("PYTHONIOENCODING", None)
+          root = pathlib.Path(output)
+          help_result = subprocess.run([exe, "--account-recovery", "--help"], env=env, stdin=subprocess.DEVNULL, capture_output=True, timeout=90)
+          text = help_result.stdout.decode("utf-8", errors="strict")
+          (root / "recovery-help.txt").write_text(text, encoding="utf-8")
+          assert help_result.returncode == 0 and "emergency" in text and "主机管理员账号恢复" in text, help_result.stderr
+          invalid = root / "nonexistent-recovery-data"
+          assert not invalid.exists()
+          denied = subprocess.run([exe, "--account-recovery", "emergency", "--data-dir", str(invalid)], env=env, stdin=subprocess.DEVNULL, capture_output=True, timeout=90)
+          assert denied.returncode == 2 and "交互终端" in denied.stderr.decode("utf-8", errors="strict")
+          assert not invalid.exists()
+          print("ARM64_FROZEN_RECOVERY_UTF8_AND_NONINTERACTIVE_DENIAL_PASS")
+          '@ | python - $exe $out
+          if ($LASTEXITCODE -ne 0) { throw 'ARM64_FROZEN_RECOVERY_HELP_FAILED' }
           @{source_commit=$env:SOURCE_SHA; status='APP_ONLY_BUILD_ONLY'; architecture='ARM64'; host_exe_sha256=(Get-FileHash $exe).Hash.ToLowerInvariant(); installer_created=$false; full_pdf_layout=$false; release_ready=$false} | ConvertTo-Json | Set-Content "$out/freeze-receipt.json"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
