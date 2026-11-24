@@ -28,9 +28,10 @@ jobs:
           out="$PWD/artifacts/loong64-deepin-baseline"
           mkdir -p "$out"
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends qemu-user-static binfmt-support mmdebstrap gpgv gnupg
+          sudo apt-get install -y --no-install-recommends qemu-user-static binfmt-support mmdebstrap arch-test gpgv gnupg
           sudo update-binfmts --enable qemu-loongarch64
           test -x /usr/bin/qemu-loongarch64-static
+          arch-test loong64
           curl --fail --location --retry 3 --max-time 90 "https://raw.githubusercontent.com/linuxdeepin/deepin-keyring/$DEEPIN_KEY_COMMIT/keyrings/deepin-archive-crimson-keyring.gpg" -o "$out/crimson.gpg"
           test "$(git hash-object "$out/crimson.gpg")" = "$DEEPIN_KEY_BLOB"
           gpg --batch --show-keys --with-fingerprint "$out/crimson.gpg" > "$out/key-fingerprints.txt"
