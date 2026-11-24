@@ -10,6 +10,7 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+  actions: read
 concurrency:
   group: rc1-arm64-app-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
@@ -72,6 +73,13 @@ jobs:
             throw "ARM64_FULL_PDF_SOURCE_BUILD_FAILED: $rc"
           }
           $wheel = @(Get-ChildItem $out -Filter 'pymupdf-2.1-*-win_arm64.whl')
+          if ($wheel.Count -eq 0) {
+            $core = @(Get-ChildItem $out -Filter 'pymupdf_lite-2.1-*-win_arm64.whl')
+            if ($core.Count -eq 1) {
+              @{source_commit=$env:SOURCE_SHA; status='CORE_BUILT_FULL_LAYOUT_INPUTS_MISSING'; wheel=$core[0].Name; wheel_sha256=(Get-FileHash $core[0].FullName).Hash.ToLowerInvariant(); release_ready=$false} | ConvertTo-Json | Set-Content (Join-Path $out 'core-only-receipt.json')
+              throw 'ARM64_FULL_LAYOUT_4LLM_SOURCE_INPUTS_NOT_INCLUDED'
+            }
+          }
           if ($wheel.Count -ne 1) { throw 'ARM64_FULL_PDF_WHEEL_MISSING' }
           python -m pip install --only-binary=:all: $wheel[0].FullName
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -85,6 +93,83 @@ jobs:
           path: artifacts/arm64-full-pdf
           if-no-files-found: warn
           retention-days: 7
+  core-regression:
+    name: Native ARM64 source-built PDF core and complete backend candidate regression (NOT RELEASE)
+    runs-on: windows-11-arm
+    timeout-minutes: 90
+    env:
+      GH_TOKEN: ${{ github.token }}
+      CORE_RUN: '45308862118'
+      CORE_SOURCE: a54592c95f24610aa698e7163e6f2c97c44dc1a0
+      CORE_WHEEL_SHA: 2e47476ef90fa4de9a0013ac70d8cd8db5fe529c7229840aafe95f33d533954d
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+          architecture: arm64
+      - name: Download previously compiled original source core wheel and verify SHA
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $run = gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/$env:CORE_RUN" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $run.head_sha -ne $env:CORE_SOURCE -or $run.head_repository.full_name -ne $env:GITHUB_REPOSITORY -or $run.path -ne '.github/workflows/cloud-arm64-application-freeze.yml') { throw 'ARM64_CORE_RUN_IDENTITY_INVALID' }
+          $wheelhouse = Join-Path $env:RUNNER_TEMP 'source-built-pdf-core'
+          gh run download $env:CORE_RUN --repo $env:GITHUB_REPOSITORY --name "RC1-ARM64-full-PDF-source-build-$env:CORE_SOURCE" --dir $wheelhouse
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $wheel = @(Get-ChildItem $wheelhouse -Recurse -Filter 'pymupdf_lite-2.1-*-win_arm64.whl')
+          if ($wheel.Count -ne 1 -or (Get-FileHash $wheel[0].FullName).Hash.ToLowerInvariant() -ne $env:CORE_WHEEL_SHA) { throw 'ARM64_SOURCE_CORE_HASH_INVALID' }
+          $wheel[0].FullName | Out-File -FilePath (Join-Path $env:RUNNER_TEMP 'source-core-path.txt') -Encoding utf8
+      - name: Build pinned native crypto and install previous isolated candidate closure
+        shell: pwsh
+        run: |
+          ./scripts/build-windows-arm64-crypto-probe.ps1 -OutputDirectory (Join-Path $env:RUNNER_TEMP 'rc1-arm64-crypto')
+          python -m pip install --disable-pip-version-check 'packaging==25.0'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python scripts/rc1_arm64_candidate_runtime.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Replace only the core wheel in candidate environment and verify actual PDF API
+        shell: pwsh
+        run: |
+          $wheel = (Get-Content (Join-Path $env:RUNNER_TEMP 'source-core-path.txt') -Raw).Trim()
+          python -m pip install --force-reinstall --no-deps --no-index $wheel
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m pip check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python scripts/probe_arm64_pdf_lite.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python scripts/probe_arm64_partyops_intake.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Run native Windows ARM64 backend regression with original assertions
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python -m pip install --only-binary=:all: 'pytest==9.1.1' 'pytest-cov==6.2.1' 'pytest-asyncio==1.4.0' -r qa/vm-lab/requirements.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m pip check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          New-Item -ItemType Directory -Force artifacts/arm64-core-regression | Out-Null
+          Push-Location backend
+          try {
+            python -m pytest tests -rs --cov=app --cov-branch --cov-report=json:../artifacts/arm64-core-regression/coverage.json --junitxml=../artifacts/arm64-core-regression/junit.xml 2>&1 | Tee-Object -FilePath ../artifacts/arm64-core-regression/pytest.log
+            if ($LASTEXITCODE -ne 0) { throw 'ARM64_CORE_FULL_BACKEND_REGRESSION_FAILED' }
+          } finally { Pop-Location }
+          python scripts/verify-coverage.py artifacts/arm64-core-regression/coverage.json --line 95 --branch 92
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          @{status='NATIVE_ARM64_CORE_BACKEND_REGRESSION_ONLY'; source_commit=$env:SOURCE_SHA; source_wheel_sha256=$env:CORE_WHEEL_SHA; full_layout_engine=$false; installer_created=$false; release_ready=$false} | ConvertTo-Json | Set-Content artifacts/arm64-core-regression/receipt.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: RC1-ARM64-source-core-regression-NOT-RELEASE-${{ env.SOURCE_SHA }}
+          path: |
+            artifacts/arm64-core-regression
+            artifacts/arm64-pdf-lite
+            artifacts/arm64-application-only/runtime-receipt.json
+          if-no-files-found: warn
+          retention-days: 14
   application:
     name: Native ARM64 PartyOps runtime and application-only EXE
     runs-on: windows-11-arm
