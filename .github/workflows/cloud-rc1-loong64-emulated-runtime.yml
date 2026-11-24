@@ -113,11 +113,19 @@ jobs:
           packages=(python3-fastapi python3-starlette python3-uvicorn python3-sqlalchemy python3-alembic python3-pydantic-settings python3-argon2 python3-multipart python3-sse-starlette python3-docx python3-lxml python3-openpyxl python3-python-calamine python3-pil python3-pytesseract python3-defusedxml python3-httpx python3-packaging python3-tk python3-pysqlite3)
           available=()
           for name in "${packages[@]}"; do
-            candidate="$(sudo chroot "$root" apt-cache policy "$name" | awk '/Candidate:/ {print $2; exit}')"
+            # Missing package names may cause apt-cache to return 100; record
+            # each result instead of aborting the whole availability inventory.
+            set +e
+            policy="$(sudo chroot "$root" apt-cache policy "$name" 2>&1)"
+            policy_rc=$?
+            set -e
+            printf '%s\n%s\n' "$name (exit $policy_rc)" "$policy" >> "$out/current-app-apt-policy.log"
+            candidate="$(awk '/Candidate:/ {print $2; exit}' <<< "$policy")"
             printf '%s\t%s\n' "$name" "${candidate:-MISSING}" | tee -a "$out/current-app-dependencies.tsv"
             if [[ -n "$candidate" && "$candidate" != '(none)' ]]; then available+=("$name"); fi
           done
-          sudo chroot "$root" apt-get install -y --no-install-recommends "${available[@]}"
+          test "${#available[@]}" -gt 0
+          sudo chroot "$root" apt-get install -y --no-install-recommends "${available[@]}" 2>&1 | tee "$out/current-app-apt-install.log"
           sudo mkdir -p "$root/tmp/rc1-app-data"
           sudo chown 65534:65534 "$root/tmp/rc1-app-data"
           set +e
