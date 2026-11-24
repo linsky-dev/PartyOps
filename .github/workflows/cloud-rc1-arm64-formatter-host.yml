@@ -1,0 +1,146 @@
+name: RC1 Windows ARM64 original formatter AnyCPU host probe (NOT WPS ACCEPTANCE)
+on:
+  pull_request:
+    branches: [qa/rc1-personal-data-preservation-20261124]
+    paths:
+      - '.github/workflows/cloud-rc1-arm64-formatter-host.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build-anycpu:
+    runs-on: windows-2025
+    timeout-minutes: 35
+    env:
+      SOURCE_SHA: 5ea9c6a128f3d8aa71ff77e7e549f4fbd6115fdb
+      PYTHONUTF8: '1'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+          architecture: x64
+      - name: Build pure IL AnyCPU host using available original VSTO reference assemblies
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          if ((git rev-parse HEAD).Trim() -ne $env:SOURCE_SHA) { throw 'SOURCE_SHA_MISMATCH' }
+          $out=Join-Path $PWD 'artifacts/formatter-cross'
+          $python=(python -c 'import sys;print(sys.executable)').Trim()
+          & ./scripts/build-document-formatter-host.ps1 -Platform AnyCPU -StageDirectory "$out/formatter-host" -PythonPath $python
+          if ($LASTEXITCODE -ne 0) { throw 'FORMATTER_CROSS_BUILD_FAILED' }
+          $files=@(Get-ChildItem "$out/formatter-host" -Recurse -File | ForEach-Object { @{path=[IO.Path]::GetRelativePath("$out/formatter-host",$_.FullName).Replace('\','/');sha256=(Get-FileHash $_.FullName).Hash.ToLowerInvariant();size=$_.Length} })
+          @{source_commit=$env:SOURCE_SHA;architecture='AnyCPU';files=$files;release_ready=$false} | ConvertTo-Json -Depth 5 | Set-Content "$out/input.json"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: RC1-AnyCPU-formatter-cross-${{ env.SOURCE_SHA }}
+          path: artifacts/formatter-cross
+          if-no-files-found: error
+          retention-days: 14
+  formatter:
+    needs: build-anycpu
+    runs-on: windows-11-arm
+    timeout-minutes: 45
+    env:
+      SOURCE_SHA: 5ea9c6a128f3d8aa71ff77e7e549f4fbd6115fdb
+      PYTHONUTF8: '1'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+          architecture: arm64
+      - name: Verify native host and .NET Framework 4.8.1 runtime before original formatter build
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $out=Join-Path $PWD 'artifacts/arm64-formatter'
+          New-Item -ItemType Directory -Force $out | Out-Null
+          if ((git rev-parse HEAD).Trim() -ne $env:SOURCE_SHA) { throw 'SOURCE_SHA_MISMATCH' }
+          if ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString() -ne 'Arm64') { throw 'NOT_ARM64_OS' }
+          $key=[Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::LocalMachine,[Microsoft.Win32.RegistryView]::Registry64)
+          try {
+            $sub=$key.OpenSubKey('SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full')
+            if (-not $sub) { throw 'FRAMEWORK_MISSING' }
+            $release=[int]$sub.GetValue('Release')
+            $version=[string]$sub.GetValue('Version')
+            $sub.Dispose()
+          } finally { $key.Dispose() }
+          @{os=[Environment]::OSVersion.VersionString;architecture='arm64';release=$release;framework_version=$version;source_commit=$env:SOURCE_SHA} | ConvertTo-Json | Set-Content "$out/framework.json"
+          if ($release -lt 533320) { throw 'DOTNET_FRAMEWORK_481_NOT_PRESENT' }
+          $compiler=Join-Path $env:WINDIR 'Microsoft.NET/Framework64/v4.0.30319/csc.exe'
+          if (-not (Test-Path $compiler)) { throw 'FRAMEWORK_COMPILER_MISSING' }
+          $src=Join-Path $env:RUNNER_TEMP 'partyops-clr-architecture.cs'
+          @'
+          using System;
+          using System.Runtime.InteropServices;
+          class Probe {
+              [DllImport("kernel32.dll", SetLastError=true)] static extern bool IsWow64Process2(IntPtr process, out ushort processMachine, out ushort nativeMachine);
+              static int Main() {
+                  ushort process, native;
+                  if (!IsWow64Process2(System.Diagnostics.Process.GetCurrentProcess().Handle,out process,out native)) return 2;
+                  Console.WriteLine("process=0x{0:X4}; native=0x{1:X4}; CLR={2}",process,native,Environment.Version);
+                  return process==0 && native==0xaa64 && Environment.Is64BitProcess ? 0 : 3;
+              }
+          }
+          '@ | Set-Content -Encoding UTF8 $src
+          $probe=Join-Path $env:RUNNER_TEMP 'partyops-clr-architecture.exe'
+          & $compiler /nologo /target:exe /platform:anycpu "/out:$probe" $src
+          if ($LASTEXITCODE -ne 0) { throw 'CLR_PROBE_COMPILE_FAILED' }
+          & $probe *> "$out/native-clr.txt"
+          if ($LASTEXITCODE -ne 0) { throw 'CLR_NATIVE_ARM64_NOT_PROVEN' }
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: RC1-AnyCPU-formatter-cross-${{ env.SOURCE_SHA }}
+          path: artifacts/formatter-cross
+      - name: Verify every cross-built file and actual pure IL host, then run on ARM64
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $out=Join-Path $PWD 'artifacts/arm64-formatter'
+          $input=Get-Content 'artifacts/formatter-cross/input.json' -Raw | ConvertFrom-Json
+          if ($input.source_commit -ne $env:SOURCE_SHA -or $input.architecture -ne 'AnyCPU' -or $input.release_ready) { throw 'CROSS_INPUT_INVALID' }
+          $stage=(Resolve-Path 'artifacts/formatter-cross/formatter-host').Path
+          $actual=@(Get-ChildItem $stage -Recurse -File)
+          if ($actual.Count -ne $input.files.Count) { throw 'CROSS_INPUT_FILE_COUNT' }
+          foreach ($row in $input.files) {
+            $p=[IO.Path]::GetFullPath((Join-Path $stage $row.path))
+            if (-not $p.StartsWith($stage+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase) -or -not (Test-Path $p -PathType Leaf) -or (Get-Item $p).Length -ne $row.size -or (Get-FileHash $p).Hash.ToLowerInvariant() -ne $row.sha256) { throw 'CROSS_INPUT_FILE_MISMATCH' }
+          }
+          python -m pip install 'pefile==2024.8.26'
+          if ($LASTEXITCODE -ne 0) { throw 'PE_AUDIT_DEPENDENCY_FAILED' }
+          @'
+          import importlib.util,pathlib,pefile
+          spec=importlib.util.spec_from_file_location("gate","scripts/validate-win7-pe.py")
+          gate=importlib.util.module_from_spec(spec);spec.loader.exec_module(gate)
+          p=pathlib.Path("artifacts/formatter-cross/formatter-host/PartyOps.DocumentFormatter.Host.exe")
+          with pefile.PE(str(p)) as image:
+              assert gate._is_managed_anycpu(image), "host is not pure IL AnyCPU"
+          '@ | python -
+          if ($LASTEXITCODE -ne 0) { throw 'ANYCPU_IL_GATE_FAILED' }
+          Copy-Item -LiteralPath $stage -Destination "$out/formatter-host" -Recurse
+          $source=Get-Content "$out/formatter-host/source-host.json" -Raw | ConvertFrom-Json
+          if ($source.architecture -ne 'AnyCPU' -or $source.adapter -ne 'dotnet-framework-com-source' -or $source.capabilities -ne 25 -or $source.features.Count -ne 6) { throw 'FORMATTER_SOURCE_RECEIPT_MISMATCH' }
+          $hostFile=Join-Path $out 'formatter-host/PartyOps.DocumentFormatter.Host.exe'
+          if ((Get-FileHash $hostFile).Hash.ToLowerInvariant() -ne $source.host_sha256) { throw 'FORMATTER_HOST_HASH_MISMATCH' }
+          $result=Join-Path $out 'standalone-selftest.json'
+          $proc=Start-Process -FilePath $hostFile -ArgumentList @('--self-test',$result) -WorkingDirectory "$out/formatter-host" -PassThru
+          try {
+            if (-not $proc.WaitForExit(120000) -or $proc.ExitCode -ne 0) { throw 'FORMATTER_STANDALONE_SELFTEST_FAILED' }
+          } finally { if (-not $proc.HasExited) { Stop-Process -Id $proc.Id -Force } }
+          $payload=Get-Content $result -Raw | ConvertFrom-Json
+          if (-not $payload.passed -or $payload.features.Count -ne 6) { throw 'FORMATTER_SELFTEST_INVALID' }
+          @{source_commit=$env:SOURCE_SHA;status='WINDOWS_ARM64_ANYCPU_FORMATTER_HOST_SELFTEST_PASS_ONLY';native_clr_probe=$true;host_sha256=$source.host_sha256;features=$source.features;current_version_real_wps_tested=$false;windows10_arm64_tested=$false;installer_created=$false;release_ready=$false} | ConvertTo-Json -Depth 5 | Set-Content "$out/receipt.json"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: RC1-ARM64-original-formatter-host-QA-${{ env.SOURCE_SHA }}
+          path: artifacts/arm64-formatter
+          if-no-files-found: warn
+          retention-days: 14
