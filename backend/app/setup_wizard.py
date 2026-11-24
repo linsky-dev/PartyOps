@@ -5783,6 +5783,8 @@ def main() -> None:
     )
     parser.add_argument("--output-file", default="")
     parser.add_argument("--manage-shared-roots", action="store_true")
+    parser.add_argument("--recover-account", action="store_true")
+    parser.add_argument("--recovery-host", action="store_true")
     parser.add_argument("--action-uri", default="")
     parser.add_argument("--reconfigure", action="store_true")
     parser.add_argument(
@@ -5844,6 +5846,10 @@ def main() -> None:
                 raise SystemExit(PERSONAL_HOST_REJECTED_EXIT) from exc
             raise
         raise SystemExit(0)
+    if args.recover_account or (args.manage_shared_roots and args.action_uri.rstrip("/") == "partyops-client://recover-account"):
+        from .desktop_recovery import run_desktop_recovery
+
+        raise SystemExit(run_desktop_recovery(host=args.recovery_host))
     if args.manage_shared_roots:
         action_token = ""
         if args.action_uri:

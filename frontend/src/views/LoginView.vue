@@ -234,6 +234,8 @@ async function submit() {
       </div>
       <template v-else>
         <p>普通成员请联系管理员核验身份后取得一次性恢复凭据；管理员可以使用事先离线保管的恢复码。</p>
+        <p><a class="recovery-action" href="partyops-client://recover-account">打开本机账号恢复助手（无需输入命令）</a></p>
+        <p>请在保存业务数据的原电脑操作；协同机请联系主机管理员。若桌面助手尚不可用，可使用下方备用方法。</p>
         <a-button type="text" class="host-recovery-help-toggle" @click="showHostRecoveryHelp = !showHostRecoveryHelp">
           {{ showHostRecoveryHelp ? "收起主机应急恢复说明" : "我是唯一管理员，忘记密码且没有恢复码" }}
         </a-button>
