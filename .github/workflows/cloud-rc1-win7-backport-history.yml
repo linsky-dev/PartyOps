@@ -37,6 +37,7 @@ jobs:
           retention-days: 14
           if-no-files-found: warn
   candidate-runtime:
+    needs: audit
     name: Win7 candidate pure Python dependencies on real CPython 3.8 ${{ matrix.arch }} (NOT WIN7 OS)
     runs-on: windows-2022
     timeout-minutes: 35
@@ -53,8 +54,8 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       SOURCE_SHA: 400dd924faaf3195aef69c24c160a2e6f109a5f0
-      BACKPORT_RUN: '45313701483'
-      BACKPORT_SHA: 3e387f2810d5f47538e8662d6308497eab9af5ff
+      BACKPORT_RUN: ${{ github.run_id }}
+      BACKPORT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
       INPUT_RUN: '45303617001'
       PYTHONUTF8: '1'
     steps:
@@ -73,7 +74,9 @@ jobs:
           $root = Join-Path $env:RUNNER_TEMP 'win7-candidate-closure'
           New-Item -ItemType Directory -Force $root | Out-Null
           $back = gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/$env:BACKPORT_RUN" | ConvertFrom-Json
-          if ($LASTEXITCODE -ne 0 -or $back.head_sha -ne $env:BACKPORT_SHA -or $back.head_repository.full_name -ne $env:GITHUB_REPOSITORY -or $back.conclusion -ne 'success' -or $back.path -ne '.github/workflows/cloud-rc1-win7-backport-history.yml') { throw 'WIN7_HISTORICAL_RUN_INVALID' }
+          if ($LASTEXITCODE -ne 0 -or $back.head_sha -ne $env:BACKPORT_SHA -or $back.head_repository.full_name -ne $env:GITHUB_REPOSITORY -or $back.path -ne '.github/workflows/cloud-rc1-win7-backport-history.yml') { throw 'WIN7_HISTORICAL_RUN_INVALID' }
+          $jobs = gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/$env:BACKPORT_RUN/jobs" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or @($jobs.jobs | Where-Object { $_.name -eq 'audit' -and $_.conclusion -eq 'success' }).Count -ne 1) { throw 'WIN7_SAME_RUN_AUDIT_NOT_SUCCESSFUL' }
           $input = gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/$env:INPUT_RUN" | ConvertFrom-Json
           if ($LASTEXITCODE -ne 0 -or $input.head_sha -ne $env:SOURCE_SHA -or $input.head_repository.full_name -ne $env:GITHUB_REPOSITORY -or $input.conclusion -ne 'success' -or $input.path -ne '.github/workflows/cloud-rc1-legacy-inputs.yml') { throw 'WIN7_PUBLIC_RUN_INVALID' }
           gh run download $env:BACKPORT_RUN --repo $env:GITHUB_REPOSITORY --name "RC1-Win7-HISTORICAL-BACKPORT-CANDIDATES-NOT-INSTALLER-$env:BACKPORT_SHA" --dir "$root/backports"
