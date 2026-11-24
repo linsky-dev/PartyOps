@@ -1,0 +1,74 @@
+name: RC1 Windows ARM64 app and Office integrated runtime (NOT INSTALLER)
+on:
+  pull_request:
+    branches: [feature/1.4.6-rc1-cloud-rebuild]
+    paths:
+      - '.github/workflows/cloud-rc1-arm64-integrated-runtime.yml'
+      - 'scripts/rc1_arm64_integrated_runtime.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  integrate:
+    runs-on: windows-11-arm
+    timeout-minutes: 65
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PYTHONUTF8: '1'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+          architecture: arm64
+      - name: Recover exact app and official Office input artifacts
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $root=Join-Path $env:RUNNER_TEMP 'arm64-integrated'
+          $app=gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/45374842017" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $app.head_sha -ne '202e456899e74d72e3e605caec6874f46a113a04' -or $app.head_repository.full_name -ne $env:GITHUB_REPOSITORY -or $app.path -ne '.github/workflows/cloud-rc1-arm64-full-pdf-inputs.yml' -or $app.status -ne 'completed') { throw 'APP_INPUT_RUN_INVALID' }
+          # Input failed final coverage; use its successful freeze only for integration QA.
+          $jobs=gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/45374842017/jobs" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { throw 'APP_JOB_EVIDENCE_MISSING' }
+          $job=@($jobs.jobs | Where-Object { $_.id -eq 138378169514 })
+          if ($job.Count -ne 1) { throw 'APP_JOB_AMBIGUOUS' }
+          $stage=@($job[0].steps | Where-Object { $_.name -like 'Freeze all eight auxiliary entries*' })
+          $failed=@($job[0].steps | Where-Object { $_.conclusion -eq 'failure' })
+          if ($stage.Count -ne 1 -or $stage[0].conclusion -ne 'success' -or $failed.Count -ne 1 -or $failed[0].name -ne 'Run native Windows ARM64 backend regression with original assertions') { throw 'APP_FREEZE_NOT_PROVEN' }
+          gh run download 45374842017 --repo $env:GITHUB_REPOSITORY --name 'RC1-ARM64-nine-native-entry-APP-ONLY-NOT-INSTALLER-96d1c9bd553b70b0bef0c934b6196d8fee0a265f' --dir (Join-Path $root 'app')
+          if ($LASTEXITCODE -ne 0) { throw 'APP_DOWNLOAD_FAILED' }
+          $office=gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/45339196816" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $office.head_sha -ne '61a982d7b8fd2d9658a5bf700e2060d3fa571d14' -or $office.head_repository.full_name -ne $env:GITHUB_REPOSITORY -or $office.path -ne '.github/workflows/cloud-windows-arm64-libreoffice-runtime.yml' -or $office.conclusion -ne 'success') { throw 'OFFICE_INPUT_RUN_INVALID' }
+          gh run download 45339196816 --repo $env:GITHUB_REPOSITORY --name 'partyops-rc1-win-arm64-OFFICE-INPUT-NOT-INSTALLER-bc9ff1be78aeb2bcfe190577762792928da5a665' --dir (Join-Path $root 'office')
+          if ($LASTEXITCODE -ne 0) { throw 'OFFICE_DOWNLOAD_FAILED' }
+      - name: Assemble exact inputs and rerun native conversion and recovery help
+        shell: pwsh
+        run: |
+          $root=Join-Path $env:RUNNER_TEMP 'arm64-integrated'
+          python scripts/rc1_arm64_integrated_runtime.py (Join-Path $root 'app') (Join-Path $root 'office') artifacts/arm64-integrated
+          if ($LASTEXITCODE -ne 0) { throw 'ARM64_INTEGRATION_FAILED' }
+      - name: Recheck actual upstream Office executable signatures
+        shell: pwsh
+        run: |
+          $out=Join-Path $PWD 'artifacts/arm64-integrated'
+          $receipt=Get-Content "$out/office-input-evidence.json" -Raw | ConvertFrom-Json
+          foreach ($name in @('soffice.exe','soffice.com')) {
+            $sign=Get-AuthenticodeSignature -LiteralPath "$out/candidate/office-runtime/program/$name"
+            if ($name -eq 'soffice.exe') { $thumb=$receipt.office_executable_signer_thumbprint } else { $thumb=$receipt.office_cli_signer_thumbprint }
+            if ($sign.Status -ne 'Valid' -or $sign.SignerCertificate.Thumbprint -ne $thumb) { throw 'INTEGRATED_OFFICE_SIGNATURE_INVALID' }
+          }
+          'INTEGRATED_NATIVE_OFFICE_SIGNATURES_PASS' | Set-Content "$out/signature-result.txt"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: RC1-ARM64-integrated-app-office-NOT-INSTALLER-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            artifacts/arm64-integrated/*.json
+            artifacts/arm64-integrated/*.txt
+          if-no-files-found: warn
+          retention-days: 14
