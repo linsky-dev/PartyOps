@@ -1,0 +1,150 @@
+name: RC1 Win7 calamine native source rebuild (NOT INSTALLER)
+on:
+  pull_request:
+    branches: [feature/1.4.6-rc1-cloud-rebuild]
+    paths:
+      - '.github/workflows/cloud-rc1-win7-calamine-native.yml'
+      - 'scripts/rc1_win7_calamine_native.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native:
+    runs-on: windows-2022
+    timeout-minutes: 100
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            python: x64
+            bits: 64
+            target: x86_64-win7-windows-msvc
+            vcarch: x64
+          - arch: x86
+            python: x86
+            bits: 32
+            target: i686-win7-windows-msvc
+            vcarch: x86
+    env:
+      PYTHONUTF8: '1'
+      SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      RUSTUP_TOOLCHAIN: nightly-2026-08-16
+      CARGO_BUILD_JOBS: '1'
+      CARGO_TARGET: ${{ matrix.target }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        id: build-python
+        with:
+          python-version: '3.12'
+          architecture: x64
+      - name: Verify historical sdist and prepare exact root version changes
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python -m pip install 'maturin==1.15.0' 'pefile==2024.8.26'
+          if ($LASTEXITCODE -ne 0) { throw 'NATIVE_BUILD_TOOLS_MISSING' }
+          python scripts/rc1_win7_calamine_native.py prepare (Join-Path $env:RUNNER_TEMP 'calamine-src')
+          if ($LASTEXITCODE -ne 0) { throw 'CALAMINE_SOURCE_PREPARATION_FAILED' }
+          rustup toolchain install nightly-2026-08-16 --profile minimal --component rust-src
+          if ($LASTEXITCODE -ne 0) { throw 'WIN7_RUST_TOOLCHAIN_MISSING' }
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        id: target-python
+        with:
+          python-version: '3.8.10'
+          architecture: ${{ matrix.python }}
+      - name: Rebuild candidate wheel with actual Win7 Rust target and VC142
+        shell: pwsh
+        env:
+          BUILD_PY: ${{ steps.build-python.outputs.python-path }}
+          TARGET_PY: ${{ steps.target-python.outputs.python-path }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $out = Join-Path $PWD 'artifacts/win7-calamine'
+          New-Item -ItemType Directory -Force $out | Out-Null
+          $root = Join-Path $env:RUNNER_TEMP 'calamine-src'
+          Copy-Item "$root/source-receipt.json" $out
+          $src = (Get-Content "$root/source-path.txt" -Raw).Trim()
+          & $env:TARGET_PY -c "import sys,struct; assert sys.version_info[:3] == (3,8,10); assert struct.calcsize('P')*8 == ${{ matrix.bits }}"
+          if ($LASTEXITCODE -ne 0) { throw 'WRONG_TARGET_PYTHON' }
+          $vswhere = Join-Path ([Environment]::GetFolderPath('ProgramFilesX86')) 'Microsoft Visual Studio/Installer/vswhere.exe'
+          $vs = & $vswhere -latest -products '*' -property installationPath | Select-Object -First 1
+          $vcvars = Join-Path $vs 'VC/Auxiliary/Build/vcvarsall.bat'
+          if (-not (Test-Path $vcvars)) { throw 'MSVC_NOT_FOUND' }
+          $env:CL = '/D_WIN32_WINNT=0x0601 /DWINVER=0x0601'
+          $env:PYO3_PYTHON = $env:TARGET_PY
+          $cmd = Join-Path $env:RUNNER_TEMP 'build-calamine.cmd'
+          @(
+            '@echo off',
+            "call ""$vcvars"" ${{ matrix.vcarch }} -vcvars_ver=14.29",
+            'if errorlevel 1 exit /b 11',
+            'echo VCToolsVersion=%VCToolsVersion%',
+            'where cl || exit /b 12',
+            "cd /d ""$src""",
+            " ""$env:BUILD_PY"" -m maturin build --release --locked --target $env:CARGO_TARGET --interpreter ""$env:TARGET_PY"" --out ""$out"" -Z build-std=std,panic_abort -j 1",
+            'if errorlevel 1 exit /b 21'
+          ) | Set-Content -Encoding ascii $cmd
+          & cmd.exe /d /c $cmd *> (Join-Path $out 'build.log')
+          $rc = $LASTEXITCODE
+          Get-Content (Join-Path $out 'build.log') -Tail 100
+          if ($rc -ne 0) { throw "WIN7_CALAMINE_NATIVE_BUILD_FAILED: $rc" }
+          & $env:BUILD_PY scripts/rc1_win7_calamine_native.py verify $out '${{ matrix.arch }}'
+          if ($LASTEXITCODE -ne 0) { throw 'WIN7_CALAMINE_PE_GATE_FAILED' }
+      - name: Real CPython 3.8 import and XLSX parsing (hosted Windows, not Win7 OS)
+        shell: pwsh
+        env:
+          TARGET_PY: ${{ steps.target-python.outputs.python-path }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $out = Join-Path $PWD 'artifacts/win7-calamine'
+          $w = @(Get-ChildItem $out -Filter '*.whl')
+          if ($w.Count -ne 1) { throw 'CALAMINE_WHEEL_MISSING' }
+          & $env:TARGET_PY -m pip install --no-index --no-deps $w[0].FullName
+          if ($LASTEXITCODE -ne 0) { throw 'CALAMINE_IMPORT_INSTALL_FAILED' }
+          @'
+          import importlib.metadata, json, pathlib, struct, sys, tempfile, zipfile
+          from python_calamine import CalamineWorkbook
+          assert sys.version_info[:3] == (3, 8, 10)
+          assert struct.calcsize("P") * 8 == ${{ matrix.bits }}
+          assert importlib.metadata.version("python-calamine") == "0.3.2+partyops.1"
+          ns = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+          rel = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+          pkg = "http://schemas.openxmlformats.org/package/2006/relationships"
+          ct = "http://schemas.openxmlformats.org/package/2006/content-types"
+          with tempfile.TemporaryDirectory() as tmp:
+              p = pathlib.Path(tmp) / "synthetic.xlsx"
+              with zipfile.ZipFile(p, "w") as z:
+                  z.writestr("[Content_Types].xml", f'<Types xmlns="{ct}"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>')
+                  z.writestr("_rels/.rels", f'<Relationships xmlns="{pkg}"><Relationship Id="rId1" Type="{rel}/officeDocument" Target="xl/workbook.xml"/></Relationships>')
+                  z.writestr("xl/workbook.xml", f'<workbook xmlns="{ns}" xmlns:r="{rel}"><sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets></workbook>')
+                  z.writestr("xl/_rels/workbook.xml.rels", f'<Relationships xmlns="{pkg}"><Relationship Id="rId1" Type="{rel}/worksheet" Target="worksheets/sheet1.xml"/></Relationships>')
+                  z.writestr("xl/worksheets/sheet1.xml", f'<worksheet xmlns="{ns}"><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>党建智办</t></is></c><c r="B1"><v>42</v></c></row></sheetData></worksheet>')
+              rows = CalamineWorkbook.from_path(str(p)).get_sheet_by_name("Sheet1").to_python()
+              assert rows == [["党建智办", 42.0]], rows
+              bad = pathlib.Path(tmp) / "invalid.xlsx"
+              bad.write_bytes(b"not an xlsx")
+              try:
+                  CalamineWorkbook.from_path(str(bad))
+              except Exception:
+                  pass
+              else:
+                  raise AssertionError("invalid XLSX was accepted")
+          print("WIN7_CALAMINE_HOSTED_PYTHON38_XLSX_PASS")
+          '@ | Set-Content -Encoding utf8 "$out/smoke.py"
+          & $env:TARGET_PY "$out/smoke.py"
+          if ($LASTEXITCODE -ne 0) { throw 'WIN7_CALAMINE_NATIVE_RUNTIME_FAILED' }
+          $receipt = Get-Content "$out/wheel-receipt.json" -Raw | ConvertFrom-Json
+          $receipt | Add-Member -NotePropertyName source_commit -NotePropertyValue $env:SOURCE_SHA
+          $receipt.status = 'HOSTED_PYTHON38_STATIC_PE_AND_XLSX_PASS_NOT_WIN7_OS'
+          $receipt | ConvertTo-Json -Depth 10 | Set-Content "$out/wheel-receipt.json"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: RC1-Win7-${{ matrix.arch }}-calamine-native-BUILD-ONLY-${{ env.SOURCE_SHA }}
+          path: artifacts/win7-calamine
+          if-no-files-found: warn
+          retention-days: 14
