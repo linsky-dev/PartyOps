@@ -1,0 +1,70 @@
+name: RC1 macOS native application freeze (APP_ONLY NOT PKG)
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'packaging/macos/**'
+      - '.github/workflows/cloud-macos-rc1-application-freeze.yml'
+      - 'backend/**'
+      - 'frontend/**'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: rc1-macos-app-only-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  freeze:
+    name: Native Mac ${{ matrix.arch }} application only
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-15
+            python: arm64
+          - arch: x86_64
+            runner: macos-15-intel
+            python: x64
+    env:
+      PARTYOPS_APP_ONLY_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      PARTYOPS_BUILD_JOBS: '3'
+      PYTHONUTF8: '1'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ env.PARTYOPS_APP_ONLY_SOURCE_SHA }}
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.11'
+          architecture: ${{ matrix.python }}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - name: Prepare existing locked build tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -s)" = Darwin
+          test "$(uname -m)" = '${{ matrix.arch }}'
+          test "$(git rev-parse HEAD)" = "$PARTYOPS_APP_ONLY_SOURCE_SHA"
+          python3.11 -m pip install --disable-pip-version-check 'uv==0.11.7'
+          corepack enable
+          corepack prepare 'pnpm@11.9.0' --activate
+          df -h /
+          bash -n packaging/macos/build-pkg.sh
+      - name: Freeze latest app with existing native Python SQLite and PyInstaller pipeline
+        shell: bash
+        run: |
+          bash packaging/macos/build-pkg.sh --architecture '${{ matrix.arch }}' --application-only
+      - name: Upload isolated application-only evidence, not a user installer
+        if: success()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: partyops-RC1-macos-${{ matrix.arch }}-APP-ONLY-NOT-PKG-${{ env.PARTYOPS_APP_ONLY_SOURCE_SHA }}
+          path: artifacts/macos-application-only-${{ matrix.arch }}
+          if-no-files-found: error
+          retention-days: 7

@@ -32,6 +32,10 @@ while (($#)); do
       MODE='unsigned-candidate'
       shift
       ;;
+    --application-only)
+      MODE='application-only'
+      shift
+      ;;
     *)
       printf '未知参数：%s\n' "$1" >&2
       exit 2
@@ -43,7 +47,7 @@ case "$TARGET_ARCH" in
   arm64) RELEASE_ARCH='arm64' ;;
   x86_64|amd64) TARGET_ARCH='x86_64'; RELEASE_ARCH='x86_64' ;;
   *)
-    printf '%s\n' '用法：build-pkg.sh --architecture arm64|x86_64 [--unsigned-development|--unsigned-candidate]' >&2
+    printf '%s\n' '用法：build-pkg.sh --architecture arm64|x86_64 [--unsigned-development|--unsigned-candidate|--application-only]' >&2
     exit 2
     ;;
 esac
@@ -138,6 +142,19 @@ print(data["head"], dirty)
 PY
 )" || return $?
     read -r SOURCE_COMMIT SOURCE_DIRTY_DIFF_SHA <<<"$binding"
+  elif [[ "$MODE" == 'application-only' ]]; then
+    # This isolated stage never emits an installer; it binds the app freeze to a clean checkout.
+    [[ -z "$OUTPUT_OVERRIDE$FORMATTER_FEATURE_EVIDENCE$SOURCE_INPUTS_MANIFEST$SOURCE_INPUTS_EXPECTED_SHA$SOURCE_INPUTS_FILE_COUNT" ]] || {
+      printf '%s\n' '[MACOS_APP_ONLY_OPTIONS_DENIED]' >&2; return 2;
+    }
+    SOURCE_COMMIT="$(git -C "$ROOT" rev-parse HEAD)" || return $?
+    [[ "$SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ ]] || return 2
+    [[ -z "$(git -C "$ROOT" status --porcelain --untracked-files=no)" ]] || {
+      printf '%s\n' '[MACOS_APP_ONLY_DIRTY_SOURCE]' >&2; return 2;
+    }
+    [[ "${PARTYOPS_APP_ONLY_SOURCE_SHA:-}" == "$SOURCE_COMMIT" ]] || {
+      printf '%s\n' '[MACOS_APP_ONLY_SOURCE_MISMATCH]' >&2; return 2;
+    }
   elif [[ "$MODE" == 'release' ]]; then
     local repository_root
     repository_root="$(git -C "$ROOT" rev-parse --show-toplevel)" || return $?
@@ -149,6 +166,12 @@ PY
   fi
 }
 verify_source_provenance
+if [[ "$MODE" == 'application-only' ]]; then
+  FORMATTER_ADAPTER=''
+  OUTPUT_DIR="$ROOT/artifacts/macos-application-only-$TARGET_ARCH"
+  [[ ! -e "$OUTPUT_DIR" ]] || { printf '%s\n' '[MACOS_APP_ONLY_OUTPUT_EXISTS]' >&2; exit 2; }
+  printf '%s\n' '[MACOS_APP_ONLY] No installer, no native WPS or production acceptance. Full package gates remain unchanged.'
+else
 if [[ ! -d "$OCR_RUNTIME" ]] || [[ ! -f "$OCR_RUNTIME/bin/tesseract" ]] ||
   [[ ! -f "$OCR_RUNTIME/tessdata/chi_sim.traineddata" ]]; then
   printf '%s\n' '[MACOS_OCR_RUNTIME_MISSING] 请提供当前架构、可审计的 OCR 运行时目录。' >&2
@@ -229,6 +252,7 @@ if [[ "$office_description" != *Mach-O* ]] || [[ "$office_description" != *"$TAR
   exit 2
 fi
 /usr/bin/codesign --verify --deep --strict --verbose=2 "$OFFICE_RUNTIME/LibreOffice.app"
+fi # full package input gate (not applicable to application-only)
 
 mkdir -p "$OUTPUT_DIR"
 # 对每个嵌套 Mach-O 和代码目录逐层签名，再签主 App。--deep 只用于最终
@@ -410,7 +434,9 @@ verify_team_ids() {
   done <"$ALL_BUNDLE_FILE_LIST"
 }
 
-if [[ "$MODE" == 'release' ]]; then
+if [[ "$MODE" == 'application-only' ]]; then
+  OUTPUT="$OUTPUT_DIR/PartyOps_${VERSION}_macos_${RELEASE_ARCH}-APP-ONLY-NOT-PKG.zip"
+elif [[ "$MODE" == 'release' ]]; then
   OUTPUT="$OUTPUT_DIR/PartyOps_${VERSION}_macos_${RELEASE_ARCH}.pkg"
   if [[ -z "${PARTYOPS_MACOS_APPLICATION_IDENTITY:-}" ]] ||
     [[ -z "${PARTYOPS_MACOS_INSTALLER_IDENTITY:-}" ]] ||
@@ -649,6 +675,39 @@ for desktop_entry in "$APP/Contents/MacOS/partyops-desktop" "$PYTHON_DESKTOP"; d
     exit 2
   fi
 done
+if [[ "$MODE" == 'application-only' ]]; then
+  # Exit before native OCR/LLM/Office/formatter installation or ANY PKG/signing path.
+  for entry in partyops partyops-client partyops-wizard partyops-launch-agent partyops-updater partyops-desktop partyops-desktop-bin; do
+    test -x "$APP/Contents/MacOS/$entry"
+    test "$(lipo -archs "$APP/Contents/MacOS/$entry")" = "$TARGET_ARCH"
+  done
+  "$APP/Contents/MacOS/partyops" --account-recovery --help >"$OUTPUT_DIR/recovery-help.txt"
+  /usr/bin/grep -q 'emergency' "$OUTPUT_DIR/recovery-help.txt"
+  /usr/bin/ditto -c -k --keepParent "$APP" "$OUTPUT"
+  python3.11 - "$OUTPUT" "$SOURCE_COMMIT" "$TARGET_ARCH" "$APP" <<'APP_ONLY_RECEIPT'
+import hashlib, json, platform, sys
+from pathlib import Path
+archive, source, arch, bundle = sys.argv[1:]
+def sha(path):
+    digest = hashlib.sha256()
+    with Path(path).open('rb') as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b''):
+            digest.update(block)
+    return digest.hexdigest()
+p = Path(archive)
+entries = {f.name: sha(f) for f in (Path(bundle) / 'Contents/MacOS').iterdir() if f.is_file()}
+receipt = {'schema': 1, 'status': 'APP_ONLY_BUILD_ONLY_NOT_PKG', 'source_commit': source,
+           'architecture': arch, 'runner_system': platform.platform(),
+           'version': '1.4.6-rc.1', 'archive': p.name, 'archive_sha256': sha(p),
+           'entrypoint_sha256': entries, 'recovery_help_verified': True,
+           'native_formatter_included': False, 'installer_created': False,
+           'production_dependency_security_review': 'NOT_RUN', 'release_ready': False}
+p.with_suffix('.receipt.json').write_text(json.dumps(receipt, indent=2)+'\n', encoding='utf-8')
+p.with_suffix('.zip.sha256').write_text(sha(p)+'  '+p.name+'\n', encoding='utf-8')
+APP_ONLY_RECEIPT
+  printf '%s\n' '[MACOS_APP_ONLY_FREEZE_PASS] No PKG or release artifact.'
+  exit 0
+fi
 # OCR 与本地 LLM 不能作为 PyInstaller datas 交给 BUNDLE 重排。Mach-O
 # 可执行文件放入 MacOS，词库和许可证放入 Resources；把 traineddata 放进
 # MacOS 会被 codesign 误判成嵌套代码，导致“能自检但无法形成可信 App”。
