@@ -8,11 +8,13 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+  actions: read
 concurrency:
   group: rc1-arm64-full-pdf-inputs-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 jobs:
   native-full:
+    if: github.event_name == 'workflow_dispatch'
     runs-on: windows-11-arm
     timeout-minutes: 120
     env:
@@ -88,5 +90,98 @@ jobs:
         with:
           name: RC1-ARM64-full-PDF-exact-companions-${{ env.SOURCE_SHA }}
           path: artifacts/arm64-full-pdf
+          if-no-files-found: warn
+          retention-days: 14
+
+  full-backend:
+    name: Exact full PDF wheel integrated with native ARM64 backend (NOT INSTALLER)
+    runs-on: windows-11-arm
+    timeout-minutes: 110
+    env:
+      SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      GH_TOKEN: ${{ github.token }}
+      PYTHONUTF8: '1'
+      FULL_RUN: '45352811769'
+      FULL_SOURCE: '6f6d74a5431ca05e48932e1f6b1afb3c45ba98b0'
+      FULL_WHEEL_SHA: c117b49cef11815a89f1d3bf6bc137e771ab06dee7fedffb96115c83dbdc40b3
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+          architecture: arm64
+      - name: Obtain prior successful full wheel by exact run, source and hash
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $run = gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/$env:FULL_RUN" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $run.head_sha -ne $env:FULL_SOURCE -or $run.head_repository.full_name -ne $env:GITHUB_REPOSITORY -or $run.conclusion -ne 'success' -or $run.path -ne '.github/workflows/cloud-rc1-arm64-full-pdf-inputs.yml') { throw 'FULL_PDF_PROVENANCE_INVALID' }
+          $dir = Join-Path $env:RUNNER_TEMP 'full-pdf'
+          gh run download $env:FULL_RUN --repo $env:GITHUB_REPOSITORY --name "RC1-ARM64-full-PDF-exact-companions-$env:FULL_SOURCE" --dir $dir
+          if ($LASTEXITCODE -ne 0) { throw 'FULL_PDF_DOWNLOAD_FAILED' }
+          $wheel = @(Get-ChildItem $dir -Recurse -Filter 'pymupdf-2.1-*-win_arm64.whl')
+          if ($wheel.Count -ne 1 -or (Get-FileHash $wheel[0].FullName).Hash.ToLowerInvariant() -ne $env:FULL_WHEEL_SHA) { throw 'FULL_PDF_HASH_INVALID' }
+          "FULL_PDF_WHEEL=$($wheel[0].FullName)" >> $env:GITHUB_ENV
+      - name: Build pinned native crypto and install existing ARM64 candidate closure
+        shell: pwsh
+        run: |
+          ./scripts/build-windows-arm64-crypto-probe.ps1 -OutputDirectory (Join-Path $env:RUNNER_TEMP 'rc1-arm64-crypto')
+          python -m pip install --disable-pip-version-check 'packaging==25.0'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python scripts/rc1_arm64_candidate_runtime.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Install actual full PDF without changing unrelated candidate pins
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $out = Join-Path $PWD 'artifacts/arm64-full-regression-inputs'
+          New-Item -ItemType Directory -Force $out | Out-Null
+          python -m pip uninstall -y pymupdf-lite
+          if ($LASTEXITCODE -ne 0) { throw 'LITE_REMOVAL_FAILED' }
+          python -m pip install --no-deps --no-index $env:FULL_PDF_WHEEL
+          if ($LASTEXITCODE -ne 0) { throw 'FULL_WHEEL_INSTALL_FAILED' }
+          # These are the six additional packages observed in the successful
+          # full wheel run. Preserve all unrelated candidate runtime pins.
+          $pins = @('networkx==3.7','pymupdf-layout==2.1','pymupdf4llm==2.1','psutil==7.2.2','pyyaml==6.0.4','tabulate==0.10.0')
+          python -m pip download --no-deps --only-binary=:all: --dest $out @pins
+          if ($LASTEXITCODE -ne 0) { throw 'FULL_PDF_COMPANION_WHEELS_MISSING' }
+          Get-ChildItem $out -Filter '*.whl' | ForEach-Object { "$((Get-FileHash $_.FullName).Hash.ToLowerInvariant())  $($_.Name)" } | Set-Content "$out/sha256.txt"
+          python -m pip install --no-index --no-deps --find-links $out @pins
+          if ($LASTEXITCODE -ne 0) { throw 'FULL_PDF_COMPANION_INSTALL_FAILED' }
+          python -m pip check
+          if ($LASTEXITCODE -ne 0) { throw 'FULL_DEPENDENCY_CONFLICT' }
+          python -c "import importlib.metadata as m, pymupdf, pymupdf.layout, pymupdf4llm; assert m.version('pymupdf')=='2.1'; d=pymupdf.open(); p=d.new_page(); p.insert_text((72,72),'PartyOps full native PDF'); assert 'PartyOps full native PDF' in pymupdf4llm.to_markdown(d)"
+          if ($LASTEXITCODE -ne 0) { throw 'FULL_PDF_FUNCTION_FAILED' }
+          python scripts/probe_arm64_partyops_intake.py
+          if ($LASTEXITCODE -ne 0) { throw 'INTAKE_REGRESSION_FAILED' }
+          python -m pip freeze | Set-Content "$out/runtime-freeze.txt"
+      - name: Run native Windows ARM64 backend regression with original assertions
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python -m pip install --only-binary=:all: 'pytest==9.1.1' 'pytest-cov==6.2.1' 'pytest-asyncio==1.4.0' 'pefile==2023.2.7' -r qa/vm-lab/requirements.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m pip check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          New-Item -ItemType Directory -Force artifacts/arm64-full-regression | Out-Null
+          Push-Location backend
+          try {
+            python -m pytest tests -rs --cov=app --cov-branch --cov-report=json:../artifacts/arm64-full-regression/coverage.json --junitxml=../artifacts/arm64-full-regression/junit.xml 2>&1 | Tee-Object -FilePath ../artifacts/arm64-full-regression/pytest.log
+            if ($LASTEXITCODE -ne 0) { throw 'ARM64_FULL_PDF_BACKEND_REGRESSION_FAILED' }
+          } finally { Pop-Location }
+          python scripts/verify-coverage.py artifacts/arm64-full-regression/coverage.json --line 95 --branch 92
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          @{status='NATIVE_ARM64_FULL_PDF_BACKEND_REGRESSION_ONLY'; source_commit=$env:SOURCE_SHA; source_wheel_sha256=$env:FULL_WHEEL_SHA; full_layout_engine=$true; installer_created=$false; release_ready=$false} | ConvertTo-Json | Set-Content artifacts/arm64-full-regression/receipt.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: RC1-ARM64-full-PDF-regression-NOT-RELEASE-${{ env.SOURCE_SHA }}
+          path: |
+            artifacts/arm64-full-regression
+            artifacts/arm64-full-regression-inputs
+            artifacts/arm64-application-only/runtime-receipt.json
           if-no-files-found: warn
           retention-days: 14
