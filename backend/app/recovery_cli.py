@@ -182,7 +182,7 @@ def personal_owner_scope(path: Path) -> bool:
         mode_path, config = root / "mode.json", root / "personal.env"
         for item in (root, mode_path, config, path, path / "partyops.db"):
             info = item.lstat()
-            if stat.S_ISLNK(info.st_mode) or info.st_uid != os.geteuid() or info.st_mode & 0o022:
+            if stat.S_ISLNK(info.st_mode) or info.st_uid != getattr(os, "geteuid", lambda: -1)() or info.st_mode & 0o022:
                 return False
         if mode_path.stat().st_size > 8192 or config.stat().st_size > 65536:
             return False
@@ -346,6 +346,8 @@ def _run(
             if action == "authorize":
                 return authorize_local_maintenance(db, identity, proof)
             if action == "desktop-reset":
+                from pydantic import SecretStr
+
                 from .account_recovery import RedeemCredential, redeem_credential
 
                 if new_password is None or not 8 <= len(new_password) <= 128:
@@ -355,7 +357,7 @@ def _run(
                 )
                 db.flush()
                 user = redeem_credential(db, RedeemCredential(
-                    credential=token, new_password=new_password,
+                    credential=SecretStr(token), new_password=SecretStr(new_password),
                 ), "local-desktop-recovery")
                 return user.username
             if action == "emergency":
