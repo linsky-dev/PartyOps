@@ -166,7 +166,7 @@ def main():
                     assert "urllib3/_version.py" in z.namelist(), "generated version module omitted from wheel"
             wheel_digest=sha(wheel)
             row.update(status="REBUILT_CANDIDATE_NOT_APPROVED",candidate_wheel=wheel.name,candidate_sha256=wheel_digest,
-                       matches_current_lock={a:wheel_digest in locks[a][name]["sha256"] for a in locks})
+                       matches_current_lock={a:(wheel_digest in locks[a][name]["sha256"] if name in locks[a] else None) for a in locks})
         except Exception as e:
             row["error"]=str(e)
             print(name, type(e).__name__, str(e), flush=True)

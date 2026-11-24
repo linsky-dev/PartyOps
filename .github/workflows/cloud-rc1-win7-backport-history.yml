@@ -111,14 +111,15 @@ jobs:
           rows=[]
           for name,r in historical["components"].items():
               if r["status"]!="REBUILT_CANDIDATE_NOT_APPROVED": continue
+              if r["matches_current_lock"][arch] is None: continue
               p=single(root/"backports",r["candidate_wheel"])
               assert digest(p)==r["candidate_sha256"]
               candidates.append(p)
               rows.append({"name":name,"sha256":digest(p),"historical_lock_match":r["matches_current_lock"][arch]})
-          assert len(candidates)>=7
+          assert len(candidates)==(8 if arch=="amd64" else 7), rows
           (out/"inputs.json").write_text(json.dumps({"arch":arch,"bits":bits,"public_wheels":len(verified),"candidate_wheels":rows,"release_ready":False},indent=2),encoding="utf-8")
           subprocess.check_call([sys.executable,"-m","pip","install","--no-deps","--no-index",*map(str,verified+candidates)])
-          modules=("click","fastapi","dotenv","python_multipart","requests","starlette","urllib3")
+          modules=("click","fastapi","dotenv","python_multipart","requests","starlette","urllib3") + (("filelock",) if arch=="amd64" else ())
           result={}
           for name in modules:
               p=subprocess.run([sys.executable,"-c","import "+name],capture_output=True,text=True)
