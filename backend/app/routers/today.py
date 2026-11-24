@@ -4,12 +4,13 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..config import get_settings
 from ..database import get_session
+from ..device_versions import request_device
 from ..enums import PeriodReportStatus, TaskStatus
 from ..models import (
     AttachmentVersion,
@@ -26,11 +27,11 @@ from ..models import (
     Task,
     Transfer,
     User,
-    WorkspaceFile,
     utcnow,
 )
 from ..security import get_current_user
 from ..task_service import dashboard, visible_tasks
+from ..workspace_access import recent_workspace_files, workspace_request_device_id
 from .router_utils import aware_utc
 
 router = APIRouter(tags=["today"])
@@ -73,6 +74,7 @@ def _task_summary(task: Task) -> dict[str, object]:
 
 @router.get("/today", response_model=dict)
 def today(
+    request: Request,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_session),
 ) -> dict:
@@ -140,12 +142,8 @@ def today(
             ):
                 incomplete_materials += 1
 
-    recent_files = db.scalars(
-        select(WorkspaceFile)
-        .where(WorkspaceFile.in_scope.is_(True))
-        .order_by(WorkspaceFile.last_seen_at.desc())
-        .limit(8)
-    ).all()
+    workspace_device_id = workspace_request_device_id(request, request_device(request, db))
+    recent_files = recent_workspace_files(db, user, workspace_device_id, limit=8)
     pending_transfers = db.scalars(
         select(Transfer)
         .where(

@@ -213,7 +213,9 @@ describe("应用壳与快捷操作", () => {
     expect(apiMocks.get.mock.calls.length).toBe(callsDuringBackoff);
     window.localStorage.removeItem("partyops.online-update-retry-after");
     const notification = { id: "notice-2", notification_type: "comment", title: "业务提醒", body: "请处理", entity_type: "task", entity_id: "task-1", read_at: null, created_at: now };
+    state.notificationsVisible = true;
     await invoke("openNotification", { ...notification });
+    expect(state.notificationsVisible).toBe(false);
     await invoke("openNotification", { ...notification, id: "notice-3", entity_type: "transfer" });
     await invoke("openNotification", { ...notification, id: "notice-4", entity_type: "workspace_root" });
     await invoke("openNotification", { ...notification, id: "notice-5", entity_type: "other" });
@@ -301,7 +303,7 @@ describe("应用壳与快捷操作", () => {
 
   it("应用壳覆盖离线、静默时段、搜索失败和键盘替代路径", async () => {
     vi.useFakeTimers();
-    vi.setSystemTime(new Date(2026, 7, 11, 12, 30, 0));
+    vi.setSystemTime(new Date("2026-08-11T04:30:00Z"));
     apiMocks.get.mockRejectedValueOnce(new Error("偏好离线")).mockRejectedValueOnce(new Error("通知离线"));
     const { pinia, session, router } = setupContext();
     session.runtimeContext = { ...session.runtimeContext!, capabilities: [] };

@@ -1,10 +1,10 @@
 #define MyAppName "党建智办 PartyOps"
-#define MyAppVersion "1.4.5-rc.6"
+#define MyAppVersion "1.4.6-rc.1"
 #define MyAppPublisher "PartyOps Local"
 #define BuildRoot GetEnv("PARTYOPS_WINDOWS_BUILD_ROOT")
 #define OutputRoot GetEnv("PARTYOPS_WINDOWS_OUTPUT_ROOT")
 #ifndef PartyOpsOutputBase
-  #define PartyOpsOutputBase "PartyOps_1.4.5-rc.6_windows_amd64"
+  #define PartyOpsOutputBase "PartyOps_1.4.6-rc.1_windows_amd64"
 #endif
 
 [Setup]
@@ -12,12 +12,12 @@ AppId={{1C8EFC63-CAFC-46EF-A5E3-D3D119B5BB3A}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppVerName={#MyAppName} {#MyAppVersion}
-VersionInfoVersion=1.4.5.3
+VersionInfoVersion=1.4.6.1
 AppPublisher={#MyAppPublisher}
 AppPublisherURL=https://www.partyops.cn/
 AppSupportURL=https://www.partyops.cn/guide
 AppUpdatesURL=https://www.partyops.cn/
-DefaultDirName={autopf}\PartyOps
+DefaultDirName={code:GetSuggestedProgramDir}
 DefaultGroupName=党建智办
 #ifdef PartyOpsX86
 ArchitecturesAllowed=x86compatible
@@ -40,7 +40,7 @@ WizardBackColor=#fff8ee
 WizardBackColorDynamicDark=#211816
 DisableWelcomePage=no
 DisableProgramGroupPage=yes
-UsePreviousAppDir=yes
+UsePreviousAppDir=no
 RestartApplications=no
 ShowLanguageDialog=no
 SetupLogging=yes
@@ -54,7 +54,7 @@ WizardSmallImageFile={#BuildRoot}\partyops-1024.png
 Name: "chinesesimp"; MessagesFile: "{#SourcePath}\languages\ChineseSimplified.isl"
 
 [Messages]
-BeveledLabel=PartyOps 1.4.5-rc.6 · 未签名候选版
+BeveledLabel=PartyOps 1.4.6-rc.1 · 未签名候选版
 #ifdef PartyOpsLegacy
 WinVersionTooLowError=此 Windows 7 专用安装包要求 Windows 7 SP1 或更高版本。请先安装 SP1 后重试。
 #else
@@ -168,6 +168,13 @@ var
   DataMarkerTransactionActive: Boolean;
   DeleteAllDataOnUninstall: Boolean;
   DotNet48RestartRequired: Boolean;
+  PreviousAppInstallDir: String;
+  PreviousAppInstallDirConflict: Boolean;
+  PreviousBusinessDataDir: String;
+  PreviousUnavailableAppInstallDir: String;
+  PreviousUnavailableBusinessDataDir: String;
+  UnavailableDataAcknowledged: Boolean;
+  ProgramDirectorySecuredBeforeExtraction: Boolean;
 
 const
   PartyOpsAppId = '{1C8EFC63-CAFC-46EF-A5E3-D3D119B5BB3A}';
@@ -692,6 +699,133 @@ begin
   end;
 end;
 
+function GetWindowsDriveType(RootPath: String): Integer;
+  external 'GetDriveTypeW@kernel32.dll stdcall';
+
+function IsAvailableFixedDiskPath(ChosenPath: String): Boolean;
+var
+  RootPath: String;
+begin
+  Result := False;
+  if Length(ChosenPath) < 4 then
+    exit;
+  if (ChosenPath[2] <> ':') or (ChosenPath[3] <> '\') then
+    exit;
+  RootPath := Copy(ChosenPath, 1, 3);
+  { DRIVE_FIXED = 3. A detached E: reports DRIVE_NO_ROOT_DIR = 1.
+    Always query Windows rather than hardcode a letter or assume mounted
+    media is internal. The directory itself need not yet exist for a new
+    installation, only its actual fixed-volume root. }
+  Result := DirExists(RootPath) and (GetWindowsDriveType(RootPath) = 3);
+end;
+
+function IsUsableExistingPartyOpsProgramDir(ChosenPath: String): Boolean;
+begin
+  Result := IsAvailableFixedDiskPath(ChosenPath) and
+    FileExists(AddBackslash(ChosenPath) + 'PartyOps.exe');
+end;
+
+function FindExistingPartyOpsInstallDirectory(var InstalledDir: String;
+  var Conflicting: Boolean; var UnavailableDir: String): Boolean;
+var
+  Key, Win64Dir, Win32Dir: String;
+begin
+  Result := False;
+  InstalledDir := '';
+  UnavailableDir := '';
+  Conflicting := False;
+  Key := 'Software\Microsoft\Windows\CurrentVersion\Uninstall\' +
+    PartyOpsAppId + '_is1';
+  Win64Dir := '';
+  Win32Dir := '';
+  { The prior native x64 and 32-bit installations may occupy distinct
+    registry views. Stale uninstall records from removed fixed drives MUST
+    NOT force the new install back to a non-existent root. }
+  RegQueryStringValue(HKLM, Key, 'InstallLocation', Win64Dir);
+  RegQueryStringValue(HKLM,
+    'Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\' +
+      PartyOpsAppId + '_is1', 'InstallLocation', Win32Dir);
+  Win64Dir := Trim(Win64Dir);
+  Win32Dir := Trim(Win32Dir);
+  if (Win64Dir <> '') and
+     not IsUsableExistingPartyOpsProgramDir(Win64Dir) then
+  begin
+    UnavailableDir := Win64Dir;
+    Win64Dir := '';
+  end;
+  if (Win32Dir <> '') and
+     not IsUsableExistingPartyOpsProgramDir(Win32Dir) then
+  begin
+    if UnavailableDir = '' then
+      UnavailableDir := Win32Dir;
+    Win32Dir := '';
+  end;
+  if (Win64Dir <> '') and (Win32Dir <> '') and
+     (CompareText(ExpandFileName(Win64Dir),
+       ExpandFileName(Win32Dir)) <> 0) then
+  begin
+    Conflicting := True;
+    exit;
+  end;
+  if Win64Dir <> '' then
+    InstalledDir := ExpandFileName(Win64Dir)
+  else if Win32Dir <> '' then
+    InstalledDir := ExpandFileName(Win32Dir);
+  Result := InstalledDir <> '';
+end;
+
+function GetSuggestedProgramDir(Param: String): String;
+var
+  Existing, Unavailable: String;
+  Conflicting: Boolean;
+begin
+  { Resolves both interactive and /VERYSILENT setups. Inno's native
+    UsePreviousAppDir cache is disabled because it blindly selects a
+    removed E: volume even after the app binary is no longer there. }
+  Result := ExpandConstant('{autopf}\PartyOps');
+  if FindExistingPartyOpsInstallDirectory(
+    Existing, Conflicting, Unavailable
+  ) and (not Conflicting) then
+    Result := Existing;
+end;
+
+function ValidateUpgradeLocations: String;
+begin
+  Result := '';
+  if PreviousAppInstallDirConflict then
+  begin
+    Result := '[PARTYOPS_UPGRADE_MULTIPLE_INSTALLATIONS] 检测到多个不同路径的旧版 ' +
+      'PartyOps 安装记录。为避免覆盖错误版本或接管第三方服务，请保留原安装和数据，' +
+      '将安装日志交给技术支持核对，不要先卸载旧版。';
+    exit;
+  end;
+  if PreviousAppInstallDir = '' then
+    exit;
+  { Normalize legacy Inno's trailing separator before comparing a user-chosen
+    directory with the HKLM InstallLocation; both forms name the SAME folder.
+    An actual different /DIR remains rejected: never relocate a live service. }
+  Log('[PARTYOPS_UPGRADE_PATH_CHECK] selected=' + WizardDirValue +
+    '; registered=' + PreviousAppInstallDir);
+  if CompareText(
+      RemoveBackslashUnlessRoot(ExpandFileName(WizardDirValue)),
+      RemoveBackslashUnlessRoot(ExpandFileName(PreviousAppInstallDir))
+    ) <> 0 then
+  begin
+    Result := '[PARTYOPS_UPGRADE_USE_EXISTING_DIRECTORY] 检测到旧版 PartyOps ' +
+      '安装在 ' + PreviousAppInstallDir + '。请保持此程序目录进行原位覆盖升级，' +
+      '不需要先卸载旧版，且不会迁移或删除原数据。当前暂不支持安装到另一' +
+      '个目录后自动搬迁旧版服务，请返回修改程序路径。';
+    exit;
+  end;
+  if (PreviousBusinessDataDir <> '') and
+     (CompareText(ExpandFileName(DataDirPage.Values[0]),
+       ExpandFileName(PreviousBusinessDataDir)) <> 0) then
+    Result := '[PARTYOPS_UPGRADE_PRESERVE_DATA_DIRECTORY] 现有 PartyOps ' +
+      '业务数据目录为 ' + PreviousBusinessDataDir + '。覆盖升级必须保留' +
+      '原有数据目录，切换数据盘需单独执行受控备份与迁移。请返回修改' +
+      '业务数据目录，不必卸载或重置旧版账号和配置。';
+end;
+
 procedure InitializeWizard;
 var
   PreviousDataDir: String;
@@ -700,7 +834,35 @@ begin
   InAppServiceUpdate := CompareText(
     ExpandConstant('{param:INAPPUPDATE|0}'), '1'
   ) = 0;
-  WizardForm.Caption := '党建智办 PartyOps 1.4.5-rc.6 安装向导';
+  WizardForm.Caption := '党建智办 PartyOps 1.4.6-rc.1 安装向导';
+  PreviousAppInstallDir := '';
+  PreviousAppInstallDirConflict := False;
+  PreviousBusinessDataDir := '';
+  PreviousUnavailableAppInstallDir := '';
+  PreviousUnavailableBusinessDataDir := '';
+  UnavailableDataAcknowledged := False;
+  if FindExistingPartyOpsInstallDirectory(
+    PreviousAppInstallDir, PreviousAppInstallDirConflict,
+    PreviousUnavailableAppInstallDir
+  ) then
+  begin
+    { Keep original installation path even when old RC6 was in the 32-bit
+      registry view. The user can retain all applications and data. }
+    WizardForm.DirEdit.Text := PreviousAppInstallDir;
+    WizardForm.WelcomeLabel2.Caption :=
+      '已检测到已安装的 PartyOps，安装位置：' + PreviousAppInstallDir + #13#10 + #13#10 +
+      '无需卸载旧版。本向导将原位覆盖程序并保留原来的账号、' +
+      '数据库、附件、证书和配置。升级前请完成业务数据备份。';
+  end
+  else if PreviousUnavailableAppInstallDir <> '' then
+  begin
+    WizardForm.DirEdit.Text := ExpandConstant('{autopf}\PartyOps');
+    WizardForm.WelcomeLabel2.Caption :=
+      '检测到旧版安装位置已不可使用：' + PreviousUnavailableAppInstallDir + #13#10 +
+      '该盘可能已拆除或不再是固定磁盘。安装程序已改选当前可用' +
+      '系统固定磁盘，不必先卸载失效的旧程序。' + #13#10 +
+      '旧盘内文件无法自动恢复；若业务数据仍在其他可用磁盘上，会继续沿用原数据路径。';
+  end;
   DataDirPage := CreateInputDirPage(
     wpSelectDir,
     '选择 PartyOps 业务数据目录',
@@ -721,9 +883,39 @@ begin
     ) and (GetArrayLength(PreviousDataDirLines) > 0) then
       PreviousDataDir := Trim(PreviousDataDirLines[0]);
   end;
+  { Do not keep a vanished E:\ data path just because partyops.env or the
+    install-data-dir.txt pointer mentions it. Recover an accessible marker
+    if it exists; otherwise propose a new *local* directory, but require a
+    visible user acknowledgement that the detached disk's data is NOT
+    present. Never silently claim to have restored lost data. }
+  if (PreviousDataDir <> '') and
+     (not IsAvailableFixedDiskPath(PreviousDataDir) or
+      not DirExists(PreviousDataDir)) then
+  begin
+    PreviousUnavailableBusinessDataDir := PreviousDataDir;
+    PreviousDataDir := '';
+    if LoadStringsFromFile(
+      ExpandConstant('{commonappdata}\PartyOps\install-data-dir.txt'),
+      PreviousDataDirLines
+    ) and (GetArrayLength(PreviousDataDirLines) > 0) then
+    begin
+      PreviousDataDir := Trim(PreviousDataDirLines[0]);
+      if (not IsAvailableFixedDiskPath(PreviousDataDir)) or
+         (not DirExists(PreviousDataDir)) then
+        PreviousDataDir := ''
+      else
+        PreviousUnavailableBusinessDataDir := '';
+    end;
+  end;
   if PreviousDataDir = '' then
     PreviousDataDir := ExpandConstant('{commonappdata}\PartyOps-Data');
   DataDirPage.Values[0] := PreviousDataDir;
+  if (PreviousAppInstallDir <> '') or
+     (PreviousUnavailableAppInstallDir <> '') then
+  begin
+    if PreviousUnavailableBusinessDataDir = '' then
+      PreviousBusinessDataDir := PreviousDataDir;
+  end;
 end;
 
 function ServiceExists(ServiceName: String): Boolean;
@@ -1172,6 +1364,118 @@ begin
   end;
 end;
 
+procedure ReportWizardError(Message: String);
+begin
+  { Custom MsgBox is not suppressed by /SUPPRESSMSGBOXES. Returning False
+    without advancing an invisible wizard also risks waiting indefinitely.
+    Abort the unattended setup with the ORIGINAL failure code; interactive
+    mode stays on the editable page. No application data is touched here. }
+  if WizardSilent then
+  begin
+    Log('[PARTYOPS_SILENT_WIZARD_ERROR] ' + Message);
+    RaiseException(Message);
+  end
+  else
+    MsgBox(Message, mbError, MB_OK);
+end;
+
+function NextButtonClick(CurPageID: Integer): Boolean;
+var
+  AppDir, Validator, PowerShell, Parameters, DiagnosticFile, Detail: String;
+  ResultCode: Integer;
+begin
+  Result := True;
+  if CurPageID = DataDirPage.ID then
+  begin
+    Detail := ValidateUpgradeLocations;
+    if Detail <> '' then
+    begin
+      ReportWizardError(Detail);
+      Result := False;
+    end;
+    if Result and (PreviousUnavailableBusinessDataDir <> '') and
+       not UnavailableDataAcknowledged then
+    begin
+      if WizardSilent then
+      begin
+        { Unattended installs must obtain EXPLICIT acknowledgement. Without
+          it, abort before extracting files or changing the data pointer. }
+        if CompareText(ExpandConstant('{param:ALLOWMISSINGDATA|0}'), '1') = 0 then
+        begin
+          UnavailableDataAcknowledged := True;
+          Log('[PARTYOPS_OLD_DATA_DISK_ACKNOWLEDGED] Explicit unattended ' +
+            'missing-data flag; old data is not recovered, deleted or migrated.');
+        end
+        else
+        begin
+          ReportWizardError('[PARTYOPS_OLD_DATA_DISK_MISSING] 无人值守安装缺少 ' +
+            '/ALLOWMISSINGDATA=1 明确授权；旧业务数据不受影响，安装已停止。');
+          Result := False;
+        end;
+      end
+      else if MsgBox('[PARTYOPS_OLD_DATA_DISK_MISSING] 旧业务数据目录：' +
+        PreviousUnavailableBusinessDataDir + #13#10 +
+        '磁盘已不可访问，安装器无法从中恢复原账号、数据库、附件或证书。' +
+        '可以选择新的本机数据目录继续安装，但旧数据不会被删除或迁移；' +
+        '以后重新接回磁盘或恢复备份时仍需单独导入。' + #13#10 +
+        '确认继续使用新数据目录吗？', mbConfirmation, MB_YESNO) = IDYES then
+        UnavailableDataAcknowledged := True
+      else
+        Result := False;
+    end;
+    exit;
+  end;
+  if CurPageID <> wpSelectDir then
+    exit;
+  Detail := ValidateUpgradeLocations;
+  if Detail <> '' then
+  begin
+    ReportWizardError(Detail);
+    Result := False;
+    exit;
+  end;
+  if WizardSilent then
+  begin
+    { The unattended wizard has no editable path page. Do not execute the
+      redundant slow PowerShell UI-only validator here: the mandatory
+      ValidateAndSecureInstallDirectory still executes in PrepareToInstall
+      BEFORE stopping services, extracting payload or writing program files.
+      Interactive installs retain the early feedback check. }
+    Log('[PARTYOPS_SILENT_INSTALL_PRECHECK_DEFERRED] Mandatory pre-extraction ' +
+      'path, reparse and ACL checks remain enabled in PrepareToInstall.');
+    exit;
+  end;
+  { Validate the USER'S chosen program path before switching to the data
+    directory page. Invalid removable/network/relative paths stay editable
+    in the wizard instead of causing a fatal PrepareToInstall screen. This
+    check must not create paths, change ACLs or stop PartyOps services. }
+  AppDir := WizardDirValue;
+  ExtractTemporaryFile('validate-install-path.ps1');
+  Validator := ExpandConstant('{tmp}\validate-install-path.ps1');
+  PowerShell := ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe');
+  DiagnosticFile := ExpandConstant('{tmp}\partyops-wizard-path-diagnostic.txt');
+  DeleteFile(DiagnosticFile);
+  if not FileExists(PowerShell) then
+  begin
+    ReportWizardError('Windows PowerShell 不可用，无法安全验证程序目录；请检查 Windows 组件。');
+    Result := False;
+    exit;
+  end;
+  Parameters := '-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ' +
+    AddQuotes(Validator) + ' -Path ' + AddQuotes(AppDir) +
+    ' -DiagnosticFile ' + AddQuotes(DiagnosticFile);
+  ResultCode := 5;
+  if (not RunInstallPathValidator(PowerShell, Parameters, ResultCode)) or
+     (ResultCode <> 0) then
+  begin
+    Detail := ReadInstallPathDiagnostic(DiagnosticFile, ResultCode);
+    ReportWizardError('所选 PartyOps 程序目录无法使用：' + #13#10 +
+      Detail + #13#10 + #13#10 +
+      '请返回当前页面改选本机固定磁盘中的目录，例如 C:\Program Files\PartyOps。');
+    Result := False;
+  end;
+end;
+
 function SetAdministratorOwnerWithFallback(
   Target: String; Recursive: Boolean; var ResultCode: Integer
 ): Boolean;
@@ -1317,12 +1621,73 @@ begin
     Result := ReadInstallPathDiagnostic(DiagnosticFile, ResultCode);
 end;
 
+function VerifyExtractedInstallDirectory: String;
+var
+  AppDir, Validator, PowerShell, Parameters, DiagnosticFile: String;
+  ResultCode: Integer;
+begin
+  Result := '';
+  { The full repair with recursive icacls /setowner, /reset and integrity
+    propagation was already performed before any payload was released.
+    Repeating those expensive 16k-file rewrites AFTER extraction causes
+    unnecessary per-file antivirus/I/O churn and overwrites correctly
+    inherited DACLs. Do a separate FAIL-CLOSED read-only post-extraction
+    check instead: fixed volume, every path component + payload reparse
+    protection, the installed main binary and protected root ownership/DACL.
+    New Inno files inherit the secure parent DACL and OI/CI high-integrity
+    label applied before extraction. Never skip the original preflight. }
+  if not ProgramDirectorySecuredBeforeExtraction then
+  begin
+    Result := '[INSTALL_DIR_PRE_SECURE_NOT_RUN] 安装前目录安全保护尚未完成。';
+    exit;
+  end;
+  AppDir := ExpandConstant('{app}');
+  if not FileExists(AddBackslash(AppDir) + 'PartyOps.exe') then
+  begin
+    Result := '[INSTALL_DIR_PAYLOAD_MISSING] 新版本主程序未被完整写入。';
+    exit;
+  end;
+  if not FileExists(AddBackslash(AppDir) + 'release-manifest.json') then
+  begin
+    Result := '[RUNTIME_DEPENDENCY_MISSING] 新版程序 release-manifest.json ' +
+      '未释放到目标安装目录，无法完成安全验收；安装将失败并回滚，而不是' +
+      '让用户首次启动时才发现清单缺失。程序目录：' + AppDir;
+    exit;
+  end;
+  ExtractTemporaryFile('validate-install-path.ps1');
+  Validator := ExpandConstant('{tmp}\validate-install-path.ps1');
+  PowerShell := ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe');
+  DiagnosticFile := ExpandConstant('{tmp}\partyops-postinstall-path-diagnostic.txt');
+  DeleteFile(DiagnosticFile);
+  Parameters := '-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ' +
+    AddQuotes(Validator) + ' -Path ' + AddQuotes(AppDir) +
+    ' -DiagnosticFile ' + AddQuotes(DiagnosticFile) + ' -VerifyTargetAcl';
+  ResultCode := 5;
+  if (not FileExists(PowerShell)) or
+     (not RunInstallPathValidator(PowerShell, Parameters, ResultCode)) or
+     (ResultCode <> 0) then
+    Result := ReadInstallPathDiagnostic(DiagnosticFile, ResultCode);
+end;
+
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 #ifdef PartyOpsLegacy
 var
   RegistryError: String;
 #endif
 begin
+  Result := ValidateUpgradeLocations;
+  if Result <> '' then
+    exit;
+  if (PreviousUnavailableBusinessDataDir <> '') and
+     not (UnavailableDataAcknowledged or
+       (CompareText(ExpandConstant('{param:ALLOWMISSINGDATA|0}'), '1') = 0)) then
+  begin
+    Result := '[PARTYOPS_OLD_DATA_DISK_MISSING] 旧数据盘已断开：' +
+      PreviousUnavailableBusinessDataDir +
+      '。请在安装向导确认选择新数据目录；无人值守安装须显式传入' +
+      ' /ALLOWMISSINGDATA=1，绝不能假装已恢复旧数据。';
+    exit;
+  end;
   Result := EnsureDotNet48(NeedsRestart);
   if Result <> '' then
     exit;
@@ -1337,6 +1702,7 @@ begin
   Result := ValidateAndSecureInstallDirectory;
   if Result <> '' then
     exit;
+  ProgramDirectorySecuredBeforeExtraction := True;
   HostServiceExistedBeforeInstall := ServiceExists('PartyOpsHost');
   UpdateServiceExistedBeforeInstall := ServiceExists('PartyOpsUpdateService');
   ConfiguredPersonalModeBeforeInstall := IsConfiguredPersonalMode;
@@ -1432,10 +1798,13 @@ begin
   if (DataAction <> '') and (DataAction <> 'preserve') and
      (DataAction <> 'delete') then
   begin
-    MsgBox(
-      '[UNINSTALL_DATAACTION_INVALID] /DATAACTION 只能使用 preserve 或 delete。',
-      mbError, MB_OK
-    );
+    if UninstallSilent then
+      Log('[UNINSTALL_DATAACTION_INVALID] /DATAACTION 只能使用 preserve 或 delete。')
+    else
+      MsgBox(
+        '[UNINSTALL_DATAACTION_INVALID] /DATAACTION 只能使用 preserve 或 delete。',
+        mbError, MB_OK
+      );
     Result := False;
     exit;
   end;
@@ -1467,11 +1836,15 @@ begin
     if not RunDataCleanup('all', True) then
     begin
       DeleteAllDataOnUninstall := False;
-      MsgBox(
-        '[UNINSTALL_DATA_PREFLIGHT_FAILED] 本机 PartyOps 数据目录未通过完整安全检查。' +
-        '为防止误删，本次已自动改为“仅删除程序并保留数据”；程序卸载将继续，业务数据不会被删除。',
-        mbInformation, MB_OK
-      );
+      if UninstallSilent then
+        Log('[UNINSTALL_DATA_PREFLIGHT_FAILED] 数据清理安全检查未通过，' +
+          '自动保留全部业务数据并继续卸载程序。')
+      else
+        MsgBox(
+          '[UNINSTALL_DATA_PREFLIGHT_FAILED] 本机 PartyOps 数据目录未通过完整安全检查。' +
+          '为防止误删，本次已自动改为“仅删除程序并保留数据”；程序卸载将继续，业务数据不会被删除。',
+          mbInformation, MB_OK
+        );
     end;
   end;
   Result := True;
@@ -1709,7 +2082,20 @@ begin
     RaiseException('[DATA_MARKER_DENIED] 无法创建 PartyOps 系统引导目录。');
   DataMarkerPath := ExpandConstant('{commonappdata}\PartyOps\install-data-dir.txt');
   DataMarkerPreviousPath := DataMarkerPath + '.previous';
-  DeleteFile(DataMarkerPreviousPath);
+  { An interrupted previous upgrade may have left the original business
+    data pointer in .previous. Never discard the only valid old location.
+    Recover that value BEFORE beginning a new transaction. A previous file
+    remaining after a crash means the last change was not cleanly committed. }
+  if FileExists(DataMarkerPreviousPath) then
+  begin
+    if FileExists(DataMarkerPath) and
+       (not DeleteFile(DataMarkerPath)) then
+      RaiseException('[DATA_MARKER_INTERRUPTED_RECOVERY_FAILED] ' +
+        '无法保护上次升级前的数据目录标记，安装已停止，原数据未修改。');
+    if not RenameFile(DataMarkerPreviousPath, DataMarkerPath) then
+      RaiseException('[DATA_MARKER_INTERRUPTED_RECOVERY_FAILED] ' +
+        '无法从上次未完成的升级恢复原数据目录标记，安装已停止。');
+  end;
   DataMarkerHadPrevious := FileExists(DataMarkerPath);
   if DataMarkerHadPrevious and
      (not RenameFile(DataMarkerPath, DataMarkerPreviousPath)) then
@@ -1882,7 +2268,7 @@ begin
   try
     { 文件释放后再次检查重解析点与最终 ACL，再注册 LocalSystem 服务。 }
     WizardForm.StatusLabel.Caption := '正在复核自定义程序目录与安装文件…';
-    ErrorMessage := ValidateAndSecureInstallDirectory;
+    ErrorMessage := VerifyExtractedInstallDirectory;
     if ErrorMessage <> '' then
       RaiseException(ErrorMessage);
     RunRuntimeStartupSelfTest;

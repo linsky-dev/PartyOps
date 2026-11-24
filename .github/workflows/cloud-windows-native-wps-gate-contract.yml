@@ -1,0 +1,208 @@
+name: RC1 native Windows 10/11 WPS entrypoint fail-closed contract
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/cloud-windows-native-wps-gate-contract.yml'
+      - 'scripts/rc1-windows-native-wps-gate.ps1'
+      - 'backend/tests/test_rc1_windows_native_wps_gate.py'
+      - 'packaging/windows/build-windows.ps1'
+      - 'scripts/verify_windows_secure_pdf_package.py'
+      - 'backend/tests/test_rc1_windows_secure_pdf_package.py'
+      - 'scripts/test.ps1'
+      - 'scripts/verify-full-function-gate.py'
+      - 'backend/tests/test_full_function_gate.py'
+
+permissions:
+  contents: read
+
+jobs:
+  hosted-server-must-not-impersonate-windows-client:
+    runs-on: windows-2025
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact triggering source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Parse package-scoped original full-function QA entrypoint
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $entry = Join-Path (Get-Location) 'scripts/test.ps1'
+          $tokens = $null
+          $parseErrors = $null
+          $syntax = [System.Management.Automation.Language.Parser]::ParseFile($entry, [ref]$tokens, [ref]$parseErrors)
+          if (@($parseErrors).Count -ne 0) { throw '[RC1_FULL_FUNCTION_POWERSHELL_SYNTAX_INVALID]' }
+          $scope = @($syntax.ParamBlock.Parameters | Where-Object {
+            $_.Name.VariablePath.UserPath -eq 'Scope'
+          })
+          if ($scope.Count -ne 1 -or $scope[0].DefaultValue.Extent.Text -notmatch 'Full') {
+            throw '[RC1_PACKAGE_SCOPE_NOT_OPT_IN_OR_FULL_NOT_DEFAULT]'
+          }
+          # Only parses the original test script. Real WPS golden cases are
+          # deliberately not attempted on Windows Server.
+          'PARTYOPS_RC1_NATIVE_PACKAGE_QA_SCOPE_PARSE_PASS'
+
+      - name: Validate PowerShell grammar and hosted-server refusal
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $entry = Join-Path (Get-Location) 'scripts/rc1-windows-native-wps-gate.ps1'
+          $tokenStream = $null
+          $parseErrors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile($entry, [ref]$tokenStream, [ref]$parseErrors) | Out-Null
+          if (@($parseErrors).Count) { throw '[RC1_NATIVE_WPS_ENTRYPOINT_SYNTAX_INVALID]' }
+          $sha = (git rev-parse HEAD).Trim()
+          $output = & pwsh -NoProfile -File $entry -ExpectedSourceSha $sha -Mode Preflight
+          $exitCode = $LASTEXITCODE
+          if ($exitCode -ne 2) { throw '[RC1_NATIVE_WPS_HOSTED_RUNNER_FALSE_PASS]' }
+          $report = ($output -join [Environment]::NewLine) | ConvertFrom-Json
+          if ($report.status -ne 'BLOCKED' -or $report.release_ready -or
+              $report.native_wps_passed -or $report.native_full_function_passed -or
+              $report.candidate_installer_built) {
+            throw '[RC1_NATIVE_WPS_PREVIEW_FABRICATED_ACCEPTANCE]'
+          }
+          if (@($report.blockers | Where-Object { $_ -eq 'WINDOWS_10_11_CLIENT_REQUIRED' }).Count -ne 1) {
+            throw '[RC1_NATIVE_WPS_SERVER_REJECTION_MISSING]'
+          }
+          if ($report.os_architecture -ne 'X64') {
+            throw '[RC1_NATIVE_WPS_RUNNER_ARCH_PROBE_UNEXPECTED]'
+          }
+          "PARTYOPS_RC1_WPS_HOSTED_WINDOWS_SERVER_CORRECTLY_BLOCKED"
+          # The child deliberately exited 2; do not leak that expected code as this job result.
+          exit 0
+
+      - name: Prove generated WPS receipts can change but tracked source cannot
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = (Get-Location).Path
+          $entry = Join-Path $root 'scripts/rc1-windows-native-wps-gate.ps1'
+          $sha = (git rev-parse HEAD).Trim()
+          $generated = Join-Path $root '.release-gates/formatter-parity-x64.json'
+          $trackedSource = Join-Path $root 'README.md'
+          $generatedOriginal = [IO.File]::ReadAllBytes($generated)
+          $trackedOriginal = [IO.File]::ReadAllBytes($trackedSource)
+          try {
+            # Real checkout: a generated, UNSTAGED receipt change must not
+            # be misclassified as a source edit in the next WPS QA run.
+            Add-Content -LiteralPath $generated -Value ' ' -Encoding utf8
+            $report = (& pwsh -NoProfile -File $entry -ExpectedSourceSha $sha -Mode Preflight |
+              Out-String | ConvertFrom-Json)
+            if ($report.blockers -contains 'SOURCE_TRACKED_WORKTREE_NOT_CLEAN' -or
+                $report.allowed_generated_evidence_changes -notcontains '.release-gates/formatter-parity-x64.json') {
+              throw '[RC1_WPS_RERUN_TRACKED_RECEIPT_FALSE_SOURCE_DIRTY]'
+            }
+            # Altering ANY tracked code/document outside the exact allowlist
+            # must still block, even when a generated receipt also changed.
+            Add-Content -LiteralPath $trackedSource -Value ' ' -Encoding utf8
+            $report = (& pwsh -NoProfile -File $entry -ExpectedSourceSha $sha -Mode Preflight |
+              Out-String | ConvertFrom-Json)
+            if ($report.blockers -notcontains 'SOURCE_TRACKED_WORKTREE_NOT_CLEAN') {
+              throw '[RC1_NATIVE_WPS_SOURCE_MODIFICATION_NOT_BLOCKED]'
+            }
+          } finally {
+            [IO.File]::WriteAllBytes($generated, $generatedOriginal)
+            [IO.File]::WriteAllBytes($trackedSource, $trackedOriginal)
+          }
+          # The Preflight deliberately returns 2 on Windows Server. We only
+          # assert source-cleanliness classification, never WPS readiness.
+          'PARTYOPS_RC1_WPS_RECEIPT_RERUN_SOURCE_BOUNDARY_PASS'
+          exit 0
+
+      - name: Prepare a pinned Python interpreter for direct packager guard
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+          architecture: x64
+
+      - name: Direct Windows x64 packager must fail before making an installer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = (Get-Location).Path
+          $packager = Join-Path $root 'packaging/windows/build-windows.ps1'
+          $tokens = $null
+          $parseErrors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile($packager, [ref]$tokens, [ref]$parseErrors) | Out-Null
+          if (@($parseErrors).Count) { throw '[RC1_DIRECT_WINDOWS_PACKAGER_SCRIPT_INVALID]' }
+
+          # The pinned production dependency is known to be unsafe. This run
+          # proves the real packager rejects it BEFORE WPS, PyInstaller, or Inno.
+          # Child stderr is expected and captured, not treated as this job's failure.
+          $ErrorActionPreference = 'Continue'
+          try {
+            $output = & pwsh -NoProfile -File $packager -Python python 2>&1
+            $childExit = $LASTEXITCODE
+          } finally {
+            $ErrorActionPreference = 'Stop'
+          }
+          if ($childExit -eq 0) {
+            throw '[RC1_WINDOWS_UNSAFE_PDF_LOCK_REACHED_INSTALLER_BUILDER]'
+          }
+          $diagnostic = ($output | Out-String)
+          if ($diagnostic -notmatch '\[WINDOWS_X64_PDF_BUILD_INPUTS_UNSAFE\]' -or
+              $diagnostic -notmatch 'PyMuPDF 1\.26\.0 violates security floor') {
+            throw '[RC1_DIRECT_PACKAGER_DID_NOT_FAIL_AT_EXPECTED_SECURITY_GATE]'
+          }
+          foreach ($path in @(
+            'artifacts/PartyOps_1.4.6-rc.1_windows_amd64.exe',
+            'artifacts/PartyOps_1.4.6-rc.1_windows_amd64.candidate.json',
+            'artifacts/windows-runtime',
+            '.build-windows'
+          )) {
+            if (Test-Path -LiteralPath (Join-Path $root $path)) {
+              throw "[RC1_DIRECT_PACKAGER_LEFT_BUILD_ARTIFACT] $path"
+            }
+          }
+          'PARTYOPS_RC1_DIRECT_WINDOWS_X64_UNSAFE_PDF_PACKAGE_BLOCKED_BEFORE_BUILD'
+          exit 0
+
+  native-arm64-must-reject-x64-wps-acceptance:
+    runs-on: windows-11-arm
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact triggering source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Prove real ARM64 cannot pass x64 client acceptance
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $actualArchitecture = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
+          if ($actualArchitecture -ne 'Arm64') {
+            throw '[RC1_ARM64_RUNNER_ARCHITECTURE_NOT_NATIVE]'
+          }
+          $entry = Join-Path (Get-Location) 'scripts/rc1-windows-native-wps-gate.ps1'
+          $tokens = $null
+          $parseErrors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile($entry, [ref]$tokens, [ref]$parseErrors) | Out-Null
+          if (@($parseErrors).Count) {
+            throw '[RC1_ARM64_WPS_PREFLIGHT_SCRIPT_INVALID]'
+          }
+          $sha = (git rev-parse HEAD).Trim()
+          $output = & pwsh -NoProfile -File $entry -ExpectedSourceSha $sha -Mode Preflight
+          $exitCode = $LASTEXITCODE
+          if ($exitCode -ne 2) {
+            throw '[RC1_ARM64_FALSE_ACCEPTED_AS_WINDOWS_X64]'
+          }
+          $report = ($output -join [Environment]::NewLine) | ConvertFrom-Json
+          if ($report.os_architecture -ne 'Arm64' -or $report.status -ne 'BLOCKED' -or
+              $report.release_ready -or $report.native_wps_passed -or
+              $report.native_full_function_passed -or $report.candidate_installer_built) {
+            throw '[RC1_ARM64_NATIVE_WPS_ACCEPTANCE_FALSE_PASS]'
+          }
+          if (@($report.blockers | Where-Object { $_ -eq 'WINDOWS_AMD64_ARCH_REQUIRED' }).Count -ne 1) {
+            throw '[RC1_ARM64_REAL_OS_ARCH_GATE_MISSING]'
+          }
+          'PARTYOPS_RC1_NATIVE_ARM64_X64_WPS_GATE_CORRECTLY_BLOCKED'
+          # This run validates only the safety boundary; it does NOT exercise
+          # production WPS, an ARM64 application installer, or any user data.
+          exit 0

@@ -6,6 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from starlette.requests import Request
 
 from app.models import (
     Device,
@@ -232,7 +233,7 @@ def test_collaboration_options_filters_roots_devices_and_absolute_paths(monkeypa
     monkeypatch.setattr(fleet, "request_device", lambda *_args: None)
     admin = SimpleNamespace(id="admin", role=SimpleNamespace(value="admin"))
     admin_result = fleet.collaboration_options(
-        SimpleNamespace(),
+        Request({"type": "http", "client": ("127.0.0.1", 1234), "headers": []}),
         admin,
         SequenceDb([[current, hidden], []]),
     )

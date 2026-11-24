@@ -326,6 +326,7 @@ def configure_macos_transaction(
         updates_dir=updates,
         backups_dir=backups,
         data_dir=data,
+        database_path=data / "partyops.db",
         port=18775,
     )
     app = tmp_path / "PartyOps.app"

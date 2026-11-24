@@ -22,7 +22,7 @@ else
 fi
 FINISHED_AT="$(TZ=Asia/Shanghai date +%Y-%m-%dT%H:%M:%S%:z)"
 umask 077
-printf '{"version":"1.4.5-rc.6","state":"%s","result_code":"%s","started_at":"%s","finished_at":"%s","log":"/var/log/partyops-package-selftest.log"}\n' \
+printf '{"version":"1.4.6-rc.1","state":"%s","result_code":"%s","started_at":"%s","finished_at":"%s","log":"/var/log/partyops-package-selftest.log"}\n' \
   "$STATE" "$CODE" "$STARTED_AT" "$FINISHED_AT" >"$TEMP_FILE"
 chmod 0600 "$TEMP_FILE"
 mv -f -- "$TEMP_FILE" "$STATUS_FILE"

@@ -14,7 +14,7 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-VERSION = "1.4.5-rc.6"
+VERSION = "1.4.6-rc.1"
 
 
 def _config_root() -> Path:

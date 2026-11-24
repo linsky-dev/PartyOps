@@ -26,6 +26,7 @@ import {
 import { Message } from "@arco-design/web-vue";
 import { useSessionStore } from "../stores/session";
 import QuickCreateDrawer from "./QuickCreateDrawer.vue";
+import NotificationDestinationDialog from "./NotificationDestinationDialog.vue";
 import OrientalArtLayer from "./OrientalArtLayer.vue";
 import { api } from "../api";
 import type { NotificationItem, ReminderPreference } from "../types";
@@ -39,6 +40,7 @@ import {
 } from "../navigation";
 import { sceneConfigForPath, shouldShowOrientalArt } from "../theme/oriental";
 import { beijingNow, beijingNowIso } from "../utils/datetime";
+import { openNotification as navigateNotification } from "../utils/notificationNavigation";
 
 const route = useRoute();
 const router = useRouter();
@@ -57,6 +59,7 @@ const commandLoading = ref(false);
 const connectionState = ref<"live" | "polling" | "offline">("live");
 const reminderPreference = ref<ReminderPreference | null>(null);
 const recentNotifications = ref<NotificationItem[]>([]);
+const notificationsVisible = ref(false);
 const pendingUpdateVersion = ref("");
 const unreadNotifications = computed(() => recentNotifications.value.filter((item) => !item.read_at).length);
 const visibleNavigationDomains = computed(() => {
@@ -282,15 +285,9 @@ async function prepareProfessionalUpdate() {
   }
 }
 
-async function openNotification(item: NotificationItem) {
-  if (!item.read_at) {
-    await api.post(`/notifications/${item.id}/read`);
-    item.read_at = beijingNowIso();
-  }
-  if (item.entity_type === "task" && item.entity_id) await router.push(`/tasks/${item.entity_id}`);
-  else if (item.entity_type === "transfer") await router.push("/fleet/inbox");
-  else if (item.entity_type === "workspace_root") await router.push("/fleet/grants");
-  else await router.push("/notifications");
+function openNotification(item: NotificationItem) {
+  notificationsVisible.value = false;
+  return navigateNotification(router, item);
 }
 
 function connectEvents() {
@@ -500,6 +497,7 @@ onBeforeUnmount(() => {
             <strong>{{ session.user?.display_name }}</strong>
             <small>{{ session.user?.role === "admin" ? "管理员" : "协同人员" }}</small>
           </div>
+          <a-button type="text" size="small" @click="router.push('/account')">账号设置</a-button>
           <a-button type="text" size="small" aria-label="退出登录" @click="logout">
             <template #icon><IconPoweroff /></template>
           </a-button>
@@ -532,13 +530,13 @@ onBeforeUnmount(() => {
             <template #icon><IconCloudDownload /></template>
             {{ pendingUpdateVersion }} 更新准备中
           </a-button>
-          <a-popover trigger="click" position="br">
+          <a-popover v-model:popup-visible="notificationsVisible" trigger="click" position="br">
             <a-badge :count="unreadNotifications" :max-count="99" :dot="false">
               <a-button aria-label="打开最近通知"><template #icon><IconNotification /></template>通知</a-button>
             </a-badge>
             <template #content>
               <div class="recent-notifications">
-                <header><b>最近通知</b><RouterLink to="/notifications">查看全部</RouterLink></header>
+                <header><b>最近通知</b><RouterLink to="/notifications" @click="notificationsVisible = false">查看全部</RouterLink></header>
                 <button v-for="item in recentNotifications" :key="item.id" type="button" :class="{ unread: !item.read_at }" @click="openNotification(item)">
                   <span>{{ item.title }}</span><small>{{ item.body || zhLabel(item.notification_type, '协同通知') }}</small>
                 </button>
@@ -585,6 +583,7 @@ onBeforeUnmount(() => {
         </a-spin>
       </div>
     </a-modal>
+    <NotificationDestinationDialog />
   </div>
 </template>
 

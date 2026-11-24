@@ -342,10 +342,10 @@ def test_agent_heartbeat_commands_certificate_and_ack(monkeypatch, tmp_path: Pat
             "agent_url": "https://host:18766",
         },
     )
-    monkeypatch.setattr(client_agent, "configure_ssl_context", lambda _config: None)
+    monkeypatch.setattr(client_agent, "_create_ssl_context", lambda _config: None)
     result = client_agent.rotate_device_certificate("http://host", "token", config, config_path)
     assert result["ok"] is True
-    assert (tmp_path / "pki" / "device.key").is_file()
+    assert Path(config["key_file"]).is_file()
 
 
 def test_transfer_upload_bundle_download_and_command_dispatch(monkeypatch, tmp_path: Path) -> None:

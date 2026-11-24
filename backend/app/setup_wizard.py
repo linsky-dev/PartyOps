@@ -3290,7 +3290,7 @@ def _marked_runtime_file_is_trusted(root: Path, candidate: Path) -> bool:
     """核对安装根标记指向的可执行文件，防止用户可写标记被替换。"""
 
     try:
-        manifest = _read_small_json(root / "release-manifest.json")
+        manifest = _read_small_json(root / "release-manifest.json", limit=8 * 1024 * 1024)
         if manifest.get("product") != "PartyOps":
             return False
         relative = candidate.resolve().relative_to(root.resolve()).as_posix()
@@ -3589,12 +3589,20 @@ def _preflight_windows_runtime_dependencies(
     runtime = executable.resolve().parent
     manifest_path = runtime / "release-manifest.json"
     try:
-        manifest = _read_small_json(manifest_path)
+        # The complete onedir installer may contain 20k+ runtime assets.
+        # Match the bounded 8 MiB identity reader, rather than incorrectly
+        # calling an intact >4 MiB release manifest missing or corrupt.
+        manifest = _read_small_json(manifest_path, limit=8 * 1024 * 1024)
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         raise HostStartupError(
             RUNTIME_DEPENDENCY_MISSING,
-            "安装包运行时清单缺失或损坏，请使用官网下载的完整安装包执行修复安装。",
-            detail=f"缺失或无效清单={manifest_path.name}",
+            "安装位置的发布清单缺失或损坏。请先检查是否启动了旧目录中的快捷方式；若当前目录确实缺失文件，请使用与目标版本一致、已校验 SHA-256 的完整安装包进行修复，不要混用其他版本。",
+            detail=(
+                f"缺失或无效清单={manifest_path}；"
+                f"实际启动主程序={executable}；"
+                f"清单检查错误类型={type(exc).__name__}。"
+                "请先确认快捷方式指向的是最新安装目录，而非旧版残留启动器。"
+            ),
         ) from exc
 
     detected_version = windows_version or _windows_version_tuple()

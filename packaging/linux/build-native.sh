@@ -5,9 +5,9 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 FORMAT="${1:-}"
 ARCH="${PARTYOPS_BUILD_ARCH:-}"
 RUNTIME_PROFILE="${PARTYOPS_RUNTIME_PROFILE:-full}"
-DEB_VERSION="1.4.5~rc.6"
-RPM_VERSION="1.4.5"
-RPM_RELEASE="0.rc.6.1"
+DEB_VERSION="1.4.6~rc.1"
+RPM_VERSION="1.4.6"
+RPM_RELEASE="0.rc.1.1"
 ARTIFACTS="$ROOT/artifacts"
 
 if [[ -z "${PYTHON_BIN:-}" && -f "$ROOT/.partyops-build.env" ]]; then
@@ -27,7 +27,7 @@ if [[ -z "$PYTHON_BIN" || ! -x "$PYTHON_BIN" ]]; then
 fi
 
 "$PYTHON_BIN" "$ROOT/scripts/verify-version-consistency.py" \
-  --root "$ROOT" --expected "1.4.5-rc.6"
+  --root "$ROOT" --expected "1.4.6-rc.1"
 "$PYTHON_BIN" "$ROOT/scripts/verify-full-function-gate.py" verify --root "$ROOT" --scope package
 
 [[ "$FORMAT" == "deb" || "$FORMAT" == "rpm" ]] || {
@@ -50,8 +50,11 @@ if [[ "$ARCH" == loong64 ]]; then
   [[ "$FORMAT" == deb && "$RUNTIME_PROFILE" == core ]] || {
     echo "Loong64 仅提供显式 core DEB 档。" >&2; exit 2;
   }
-elif [[ "$RUNTIME_PROFILE" != full ]]; then
+elif [[ "$RUNTIME_PROFILE" != full && "$RUNTIME_PROFILE" != uos-v20 ]]; then
   echo "core 档仅允许 Loong64。" >&2; exit 2
+fi
+if [[ "$RUNTIME_PROFILE" == uos-v20 && "$FORMAT" != deb ]]; then
+  echo "uos-v20 仅允许 UOS V20 专用 DEB 封装，其他 Linux 包仍保持 glibc 2.17。" >&2; exit 2
 fi
 EXPECTED_MACHINE=x86_64
 [[ "$ARCH" == arm64 ]] && EXPECTED_MACHINE=aarch64
@@ -242,6 +245,7 @@ fi
 GLIBC="$(getconf GNU_LIBC_VERSION | awk '{print $2}')"
 EXPECTED_GLIBC=2.17
 [[ "$ARCH" == loong64 ]] && EXPECTED_GLIBC=2.38
+[[ "$RUNTIME_PROFILE" == uos-v20 ]] && EXPECTED_GLIBC=2.28
 [[ "$GLIBC" == "$EXPECTED_GLIBC" ]] || {
   echo "正式包要求 glibc $EXPECTED_GLIBC 构建基线，当前为 $GLIBC；拒绝生成伪兼容制品。" >&2
   exit 2
@@ -493,6 +497,7 @@ if [[ "$FORMAT" == deb ]]; then
     PACKAGE_DESCRIPTION='原生离线主机、协同、中文 OCR、语义重排和本地 LLM。'
     PACKAGE_LIBC_VERSION=2.17
   fi
+  [[ "$RUNTIME_PROFILE" == uos-v20 ]] && PACKAGE_LIBC_VERSION=2.28
   mkdir -p "$PKG/DEBIAN"
   cat >"$PKG/DEBIAN/control" <<EOF
 Package: partyops
@@ -526,7 +531,7 @@ systemctl daemon-reload >/dev/null 2>&1 || true
 echo "PartyOps 业务数据保留在 /var/lib/partyops，卸载不会自动删除。" >&2
 EOF
   chmod 0755 "$PKG/DEBIAN/preinst" "$PKG/DEBIAN/postinst" "$PKG/DEBIAN/prerm" "$PKG/DEBIAN/postrm"
-  OUTPUT="$ARTIFACTS/PartyOps_1.4.5-rc.6_linux_${ARCH}.deb"
+  OUTPUT="$ARTIFACTS/PartyOps_1.4.6-rc.1_linux_${ARCH}.deb"
   if dpkg-deb --help 2>&1 | grep -q -- '--root-owner-group'; then
     dpkg-deb --root-owner-group --build "$PKG" "$OUTPUT"
   else
@@ -640,7 +645,7 @@ EOF
     --define "partyops_release $RPM_RELEASE" \
     --define "with_rollback_cache 1" \
     -bb "$BUILD/rpmbuild/SPECS/partyops.spec"
-  OUTPUT="$ARTIFACTS/PartyOps-1.4.5-0.rc.6.1.${RPM_ARCH}.rpm"
+  OUTPUT="$ARTIFACTS/PartyOps-1.4.6-0.rc.1.1.${RPM_ARCH}.rpm"
   cp "$BUILD/rpmbuild/RPMS/$RPM_ARCH/partyops-$RPM_VERSION-$RPM_RELEASE.$RPM_ARCH.rpm" "$OUTPUT"
 fi
 if [[ "$FORMAT" == deb ]]; then

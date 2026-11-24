@@ -48,7 +48,13 @@ macOS 必须分别在原生 Apple Silicon 与 Intel Darwin 环境手动构建。
 
 本次 Apple Silicon arm64 候选在 macOS 15.7.9 / GitHub arm64 原生主机完成安装后资源签名校验和四项 CLI 自检；GUI、WPS 金样与六类功能、覆盖升级及完整生命周期尚未验证。应用使用 ad-hoc 签名，安装器未签名、未公证，因此该候选不满足上述完整验收要求。经用户授权发布有限测试候选不代表完整正式包验收通过，Developer ID、公证、WPS 金样、功能和生命周期门禁均不降低。
 
-LibreOffice 官方 DMG 的完整 `LibreOffice.app` 会在复制前执行严格签名验证，并作为嵌套 App 原样保留。运行时在 PartyOps 逐层统一签名前不得提前启动；真实 `--headless --version` 门禁固定放在最终 App 统一签名完成后，并覆盖包级自检、全新安装和覆盖升级三条路径。失败时构建日志会附带嵌套 App 的签名、依赖与 macOS 统一日志摘录。
+LibreOffice 官方 DMG 的完整 `LibreOffice.app` 会在复制前执行严格签名验证，并作为嵌套 App 原样保留。PartyOps 随包 `--headless --version` 门禁在最终 App 统一签名后执行，覆盖包级自检、全新安装和覆盖升级三条路径。失败时构建日志会附带嵌套 App 的签名、依赖与 macOS 统一日志摘录。
+
+### 1.4.6-rc.1 LibreOffice 输入
+
+共享准备脚本锁定 The Document Foundation 官方 26.8.3.1 DMG 和两种架构的 SHA-256。打包时重新核对来源清单、签名和 `LibreOffice.app` 的版本，替换旧输入需从脚本重新准备。上游公开最低系统为 macOS 11。[上游系统要求](https://www.libreoffice.org/system-requirements/) · [安全公告](https://www.libreoffice.org/security/)
+
+Cloud runner smoke 分别在 Intel 与 Apple Silicon 的 macOS 15 runner 上，以临时用户配置启动上游签名的独立 App。证据只包含源清单和日志，记录实际架构、系统版本、签名与启动输出。Intel macOS 11.0 的运行、PartyOps 签名包的安装和 DOC/WPS 转换仍须在相应目标机上验收。
 
 PKG 不把 `.app` 目录直接交给 `pkgbuild` 组件分析。PyInstaller 内嵌的 `Python.framework` 会被 Installer 识别为第二个可重定位组件，在部分系统上破坏 Bundle。构建脚本改为携带经过 ZIP 往返校验的原始 App；`postinstall` 完整解包并验证 Bundle ID、主程序权限和代码签名后，才事务式替换 `/Applications/PartyOps.app`。升级失败会恢复旧 App，用户业务数据不参与该事务。
 

@@ -1,0 +1,246 @@
+name: RC1 UOS cloud native-input recovery (NO REPACKAGED DEB)
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/cloud-uos-native-input-recovery.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: partyops-rc1-uos-native-recovery-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  recover-verified-release-inputs:
+    name: Recover prior native ${{ matrix.arch }} binary provenance and glibc 2.17 toolchain
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+            release_tag: v1.4.5-rc.6
+            release_asset: PartyOps_1.4.5-rc.6_linux_amd64.deb
+            expected_sha256: 4557129b9f081c1b525d6dd6c6d444f7e0d35d63021b4b1c20c8daeffd4c30ae
+            donor_os: UOS V20 1070 x86_64
+            donor_kind: SAME_UOS_PLATFORM
+            container_image: quay.io/pypa/manylinux2014_x86_64:latest
+            uos_container_image: quay.io/pypa/manylinux_2_28_x86_64:latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+            release_tag: v1.4.5-rc.6
+            release_asset: PartyOps_1.4.5-rc.6_linux_arm64_kylin-full-20261016.deb
+            expected_sha256: 17d0e3a3acf060d3c65299c012078435bacc0da3f1f0a909fe3cc997cbbee69c
+            donor_os: Kylin V10 SP1 ARM64
+            donor_kind: CROSS_DISTRIBUTION_NOT_VERIFIED_UOS
+            container_image: quay.io/pypa/manylinux2014_aarch64:latest
+            uos_container_image: quay.io/pypa/manylinux_2_28_aarch64:latest
+
+    env:
+      GH_TOKEN: ${{ github.token }}
+      ARCHITECTURE: ${{ matrix.arch }}
+      SOURCE_REF: ${{ github.event.pull_request.head.sha || github.sha }}
+      DONOR_TAG: ${{ matrix.release_tag }}
+      DONOR_ASSET: ${{ matrix.release_asset }}
+      DONOR_EXPECTED_SHA256: ${{ matrix.expected_sha256 }}
+      DONOR_OS: ${{ matrix.donor_os }}
+      DONOR_KIND: ${{ matrix.donor_kind }}
+      CONTAINER_IMAGE: ${{ matrix.container_image }}
+      UOS_CONTAINER_IMAGE: ${{ matrix.uos_container_image }}
+      PYTHONUTF8: '1'
+
+    steps:
+      - name: Checkout current RC1 branch without changing original WPS
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Validate source and frozen UOS package version
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/verify-version-consistency.py --root . --expected 1.4.6-rc.1
+          bash -n packaging/uos/build-portable.sh packaging/linux/build-native.sh \
+            packaging/uos/one-click-install.sh
+          test "$(git rev-parse HEAD)" = "$SOURCE_REF"
+          mkdir -p artifacts/uos-recovery inputs/native/release extracted
+
+      - name: Download ONLY first-party immutable historical DEB and verify release SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release download "$DONOR_TAG" --repo "$GITHUB_REPOSITORY" \
+            --pattern "$DONOR_ASSET" --dir inputs/native/release --clobber
+          printf '%s  %s\n' "$DONOR_EXPECTED_SHA256" "inputs/native/release/$DONOR_ASSET" |
+            sha256sum --check --status
+          dpkg-deb --field "inputs/native/release/$DONOR_ASSET" \
+            Package Version Architecture > artifacts/uos-recovery/donor-deb-identity.txt
+          test "$(dpkg-deb --field "inputs/native/release/$DONOR_ASSET" Package)" = partyops
+          test "$(dpkg-deb --field "inputs/native/release/$DONOR_ASSET" Architecture)" = "$ARCHITECTURE"
+          dpkg-deb --extract "inputs/native/release/$DONOR_ASSET" extracted
+
+      - name: Inventory original native runtime closure and exact UOS build blockers
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib, platform, subprocess
+          root=pathlib.Path.cwd()
+          extracted=root/"extracted"/"opt"/"partyops"
+          def sha(path):
+              h=hashlib.sha256()
+              with path.open("rb") as f:
+                  for data in iter(lambda:f.read(1024*1024),b""):
+                      h.update(data)
+              return h.hexdigest()
+          current=subprocess.check_output(["git","rev-parse","HEAD"],text=True).strip()
+          if current!=os.environ["SOURCE_REF"]:
+              raise SystemExit("SOURCE_SHA_MISMATCH")
+          donor_root=root/"inputs/native/release"
+          asset=donor_root/os.environ["DONOR_ASSET"]
+          entries={
+              "wps_native_host":"formatter-host/partyops-document-formatter-host",
+              "wps_native_source":"formatter-host/source-host.json",
+              "wps_native_historical_evidence":"formatter-host/runtime-evidence.json",
+              "wps_native_slot_map":"formatter-host/word-vtable-map.json",
+              "wps_native_sdk_license":"formatter-host/LICENSE-WPS-SDK.txt",
+              "office_runtime":"office-runtime/program/soffice",
+              "ocr_runtime":"ocr-runtime/bin/tesseract",
+              "model_server":"llama-server",
+              "updater":"partyops-updater",
+              "release_manifest":"release-manifest.json",
+              "application":"partyops",
+          }
+          previous={}
+          for key,rel in entries.items():
+              path=extracted/rel
+              previous[key]={"present":path.is_file(),"sha256":sha(path) if path.is_file() else None}
+          # Read-only binding audit of the ORIGINAL WPS host and historical record.
+          # This does not regenerate, replay or assert native WPS gold tests.
+          donor_host=extracted/"formatter-host/partyops-document-formatter-host"
+          donor_source=extracted/"formatter-host/source-host.json"
+          donor_record=extracted/"formatter-host/runtime-evidence.json"
+          donor_map=extracted/"formatter-host/word-vtable-map.json"
+          try:
+              raw_source=json.loads(donor_source.read_text(encoding="utf-8"))
+              raw_record=json.loads(donor_record.read_text(encoding="utf-8"))
+              source_host_binding=(raw_source.get("host_sha256")==sha(donor_host))
+              record_host_binding=(raw_record.get("host_sha256")==sha(donor_host))
+              source_snapshot=raw_source.get("source_snapshot_sha256")
+              source_map_binding=(raw_source.get("word_vtable_map_sha256")==sha(donor_map))
+              donor_binding={
+                  "source_host_sha256_matches_file":source_host_binding,
+                  "historical_record_host_sha256_matches_file":record_host_binding,
+                  "source_snapshot_sha256":source_snapshot,
+                  "source_vtable_map_matches_file":source_map_binding,
+                  "source_record_schema":raw_source.get("schema"),
+                  "evidence_schema":raw_record.get("schema"),
+                  "source_features":raw_source.get("features"),
+                  "evidence_features":raw_record.get("features"),
+                  "evidence_status":raw_record.get("status"),
+                  "bound_to_current_formatter_source":source_snapshot=="7ae0eb67a0cb6a2d4a332cde74adf8977d93ae73541f864f01df214d39fefdf2",
+                  "evidence_available_as_original_parity_and_features":False,
+                  "new_native_wps_acceptance_executed":False,
+              }
+          except (ValueError,OSError,TypeError) as exc:
+              donor_binding={"readable":False,"error_type":type(exc).__name__,"new_native_wps_acceptance_executed":False}
+          native_sources={
+              "linux_wheelhouse":f"vendor/wheels/{os.environ['ARCHITECTURE']}",
+              "linux_local_ai_archive":f"vendor/local-ai/{os.environ['ARCHITECTURE']}/llama-runtime.tar.gz",
+              "linux_ocr_archive":f"vendor/ocr/{os.environ['ARCHITECTURE']}/tesseract-runtime.tar.gz",
+              "linux_private_office":f"vendor/linux/libreoffice-headless-{os.environ['ARCHITECTURE']}",
+              "sqlite_amalgamation":"vendor/sqlite-amalgamation-3510300.zip",
+              "pysqlite3_source":"vendor/pysqlite3-0.5.4.tar.gz",
+              "vendor_hash_manifest":"vendor/SHA256SUMS",
+              "signed_formatter_evidence":"artifacts/native-wps-evidence",
+              "built_frontend":"frontend/dist/client/index.html",
+          }
+          available={name:(root/rel).exists() for name,rel in native_sources.items()}
+          os_match=(os.environ["DONOR_KIND"]=="SAME_UOS_PLATFORM")
+          report={
+              "schema_version":1,
+              "version":"1.4.6-rc.1",
+              "source_sha":current,
+              "requested_target":f"UOS V20 {os.environ['ARCHITECTURE']}",
+              "native_cpu":platform.machine(),
+              "historical_donor":{
+                  "release_tag":os.environ["DONOR_TAG"],
+                  "asset":os.environ["DONOR_ASSET"],
+                  "sha256":sha(asset),
+                  "sha256_matches_release":sha(asset)==os.environ["DONOR_EXPECTED_SHA256"],
+                  "historical_os":os.environ["DONOR_OS"],
+                  "provenance":os.environ["DONOR_KIND"],
+                  "same_os_family":os_match,
+                  "files":previous,
+                  "historical_wps_source_binding":donor_binding,
+              },
+              "current_source_build_inputs":available,
+              "missing_native_build_inputs":[name for name,exists in available.items() if not exists],
+              "full_rc1_native_deb_built":False,
+              "native_uos_install_executed":False,
+              "historical_wps_tests_reexecuted":False,
+              "historical_binary_repackaged_as_new":False,
+              "reuse_requires_source_and_licensing_review":True,
+              "build_status":"INPUT_RECOVERY_AUDIT_ONLY",
+              "release_ready":False,
+          }
+          output=root/"artifacts/uos-recovery"/f"native-inputs-{os.environ['ARCHITECTURE']}.json"
+          output.write_text(json.dumps(report,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
+          print(f"UOS_DONOR_HASH_VERIFIED={report['historical_donor']['sha256_matches_release']}")
+          print(f"UOS_OLD_WPS_HOST_PRESENT={previous['wps_native_host']['present']}")
+          print(f"UOS_OLD_WPS_EVIDENCE_PRESENT={previous['wps_native_historical_evidence']['present']}")
+          print(f"UOS_HISTORIC_WPS_SOURCE_BINDING={donor_binding.get('bound_to_current_formatter_source')}")
+          print(f"UOS_HISTORIC_WPS_SHA_BINDING={donor_binding.get('source_host_sha256_matches_file')}")
+          print(f"UOS_SAME_DISTRIBUTION={os_match}")
+          print(f"UOS_CURRENT_SOURCE_MISSING_INPUTS={','.join(report['missing_native_build_inputs'])}")
+          print("UOS_NATIVE_BINARY_STATUS=NOT_BUILT")
+          PY
+
+      - name: Probe real glibc 2.17 cloud container availability (do not build or re-test WPS)
+        shell: bash
+        run: |
+          set -euo pipefail
+          outcome=UNAVAILABLE
+          if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+            # Exploratory image tag: do not use as a production-pinned toolchain.
+            if timeout 300 docker run --rm --network none "$CONTAINER_IMAGE" \
+                /bin/bash -c 'test "$(getconf GNU_LIBC_VERSION)" = "glibc 2.17" && \
+                              test -x /opt/python/cp311-cp311/bin/python && \
+                              /opt/python/cp311-cp311/bin/python --version'; then
+              outcome=AVAILABLE_UNPINNED_PROBE_ONLY
+            fi
+          fi
+          echo "UOS_MANYLINUX2014_TOOLCHAIN=$outcome" |
+            tee "artifacts/uos-recovery/toolchain-$ARCHITECTURE.txt"
+
+      - name: Probe exact UOS V20 glibc 2.28 native build container
+        shell: bash
+        run: |
+          set -euo pipefail
+          status=UNAVAILABLE
+          if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+            if timeout 300 docker run --rm --network none "$UOS_CONTAINER_IMAGE" \
+                /bin/bash -c 'test "$(getconf GNU_LIBC_VERSION)" = "glibc 2.28" && \
+                              test -x /opt/python/cp311-cp311/bin/python && \
+                              /opt/python/cp311-cp311/bin/python --version'; then
+              status=AVAILABLE_UNPINNED_PROBE_ONLY
+            fi
+          fi
+          printf 'UOS_V20_NATIVE_GLIBC_228_TOOLCHAIN=%s\n' "$status" |
+            tee "artifacts/uos-recovery/uos-v20-toolchain-$ARCHITECTURE.txt"
+
+      - name: Upload verified old-input inventory ONLY, not old package as new
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: partyops-uos-${{ matrix.arch }}-NATIVE-INPUT-AUDIT-${{ github.event.pull_request.head.sha || github.sha }}
+          path: artifacts/uos-recovery/
+          retention-days: 14
+          if-no-files-found: warn

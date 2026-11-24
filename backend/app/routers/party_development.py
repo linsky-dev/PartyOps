@@ -37,11 +37,13 @@ from ..models import (
     utcnow,
 )
 from ..party_development import (
+    FACT_REFERENCE_NODES,
     NATIONAL_MATERIALS,
     NODE_LABELS,
     PHASE_LABELS,
     calculate_party_development,
     calculate_reference_plan,
+    completed_node_keys,
     ensure_reference_plan_profile,
     ensure_reference_profile,
     export_result_docx,
@@ -71,7 +73,7 @@ from ..schemas import (
 )
 from ..security import get_current_user, require_admin
 from ..spreadsheet_security import safe_spreadsheet_row
-from ..time_utils import beijing_iso
+from ..time_utils import beijing_iso, beijing_now
 from .router_utils import client_ip, parse_if_match
 
 router = APIRouter(tags=["party-development"])
@@ -123,6 +125,9 @@ EVENT_TO_ACTUAL_FIELD = {
     "transition_branch_meeting": "transition_branch_meeting_date",
     "transition_approval": "transition_approval_date",
 }
+
+def _completed_nodes(events: dict[str, PartyDevelopmentProgressEvent]) -> set[str]:
+    return {key for milestone in events for key in completed_node_keys(milestone)}
 
 
 def _current_progress_events(
@@ -260,7 +265,6 @@ def _calculated_reference_plan(
         for row in db.scalars(
             select(PartyDevelopmentMilestone).where(
                 PartyDevelopmentMilestone.case_id == item.id,
-                PartyDevelopmentMilestone.plan_kind == "reference",
             )
         ).all()
     }
@@ -297,18 +301,20 @@ def _apply_reference_plan(
             "请刷新参考计划后重新调整。",
             extra={"unknown_keys": unknown},
         )
+    completed = _completed_nodes(_current_progress_events(db, item.id))
     previous = {
         row.milestone_type: row
         for row in db.scalars(
             select(PartyDevelopmentMilestone).where(
                 PartyDevelopmentMilestone.case_id == item.id,
-                PartyDevelopmentMilestone.plan_kind == "reference",
             )
         ).all()
     }
     for node in plan["nodes"]:
         key = str(node["key"])
         row = previous.get(key)
+        if key in completed or (row and row.actual_at is not None):
+            continue
         if row is None:
             row = PartyDevelopmentMilestone(
                 case_id=item.id,
@@ -318,9 +324,6 @@ def _apply_reference_plan(
             db.add(row)
         else:
             row.version += 1
-        row.actual_at = None
-        row.legal_earliest_at = None
-        row.legal_deadline_at = None
         row.planned_at = _as_datetime(node["reference_date"])
         row.adjusted_at = (
             _as_datetime(adjustment_values[key])
@@ -328,7 +331,6 @@ def _apply_reference_plan(
             else row.adjusted_at
         )
         row.rule_version = item.rule_version
-        row.legal_basis = ""
         row.planning_basis = str(node["planning_basis"])
     if bump_case_version:
         item.version += 1
@@ -670,29 +672,48 @@ def get_case_timeline(
 ) -> dict[str, typing.Any]:
     item = _case_or_404(db, case_id)
     current = _case_out(db, item)
-    now = utcnow()
+    today = beijing_now().date()
     facts = {row["milestone_type"]: row for row in current["progress_events"]}
+    history = db.scalars(
+        select(PartyDevelopmentProgressEvent)
+        .where(PartyDevelopmentProgressEvent.case_id == item.id)
+        .order_by(PartyDevelopmentProgressEvent.created_at.desc())
+    ).all()
     timeline: list[dict[str, typing.Any]] = []
+    milestones = {row["milestone_type"]: row for row in current["milestones"]}
+    plans_paired = {
+        key for event in facts for key in FACT_REFERENCE_NODES.get(event, ())
+    }
     for milestone in current["milestones"]:
-        target = milestone["adjusted_at"] or milestone["legal_deadline_at"] or milestone["legal_earliest_at"] or milestone["planned_at"]
+        kind = milestone["milestone_type"]
+        if kind in plans_paired and kind not in facts:
+            continue
+        target = milestone["adjusted_at"] or milestone["planned_at"] or milestone["legal_deadline_at"] or milestone["legal_earliest_at"]
         actual = milestone["actual_at"]
-        fact = facts.get(milestone["milestone_type"])
+        fact = facts.get(kind)
         if fact:
             actual = fact["actual_at"]
-        aware_target = _aware(target)
         if actual:
             visual_state = "completed"
-        elif aware_target and aware_target < now:
+        elif milestone["legal_deadline_at"] and milestone["legal_deadline_at"].date() < today:
             visual_state = "overdue"
-        elif aware_target and aware_target <= now + timedelta(days=60):
+        elif target and today <= target.date() <= today + timedelta(days=60):
             visual_state = "upcoming"
         else:
             visual_state = "planned"
-        timeline.append({**milestone, "title_zh": NODE_LABELS.get(milestone["milestone_type"], "待确认节点"), "actual_at": actual, "progress_event": fact, "visual_state": visual_state, "is_reference": bool(milestone["adjusted_at"] or milestone["plan_kind"] == "reference")})
-    present = {row["milestone_type"] for row in timeline}
+        timeline.append({**milestone, "title_zh": NODE_LABELS.get(kind, "待确认节点"), "actual_at": actual, "progress_event": fact, "visual_state": visual_state, "is_reference": bool(milestone["adjusted_at"] or milestone["plan_kind"] == "reference")})
+    actual_rows = {row["milestone_type"]: row for row in timeline if row["actual_at"]}
     for event_type, fact in facts.items():
-        if event_type not in present:
-            timeline.append({"id": f"fact:{fact['id']}", "milestone_type": event_type, "title_zh": NODE_LABELS.get(event_type, "待确认节点"), "actual_at": fact["actual_at"], "legal_earliest_at": None, "legal_deadline_at": None, "planned_at": None, "adjusted_at": None, "legal_basis": "", "planning_basis": "", "plan_kind": "fact", "reminder_days": [], "version": fact["version"], "progress_event": fact, "visual_state": "completed", "is_reference": False})
+        actual = actual_rows.get(event_type)
+        if actual is None:
+            actual = {"id": f"fact:{fact['id']}", "milestone_type": event_type, "title_zh": NODE_LABELS.get(event_type, "待确认节点"), "actual_at": fact["actual_at"], "legal_earliest_at": None, "legal_deadline_at": None, "planned_at": None, "adjusted_at": None, "legal_basis": "", "planning_basis": "", "plan_kind": "fact", "reminder_days": [], "version": fact["version"], "progress_event": fact, "visual_state": "completed", "is_reference": False}
+            timeline.append(actual)
+        related_plans = [milestones[key] for key in FACT_REFERENCE_NODES.get(event_type, ()) if key in milestones]
+        actual["related_plan_ids"] = [related["id"] for related in related_plans]
+        for key in ("planned_at", "adjusted_at", "legal_earliest_at", "legal_deadline_at", "legal_basis", "planning_basis", "rule_version"):
+            if not actual.get(key):
+                actual[key] = next((related[key] for related in related_plans if related.get(key)), None)
+
     def sort_key(row: dict[str, typing.Any]) -> float:
         value = row["actual_at"] or row["adjusted_at"] or row["legal_deadline_at"] or row["planned_at"]
         if isinstance(value, str):
@@ -703,7 +724,18 @@ def get_case_timeline(
         return _aware(value).timestamp() if isinstance(value, datetime) else float("inf")
 
     timeline.sort(key=sort_key)
-    return {"case": current, "timeline": timeline, "legend": {"completed": "已实际完成", "overdue": "已逾期未完成", "upcoming": "即将到期", "planned": "法规或参考计划", "reference": "人工调整或不确定预测"}}
+    return {
+        "case": current,
+        "timeline": timeline,
+        "progress_history": [
+            {"id": row.id, "milestone_type": row.milestone_type, "actual_at": row.actual_at,
+             "status": row.status, "evidence_note": row.evidence_note, "created_by": row.created_by,
+             "created_at": row.created_at, "supersedes_event_id": row.supersedes_event_id,
+             "voided_at": row.voided_at}
+            for row in history
+        ],
+        "legend": {"completed": "已实际完成", "overdue": "已过法规截止日期", "upcoming": "即将到期", "planned": "法规或参考计划", "reference": "人工调整或不确定预测"},
+    }
 
 
 @router.post(
@@ -973,8 +1005,10 @@ def generate_case_milestones(
     item = db.get(PartyDevelopmentCase, case_id)
     if not item:
         raise ProblemException(404, "PARTY_DEVELOPMENT_CASE_NOT_FOUND", "发展档案不存在", "请刷新后重试。")
+    events = _current_progress_events(db, item.id)
+    completed = _completed_nodes(events)
     result = calculate_party_development(
-        _case_payload(item),
+        _case_payload(item, events),
         db.scalars(select(WorkCalendarEntry)).all(),
         supplemental_materials(db, []),
     )
@@ -995,6 +1029,8 @@ def generate_case_milestones(
             continue
         generated.add(node.key)
         row = previous.get(node.key)
+        if row is not None and (node.key in completed or row.actual_at is not None):
+            continue
         is_new = row is None
         if row is None:
             row = PartyDevelopmentMilestone(case_id=item.id, milestone_type=node.key, version=1)
@@ -1065,14 +1101,34 @@ def development_statistics(
         stage_counts[item.stage] = stage_counts.get(item.stage, 0) + 1
     case_ids = [item.id for item in cases]
     milestones = db.scalars(select(PartyDevelopmentMilestone).where(PartyDevelopmentMilestone.case_id.in_(case_ids))).all() if case_ids else []
-    now = utcnow()
-    targets = [
-        (row, _aware(row.adjusted_at or row.planned_at or row.legal_deadline_at))
-        for row in milestones
-    ]
-    upcoming = sum(1 for row, target in targets if not row.actual_at and target and now <= target <= now + timedelta(days=60))
-    overdue = sum(1 for row, target in targets if not row.actual_at and target and target < now)
-    return {"total": len(cases), "stage_counts": stage_counts, "upcoming_60_days": upcoming, "overdue": overdue}
+    today = beijing_now().date()
+    completed: dict[str, set[str]] = {item.id: set() for item in cases}
+    if case_ids:
+        facts = db.execute(
+            select(PartyDevelopmentProgressEvent.case_id, PartyDevelopmentProgressEvent.milestone_type)
+            .where(
+                PartyDevelopmentProgressEvent.case_id.in_(case_ids),
+                PartyDevelopmentProgressEvent.status == "confirmed",
+            )
+        )
+        for case_id, key in facts:
+            completed[case_id].update(completed_node_keys(key))
+    upcoming = legal_overdue = reference_overdue = 0
+    for row in milestones:
+        if row.actual_at or row.milestone_type in completed[row.case_id]:
+            continue
+        legal = _as_date(row.legal_deadline_at)
+        reference = _as_date(row.adjusted_at or row.planned_at)
+        upcoming += any(today <= value <= today + timedelta(days=60) for value in (legal, reference) if value)
+        if legal and legal < today:
+            legal_overdue += 1
+        elif reference and reference < today:
+            reference_overdue += 1
+    return {
+        "total": len(cases), "stage_counts": stage_counts, "upcoming_60_days": upcoming,
+        "overdue": legal_overdue + reference_overdue,
+        "legal_overdue": legal_overdue, "reference_overdue": reference_overdue,
+    }
 
 
 def _export_cases_query(party_committee: str, party_branch: str):

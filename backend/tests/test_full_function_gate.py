@@ -64,6 +64,70 @@ def test_gate_requires_record_and_invalidates_after_source_change(tmp_path: Path
     assert _run(tmp_path, "verify", "website").returncode == 0
 
 
+def test_package_only_wps_evidence_never_certifies_website_or_full(tmp_path: Path) -> None:
+    package = tmp_path / "backend/app/sample.py"
+    package.parent.mkdir(parents=True)
+    package.write_text("VALUE = 1\n", encoding="utf-8")
+    assert _run(tmp_path, "record", "package").returncode == 0
+    assert _run(tmp_path, "verify", "package").returncode == 0
+
+    receipt = json.loads(
+        (tmp_path / ".release-gates/full-function-tests.json").read_text(encoding="utf-8")
+    )
+    assert receipt["record_scope"] == "package"
+    assert receipt["suite"] == "scripts/test.ps1 -Scope Package"
+    assert set(receipt["source_fingerprints"]) == {"package"}
+    assert all(not item.startswith("website-") for item in receipt["scope"])
+    for scope in ("website", "full"):
+        denied = _run(tmp_path, "verify", scope)
+        assert denied.returncode == 2
+        assert f"FULL_FUNCTION_GATE_SCOPE_UNTESTED:{scope}" in denied.stderr
+
+    # Adding site files after package QA cannot forge website/full approval.
+    site = tmp_path / "website/src/site.js"
+    site.parent.mkdir(parents=True)
+    site.write_text("export default 1;\n", encoding="utf-8")
+    assert _run(tmp_path, "verify", "website").returncode == 2
+    assert _run(tmp_path, "verify", "full").returncode == 2
+    package.write_text("VALUE = 2\n", encoding="utf-8")
+    assert _run(tmp_path, "verify", "package").returncode == 2
+
+    # Full approval still requires a later independent complete test record.
+    assert _run(tmp_path, "record", "full").returncode == 0
+    for scope in ("package", "website", "full"):
+        assert _run(tmp_path, "verify", scope).returncode == 0
+
+
+def test_package_only_switch_preserves_native_wps_and_security_checks() -> None:
+    source = (ROOT / "scripts/test.ps1").read_text(encoding="utf-8")
+    assert '[ValidateSet("Full", "Package", "WpsOnly")][string]$Scope = "Full"' in source
+    assert source.count('if ($Scope -eq "Full")') == 2
+    for command in (
+        'verify-document-formatter-parity.py',
+        'verify-document-formatter-features-e2e.py',
+        'backend\\app',
+        'verify-coverage.py',
+        'pip_audit',
+        'scan-secrets.ps1',
+        'record --root $root --scope $gateScope',
+    ):
+        assert command in source
+    assert '($Scope.ToLowerInvariant())' not in source
+    assert '$gateScope = $Scope.ToLowerInvariant()' in source
+
+
+def test_wps_only_mode_stops_after_real_wps_e2e_without_granting_release() -> None:
+    source = (ROOT / "scripts/test.ps1").read_text(encoding="utf-8")
+    assert source.count('if ($Scope -eq "WpsOnly")') == 1
+    stop = source.index('if ($Scope -eq "WpsOnly")')
+    assert source.index("verify-document-formatter-parity.py") < stop
+    assert source.index("verify-document-formatter-features-e2e.py") < stop
+    assert source.index('  return\n}', stop) < source.index("pip_audit")
+    assert stop < source.index("verify-full-function-gate.py")
+    assert stop < source.index('pnpm --dir (Join-Path $root "frontend") audit')
+    assert 'Scope.ToLowerInvariant()' in source
+
+
 def test_package_gate_rejects_changed_legacy_wheel_lock(tmp_path: Path) -> None:
     """Win7依赖哈希变化也必须使原源码门禁失效。"""
     lock = tmp_path / "backend/legacy/requirements-windows7-amd64.lock"

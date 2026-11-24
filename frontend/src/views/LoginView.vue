@@ -10,7 +10,7 @@ import {
 } from "@arco-design/web-vue/es/icon";
 import { Message } from "@arco-design/web-vue";
 import { useSessionStore } from "../stores/session";
-import { ApiError } from "../api";
+import { api, ApiError } from "../api";
 import { orientalDateLabel } from "../utils/lunar";
 import { validateLoginForm, type LoginFieldErrors } from "../utils/onboarding";
 import OrientalArtLayer from "../components/OrientalArtLayer.vue";
@@ -22,6 +22,11 @@ const session = useSessionStore();
 const loading = ref(false);
 const showPassword = ref(false);
 const showConnection = ref(false);
+const showRecovery = ref(false);
+const showHostRecoveryHelp = ref(false);
+const recoveryBusy = ref(false);
+const recoveryResult = ref("");
+const recoveryForm = reactive({ credential: "", username: "", newPassword: "" });
 const configured = ref(true);
 const usernameInput = ref<{ focus?: () => void } | null>(null);
 const passwordInput = ref<{ focus?: () => void } | null>(null);
@@ -52,6 +57,35 @@ onMounted(async () => {
 
 function clearFieldError(field: keyof LoginFieldErrors) {
   delete fieldErrors[field];
+}
+
+function closeRecovery() {
+  if (!recoveryBusy.value) {
+    showRecovery.value = false;
+    showHostRecoveryHelp.value = false;
+    recoveryResult.value = "";
+    Object.assign(recoveryForm, { credential: "", username: "", newPassword: "" });
+  }
+}
+
+async function recoverAccount() {
+  if (recoveryBusy.value || !recoveryForm.credential.trim()) return;
+  recoveryBusy.value = true;
+  try {
+    const account = await api.post<{ username: string }>("/auth/recovery/redeem", {
+      credential: recoveryForm.credential.trim(),
+      username: recoveryForm.username.trim() || undefined,
+      new_password: recoveryForm.newPassword || undefined,
+    });
+    recoveryResult.value = account.username;
+    form.username = account.username;
+    form.password = "";
+    Object.assign(recoveryForm, { credential: "", username: "", newPassword: "" });
+  } catch (error) {
+    Message.error(error instanceof Error ? error.message : "恢复失败，请重试或联系管理员重新签发。");
+  } finally {
+    recoveryBusy.value = false;
+  }
 }
 
 async function focusFirstError() {
@@ -182,13 +216,55 @@ async function submit() {
           </a-button>
         </form>
         <div class="form-rule bottom"></div>
-        <button class="connection-settings" type="button" @click="showConnection = true">
-          <IconSettings />
-          连接设置
-        </button>
+        <div class="login-secondary-actions">
+          <button class="connection-settings" type="button" @click="showConnection = true">
+            <IconSettings /> 连接设置
+          </button>
+          <button v-if="configured" class="connection-settings" type="button" @click="showRecovery = true">
+            恢复账号
+          </button>
+        </div>
         <p v-if="!configured" class="setup-note">业务数据只保存在这台主机；首位管理员创建后请立即配置备份。</p>
       </div>
     </section>
+    <a-modal :visible="showRecovery" title="恢复账号" :footer="false" :mask-closable="false" @cancel="closeRecovery">
+      <div v-if="recoveryResult">
+        <a-alert type="success">账号用户名为 <strong>{{ recoveryResult }}</strong>。恢复凭据已经使用。</a-alert>
+        <a-button class="recovery-action" type="primary" @click="closeRecovery">返回登录</a-button>
+      </div>
+      <template v-else>
+        <p>普通成员请联系管理员核验身份后取得一次性恢复凭据；管理员可以使用事先离线保管的恢复码。</p>
+        <a-button type="text" class="host-recovery-help-toggle" @click="showHostRecoveryHelp = !showHostRecoveryHelp">
+          {{ showHostRecoveryHelp ? "收起主机应急恢复说明" : "我是唯一管理员，忘记密码且没有恢复码" }}
+        </a-button>
+        <div v-if="showHostRecoveryHelp" class="host-recovery-help">
+          <a-alert type="warning">没有预存恢复码时，不能仅凭网页或用户名重置密码。团队主机须由操作系统管理员执行；Windows 个人模式仅允许当前配置和数据库所属的 Windows 账户操作。协同电脑与远程网页不能执行。</a-alert>
+          <p>先备份主机业务数据并停止 PartyOps 主机服务；在提升权限的本机交互终端执行以下命令。将数据目录替换为该主机实际使用的目录，不得指向新建空目录。</p>
+          <p><strong>UOS、麒麟及其他 Linux：</strong></p>
+          <code>sudo /opt/partyops/partyops --account-recovery emergency --data-dir /var/lib/partyops</code>
+          <p><strong>Windows 团队主机：</strong>在管理员 PowerShell 中，从主机安装配置确认实际业务数据目录（默认 C:&#92;ProgramData&#92;PartyOps-Data），进入程序安装目录后执行：</p>
+          <code>&amp; ".&#92;PartyOps.exe" --account-recovery emergency --data-dir "C:&#92;ProgramData&#92;PartyOps-Data"</code>
+          <p><strong>Windows 个人使用：</strong>在原 Windows 登录账户的普通 PowerShell 中执行，无须系统管理员提权。先核对当前账户的 %LOCALAPPDATA%&#92;PartyOps&#92;personal.env 中 PARTYOPS_DATA_DIR；默认示例如下：</p>
+          <code>&amp; ".&#92;PartyOps.exe" --account-recovery emergency --data-dir "$env:LOCALAPPDATA&#92;PartyOps-个人数据"</code>
+          <p>以上 Windows 路径均为默认示例；自定义目录必须按原配置填写。个人模式若换用其他 Windows 账户或目录 ACL 不安全，工具会拒绝操作，不能通过新建目录规避。</p>
+          <p>确认后工具只显示一次 30 分钟有效恢复凭据。重启主机服务后，在上方“恢复凭据”和“新密码”输入框完成重置；旧账号、业务数据及权限均保留，旧会话将失效。</p>
+          <p>如有其他有效管理员，应由该管理员使用正式后台流程操作，不应使用本机应急模式。</p>
+        </div>
+        <a-form :model="recoveryForm" layout="vertical" class="recovery-form" @submit-success="recoverAccount">
+          <a-form-item label="恢复凭据" required>
+            <a-input-password v-model="recoveryForm.credential" autocomplete="off" />
+          </a-form-item>
+          <a-form-item label="新用户名（选填）">
+            <a-input v-model="recoveryForm.username" autocomplete="off" />
+          </a-form-item>
+          <a-form-item label="新密码（主机应急恢复时必填）">
+            <a-input-password v-model="recoveryForm.newPassword" autocomplete="new-password" />
+          </a-form-item>
+          <p>普通恢复凭据留空两项只找回用户名，同样会消耗恢复凭据。主机应急恢复凭据必须设置新密码；漏填不会消耗凭据。</p>
+          <a-button type="primary" html-type="submit" :disabled="!recoveryForm.credential.trim()" :loading="recoveryBusy">验证并恢复</a-button>
+        </a-form>
+      </template>
+    </a-modal>
     <a-modal v-model:visible="showConnection" title="局域网连接设置" :footer="false">
       <div class="connection-modal">
         <span class="connection-dot"></span>
@@ -443,6 +519,17 @@ form {
   line-height: 1.6;
   text-align: center;
 }
+
+.login-secondary-actions { display: flex; justify-content: center; gap: 10px; }
+.login-secondary-actions .connection-settings { margin: 0; }
+.recovery-form { display: block; }
+.recovery-form :deep(.arco-input-wrapper) { height: auto; padding: 0 8px; font-size: 14px; }
+.recovery-action { margin-top: 16px; }
+.host-recovery-help-toggle { margin: 4px 0 12px; padding-left: 0; }
+.host-recovery-help { padding: 12px; border: 1px solid var(--line); background: rgba(247, 241, 231, 0.6); }
+.host-recovery-help p { margin: 10px 0 6px; font-size: 12px; line-height: 1.65; }
+.host-recovery-help code { display: block; padding: 8px; overflow-wrap: anywhere; user-select: all; background: rgba(255,255,255,0.76); font-size: 12px; }
+
 
 .connection-modal {
   display: flex;

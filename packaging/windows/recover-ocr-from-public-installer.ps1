@@ -54,9 +54,16 @@ function Restore-PartyOpsOcrFromPublicInstaller {
         [Parameter(Mandatory = $true)][string]$InstallerPath,
         [Parameter(Mandatory = $true)][string]$ExtractorDirectory)
   $ErrorActionPreference = 'Stop'
-  if ((Get-FileHash -Algorithm SHA256 -LiteralPath $InstallerPath).Hash -ne
-      "A7C044B0B830CE416FDF02C84DAA2E7AA4929C0833D9B530BC47486D861A81BE") {
-    throw "公开 PartyOps 安装包 SHA-256 不匹配，拒绝恢复 OCR。"
+  # The original 443 MB release asset was removed; the still-published
+  # startup-fixed RC6 asset is byte-verified separately. Both inputs must
+  # produce the *identical* 62 OCR files in the frozen per-file manifest.
+  $allowedInstallerHashes = @{
+    "A7C044B0B830CE416FDF02C84DAA2E7AA4929C0833D9B530BC47486D861A81BE" = "rc6-original"
+    "E3E2EA45CCD38ACFF059B5713826A78F998A56CCEF75341633F67BD4E17E57DA" = "rc6-startup-repair-20261018"
+  }
+  $sourceHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $InstallerPath).Hash
+  if (-not $allowedInstallerHashes.ContainsKey($sourceHash)) {
+    throw "公开 PartyOps 安装包 SHA-256 不属于已审查的两个 RC6 来源，拒绝恢复 OCR。"
   }
   # 固定维护者发布 tag 670 的两个文件，禁止执行未知解包程序或旁加载 DLL。
   $toolHashes = @{

@@ -1,0 +1,130 @@
+name: RC1 PR source and SBOM preflight
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: partyops-pr-evidence-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  evidence:
+    name: Locked source and SBOM (BUILD_ONLY)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Checkout exact PR test merge commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Verify source version and archive it
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          python scripts/verify-version-consistency.py --root . --expected 1.4.6-rc.1
+          mkdir -p artifacts/pr-source
+          git archive --format=tar --prefix='PartyOps-1.4.6-rc.1/' HEAD \
+            | gzip -n > artifacts/pr-source/PartyOps-1.4.6-rc.1-source.tar.gz
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+
+      - name: Generate locked Python runtime SBOM
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check 'uv==0.11.7' 'cyclonedx-bom==7.3.1'
+          uv export --project backend --frozen --no-dev --no-emit-project --no-hashes \
+            --output-file artifacts/pr-source/locked-runtime.txt --quiet
+          cyclonedx-py requirements artifacts/pr-source/locked-runtime.txt \
+            --spec-version 1.6 --output-format JSON --output-reproducible \
+            --output-file artifacts/pr-source/sbom-python.cdx.json
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+
+      - name: Generate frontend production SBOM without installing dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          corepack enable
+          corepack prepare 'pnpm@11.9.0' --activate
+          corepack pnpm --dir frontend sbom \
+            --sbom-format cyclonedx --sbom-spec-version 1.6 --prod --lockfile-only \
+            --out "$GITHUB_WORKSPACE/artifacts/pr-source/sbom-frontend.cdx.json"
+
+      - name: Record source identity and SHA-256
+        shell: bash
+        env:
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          root = Path("artifacts/pr-source")
+          names = (
+              "PartyOps-1.4.6-rc.1-source.tar.gz",
+              "locked-runtime.txt",
+              "sbom-python.cdx.json",
+              "sbom-frontend.cdx.json",
+          )
+          files = []
+          for name in names:
+              path = root / name
+              if not path.is_file() or path.stat().st_size <= 0:
+                  raise SystemExit(f"PR_SOURCE_EVIDENCE_MISSING: {name}")
+              files.append({
+                  "filename": name,
+                  "bytes": path.stat().st_size,
+                  "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+              })
+          manifest = {
+              "schema_version": 1,
+              "product": "PartyOps",
+              "version": "1.4.6-rc.1",
+              "status": "BUILD_ONLY",
+              "source_kind": "PR_TEST_MERGE_COMMIT",
+              "source_sha": os.environ["GITHUB_SHA"],
+              "pull_request_head_sha": os.environ["PR_HEAD_SHA"],
+              "pull_request_number": int(os.environ["PR_NUMBER"]),
+              "installers_built": False,
+              "native_install_acceptance": "NOT_RUN",
+              "signed": False,
+              "release_gate": "BLOCKED",
+              "files": files,
+          }
+          manifest_path = root / "source-evidence.json"
+          manifest_path.write_text(
+              json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+          )
+          with (root / "SHA256SUMS.txt").open("w", encoding="utf-8") as output:
+              for item in files:
+                  output.write(f'{item["sha256"]}  {item["filename"]}\n')
+              output.write(f'{hashlib.sha256(manifest_path.read_bytes()).hexdigest()}  source-evidence.json\n')
+          PY
+          (cd artifacts/pr-source && sha256sum --check SHA256SUMS.txt)
+
+      - name: Upload BUILD_ONLY PR preflight evidence
+        if: ${{ success() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: partyops-pr-source-build-only-${{ github.event.pull_request.number }}-${{ github.sha }}
+          path: artifacts/pr-source
+          if-no-files-found: error
+          retention-days: 14

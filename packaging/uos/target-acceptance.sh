@@ -19,8 +19,8 @@ mkdir -p "$(dirname "$RESULT")"
   echo "architecture=$ARCH"
   RUNTIME_PROFILE=full
   [[ "$ARCH" == loong64 ]] && RUNTIME_PROFILE=core
-  VERSION="${PARTYOPS_VERSION:-1.4.5-rc.6}"
-  PACKAGE_VERSION="${PARTYOPS_PACKAGE_VERSION:-1.4.5~rc.6}"
+  VERSION="${PARTYOPS_VERSION:-1.4.6-rc.1}"
+  PACKAGE_VERSION="${PARTYOPS_PACKAGE_VERSION:-1.4.6~rc.1}"
   INSTALLED_VERSION="$(dpkg-query -W -f='${Version}' partyops)"
   INSTALLED_ARCH="$(dpkg-query -W -f='${Architecture}' partyops)"
   echo "installed_version=$INSTALLED_VERSION"

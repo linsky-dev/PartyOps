@@ -10,10 +10,11 @@ import re
 import shutil
 import threading
 import uuid
+from collections.abc import Collection
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 
-from sqlalchemy import or_, select, text
+from sqlalchemy import column, or_, select, table, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -35,6 +36,7 @@ from .schemas import WorkspaceFileOut, WorkspaceScanOut
 
 logger = logging.getLogger("partyops.workspace")
 _SCAN_COMMIT_BATCH_SIZE = 500
+_WORKSPACE_NAME_FTS = table("workspace_name_fts", column("file_id"))
 _scan_locks: dict[str, threading.Lock] = {}
 _scan_locks_guard = threading.Lock()
 
@@ -707,42 +709,43 @@ def search_workspace_files(
     keyword: str,
     root_id: str | None = None,
     limit: int = 100,
+    *,
+    allowed_root_ids: Collection[str] | None = None,
+    include_directories: bool = True,
+    allowed_extensions: Collection[str] | None = None,
 ) -> list[WorkspaceFile]:
-    normalized = keyword.strip()
-    if not normalized:
-        statement = select(WorkspaceFile)
-    else:
-        phrase = '"' + normalized.replace('"', '""') + '"'
-        ids = [
-            row[0]
-            for row in db.execute(
-                    text(
-                        "SELECT file_id FROM workspace_name_fts "
-                        "WHERE workspace_name_fts MATCH :query LIMIT :limit"
-                    ),
-                {"query": phrase, "limit": limit},
-            ).all()
-        ]
-        if ids:
-            # FTS 仅覆盖名称和相对路径。命中后只按主键回表，避免
-            # “FTS 命中 OR LIKE”迫使 SQLite 在十万级文件上再次全表扫描。
-            statement = select(WorkspaceFile).where(WorkspaceFile.id.in_(ids))
-        else:
-            statement = select(WorkspaceFile).where(
-                or_(
-                    WorkspaceFile.name.contains(normalized),
-                    WorkspaceFile.relative_path.contains(normalized),
-                )
-            )
+    """在所给范围内排序和截断。空授权范围直接拒绝所有结果。"""
+    if allowed_root_ids is not None and not allowed_root_ids:
+        return []
+    statement = select(WorkspaceFile).where(WorkspaceFile.in_scope.is_(True))
     if root_id:
         statement = statement.where(WorkspaceFile.root_id == root_id)
-    statement = statement.where(WorkspaceFile.in_scope.is_(True))
-    return list(
-        db.scalars(
-            statement.order_by(
-                WorkspaceFile.status == FileIndexStatus.MISSING,
-                WorkspaceFile.is_directory.desc(),
-                WorkspaceFile.modified_at.desc(),
-            ).limit(limit)
-        ).all()
-    )
+    if allowed_root_ids is not None:
+        statement = statement.where(WorkspaceFile.root_id.in_(allowed_root_ids))
+    if not include_directories:
+        statement = statement.where(WorkspaceFile.is_directory.is_(False))
+    if allowed_extensions is not None:
+        statement = statement.where(WorkspaceFile.extension.in_(allowed_extensions))
+    statement = statement.order_by(
+        WorkspaceFile.status == FileIndexStatus.MISSING,
+        WorkspaceFile.is_directory.desc(),
+        WorkspaceFile.modified_at.desc(),
+    ).limit(limit)
+
+    normalized = keyword.strip()
+    if normalized:
+        phrase = '"' + normalized.replace('"', '""') + '"'
+        indexed_ids = select(_WORKSPACE_NAME_FTS.c.file_id).where(
+            text("workspace_name_fts MATCH :query").bindparams(query=phrase)
+        )
+        # 在目录授权与纳管范围内回表。仅当范围内无 FTS 命中时才用子串兜底。
+        matches = db.scalars(statement.where(WorkspaceFile.id.in_(indexed_ids))).all()
+        if matches:
+            return list(matches)
+        statement = statement.where(
+            or_(
+                WorkspaceFile.name.contains(normalized),
+                WorkspaceFile.relative_path.contains(normalized),
+            )
+        )
+    return list(db.scalars(statement).all())

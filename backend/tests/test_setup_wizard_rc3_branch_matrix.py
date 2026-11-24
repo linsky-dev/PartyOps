@@ -11,7 +11,6 @@ import sqlite3
 import subprocess
 import sys
 import urllib.error
-import winreg
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -227,6 +226,7 @@ def test_data_root_marker_merges_legacy_roles_and_rejects_forgery(
 def test_windows_service_start_type_snapshot_restore_and_verification(
     monkeypatch,
 ) -> None:
+    winreg = pytest.importorskip("winreg")
     monkeypatch.setattr(setup_wizard, "os", _os_proxy("nt"))
     monkeypatch.setenv("PARTYOPS_ENVIRONMENT", "production")
 
@@ -468,6 +468,11 @@ def test_host_switch_rollback_keeps_snapshot_when_service_cannot_restart(
 
 
 def test_strict_mode_switch_service_restore_checks_running_state(monkeypatch) -> None:
+    # Keep synthetic monotonic/sleep isolated to the module under test:
+    # modifying the global time module can exhaust finite ticks inside pytest.
+    monkeypatch.setattr(
+        setup_wizard, "time", SimpleNamespace(**vars(setup_wizard.time))
+    )
     monkeypatch.setenv("PARTYOPS_ENVIRONMENT", "production")
     monkeypatch.setattr(setup_wizard, "os", _os_proxy("nt"))
     monkeypatch.setattr(setup_wizard, "_windows_service_running", lambda _name: False)
@@ -855,7 +860,16 @@ def test_personal_process_stop_is_pid_safe_and_bounded(
     )
     signals: list[int] = []
     monkeypatch.setattr(setup_wizard.os, "kill", lambda _pid, sig: signals.append(sig))
-    monkeypatch.setattr(setup_wizard.time, "sleep", lambda _seconds: None)
+    # Patch only this module's clock: time.monotonic is otherwise shared by
+    # pytest/async libraries that can consume our finite synthetic ticks.
+    monkeypatch.setattr(
+        setup_wizard,
+        "time",
+        SimpleNamespace(
+            monotonic=setup_wizard.time.monotonic,
+            sleep=lambda _seconds: None,
+        ),
+    )
     assert setup_wizard._stop_personal_process_for_data_migration(data_dir, 18775)
     assert signals == [setup_wizard.signal.SIGTERM]
     assert not marker.exists()
@@ -1158,6 +1172,7 @@ def test_windows_admin_probe_and_owned_user_autostarts(
 ) -> None:
     import ctypes
 
+    winreg = pytest.importorskip("winreg")
     monkeypatch.setattr(setup_wizard, "os", _os_proxy("posix"))
     assert not setup_wizard.windows_is_admin()
     monkeypatch.setattr(setup_wizard, "os", _os_proxy("nt"))
@@ -1214,6 +1229,7 @@ def test_windows_personal_autostart_falls_back_without_rolling_back_mode(
 ) -> None:
     """Win7 策略拒绝 HKCU 时应降级到 Startup，而不是破坏核心配置。"""
 
+    winreg = pytest.importorskip("winreg")
     monkeypatch.setattr(setup_wizard, "os", _os_proxy("nt"))
     monkeypatch.setenv("PARTYOPS_ENVIRONMENT", "production")
     monkeypatch.setenv("APPDATA", str(tmp_path / "Roaming"))
@@ -1480,6 +1496,11 @@ def test_personal_data_directory_supports_custom_paths_and_rejects_unsafe_media(
 def test_windows_service_acl_stop_and_autostart_errors(
     monkeypatch, tmp_path: Path
 ) -> None:
+    # Keep synthetic monotonic/sleep isolated to the module under test:
+    # modifying the global time module can exhaust finite ticks inside pytest.
+    monkeypatch.setattr(
+        setup_wizard, "time", SimpleNamespace(**vars(setup_wizard.time))
+    )
     monkeypatch.setattr(setup_wizard, "os", _os_proxy("nt"))
     monkeypatch.setenv("PARTYOPS_ENVIRONMENT", "production")
     completed = lambda code=0, out="", err="": subprocess.CompletedProcess(
@@ -2183,6 +2204,11 @@ def test_query_windows_service_state_matrix(
 def test_start_service_and_health_timeout_diagnostics(
     monkeypatch, tmp_path: Path
 ) -> None:
+    # Keep synthetic monotonic/sleep isolated to the module under test:
+    # modifying the global time module can exhaust finite ticks inside pytest.
+    monkeypatch.setattr(
+        setup_wizard, "time", SimpleNamespace(**vars(setup_wizard.time))
+    )
     monkeypatch.setattr(
         setup_wizard, "_query_windows_host_service", lambda: ("running", "ok")
     )

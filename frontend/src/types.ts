@@ -510,7 +510,19 @@ export interface NotificationItem {
   entity_type: string;
   entity_id: string | null;
   read_at: string | null;
+  revoked_at?: string | null;
   created_at: string;
+}
+
+export interface NotificationResolution {
+  status: "ready" | "unavailable" | "archived" | "revoked";
+  target: {
+    kind: "task" | "development" | "transfer" | "root_approval" | "workspace";
+    id: string;
+    section: string;
+    child_id: string | null;
+    archived: boolean;
+  } | null;
 }
 
 export interface EnablementStep {
@@ -1122,6 +1134,23 @@ export interface PartyDevelopmentNode {
   is_reference: boolean;
   requires_manual_confirmation: boolean;
   materials: PartyDevelopmentMaterial[];
+}
+
+export interface DevelopmentTimelineEntry {
+  id: string;
+  title: string;
+  phase?: string;
+  actual: string | null;
+  reference: string | null;
+  referenceEnd?: string | null;
+  legalEarliest: string | null;
+  legalDeadline: string | null;
+  legalBasis?: string;
+  planningBasis?: string;
+  ruleVersion?: string;
+  evidence?: string;
+  provisional?: boolean;
+  satisfied?: boolean;
 }
 
 export interface PartyDevelopmentResult {

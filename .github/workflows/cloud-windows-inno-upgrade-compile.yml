@@ -1,0 +1,69 @@
+name: RC1 Windows Inno in-place upgrade PascalScript compile contract
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/cloud-windows-inno-upgrade-compile.yml'
+      - 'packaging/windows/PartyOps.iss'
+      - 'packaging/windows/validate-install-path.ps1'
+      - 'backend/tests/test_rc1_windows_install_path.py'
+
+permissions:
+  contents: read
+
+jobs:
+  syntax-contract:
+    name: Compile original Inno installer UI with tiny harmless QA source files
+    runs-on: windows-2025
+    timeout-minutes: 18
+    steps:
+      - name: Checkout exact PR source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Verify or install Inno Setup 6.7.3
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $paths = @(
+            (Join-Path ([Environment]::GetFolderPath('ProgramFilesX86')) 'Inno Setup 6/ISCC.exe'),
+            (Join-Path $env:ProgramFiles 'Inno Setup 6/ISCC.exe')
+          )
+          $found = @($paths | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1)
+          if (-not $found.Count) {
+            choco install innosetup --version=6.7.3 --yes --no-progress
+            if ($LASTEXITCODE -ne 0) { throw '[RC1_INNO_QA_COMPILER_INSTALL_FAILED]' }
+            $found = @($paths | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1)
+          }
+          if (-not $found.Count) { throw '[RC1_INNO_QA_COMPILER_MISSING]' }
+          "RC1_INNO_QA_COMPILER=$($found[0])" >> $env:GITHUB_ENV
+      - name: Compile PascalScript and wizard without bundling actual backend runtime
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $scratch = Join-Path $env:RUNNER_TEMP 'rc1-inno-pascal-compile-only'
+          $mock = Join-Path $scratch 'fake-program-inputs'
+          $output = Join-Path $scratch 'qa-only-output'
+          $pre = Join-Path $mock 'prerequisites'
+          foreach ($path in @($mock,$output,$pre)) {
+            New-Item -ItemType Directory -Path $path -Force | Out-Null
+          }
+          foreach ($icon in @('partyops.ico','partyops-1024.png')) {
+            Copy-Item -LiteralPath (Join-Path 'packaging/windows' $icon) -Destination (Join-Path $mock $icon) -Force
+          }
+          foreach ($exe in @('PartyOps.exe','PartyOpsUpdater.exe','PartyOpsUpdaterService.exe')) {
+            [IO.File]::WriteAllBytes((Join-Path $mock $exe),[byte[]]@(0x4d,0x5a,0,0))
+          }
+          [IO.File]::WriteAllBytes((Join-Path $pre 'ndp48-x86-x64-allos-enu.exe'),[byte[]]@(0x4d,0x5a,0,0))
+          $env:PARTYOPS_WINDOWS_BUILD_ROOT = $mock
+          $env:PARTYOPS_WINDOWS_OUTPUT_ROOT = $output
+          & $env:RC1_INNO_QA_COMPILER '/Qp' '/DPartyOpsOutputBase=RC1_CI_NONFUNCTIONAL_PASCALSCRIPT_ONLY' 'packaging/windows/PartyOps.iss'
+          if ($LASTEXITCODE -ne 0) { throw '[RC1_INNO_UPGRADE_PASCAL_COMPILATION_FAILED]' }
+          $fake = Join-Path $output 'RC1_CI_NONFUNCTIONAL_PASCALSCRIPT_ONLY.exe'
+          if (-not (Test-Path -LiteralPath $fake -PathType Leaf)) {
+            throw '[RC1_INNO_QA_COMPILER_REPORTED_SUCCESS_WITHOUT_OUTPUT]'
+          }
+          Remove-Item -LiteralPath $scratch -Recurse -Force
+          'RC1_INNO_UPGRADE_UI_SCRIPT_COMPILED_WITH_HARMLESS_ASSETS_NO_DISTRIBUTABLE_INSTALLER'

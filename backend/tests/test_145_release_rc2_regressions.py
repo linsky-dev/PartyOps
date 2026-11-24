@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import zipfile
@@ -108,10 +109,18 @@ def test_lxml_security_version_is_explicitly_locked() -> None:
     root = Path(__file__).parents[2]
     requirements = (root / "backend" / "requirements.txt").read_text(encoding="utf-8")
     project = (root / "backend" / "pyproject.toml").read_text(encoding="utf-8")
-    wheelhouses = list((root / "vendor" / "wheels").glob("*/lxml-*.whl"))
-
     assert "lxml==6.1.1" in requirements
     assert '"lxml==6.1.1"' in project
+
+
+def test_lxml_release_wheelhouses_match_the_security_lock() -> None:
+    """候选离线轮子可用时，必须与源代码安全锁保持一致。"""
+
+    wheelhouse_root = Path(__file__).parents[2] / "vendor" / "wheels"
+    if not wheelhouse_root.is_dir():
+        pytest.skip("BLOCKED_ENV: vendor/wheels 未提供，无法验证候选离线轮子。")
+    wheelhouses = list(wheelhouse_root.glob("*/lxml-*.whl"))
+
     assert len(wheelhouses) == 2
     assert all("lxml-6.1.1-" in path.name for path in wheelhouses)
 
@@ -314,6 +323,9 @@ def test_uos_validator_reports_both_duplicate_cryptography_files(tmp_path) -> No
         check=False,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
+        env={**os.environ, "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8"},
         timeout=30,
     )
 
@@ -377,7 +389,7 @@ def test_uos_build_kit_normalizes_archive_metadata() -> None:
     ).read_text(encoding="utf-8")
 
     assert "[DateTimeOffset]::Now" not in script
-    assert '"发布基线日期：2026-08-13（内容采用可复现构建，不嵌入构建机当前时间）"' in script
+    assert '"构建基线：v1.4.6-rc.1（制品身份以源码 Git SHA 与 SHA-256 验证结果为准）"' in script
     assert "$entry.LastWriteTime = [DateTimeOffset]$normalizedTime" in script
 
 

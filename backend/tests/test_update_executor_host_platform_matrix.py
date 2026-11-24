@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 import subprocess
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -351,7 +351,8 @@ def test_deb_update_failed_install_restores_package_and_reports_rollback(
     tmp_path: Path,
 ) -> None:
     settings, _path, _package, run, states = _fixture(monkeypatch, tmp_path)
-    settings.database_path.write_bytes(b"database")
+    with closing(sqlite3.connect(settings.database_path)) as connection:
+        connection.execute("CREATE TABLE sample (id INTEGER PRIMARY KEY)")
     settings.attachments_dir.mkdir()
     settings.archives_dir.mkdir()
     (settings.attachments_dir / "a.txt").write_text("a", encoding="utf-8")

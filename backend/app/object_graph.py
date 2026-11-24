@@ -8,7 +8,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from .archive_service import can_view_category
-from .enums import ObjectType, UserRole, WorkspaceRootSource
+from .enums import ObjectType, UserRole
 from .models import (
     ArchiveCategory,
     ArchiveRecord,
@@ -25,7 +25,7 @@ from .models import (
 )
 from .problems import ProblemException
 from .task_service import can_view_task
-from .workspace_access import grant_allows
+from .workspace_access import workspace_root_permissions
 
 
 @dataclass(frozen=True)
@@ -34,21 +34,15 @@ class ObjectDescriptor:
     route: str
 
 
-def _file_accessible(db: Session, item: WorkspaceFile, user: User) -> bool:
+def _file_accessible(
+    db: Session, item: WorkspaceFile, user: User, device_id: str | None,
+) -> bool:
     if not item.in_scope:
         return False
     root = db.get(WorkspaceRoot, item.root_id)
     if not root or not root.enabled or root.approval_status != "approved":
         return False
-    if user.role == UserRole.ADMIN or root.source == WorkspaceRootSource.HOST:
-        return True
-    return bool(
-        root.device_id
-        and (
-            grant_allows(db, user, root.device_id, root.id, "download")
-            or grant_allows(db, user, root.device_id, root.id, "share")
-        )
-    )
+    return workspace_root_permissions(db, root, user, device_id)["browse"]
 
 
 def describe_object(
@@ -56,6 +50,7 @@ def describe_object(
     object_type: ObjectType,
     object_id: str,
     user: User,
+    device_id: str | None = None,
 ) -> ObjectDescriptor:
     # 每个对象分支仍保持原权限判断；显式联合类型避免跨分支复用被推断为 Task。
     item: (
@@ -68,7 +63,7 @@ def describe_object(
             return ObjectDescriptor(item.title, f"/tasks/{item.id}")
     elif object_type == ObjectType.WORKSPACE_FILE:
         item = db.get(WorkspaceFile, object_id)
-        if item and _file_accessible(db, item, user):
+        if item and _file_accessible(db, item, user, device_id):
             return ObjectDescriptor(item.name, f"/workspace?file={item.id}")
     elif object_type == ObjectType.ARCHIVE_RECORD:
         item = db.get(ArchiveRecord, object_id)
@@ -116,8 +111,9 @@ def visible_links(
     object_type: ObjectType,
     object_id: str,
     user: User,
+    device_id: str | None = None,
 ) -> list[dict[str, object]]:
-    describe_object(db, object_type, object_id, user)
+    describe_object(db, object_type, object_id, user, device_id)
     links = db.scalars(
         select(ObjectLink)
         .where(
@@ -136,7 +132,7 @@ def visible_links(
         related_type = link.target_type if outgoing else link.source_type
         related_id = link.target_id if outgoing else link.source_id
         try:
-            descriptor = describe_object(db, related_type, related_id, user)
+            descriptor = describe_object(db, related_type, related_id, user, device_id)
         except ProblemException:
             continue
         result.append(

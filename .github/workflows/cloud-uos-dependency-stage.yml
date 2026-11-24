@@ -1,0 +1,197 @@
+name: RC1 UOS cloud pinned offline dependency staging (BUILD_INPUTS_ONLY)
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/cloud-uos-dependency-stage.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: partyops-rc1-uos-dependencies-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  offline-closure:
+    name: Native ${{ matrix.arch }} offline wheelhouse and pinned Python
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 55
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+            platform: x86_64
+            python_release_arch: x86_64
+            python_sha256: 0604cd029b142dc223e131f17f5941c0c8d2d5074997c8178b515b19eea2a6c2
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+            platform: aarch64
+            python_release_arch: aarch64
+            python_sha256: 9ac18c9a761e91e6c6452bc0ef0082922a00a3fdec734555635d57c3169309b7
+
+    env:
+      TARGET_ARCH: ${{ matrix.arch }}
+      PYTHON_ARCH: ${{ matrix.python_release_arch }}
+      PIP_ARCH: ${{ matrix.platform }}
+      EXPECTED_PYTHON_SHA256: ${{ matrix.python_sha256 }}
+      SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      PYTHONUTF8: '1'
+
+    steps:
+      - name: Checkout exact RC1 source without modifying WPS
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Prepare Python download tooling
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.11'
+          architecture: ${{ matrix.arch == 'amd64' && 'x64' || 'arm64' }}
+
+      - name: Verify current source version and pin identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          python scripts/verify-version-consistency.py --root . --expected 1.4.6-rc.1
+          mkdir -p artifacts/uos-deps/wheels
+
+      - name: Download native manylinux2014/2.28 CPython 3.11 full locked wheel set
+        id: pip-download
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip download --disable-pip-version-check \
+            --dest artifacts/uos-deps/wheels \
+            --python-version 311 --implementation cp --abi cp311 \
+            --only-binary=:all: \
+            --platform "manylinux_2_28_$PIP_ARCH" \
+            --platform "manylinux2014_$PIP_ARCH" \
+            -r backend/requirements.txt \
+            -r backend/requirements-local-ai.txt \
+            -r packaging/uos/requirements-build.txt
+
+      - name: Audit strict offline wheel dependency closure without installing
+        id: offline-closure
+        if: steps.pip-download.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --no-index --find-links artifacts/uos-deps/wheels \
+            'packaging>=24,<27'
+          python scripts/validate-uos-wheelhouse.py \
+            --architecture "$TARGET_ARCH" --runtime-profile uos-v20 \
+            --wheelhouse artifacts/uos-deps/wheels --requirements \
+            backend/requirements.txt \
+            backend/requirements-local-ai.txt \
+            packaging/uos/requirements-build.txt
+
+      - name: Download pinned official CPython 3.11 source runtime image
+        id: pinned-python
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          file="cpython-3.11.15+20260623-${PYTHON_ARCH}-unknown-linux-gnu-install_only_stripped.tar.gz"
+          curl --fail --location --retry 3 --proto '=https' --tlsv1.2 \
+            --output "artifacts/uos-deps/$file" \
+            "https://github.com/astral-sh/python-build-standalone/releases/download/20260623/cpython-3.11.15%2B20260623-${PYTHON_ARCH}-unknown-linux-gnu-install_only_stripped.tar.gz"
+          printf '%s  %s\n' "$EXPECTED_PYTHON_SHA256" "artifacts/uos-deps/$file" | sha256sum --check --status
+          tar tzf "artifacts/uos-deps/$file" | grep -Fx 'python/bin/python3.11' > /dev/null
+
+      - name: Save genuine downloaded wheel hashes and truthful capability flags
+        shell: bash
+        if: always()
+        env:
+          WHEEL_DOWNLOAD_RESULT: ${{ steps.pip-download.outcome }}
+          WHEEL_CLOSURE_RESULT: ${{ steps.offline-closure.outcome }}
+          PINNED_PYTHON_RESULT: ${{ steps.pinned-python.outcome }}
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/uos-deps
+          python - <<'PY'
+          import hashlib, json, os, pathlib, platform
+          root=pathlib.Path("artifacts/uos-deps")
+          def digest(p):
+              h=hashlib.sha256()
+              with p.open("rb") as stream:
+                  for block in iter(lambda: stream.read(1024*1024),b""):
+                      h.update(block)
+              return h.hexdigest()
+          filelist=sorted(p for p in root.rglob("*") if p.is_file())
+          hashes={str(p.relative_to(root)):{"sha256":digest(p),"size_bytes":p.stat().st_size} for p in filelist}
+          passed=(os.environ["WHEEL_DOWNLOAD_RESULT"]=="success"
+                  and os.environ["WHEEL_CLOSURE_RESULT"]=="success"
+                  and os.environ["PINNED_PYTHON_RESULT"]=="success")
+          record={
+              "schema_version":1,
+              "source_sha":os.environ["SOURCE_SHA"],
+              "version":"1.4.6-rc.1",
+              "target_os":"UOS Desktop V20 1070 (native profile)",
+              "target_glibc_max":"2.28",
+              "generic_linux_glibc_217_profile_unchanged":True,
+              "arch":os.environ["TARGET_ARCH"],
+              "runner_cpu":platform.machine(),
+              "python_upstream_sha256":os.environ["EXPECTED_PYTHON_SHA256"],
+              "wheel_download_result":os.environ["WHEEL_DOWNLOAD_RESULT"],
+              "wheel_closure_result":os.environ["WHEEL_CLOSURE_RESULT"],
+              "pinned_python_result":os.environ["PINNED_PYTHON_RESULT"],
+              "all_offline_wheel_inputs_available":passed,
+              "files":hashes,
+              "native_linux_formatter_runtime_staged":False,
+              "native_ocr_office_and_llama_provenance_staged":False,
+              "full_partyops_deb_compiled":False,
+              "native_uos_install_tested":False,
+              "wps_code_or_acceptance_modified":False,
+              "release_ready":False,
+              "status":"PASS_PINNED_GENERIC_INPUTS_ONLY" if passed else "BLOCKED_DEPENDENCIES",
+          }
+          out=root/"dependency-stage.json"
+          out.write_text(json.dumps(record,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
+          print(f"UOS_DEPS_RESULT={record['status']}")
+          print(f"UOS_DEPS_ARCH={record['arch']} WHEELS={len([p for p in hashes if p.endswith('.whl')])}")
+          PY
+
+      - name: Upload audit report even when a vendor input is unavailable
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: partyops-uos-${{ matrix.arch }}-DEPENDENCY-INVENTORY-${{ github.event.pull_request.head.sha || github.sha }}
+          path: artifacts/uos-deps/dependency-stage.json
+          retention-days: 14
+          if-no-files-found: warn
+
+      - name: Upload verified wheels and Python tarball for future native DEB build
+        if: steps.pip-download.outcome == 'success' && steps.offline-closure.outcome == 'success' && steps.pinned-python.outcome == 'success'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: partyops-uos-${{ matrix.arch }}-PINNED-GENERIC-INPUTS-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            artifacts/uos-deps/wheels/*.whl
+            artifacts/uos-deps/cpython-*.tar.gz
+            artifacts/uos-deps/dependency-stage.json
+          retention-days: 7
+          compression-level: 0
+          if-no-files-found: error
+
+      - name: Close dependency gate accurately
+        shell: bash
+        if: always()
+        env:
+          WHEEL_DOWNLOAD_RESULT: ${{ steps.pip-download.outcome }}
+          WHEEL_CLOSURE_RESULT: ${{ steps.offline-closure.outcome }}
+          PINNED_PYTHON_RESULT: ${{ steps.pinned-python.outcome }}
+        run: |
+          test "$WHEEL_DOWNLOAD_RESULT" = success || { echo 'UOS_DEPENDENCY_DOWNLOAD_BLOCKED'; exit 1; }
+          test "$WHEEL_CLOSURE_RESULT" = success || { echo 'UOS_DEPENDENCY_CLOSURE_BLOCKED'; exit 1; }
+          test "$PINNED_PYTHON_RESULT" = success || { echo 'UOS_PYTHON_RUNTIME_SOURCE_BLOCKED'; exit 1; }
+          echo 'UOS_GENERIC_NATIVE_INPUTS_READY_BUT_FULL_DEB_NOT_YET_BUILT'

@@ -54,7 +54,9 @@ async function mount(component: typeof MemoView, path: string) {
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: "/:pathMatch(.*)*", component: { template: "<div />" } }] });
   await router.push(path);
   await router.isReady();
-  const wrapper = shallowMount(component, { global: { plugins: [pinia, router, ArcoVue] } });
+  const wrapper = shallowMount(component, {
+    global: { plugins: [pinia, router, ArcoVue], stubs: { DevelopmentTimeline: false } },
+  });
   await flushPromises();
   return wrapper;
 }
@@ -211,7 +213,10 @@ describe("1.4.3 新增页面", () => {
     };
     fetchMock.mockResolvedValueOnce(new Response("docx", { status: 200 }));
     await vm.downloadOutput(vm.activeJob.outputs[0]);
-    expect(saveBlobDownload).toHaveBeenCalledWith(expect.any(Blob), "结果.docx");
+    expect(saveBlobDownload).toHaveBeenCalledWith(
+      expect.objectContaining({ size: 4, type: "text/plain;charset=utf-8", text: expect.any(Function) }),
+      "结果.docx",
+    );
 
     vm.busy = true;
     vm.activeJob.state = "running";
@@ -270,7 +275,9 @@ describe("1.4.3 新增页面", () => {
     fetchMock.mockResolvedValueOnce(new Response("docx", { status: 200 }));
     await vm.downloadOutput(vm.activeJob.outputs[0]);
     expect(getFileHandle).toHaveBeenCalledWith("目录结果.docx", { create: true });
-    expect(write).toHaveBeenCalledWith(expect.any(Blob));
+    expect(write).toHaveBeenCalledWith(
+      expect.objectContaining({ size: 4, type: "text/plain;charset=utf-8", text: expect.any(Function) }),
+    );
     expect(close).toHaveBeenCalledOnce();
 
     fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ feature_count: 5, capability_count: 24, external_office_required: true }), { status: 200 }));
@@ -497,11 +504,8 @@ describe("1.4.3 新增页面", () => {
     await vm.calculate();
     expect(apiMocks.post).toHaveBeenCalledWith("/party-development/calculate", expect.objectContaining({ name: "张三" }));
     expect(vm.result.rule_version).toBe("2026.05");
-    expect(vm.nodeDate(result.nodes[0])).toBe("实际：2026-05-20");
-    expect(vm.nodeDate({ ...result.nodes[0], date: null, actual_at: null, reference_at: "2026-11-20", is_reference: true })).toContain("参考计划：2026-11-20");
-    expect(vm.nodeDate({ ...result.nodes[0], end_date: "2026-05-25", provisional: true })).toContain("暂算");
-    expect(vm.dateKindLabel("deadline")).toBe("法定截止");
-    expect(vm.dateKindLabel("unknown")).toBe("unknown");
+    expect(wrapper.get('[aria-label="实际进度"]').text()).toContain("实际发生2026-05-20");
+    expect(wrapper.get('[aria-label="参考计划"]').text()).toContain("参考计划");
     vm.saveDraft();
     expect(localStorage.length).toBe(1);
     await vm.exportWord();
@@ -597,14 +601,15 @@ describe("1.4.3 新增页面", () => {
       ...result.nodes[0], actual_at: null, date: null, end_date: null, adjusted_at: null,
       reference_at: null, reference_end_at: null, provisional: false,
     };
-    expect(vm.nodeDate({ ...blankNode, date: "2026-02-01", end_date: "2026-02-05", date_kind: "deadline" }))
-      .toBe("法定：2026-02-01 至 2026-02-05");
-    expect(vm.nodeDate({ ...blankNode, date: "2026-02-01", date_kind: "window" }))
-      .toBe("建议：2026-02-01");
-    expect(vm.nodeDate({ ...blankNode, adjusted_at: "2026-03-01" })).toBe("人工调整：2026-03-01");
-    expect(vm.nodeDate({ ...blankNode, reference_at: "2026-04-01", reference_end_at: "2026-04-10" }))
-      .toBe("参考计划：2026-04-01 至 2026-04-10");
-    expect(vm.nodeDate(blankNode)).toBe("待组织确认");
+    expect(vm.timelineEntry({ ...blankNode, date: "2026-02-01", end_date: "2026-02-05", date_kind: "deadline" }))
+      .toMatchObject({ legalDeadline: "2026-02-05", reference: null });
+    expect(vm.timelineEntry({ ...blankNode, date: "2026-02-01", date_kind: "window" }))
+      .toMatchObject({ legalDeadline: null, reference: "2026-02-01" });
+    expect(vm.timelineEntry({ ...blankNode, adjusted_at: "2026-03-01", reference_end_at: "2026-04-10" }))
+      .toMatchObject({ reference: "2026-03-01", referenceEnd: null });
+    expect(vm.timelineEntry({ ...blankNode, reference_at: "2026-04-01", reference_end_at: "2026-04-10" }))
+      .toMatchObject({ reference: "2026-04-01", referenceEnd: "2026-04-10" });
+    expect(vm.timelineEntry(blankNode)).toMatchObject({ actual: null, reference: null, legalEarliest: null, legalDeadline: null });
 
     vm.result = null;
     vm.form.name = "李四";

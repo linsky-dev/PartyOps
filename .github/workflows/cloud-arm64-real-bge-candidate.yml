@@ -1,0 +1,64 @@
+name: RC1 Windows ARM64 real BGE candidate (source-only validation)
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/probe_arm64_real_bge_candidate.py'
+      - 'scripts/probe_arm64_partyops_embedding_runtime.py'
+      - 'backend/tests/test_rc1_real_bge_arm64_contract.py'
+      - '.github/workflows/cloud-arm64-real-bge-candidate.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc1-arm64-real-bge-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native-real-bge:
+    name: Native ARM64 real BGE ONNX from hashed upstream (BUILD_ONLY)
+    runs-on: windows-11-arm
+    timeout-minutes: 35
+    steps:
+      - name: Checkout exact PR merge commit without credentials
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Install native ARM64 Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+          architecture: arm64
+
+      - name: Install isolated already-probed inference wheels
+        shell: pwsh
+        env:
+          PYTHONUTF8: '1'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python -m pip install --disable-pip-version-check --only-binary=:all: 'numpy==2.3.5' 'onnxruntime==1.24.2' 'tokenizers==0.23.3'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m pip check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Hash-check immutable real model assets and execute unchanged PartyOps embedding class
+        shell: pwsh
+        env:
+          PYTHONUTF8: '1'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python scripts/probe_arm64_real_bge_candidate.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Upload only provenance and runtime evidence, never the model
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: arm64-real-bge-third-party-build-only-${{ github.sha }}
+          path: artifacts/arm64-real-bge/evidence.json
+          if-no-files-found: warn
+          retention-days: 7

@@ -220,21 +220,21 @@ def test_search_workspace_files_empty_fts_hit_and_fallback() -> None:
     expected = [SimpleNamespace(id="file-1")]
 
     class _SearchDb:
-        def __init__(self, ids):
-            self.ids = ids
-            self.execute_calls = 0
+        def __init__(self, batches):
+            self.batches = iter(batches)
+            self.statements = []
 
-        def execute(self, _statement, _params):
-            self.execute_calls += 1
-            return _Rows([(value,) for value in self.ids])
+        def scalars(self, statement):
+            self.statements.append(statement)
+            return _Rows(next(self.batches))
 
-        def scalars(self, _statement):
-            return _Rows(expected)
-
-    empty = _SearchDb([])
+    empty = _SearchDb([expected])
     assert workspace.search_workspace_files(empty, "", root_id="root-1") == expected
-    assert empty.execute_calls == 0
-    hit = _SearchDb(["file-1"])
+    assert "workspace_name_fts" not in str(empty.statements[0])
+    hit = _SearchDb([expected])
     assert workspace.search_workspace_files(hit, 'annual "report"') == expected
-    fallback = _SearchDb([])
+    assert hit.statements[0].compile().params["query"] == '"annual ""report"""'
+    fallback = _SearchDb([[], expected])
     assert workspace.search_workspace_files(fallback, "not-found") == expected
+    assert "workspace_name_fts" in str(fallback.statements[0])
+    assert " LIKE " in str(fallback.statements[1])

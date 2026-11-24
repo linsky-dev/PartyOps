@@ -1,28 +1,35 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from "vue";
-import { IconCalendar, IconDelete, IconDownload, IconPlus, IconRefresh, IconUpload } from "@arco-design/web-vue/es/icon";
+import { useRoute } from "vue-router";
+import { IconDelete, IconDownload, IconPlus, IconRefresh, IconUpload } from "@arco-design/web-vue/es/icon";
 import { Message, Modal } from "@arco-design/web-vue";
 import { api, saveBlobDownload } from "../api";
 import LedgerImportWizard from "../components/LedgerImportWizard.vue";
 import PageHelp from "../components/PageHelp.vue";
+import DevelopmentTimeline from "../components/DevelopmentTimeline.vue";
+import type { DevelopmentTimelineEntry } from "../types";
 import { formatServerTime } from "../utils/datetime";
+import { focusNotificationTarget } from "../utils/notificationNavigation";
 
-interface Milestone { id: string; milestone_type: string; actual_at: string | null; legal_earliest_at: string | null; legal_deadline_at: string | null; planned_at: string | null; adjusted_at: string | null; legal_basis: string; planning_basis?: string; plan_kind: string; reminder_days: number[]; version: number; }
+interface Milestone { id: string; milestone_type: string; actual_at: string | null; legal_earliest_at: string | null; legal_deadline_at: string | null; planned_at: string | null; adjusted_at: string | null; legal_basis: string; planning_basis?: string; rule_version?: string; plan_kind: string; reminder_days: number[]; version: number; }
 interface ProgressEvent { id: string; milestone_type: string; actual_at: string; evidence_note: string; status: string; version: number; }
-interface TimelineItem extends Milestone { title_zh?: string; visual_state: "completed" | "overdue" | "upcoming" | "planned"; is_reference: boolean; progress_event?: ProgressEvent | null; }
+interface ProgressHistory extends ProgressEvent { created_at: string; voided_at?: string | null; }
+interface TimelineItem extends Milestone { title_zh?: string; progress_event?: ProgressEvent | null; related_plan_ids?: string[]; }
 interface DevelopmentCase { id: string; party_committee: string; party_branch: string; name: string; gender: string; ethnicity: string; birth_date: string | null; education: string; application_at: string; activist_at: string | null; training_contacts: string[]; introducers: string[]; development_object_at: string | null; probationary_at: string | null; converted_at: string | null; stage: string; status: string; rule_version: string; version: number; milestones: Milestone[]; progress_events: ProgressEvent[]; extra_fields: Record<string, unknown>; }
-interface Statistics { total: number; stage_counts: Record<string, number>; upcoming_60_days: number; overdue: number; }
+interface Statistics { total: number; stage_counts: Record<string, number>; upcoming_60_days: number; legal_overdue?: number; reference_overdue?: number; }
 interface DeletionImpact { milestones: number; progress_events: number; active_notifications: number; message: string; }
 
 const cases = ref<DevelopmentCase[]>([]);
-const statistics = ref<Statistics>({ total: 0, stage_counts: {}, upcoming_60_days: 0, overdue: 0 });
-const selectedId = ref("");
-const caseStatus = ref<"active" | "archived">("active");
+const route = useRoute();
+const statistics = ref<Statistics>({ total: 0, stage_counts: {}, upcoming_60_days: 0 });
+const selectedId = ref(typeof route?.query.noticeCase === "string" ? route.query.noticeCase : "");
+const caseStatus = ref<"active" | "archived">(route?.query.noticeArchived === "1" ? "archived" : "active");
 const createVisible = ref(false);
 const creating = ref(false);
 const importVisible = ref(false);
 const timelineLoading = ref(false);
 const timeline = ref<TimelineItem[]>([]);
+const history = ref<ProgressHistory[]>([]);
 const progressVisible = ref(false);
 const progressSaving = ref(false);
 const editingProgress = ref<ProgressEvent | null>(null);
@@ -47,6 +54,20 @@ const milestoneLabels: Record<string, string> = {
   political_review_completed: "政治审查完成", committee_approval_actual: "党委审批完成", oath: "入党宣誓",
   probationary_status: "列为预备党员", transition_approval: "转正审批完成",
 };
+const progressStatusLabels: Record<string, string> = { confirmed: "当前记录", superseded: "已纠正", voided: "已作废" };
+const timelineItems = computed(() => new Map(timeline.value.map((item) => [item.id, item])));
+const entries = computed<DevelopmentTimelineEntry[]>(() => timeline.value.map((item) => ({
+  id: item.id,
+  title: item.title_zh || milestoneLabels[item.milestone_type] || "待确认节点",
+  actual: item.actual_at,
+  reference: item.adjusted_at || item.planned_at,
+  legalEarliest: item.legal_earliest_at,
+  legalDeadline: item.legal_deadline_at,
+  legalBasis: item.legal_basis,
+  planningBasis: item.planning_basis,
+  ruleVersion: item.rule_version || selected.value?.rule_version,
+  evidence: item.progress_event?.evidence_note,
+})));
 
 const factOptions = [
   ["conversation", "派人谈话"], ["activist_date", "确定入党积极分子"], ["activist_publicity_start", "积极分子公示"],
@@ -78,19 +99,40 @@ async function load() {
 }
 
 async function loadTimeline() {
-  if (!selectedId.value) {
+  const id = selectedId.value;
+  if (!id) {
     timeline.value = [];
+    history.value = [];
     return;
   }
   timelineLoading.value = true;
   try {
-    const result = await api.get<{ timeline: TimelineItem[] }>(`/party-development/cases/${selectedId.value}/timeline`);
+    const result = await api.get<{ timeline: TimelineItem[]; progress_history?: ProgressHistory[] }>(`/party-development/cases/${encodeURIComponent(id)}/timeline`);
+    if (selectedId.value !== id) return;
     timeline.value = result.timeline;
+    history.value = result.progress_history || [];
+    await focusCaseNotification();
   } catch (error) {
     Message.error(error instanceof Error ? error.message : "发展时间轴读取失败");
   } finally {
     timelineLoading.value = false;
   }
+}
+
+async function focusCaseNotification() {
+  const target = route?.query.noticeTarget;
+  if (route?.query.noticeCase !== selectedId.value || typeof target !== "string") return;
+  const entry = timeline.value.find((item) => item.id === target || item.related_plan_ids?.includes(target));
+  await focusNotificationTarget(entry ? `notice-milestone-${entry.id}` : `notice-case-${selectedId.value}`);
+}
+
+function locateCaseNotification() {
+  const target = route?.query.noticeCase;
+  if (typeof target !== "string") return;
+  const status = route?.query.noticeArchived === "1" ? "archived" : "active";
+  selectedId.value = target;
+  if (caseStatus.value !== status) caseStatus.value = status;
+  else if (cases.value.some((item) => item.id === target)) void loadTimeline();
 }
 
 async function createCase() {
@@ -169,6 +211,11 @@ function voidProgress(event: ProgressEvent) {
   });
 }
 
+function voidTimelineEntry(id: string) {
+  const event = timelineItems.value.get(id)?.progress_event;
+  if (event) voidProgress(event);
+}
+
 async function refreshTimeline() {
   if (!selected.value) return;
   try {
@@ -227,9 +274,7 @@ async function exportCases(format: "docx" | "xlsx") {
   }
 }
 
-function targetDate(item: TimelineItem) { return item.actual_at || item.adjusted_at || item.legal_deadline_at || item.legal_earliest_at || item.planned_at; }
-
-watch(selectedId, loadTimeline);
+watch([() => route?.query.noticeCase, () => route?.query.noticeTarget, () => route?.query.noticeArchived], locateCaseNotification);
 watch(caseStatus, load);
 onMounted(load);
 </script>
@@ -246,26 +291,37 @@ onMounted(load);
         <a-button type="primary" @click="createVisible = true"><template #icon><IconPlus /></template>新增发展档案</a-button>
       </a-space>
     </header>
-    <section class="case-stats"><article><span>在办人员</span><strong>{{ statistics.total }}</strong></article><article><span>60 天内节点</span><strong>{{ statistics.upcoming_60_days }}</strong></article><article :class="{ danger: statistics.overdue }"><span>逾期待核查</span><strong>{{ statistics.overdue }}</strong></article><article><span>规则版本</span><strong class="rule-version">{{ selected?.rule_version || "—" }}</strong></article></section>
+    <section class="case-stats"><article><span>在办人员</span><strong>{{ statistics.total }}</strong></article><article><span>60 天内节点</span><strong>{{ statistics.upcoming_60_days }}</strong></article><article :class="{ danger: statistics.legal_overdue }"><span>已过法规截止</span><strong>{{ statistics.legal_overdue ?? 0 }}</strong></article><article><span>已过参考计划</span><strong>{{ statistics.reference_overdue ?? 0 }}</strong></article></section>
     <div class="ledger-toolbar"><a-radio-group v-model="caseStatus" type="button"><a-radio value="active">在办台账</a-radio><a-radio value="archived">已归档</a-radio></a-radio-group><span>已归档记录保留事实、材料和审计，可恢复。</span></div>
     <section class="case-workspace">
-      <aside><button v-for="item in cases" :key="item.id" type="button" :class="{ active: selectedId === item.id }" @click="selectedId = item.id"><span>{{ item.party_branch }}</span><strong>{{ item.name }}</strong><small>{{ item.stage }} · {{ formatServerTime(item.application_at, "YYYY-MM-DD") }}</small></button><div v-if="!cases.length" class="empty-state">{{ caseStatus === "active" ? "尚无在办发展档案，可新增或导入台账。" : "暂无已归档档案。" }}</div></aside>
+      <aside><button v-for="item in cases" :key="item.id" type="button" :class="{ active: selectedId === item.id }" @click="selectedId = item.id; loadTimeline()"><span>{{ item.party_branch }}</span><strong>{{ item.name }}</strong><small>{{ item.stage }} · {{ formatServerTime(item.application_at, "YYYY-MM-DD") }}</small></button><div v-if="!cases.length" class="empty-state">{{ caseStatus === "active" ? "尚无在办发展档案，可新增或导入台账。" : "暂无已归档档案。" }}</div></aside>
       <main v-if="selected">
-        <header class="person-header">
+        <header :id="`notice-case-${selected.id}`" tabindex="-1" class="person-header">
           <div><span>{{ selected.party_committee }} / {{ selected.party_branch }}</span><h2>{{ selected.name }}</h2><p>{{ selected.gender || "性别未填" }} · {{ selected.ethnicity || "民族未填" }} · {{ selected.education || "文化程度未填" }}</p></div>
           <a-space v-if="selected.status === 'active'" wrap><a-button @click="openProgress()">录入真实进度</a-button><a-button @click="refreshTimeline"><template #icon><IconRefresh /></template>重算未来节点</a-button><a-button status="danger" @click="openDeletion"><template #icon><IconDelete /></template>归档</a-button></a-space>
           <a-button v-else type="primary" @click="restoreSelected">恢复继续办理</a-button>
         </header>
         <a-alert type="info">真实进度必须有事实依据；未来预测不会写成实际发生。修改上游事实只重算未发生节点。</a-alert>
-        <div class="timeline-legend"><span class="completed">已实际完成</span><span class="overdue">已逾期</span><span class="upcoming">即将到期</span><span class="planned">法规/参考计划</span><span class="reference">人工调整参考</span></div>
         <a-spin :loading="timelineLoading">
-          <section class="milestone-grid unified-timeline">
-            <article v-for="item in timeline" :key="item.id" :class="[`state-${item.visual_state}`, { reference: item.is_reference && !item.actual_at }]">
-              <i />
-              <div><span>{{ item.actual_at ? "实际事实" : item.is_reference ? "参考计划" : "法规边界" }}</span><h3>{{ item.title_zh || milestoneLabels[item.milestone_type] || "待确认节点" }}</h3><strong><IconCalendar /> {{ formatServerTime(targetDate(item), "YYYY-MM-DD", "等待组织确认") }}</strong><p>{{ item.progress_event?.evidence_note || item.legal_basis || item.planning_basis || "该节点须结合实际材料确认。" }}</p><small v-if="item.actual_at">已完成；事实记录保留纠正链</small><small v-else-if="item.reminder_days.length">提醒：提前 {{ item.reminder_days.join("、") }} 天及逾期</small><a-space v-if="item.progress_event && selected.status === 'active'"><a-button size="mini" type="text" @click="openProgress(item)">纠正</a-button><a-button size="mini" type="text" status="danger" @click="voidProgress(item.progress_event)">作废</a-button></a-space></div>
-            </article>
-            <div v-if="!timeline.length" class="empty-state">尚无时间轴节点，请录入真实进度或重新计算未来节点。</div>
-          </section>
+          <DevelopmentTimeline :entries="entries" notice-anchors>
+            <template #detail="{ entry }">
+              <a-space v-if="timelineItems.get(entry.id)?.progress_event && selected.status === 'active'">
+                <a-button size="mini" type="text" @click="openProgress(timelineItems.get(entry.id))">纠正</a-button>
+                <a-button size="mini" type="text" status="danger" @click="voidTimelineEntry(entry.id)">作废</a-button>
+              </a-space>
+            </template>
+          </DevelopmentTimeline>
+          <details v-if="history.length" class="progress-history">
+            <summary>事实记录与纠正历史（{{ history.length }} 条）</summary>
+            <ul>
+              <li v-for="record in history" :key="record.id">
+                <strong>{{ milestoneLabels[record.milestone_type] || "发展节点" }}</strong>
+                · {{ formatServerTime(record.actual_at, "YYYY-MM-DD") }} · {{ progressStatusLabels[record.status] || "历史记录" }}
+                <p>{{ record.evidence_note }}</p>
+                <small>入账 {{ formatServerTime(record.created_at, "YYYY-MM-DD HH:mm") }}<template v-if="record.voided_at"> · 作废 {{ formatServerTime(record.voided_at, "YYYY-MM-DD HH:mm") }}</template></small>
+              </li>
+            </ul>
+          </details>
         </a-spin>
       </main>
       <main v-else class="empty-state">选择人员查看完整时间轴。</main>
@@ -279,5 +335,9 @@ onMounted(load);
 </template>
 
 <style scoped>
-.case-page{max-width:1540px}.case-stats{display:grid;grid-template-columns:repeat(4,1fr);margin:18px 0;border:1px solid var(--line);background:var(--line);gap:1px}.case-stats article{padding:20px 24px;background:#fffaf0}.case-stats span{display:block;color:var(--muted);font-size:11px}.case-stats strong{display:block;margin-top:7px;color:#4d382c;font-family:Georgia,"Noto Serif SC",serif;font-size:30px}.case-stats article.danger strong{color:#b42318}.case-stats .rule-version{font-size:20px}.ledger-toolbar{display:flex;align-items:center;justify-content:space-between;margin:0 0 12px;color:var(--muted);font-size:12px}.case-workspace{display:grid;grid-template-columns:260px 1fr;min-height:690px;border:1px solid var(--line);background:#fffaf0}.case-workspace>aside{border-right:1px solid var(--line);background:#f8f0e2}.case-workspace>aside button{display:grid;width:100%;gap:5px;padding:17px;border:0;border-bottom:1px solid var(--line);background:transparent;text-align:left;cursor:pointer}.case-workspace>aside button.active{background:#fffdf8;box-shadow:inset 4px 0 #9b2b24}.case-workspace>aside span{color:#9b2b24;font-size:11px}.case-workspace>aside strong{color:#4d382c;font-size:17px}.case-workspace>aside small{color:var(--muted)}.case-workspace>main{min-width:0;padding:26px}.person-header{display:flex;justify-content:space-between;align-items:start;margin-bottom:18px}.person-header span{color:#9b2b24}.person-header h2{margin:6px 0;color:#493328;font-family:"Noto Serif SC","Songti SC",serif;font-size:28px}.person-header p{color:var(--muted)}.timeline-legend{display:flex;flex-wrap:wrap;gap:8px 18px;margin-top:20px;padding:10px 12px;border:1px solid var(--line);background:#f8f0e2}.timeline-legend span{display:flex;align-items:center;gap:7px;color:var(--muted);font-size:11px}.timeline-legend span::before{width:9px;height:9px;background:#b78b4a;content:""}.timeline-legend .completed::before{background:#4c7a5d}.timeline-legend .overdue::before{background:#b42318}.timeline-legend .upcoming::before{background:#da7b20}.timeline-legend .planned::before{background:#718096}.timeline-legend .reference::before{background:transparent;border:1px dashed #8c5f35}.milestone-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-top:14px}.milestone-grid article{display:grid;grid-template-columns:7px 1fr;min-height:170px;border:1px solid #dfd1bd;background:#fffdf8}.milestone-grid article>i{background:#718096}.milestone-grid article.state-completed>i{background:#4c7a5d}.milestone-grid article.state-overdue>i{background:#b42318}.milestone-grid article.state-upcoming>i{background:#da7b20}.milestone-grid article.reference{border-style:dashed;border-color:#8c5f35}.milestone-grid article>div{padding:16px}.milestone-grid span{color:#9b2b24;font-size:10px}.milestone-grid h3{margin:6px 0;color:#4d382c}.milestone-grid strong{display:flex;gap:6px;align-items:center;color:#8c5f35}.milestone-grid p{color:#796656;font-size:12px;line-height:1.6}.milestone-grid small{display:block;margin-top:8px;color:var(--muted)}.progress-form{margin-top:16px}.impact-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;margin:16px 0;background:var(--line);border:1px solid var(--line)}.impact-grid span{padding:14px;background:#fffaf0;color:var(--muted);font-size:11px}.impact-grid b{display:block;margin-top:5px;color:var(--charcoal);font:24px Georgia,serif}.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:0 14px}@media(max-width:1000px){.case-workspace{grid-template-columns:1fr}.case-workspace>aside{max-height:230px;overflow:auto}.milestone-grid{grid-template-columns:1fr}}@media(max-width:720px){.case-stats,.form-grid,.impact-grid{grid-template-columns:1fr}.ledger-toolbar,.person-header{align-items:stretch;flex-direction:column;gap:10px}}
+.progress-history { margin-top: 18px; padding: 12px; border: 1px solid var(--line); }
+.progress-history summary { color: var(--cinnabar); cursor: pointer; }
+.progress-history p { margin: 4px 0; }
+.progress-history small { color: var(--muted); }
+.case-page{max-width:1540px}.case-stats{display:grid;grid-template-columns:repeat(4,1fr);margin:18px 0;border:1px solid var(--line);background:var(--line);gap:1px}.case-stats article{padding:20px 24px;background:#fffaf0}.case-stats span{display:block;color:var(--muted);font-size:11px}.case-stats strong{display:block;margin-top:7px;color:#4d382c;font-family:Georgia,"Noto Serif SC",serif;font-size:30px}.case-stats article.danger strong{color:#b42318}.ledger-toolbar{display:flex;align-items:center;justify-content:space-between;margin:0 0 12px;color:var(--muted);font-size:12px}.case-workspace{display:grid;grid-template-columns:260px 1fr;min-height:690px;border:1px solid var(--line);background:#fffaf0}.case-workspace>aside{border-right:1px solid var(--line);background:#f8f0e2}.case-workspace>aside button{display:grid;width:100%;gap:5px;padding:17px;border:0;border-bottom:1px solid var(--line);background:transparent;text-align:left;cursor:pointer}.case-workspace>aside button.active{background:#fffdf8;box-shadow:inset 4px 0 #9b2b24}.case-workspace>aside span{color:#9b2b24;font-size:11px}.case-workspace>aside strong{color:#4d382c;font-size:17px}.case-workspace>aside small{color:var(--muted)}.case-workspace>main{min-width:0;padding:26px}.person-header{display:flex;justify-content:space-between;align-items:start;margin-bottom:18px}.person-header span{color:#9b2b24}.person-header h2{margin:6px 0;color:#493328;font-family:"Noto Serif SC","Songti SC",serif;font-size:28px}.person-header p{color:var(--muted)}.progress-form{margin-top:16px}.impact-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;margin:16px 0;background:var(--line);border:1px solid var(--line)}.impact-grid span{padding:14px;background:#fffaf0;color:var(--muted);font-size:11px}.impact-grid b{display:block;margin-top:5px;color:var(--charcoal);font:24px Georgia,serif}.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:0 14px}@media(max-width:1000px){.case-workspace{grid-template-columns:1fr}.case-workspace>aside{max-height:230px;overflow:auto}}@media(max-width:720px){.case-stats,.form-grid,.impact-grid{grid-template-columns:1fr}.ledger-toolbar,.person-header{align-items:stretch;flex-direction:column;gap:10px}}
 </style>

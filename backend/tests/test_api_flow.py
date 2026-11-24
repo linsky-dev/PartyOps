@@ -7,6 +7,8 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi.testclient import TestClient
 
+from app import task_service
+
 from .conftest import create_task
 
 
@@ -200,9 +202,10 @@ def test_search_exports_and_audit(client: TestClient, admin: dict) -> None:
 
 
 def test_dashboard_all_operational_buckets(
-    client: TestClient, admin: dict, staff: dict
+    client: TestClient, admin: dict, staff: dict, monkeypatch
 ) -> None:
-    now = datetime.now(timezone.utc)
+    now = datetime(2026, 8, 20, 12, tzinfo=timezone.utc)
+    monkeypatch.setattr(task_service, "utcnow", lambda: now)
     create_task(
         client,
         admin["id"],

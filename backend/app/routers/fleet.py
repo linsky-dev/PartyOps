@@ -13,7 +13,7 @@ import secrets
 import shutil
 import typing
 import zipfile
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path, PurePosixPath
 
 from fastapi import (
@@ -29,6 +29,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy import delete, func, or_, select
 from sqlalchemy.orm import Session
 
+from ..agent_tls import stage_device_certificate
 from ..archive_service import (
     can_contribute_category,
     category_for_record,
@@ -59,7 +60,7 @@ from ..enums import (
     TransferStatus,
     UpdateStatus,
 )
-from ..local_secrets import decrypt_local_json, encrypt_local_json
+from ..local_secrets import LocalRecoveryError, decrypt_local_json, encrypt_local_json
 from ..models import (
     ArchiveAttachment,
     ArchiveRecord,
@@ -88,7 +89,8 @@ from ..networking import (
     service_url,
     validate_advertise_host,
 )
-from ..pki import issue_device_certificate
+from ..notification_targets import notification_target
+from ..pki import DeviceCSRInvalid, issue_device_certificate
 from ..problems import ProblemException
 from ..schemas import (
     DeviceBrowserTokenOut,
@@ -126,6 +128,7 @@ from ..workspace import resolve_workspace_path, store_managed_path
 from ..workspace_access import (
     DEVICE_GRANT_CAPABILITIES,
     grant_allows,
+    workspace_request_device_id,
     workspace_root_permissions,
 )
 from .router_utils import aware_utc
@@ -167,6 +170,7 @@ def notify_root_approval_needed(db: Session, root: WorkspaceRoot, device: Device
                 body=f"协同电脑“{device.name}”申请共享本机目录，请确认范围并授权。",
                 entity_type="workspace_root",
                 entity_id=root.id,
+                  target=notification_target("workspace_root", root.id, "grants"),
                 dedupe_key=dedupe,
             )
         )
@@ -781,6 +785,11 @@ def enroll_device(
                 "入网安全令牌不匹配",
                 "请从主机重新复制完整入网码后重试。",
             )
+        if not payload.csr_pem or not get_settings().tls_enabled:
+            raise ProblemException(
+                422, "ENROLLMENT_CERTIFICATE_REQUIRED", "需要设备证书请求",
+                "请开启主机 HTTPS，并使用当前版本配置向导提交设备证书请求。",
+            )
     with db_runtime.write_lock:
         enrollment = db.scalar(
             select(DeviceEnrollment).where(
@@ -806,9 +815,14 @@ def enroll_device(
             ):
                 try:
                     recovered = decrypt_local_json(
-                        str(metadata["enrollment_recovery"])
+                        str(metadata["enrollment_recovery"]), device_id=existing_device.id,
                     )
                     return DeviceEnrollOut(**recovered)
+                except LocalRecoveryError as exc:
+                    status_code = 503 if exc.code.startswith(("ENROLLMENT_KEY_", "ENROLLMENT_CRYPTO_")) else 409
+                    raise ProblemException(
+                        status_code, exc.code, "无法恢复设备入网响应", str(exc),
+                    ) from None
                 except (TypeError, ValueError):
                     pass
             raise ProblemException(
@@ -876,11 +890,20 @@ def enroll_device(
                 protocol_version=device.protocol_version,
             )
         )
-        certificate_bundle = issue_device_certificate(
-            get_settings(),
-            device.id,
-            payload.csr_pem,
-        )
+        try:
+            certificate_bundle = issue_device_certificate(get_settings(), device.id, payload.csr_pem)
+        except DeviceCSRInvalid:
+            db.rollback()
+            raise ProblemException(
+                422, "ENROLLMENT_CSR_INVALID", "设备证书请求无效",
+                "请重新生成设备证书请求后再使用当前入网码。",
+            ) from None
+        except (OSError, ValueError):
+            db.rollback()
+            raise ProblemException(
+                503, "DEVICE_CA_UNAVAILABLE", "主机设备证书服务不可用",
+                "请由主机管理员检查已经登记的 CA 与密钥材料，修复后可重试当前入网码。",
+            ) from None
         device.certificate_fingerprint = str(
             certificate_bundle.get("certificate_fingerprint", "")
         )
@@ -917,11 +940,18 @@ def enroll_device(
             **certificate_bundle,
             agent_url=response_agent_url,
         )
+        try:
+            recovery = encrypt_local_json(
+                response.model_dump(mode="json"), device_id=device.id, db=db,
+            )
+        except LocalRecoveryError as exc:
+            db.rollback()
+            raise ProblemException(
+                503, exc.code, "无法保存设备入网响应", str(exc),
+            ) from None
         device.device_metadata = {
             **dict(device.device_metadata or {}),
-            "enrollment_recovery": encrypt_local_json(
-                response.model_dump(mode="json")
-            ),
+            "enrollment_recovery": recovery,
         }
         enrollment.used_at = utcnow()
         write_audit(
@@ -1653,12 +1683,6 @@ def rotate_certificate(
     token: str | None = Header(default=None, alias="X-PartyOps-Device-Token"),
     db: Session = Depends(get_session),
 ) -> DeviceCertificateOut:
-    device = authenticated_device(token, db)
-    bundle = issue_device_certificate(get_settings(), device.id, payload.csr_pem)
-    device.certificate_fingerprint = str(bundle.get("certificate_fingerprint", ""))
-    device.certificate_expires_at = utcnow() + timedelta(days=365)
-    device.version += 1
-    db.commit()
     settings = get_settings()
     if settings.environment == "test":
         response_agent_url = f"{request.base_url.scheme}://{request.base_url.hostname}:{settings.agent_port}"
@@ -1672,12 +1696,16 @@ def rotate_certificate(
             settings.agent_port,
             tls_enabled=settings.tls_enabled,
         )
+    with db_runtime.write_lock:
+        device = authenticated_device(token, db)
+        bundle = stage_device_certificate(db, device, payload.csr_pem)
+        db.commit()
     return DeviceCertificateOut(
         certificate_pem=str(bundle.get("certificate_pem", "")),
         ca_certificate_pem=str(bundle.get("ca_certificate_pem", "")),
-        certificate_fingerprint=device.certificate_fingerprint,
+        certificate_fingerprint=str(bundle.get("certificate_fingerprint", "")),
         agent_url=response_agent_url,
-        expires_at=device.certificate_expires_at,
+        expires_at=datetime.fromisoformat(bundle["expires_at"]),
     )
 
 
@@ -1901,6 +1929,7 @@ def ack_command(
                         ),
                         entity_type="transfer",
                         entity_id=transfer.id,
+                        target=notification_target("transfer", transfer.id, "transfer"),
                         dedupe_key=dedupe,
                     )
                 )
@@ -1952,10 +1981,11 @@ def collaboration_options(
     allowed_device_ids: set[str] = set()
     current = request_device(request, db)
     current_device_id = current.id if current else None
+    workspace_device_id = workspace_request_device_id(request, current)
     if current_device_id:
         allowed_device_ids.add(current_device_id)
     for root in all_roots:
-        permissions = workspace_root_permissions(db, root, user, current_device_id)
+        permissions = workspace_root_permissions(db, root, user, workspace_device_id)
         if not permissions["browse"] and not permissions["manage_root"]:
             continue
         if root.device_id:
@@ -2015,7 +2045,9 @@ def _authorized_transfer(db: Session, transfer_id: str, user: User) -> Transfer:
     return transfer
 
 
-def _require_current_transfer_source_access(db: Session, transfer: Transfer) -> None:
+def _require_current_transfer_source_access(
+    db: Session, transfer: Transfer, user: User, request: Request
+) -> None:
     """最终读取受管副本前再次校验源共享权限。
 
     旧传输和管理员手工创建的接收文件可能没有源索引，此时只能沿用传输所有权
@@ -2028,7 +2060,15 @@ def _require_current_transfer_source_access(db: Session, transfer: Transfer) -> 
     )
     if not item_ids and not transfer.source_device_id:
         return
-    if not transfer_sources_still_allowed(db, transfer):
+    workspace_device_id = workspace_request_device_id(request, request_device(request, db))
+    accessible = transfer_sources_still_allowed(db, transfer)
+    for item_id in item_ids:
+        item = db.get(WorkspaceFile, item_id)
+        root = db.get(WorkspaceRoot, item.root_id) if item else None
+        if root and root.source.value == "host" and not workspace_root_permissions(db, root, user, workspace_device_id)["download"]:
+            accessible = False
+            break
+    if not accessible:
         raise ProblemException(
             403,
             "GRANT_DENIED",
@@ -2069,7 +2109,7 @@ def download_transfer_content(
     db: Session = Depends(get_session),
 ) -> FileResponse:
     transfer = _authorized_transfer(db, transfer_id, user)
-    _require_current_transfer_source_access(db, transfer)
+    _require_current_transfer_source_access(db, transfer, user, request)
     path = _completed_inbox_path(transfer)
     media_type = mimetypes.guess_type(transfer.original_name)[0] or "application/octet-stream"
     actual_inline = inline and may_render_inline(media_type)
@@ -2094,7 +2134,7 @@ def freeze_transfer_content(
     db: Session = Depends(get_session),
 ) -> Transfer:
     transfer = _authorized_transfer(db, transfer_id, user)
-    _require_current_transfer_source_access(db, transfer)
+    _require_current_transfer_source_access(db, transfer, user, request)
     path = _completed_inbox_path(transfer)
     mime_type = mimetypes.guess_type(transfer.original_name)[0] or "application/octet-stream"
     blob = store_managed_path(db, path, transfer.original_name, mime_type, transfer.sha256)
@@ -2119,7 +2159,7 @@ def attach_transfer_content(
     db: Session = Depends(get_session),
 ) -> Transfer:
     transfer = _authorized_transfer(db, transfer_id, user)
-    _require_current_transfer_source_access(db, transfer)
+    _require_current_transfer_source_access(db, transfer, user, request)
     path = _completed_inbox_path(transfer)
     mime_type = mimetypes.guess_type(transfer.original_name)[0] or "application/octet-stream"
     linked_id: str
@@ -2333,7 +2373,7 @@ def create_workspace_download(
     current = request_device(request, db)
     if payload.delivery == "current_device" and not current:
         raise ProblemException(409, "CLIENT_DEVICE_REQUIRED", "请在协同电脑上操作", "当前协同机下载需要有效设备上下文。")
-    selected = _workspace_download_items(db, payload.item_ids, user, current.id if current else None)
+    selected = _workspace_download_items(db, payload.item_ids, user, workspace_request_device_id(request, current))
     if payload.bundle_mode == "single" and (len(selected) != 1 or selected[0][0].is_directory):
         raise ProblemException(422, "SINGLE_FILE_REQUIRED", "请选择一个文件", "单文件下载不能包含文件夹或多个项目。")
     if payload.bundle_mode == "folder_zip" and (len(selected) != 1 or not selected[0][0].is_directory):
@@ -2513,6 +2553,10 @@ def create_transfer(
         raise ProblemException(413, "TRANSFER_FILE_TOO_LARGE", "文件超过20GB限制", "请拆分文件后重试。")
     source_file = db.get(WorkspaceFile, payload.source_file_id) if payload.source_file_id else None
     root = db.get(WorkspaceRoot, source_file.root_id) if source_file else None
+    if source_file and root and root.source.value == "host":
+        workspace_device_id = workspace_request_device_id(request, request_device(request, db))
+        if not source_file.in_scope or not workspace_root_permissions(db, root, user, workspace_device_id)["send"]:
+            raise ProblemException(403, "GRANT_DENIED", "没有主机源文件发送权限", "请使用已授权的协同设备。")
     source_device_id = payload.source_device_id or (root.device_id if root and root.source.value == "device" else None)
     if source_file and root and root.source.value == "device" and source_device_id:
         if not grant_allows(db, user, source_device_id, root.id, "download"):

@@ -11,6 +11,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from app.backups import SCHEMA_VERSION
 from app.enums import UserRole
 from app.models import WorkspaceFile, WorkspaceRoot
 from app.problems import ProblemException
@@ -110,7 +111,7 @@ def _valid_update_manifest() -> dict:
         "format_version": 2,
         "version": "9.9.9",
         "min_version": "1.3.4",
-        "schema_revision": "0026",
+        "schema_revision": SCHEMA_VERSION,
         "release_notes": ["正式发布回归"],
         "architecture_artifacts": architecture,
         "platform_artifacts": {

@@ -7,10 +7,6 @@ param(
 
 $ErrorActionPreference = "Stop"
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Path
-if ([string]::IsNullOrWhiteSpace($DocumentFormatterSource)) {
-  $DocumentFormatterSource = Join-Path $repoRoot "vendor\document-formatter-source"
-}
-$DocumentFormatterSource = (Resolve-Path -LiteralPath $DocumentFormatterSource).Path
 $sourceVerifier = Join-Path $repoRoot "scripts\verify-document-formatter-source-snapshot.py"
 $python = $PythonPath
 if ([string]::IsNullOrWhiteSpace($python)) {
@@ -23,12 +19,22 @@ if (-not (Test-Path -LiteralPath $python -PathType Leaf)) {
 if (-not (Test-Path -LiteralPath $python -PathType Leaf)) {
   throw "[FORMATTER_PYTHON_MISSING] 缺少锁定的后端 Python：$python"
 }
-$sourceSnapshotJson = & $python $sourceVerifier --source $DocumentFormatterSource
+$sourceArguments = @("--source", $DocumentFormatterSource)
+if ([string]::IsNullOrWhiteSpace($DocumentFormatterSource)) {
+  $DocumentFormatterSource = Join-Path $repoRoot ("artifacts\formatter-sources\" + [Guid]::NewGuid().ToString("N"))
+  $sourceArguments = @(
+    "--source", (Join-Path $repoRoot "vendor\document-formatter-source"),
+    "--stage-upstream", $DocumentFormatterSource
+  )
+}
+$sourceSnapshotJson = & $python $sourceVerifier @sourceArguments
 if ($LASTEXITCODE -ne 0) {
+  Write-Output $sourceSnapshotJson
   throw "[FORMATTER_SOURCE_DIVERGED] 内嵌排版源码与锁定上游不一致，拒绝构建。"
 }
 $sourceSnapshot = $sourceSnapshotJson | ConvertFrom-Json
 Write-Output $sourceSnapshotJson
+$DocumentFormatterSource = (Resolve-Path -LiteralPath $DocumentFormatterSource).Path
 $sourceProject = Join-Path $DocumentFormatterSource "src\PartyOps.DocumentFormatter.AddIn\PartyOps.DocumentFormatter.AddIn.csproj"
 if (-not (Test-Path -LiteralPath $sourceProject -PathType Leaf)) {
   throw "[FORMATTER_SOURCE_MISSING] 原排版工具业务项目不存在：$sourceProject"

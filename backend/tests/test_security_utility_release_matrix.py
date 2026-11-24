@@ -253,6 +253,7 @@ def _write_ca_fixture(root, key, certificate) -> None:
             serialization.NoEncryption(),
         )
     )
+    (pki_root / "ca.key").chmod(0o600)
     (pki_root / "ca.pem").write_bytes(certificate.public_bytes(serialization.Encoding.PEM))
 
 
@@ -385,7 +386,7 @@ class _RelationDb:
 
 def test_relation_delete_guards_and_activity_actor_projection(monkeypatch) -> None:
     user = SimpleNamespace(id="user-1", role=UserRole.STAFF)
-    request = SimpleNamespace(client=SimpleNamespace(host="127.0.0.1"))
+    request = SimpleNamespace(client=SimpleNamespace(host="127.0.0.1"), cookies={}, headers={})
     monkeypatch.setattr(relations, "describe_object", lambda *_args: SimpleNamespace())
     monkeypatch.setattr(relations, "write_audit", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(relations, "emit_event", lambda *_args, **_kwargs: None)
@@ -427,6 +428,6 @@ def test_relation_delete_guards_and_activity_actor_projection(monkeypatch) -> No
         ),
     ]
     actor = SimpleNamespace(id="actor-1", display_name="办理人", role=UserRole.ADMIN)
-    activity = relations.get_object_activity("task", "task-1", 100, user, _RelationDb(rows=rows, actors=[actor]))
+    activity = relations.get_object_activity("task", "task-1", request, 100, user, _RelationDb(rows=rows, actors=[actor]))
     assert activity[0]["actor_name"] == "办理人"
     assert activity[1]["actor_name"] == "系统" and activity[1]["event_label"] == "更新业务记录"

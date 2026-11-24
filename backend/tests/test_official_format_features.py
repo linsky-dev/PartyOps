@@ -14,6 +14,7 @@ from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml.ns import qn
 
+from app import official_format
 from app import official_format_features as features
 from app.official_format import OfficialFormatError
 from app.official_format_features import capabilities_payload, execute_feature
@@ -46,6 +47,22 @@ def _source_pdf(path: Path, pages: int = 2) -> None:
 
 def _hash(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _require_system_official_fonts() -> None:
+    issues = official_format._font_issues()
+    if issues:
+        pytest.skip(f"BLOCKED_ENV: 本机缺少原生公文字体，验收未执行：{issues[0].detail}")
+
+
+def _use_synthetic_fonts_for_ooxml_test(monkeypatch: pytest.MonkeyPatch) -> None:
+    """纯 OOXML 结构测试只模拟前置清单，不声称本机安装了字体。"""
+    monkeypatch.setattr(
+        official_format,
+        "_font_inventory",
+        lambda: "方正小标宋简体 仿宋_GB2312 楷体_GB2312 黑体",
+    )
+    monkeypatch.setenv("PARTYOPS_FORMATTER_TEST_LOCAL_ENGINE", "1")
 
 
 @pytest.mark.parametrize("feature_id", ["format", "redheader"])
@@ -147,7 +164,11 @@ def test_replace_text_regex_wildcard_format_and_batch_rules(tmp_path: Path) -> N
         )
 
 
-def test_redheader_three_document_types_and_top_marks(tmp_path: Path) -> None:
+def test_redheader_three_document_types_and_top_marks_ooxml_structure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """只核对 DOCX 套红内容结构；字体可用性由独立原生集成门禁负责。"""
+    _use_synthetic_fonts_for_ooxml_test(monkeypatch)
     source = tmp_path / "redheader.docx"
     _source_docx(source)
     common = {
@@ -256,7 +277,13 @@ def test_pdf_to_word_local_reconstruction_and_verification(tmp_path: Path) -> No
     assert result.outputs[0].path.read_bytes().startswith(b"PK")
 
 
-def test_cancel_and_unknown_feature_are_deterministic(tmp_path: Path) -> None:
+def test_cancel_and_unknown_feature_are_deterministic(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "app.official_format._font_inventory",
+        lambda: "方正小标宋简体 仿宋_GB2312 楷体_GB2312 黑体",
+    )
     source = tmp_path / "cancel.docx"
     _source_docx(source)
     with pytest.raises(OfficialFormatError, match="源文件未改变"):
@@ -371,8 +398,11 @@ def test_feature_validation_and_pdf_conversion_alternatives(tmp_path: Path) -> N
     assert len(Document(docx_result.outputs[0].path).sections) == 2
 
 
-def test_redheader_empty_document_and_existing_border(tmp_path: Path) -> None:
-    """空文档仍能套红，重复写红线时复用已有边框容器。"""
+def test_redheader_empty_document_and_existing_border_ooxml_structure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """只核对空文档与 OOXML 边框容器；不声称字体实际可用或完成渲染。"""
+    _use_synthetic_fonts_for_ooxml_test(monkeypatch)
 
     source = tmp_path / "empty.docx"
     Document().save(source)
@@ -390,6 +420,20 @@ def test_redheader_empty_document_and_existing_border(tmp_path: Path) -> None:
     features._red_line(paragraph)
     borders = paragraph._p.get_or_add_pPr().find(qn("w:pBdr"))
     assert borders is not None and len(borders) == 2
+
+
+def test_native_redheader_font_inventory() -> None:
+    """核验原生排版字体。真实 WPS 套红和金样仍由原端到端入口验收。"""
+    _require_system_official_fonts()
+
+
+def test_native_redheader_integration_marks_missing_fonts_as_blocked(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """集成门禁遇到缺字体现为 BLOCKED；纯 OOXML 测试不依赖这个前置条件。"""
+    monkeypatch.setattr(official_format, "_font_inventory", lambda: "仿宋 楷体 黑体")
+    with pytest.raises(pytest.skip.Exception, match="BLOCKED_ENV: 本机缺少原生公文字体"):
+        _require_system_official_fonts()
 
 
 def test_bundled_conversion_runtime_failures_and_success(tmp_path: Path, monkeypatch) -> None:

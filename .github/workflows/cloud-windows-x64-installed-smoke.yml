@@ -1,0 +1,95 @@
+# Historical immutable pre-fix installer. This intentionally downloads SHA
+# 7ed8367b and must NOT be treated as current-source Windows release QA.
+# Native current-source fresh-install, upgrade, and detached-drive QA lives
+# in cloud-windows-x64-build-only-preview.yml under the same build SHA.
+name: RC1 legacy frozen installer regression (MANUAL, NOT RELEASE GATE)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: rc1-actual-installed-smoke-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  hosted-install:
+    name: Actual EXE install/uninstall on disposable Windows
+    runs-on: windows-2025
+    timeout-minutes: 45
+    steps:
+      - name: Checkout source code, not an installation
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+
+      - name: Recover immutable successfully built x64 candidate artifact
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $name = 'partyops-windows-x64-BUILD_ONLY-7ed8367b7b6e7a36a4eee1db8e818d4643bf5f72'
+          $download = Join-Path $env:RUNNER_TEMP 'partyops-rc1-download'
+          New-Item -ItemType Directory -Path $download -Force | Out-Null
+          & gh run download 45096682908 -R linsky-dev/PartyOps --name $name --dir $download
+          if ($LASTEXITCODE -ne 0) { throw '[RC1_SMOKE_CANDIDATE_DOWNLOAD_FAILED]' }
+          $exe = @(Get-ChildItem -LiteralPath $download -Recurse -File -Filter 'PartyOps_1.4.6-rc.1_windows_amd64_BUILD_ONLY_UNVERIFIED.exe')
+          $shaFile = @(Get-ChildItem -LiteralPath $download -Recurse -File -Filter 'PartyOps_1.4.6-rc.1_windows_amd64_BUILD_ONLY_UNVERIFIED.exe.sha256')
+          $receipt = @(Get-ChildItem -LiteralPath $download -Recurse -File -Filter 'PartyOps_1.4.6-rc.1_windows_amd64_BUILD_ONLY_UNVERIFIED.candidate.json')
+          if ($exe.Count -ne 1 -or $shaFile.Count -ne 1 -or $receipt.Count -ne 1) {
+            throw '[RC1_SMOKE_DOWNLOADED_EXE_OR_MANIFEST_AMBIGUOUS]'
+          }
+          $shaLine = [IO.File]::ReadAllText($shaFile[0].FullName).Trim()
+          if ($shaLine -notmatch '^([0-9a-fA-F]{64})\s+') {
+            throw '[RC1_SMOKE_SHA_FILE_INVALID]'
+          }
+          $expectedSha = $Matches[1].ToLowerInvariant()
+          $actual = (Get-FileHash -LiteralPath $exe[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          $manifest = Get-Content -Raw -LiteralPath $receipt[0].FullName | ConvertFrom-Json
+          if ($actual -ne $expectedSha -or $manifest.sha256 -ne $actual -or
+              $manifest.source_commit -ne '7ed8367b7b6e7a36a4eee1db8e818d4643bf5f72' -or
+              $manifest.scope -ne 'BUILD_ONLY_UNVERIFIED_NATIVE_WPS' -or
+              $manifest.signed -or $manifest.release_ready) {
+            throw '[RC1_SMOKE_ARTIFACT_SOURCE_IDENTITY_OR_SHA_INVALID]'
+          }
+          "RC1_SMOKE_EXE=$($exe[0].FullName)" >> $env:GITHUB_ENV
+          "RC1_SMOKE_SHA=$actual" >> $env:GITHUB_ENV
+          "RC1_SMOKE_INPUT_PROVENANCE_VERIFIED"
+      - name: Parse real PowerShell install and uninstall QA script
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $errors = $null
+          $tokens = $null
+          [Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path -LiteralPath 'scripts/rc1-windows-installed-smoke.ps1').Path,
+            [ref]$tokens,[ref]$errors
+          ) | Out-Null
+          if ($errors.Count) { throw '[RC1_SMOKE_POWER_SHELL_SYNTAX_ERROR] ' + ($errors -join ',') }
+
+      - name: ACTUALLY install, verify program identity, then uninstall on ephemeral Windows Server
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $args = @{
+            Installer = $env:RC1_SMOKE_EXE
+            ExpectedSha256 = $env:RC1_SMOKE_SHA
+            OutputDirectory = (Join-Path $env:RUNNER_TEMP 'partyops-rc1-hosted-smoke')
+            ConfirmEphemeralHostedRunner = $true
+          }
+          & ./scripts/rc1-windows-installed-smoke.ps1 @args
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Upload actual install log and pass/fail evidence (never a signed release)
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: partyops-rc1-hosted-actual-installed-evidence-${{ github.event.pull_request.head.sha }}
+          path: ${{ runner.temp }}/partyops-rc1-hosted-smoke
+          if-no-files-found: warn
+          retention-days: 14

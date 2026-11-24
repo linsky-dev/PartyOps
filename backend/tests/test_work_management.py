@@ -17,6 +17,7 @@ from openpyxl import Workbook
 from sqlalchemy import select
 
 from app import ai_service, client_agent, intake, upgrades, workspace
+from app.backups import SCHEMA_VERSION
 from app.config import get_settings
 from app.database import db_runtime
 from app.enums import AiCapability, PeriodType
@@ -236,7 +237,7 @@ def test_period_report_journal_templates_and_status(
     assert status.status_code == 200, status.text
     body = status.json()
     assert body["app_version"] == get_settings().app_version
-    assert body["schema_revision"] == "0026"
+    assert body["schema_revision"] == SCHEMA_VERSION
     assert "sse_clients" in body["service"]
 
 
@@ -1049,11 +1050,11 @@ def test_ai_file_scope_intake_formats_scan_failure_and_upgrade_restore(
         db.commit()
         assert item.extracted_text == ""
         with pytest.raises(ProblemException) as metadata_only:
-            ai_service._file_source(db, item, policy)
+            ai_service._file_source(db, item, policy, user)
         assert metadata_only.value.code == "AI_FILE_TEXT_UNAVAILABLE"
         # AI 正文能力与原始文件目录扫描解耦；仅在明确授权/按需提取后使用。
         item.extracted_text = "本周完成组织生活会材料整理。"
-        source_meta, excerpt = ai_service._file_source(db, item, policy)
+        source_meta, excerpt = ai_service._file_source(db, item, policy, user)
         assert source_meta["root"] == "AI 授权目录"
         assert "组织生活会" in excerpt
         sources, excerpts = ai_service.collect_sources(
@@ -1064,18 +1065,18 @@ def test_ai_file_scope_intake_formats_scan_failure_and_upgrade_restore(
 
         policy.allowed_file_types = [".pdf"]
         with pytest.raises(ProblemException) as type_denied:
-            ai_service._file_source(db, item, policy)
+            ai_service._file_source(db, item, policy, user)
         assert type_denied.value.code == "AI_FILE_TYPE_DENIED"
         policy.allowed_file_types = [".txt"]
         item.extracted_text = ""
         item.ocr_text = ""
         with pytest.raises(ProblemException) as text_missing:
-            ai_service._file_source(db, item, policy)
+            ai_service._file_source(db, item, policy, user)
         assert text_missing.value.code == "AI_FILE_TEXT_UNAVAILABLE"
         item.extracted_text = "本周完成组织生活会材料整理。"
         policy.allowed_root_ids = []
         with pytest.raises(ProblemException) as scope_denied:
-            ai_service._file_source(db, item, policy)
+            ai_service._file_source(db, item, policy, user)
         assert scope_denied.value.code == "AI_FILE_SCOPE_DENIED"
         policy.allowed_root_ids = [root_id]
         policy.allowed_task_categories = ["基层党建"]

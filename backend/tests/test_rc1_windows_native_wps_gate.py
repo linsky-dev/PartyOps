@@ -1,0 +1,131 @@
+"""Native Windows RC1 test launcher must never fabricate WPS or installation evidence."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[2]
+SOURCE = (ROOT / "scripts/rc1-windows-native-wps-gate.ps1").read_text(encoding="utf-8")
+
+# Match executable invocations, not explanatory strings in the header comment.
+# False positives here previously prevented the entire Windows backend suite
+# from passing even though the gate itself refused unsupported environments.
+NATIVE_WPS_CALL = "& (Join-Path $root 'scripts/test.ps1') -Scope WpsOnly"
+NATIVE_TEST_CALL = "& (Join-Path $root 'scripts/test.ps1') -Scope Package"
+VERIFY_CALL = "& $Python (Join-Path $root 'scripts/verify-full-function-gate.py') verify --root $root --scope package"
+BUILD_CALL = "& (Join-Path $root 'packaging/windows/build-windows.ps1') -Python $Python"
+
+
+def test_native_wps_launcher_is_opt_in_and_platform_bound() -> None:
+    for value in (
+        "ValidateSet('Preflight', 'NativeTests', 'BuildCandidate')",
+        "ConfirmDedicatedTestMachine",
+        "ConfirmInteractiveWpsAcceptance",
+        "WINDOWS_10_11_CLIENT_REQUIRED",
+        "WINDOWS_AMD64_ARCH_REQUIRED",
+        "WINDOWS_ARCH_IDENTITY_UNAVAILABLE",
+        "INTERACTIVE_WPS_USER_SESSION_REQUIRED",
+        "WPS_OFFICE_CURRENT_USER_OR_MACHINE_INSTALL_NOT_FOUND",
+        "SOURCE_COMMIT_NOT_APPROVED",
+        "SOURCE_TRACKED_WORKTREE_NOT_CLEAN",
+        "SECURE_PYMUPDF_PRODUCTION_LOCK_REQUIRED",
+    ):
+        assert value in SOURCE
+
+
+def test_only_original_native_wps_tests_can_record_real_approval() -> None:
+    for call in (NATIVE_WPS_CALL, NATIVE_TEST_CALL, VERIFY_CALL, BUILD_CALL):
+        assert SOURCE.count(call) == 1
+    assert SOURCE.index("if ($Mode -eq 'NativeTests') {") < SOURCE.index(NATIVE_WPS_CALL)
+    assert SOURCE.index(NATIVE_WPS_CALL) < SOURCE.index("'PASS_NATIVE_WPS_ONLY'")
+    assert SOURCE.index(NATIVE_TEST_CALL) < SOURCE.index(VERIFY_CALL)
+    assert SOURCE.index(VERIFY_CALL) < SOURCE.index(
+        "report.native_full_function_passed = $true"
+    )
+    assert SOURCE.index("} else {\n    # BuildCandidate requires") < SOURCE.index(NATIVE_TEST_CALL)
+    assert SOURCE.index("if ($Mode -eq 'BuildCandidate') {") < SOURCE.index(BUILD_CALL)
+    assert SOURCE.index("SECURE_PYMUPDF_PRODUCTION_LOCK_REQUIRED") < SOURCE.index(
+        "if ($Mode -eq 'BuildCandidate' -and $blocked.Count)"
+    )
+
+
+def test_candidate_is_never_mislabeled_release_ready_or_signed() -> None:
+    for marker in (
+        "release_ready = $false",
+        "signed = $false",
+        "native_install_upgrade_rollback_passed = $false",
+        "release_approved = $false",
+        "BUILD_ONLY_NEEDS_NATIVE_INSTALL_SIGNATURE_AND_RELEASE",
+    ):
+        assert marker in SOURCE
+    assert "bypass" not in SOURCE.lower()
+
+
+def test_preflight_returns_blocked_without_starting_native_wps() -> None:
+    assert SOURCE.index("if ($Mode -eq 'Preflight')") < SOURCE.index(
+        NATIVE_WPS_CALL
+    )
+    assert "exit 2" in SOURCE
+    assert "Test-Path -LiteralPath" in SOURCE
+
+
+def test_native_rerun_allows_only_five_unstaged_generated_wps_receipts() -> None:
+    """A native WPS run must not make the same source checkout unusable."""
+    assert "git -C $root status --porcelain --untracked-files=no" in SOURCE
+    assert SOURCE.count("'.release-gates/formatter-parity-") == 2
+    assert SOURCE.count("'.release-gates/formatter-features-e2e-") == 2
+    assert "'.release-gates/full-function-tests.json'" in SOURCE
+    assert "$line.Substring(0, 2) -ceq ' M'" in SOURCE
+    assert "$line.Substring(3) -cin $allowedGeneratedEvidence" in SOURCE
+    assert "allowed_generated_evidence_changes = @($generatedEvidenceChanges)" in SOURCE
+    assert "$gitStatusExit -ne 0 -or $unsafeChanges.Count" in SOURCE
+    assert "SOURCE_TRACKED_WORKTREE_NOT_CLEAN" in SOURCE
+
+
+def test_native_wps_only_cannot_forge_full_suite_or_installer() -> None:
+    assert SOURCE.index("NATIVE_WPS_TEST_INPUTS_MISSING") < SOURCE.index(
+        "if ($Mode -eq 'Preflight')"
+    )
+    assert SOURCE.index("if ($Mode -eq 'BuildCandidate' -and $blocked.Count)") < SOURCE.rindex(
+        "if ($Mode -eq 'NativeTests') {"
+    )
+    assert SOURCE.count("report.native_full_function_passed = $true") == 1
+    assert SOURCE.count("report.candidate_installer_built = $true") == 1
+    assert "native_full_function_passed = $false" in SOURCE
+    assert "release_ready = $false" in SOURCE
+
+
+def test_both_native_modes_require_fresh_verified_wps_host_and_goldens() -> None:
+    assert "function Assert-NativeWpsEvidence {" in SOURCE
+    assert "formatter-relocated-" in SOURCE
+    assert "formatter-parity-" in SOURCE
+    assert "formatter-features-e2e-" in SOURCE
+    assert "LastWriteTimeUtc -lt $StartedUtc.AddSeconds(-2)" in SOURCE
+    assert "verify-formatter-runtime-evidence.py" in SOURCE
+    assert SOURCE.count("Assert-NativeWpsEvidence -StartedUtc $wpsRunStartedUtc") == 2
+    assert SOURCE.index("Assert-NativeWpsEvidence -StartedUtc $wpsRunStartedUtc") < SOURCE.index(
+        "report.native_wps_passed = $true"
+    )
+    assert SOURCE.rindex("Assert-NativeWpsEvidence -StartedUtc $wpsRunStartedUtc") < SOURCE.index(
+        "report.native_full_function_passed = $true"
+    )
+    assert SOURCE.count("report.native_wps_passed = $true") == 2
+    assert "wps_verified_evidence = @()" in SOURCE
+    for marker in (
+        "NATIVE_WPS_EVIDENCE_MISSING",
+        "NATIVE_WPS_EVIDENCE_STALE",
+        "NATIVE_WPS_EVIDENCE_VERIFICATION_FAILED",
+        "NATIVE_WPS_EVIDENCE_CONTRACT_INVALID",
+    ):
+        assert marker in SOURCE
+
+
+def test_x64_native_gate_checks_os_arch_not_just_64bit_process() -> None:
+    # Windows ARM64 also reports Is64BitOperatingSystem=True. Never treat it
+    # as equivalent to the genuine Windows x64 client release target.
+    assert "RuntimeInformation]::OSArchitecture" in SOURCE
+    assert "if ($osArchitecture -ne 'X64')" in SOURCE
+    assert "os_architecture = $osArchitecture" in SOURCE
+    assert SOURCE.index("WINDOWS_AMD64_ARCH_REQUIRED") < SOURCE.index(
+        "if ($Mode -eq 'Preflight')"
+    )

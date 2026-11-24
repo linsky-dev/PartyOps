@@ -33,6 +33,11 @@ from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
+from ..account_recovery import (
+    credential_transaction,
+    revoke_account_sessions,
+    revoke_recovery_credentials,
+)
 from ..audit import write_audit
 from ..backups import (
     SCHEMA_VERSION,
@@ -59,7 +64,6 @@ from ..models import (
     DeviceCommand,
     DeviceGrant,
     FileBlob,
-    LoginSession,
     Notification,
     ProjectionCheckpoint,
     ReminderPreference,
@@ -98,6 +102,7 @@ from ..schemas import (
     serialize_api_datetime,
 )
 from ..security import (
+    get_current_user,
     get_current_user_optional,
     hash_password,
     hash_token,
@@ -292,51 +297,46 @@ def update_user(
     payload: UserPatch,
     request: Request,
     if_match: str | None = Header(default=None, alias="If-Match"),
-    admin: User = Depends(require_admin),
     db: Session = Depends(get_session),
 ) -> User:
-    target = db.get(User, user_id)
-    if not target:
-        raise ProblemException(404, "USER_NOT_FOUND", "用户不存在", "未找到该用户。")
-    if target.version != parse_if_match(if_match):
-        raise ProblemException(409, "VERSION_CONFLICT", "用户信息已更新", "请刷新后重试。")
-    if target.id == admin.id and payload.active is False:
-        raise ProblemException(409, "SELF_DISABLE_DENIED", "不能停用自己", "请由另一位管理员操作。")
-    removes_admin = target.role.value == "admin" and (
-        payload.active is False
-        or (payload.role is not None and payload.role.value != "admin")
-    )
-    if removes_admin:
-        remaining_admins = db.scalar(
-            select(func.count()).select_from(User).where(
-                User.role == "admin",
-                User.active.is_(True),
-                User.id != target.id,
-            )
-        ) or 0
-        if remaining_admins == 0:
-            raise ProblemException(409, "LAST_ADMIN_DENIED", "不能移除最后一名管理员", "请先创建或提升另一名管理员。")
-    for field in payload.model_fields_set:
-        setattr(target, field, getattr(payload, field))
-    target.version += 1
-    if payload.active is False or "role" in payload.model_fields_set:
-        for session in db.scalars(
-            select(LoginSession).where(
-                LoginSession.user_id == target.id,
-                LoginSession.revoked_at.is_(None),
-            )
-        ).all():
-            session.revoked_at = utcnow()
-    write_audit(
-        db,
-        admin,
-        "user.update",
-        "user",
-        target.id,
-        {"fields": sorted(payload.model_fields_set), "version": target.version},
-        client_ip(request),
-    )
-    db.commit()
+    with credential_transaction(db):
+        admin = require_admin(get_current_user(request, db))
+        target = db.get(User, user_id)
+        if not target:
+            raise ProblemException(404, "USER_NOT_FOUND", "用户不存在", "未找到该用户。")
+        if target.version != parse_if_match(if_match):
+            raise ProblemException(409, "VERSION_CONFLICT", "用户信息已更新", "请刷新后重试。")
+        if target.id == admin.id and payload.active is False:
+            raise ProblemException(409, "SELF_DISABLE_DENIED", "不能停用自己", "请由另一位管理员操作。")
+        removes_admin = target.role.value == "admin" and (
+            payload.active is False
+            or (payload.role is not None and payload.role.value != "admin")
+        )
+        if removes_admin:
+            remaining_admins = db.scalar(
+                select(func.count()).select_from(User).where(
+                    User.role == "admin",
+                    User.active.is_(True),
+                    User.id != target.id,
+                )
+            ) or 0
+            if remaining_admins == 0:
+                raise ProblemException(409, "LAST_ADMIN_DENIED", "不能移除最后一名管理员", "请先创建或提升另一名管理员。")
+        for field in payload.model_fields_set:
+            setattr(target, field, getattr(payload, field))
+        target.version += 1
+        if payload.active is False or "role" in payload.model_fields_set:
+            revoke_account_sessions(db, target.id)
+            revoke_recovery_credentials(db, target.id)
+        write_audit(
+            db,
+            admin,
+            "user.update",
+            "user",
+            target.id,
+            {"fields": sorted(payload.model_fields_set), "version": target.version},
+            client_ip(request),
+        )
     db.refresh(target)
     return target
 
@@ -379,65 +379,65 @@ def archive_user(
     user_id: str,
     request: Request,
     transfer_to: str | None = Query(default=None),
-    admin: User = Depends(require_admin),
     db: Session = Depends(get_session),
 ) -> dict[str, typing.Any]:
-    target = db.get(User, user_id)
-    if not target:
-        raise ProblemException(404, "USER_NOT_FOUND", "用户不存在", "未找到该用户。")
-    if target.id == admin.id:
-        raise ProblemException(409, "SELF_DELETE_DENIED", "不能删除当前用户", "请由另一名管理员操作。")
-    if target.archived_at is not None:
-        return {"deleted": True, "user_id": target.id, "history_preserved": True}
-    if target.role.value == "admin":
-        remaining_admins = db.scalar(
-            select(func.count()).select_from(User).where(
-                User.role == "admin", User.active.is_(True), User.id != target.id
+    with credential_transaction(db):
+        admin = require_admin(get_current_user(request, db))
+        target = db.get(User, user_id)
+        if not target:
+            raise ProblemException(404, "USER_NOT_FOUND", "用户不存在", "未找到该用户。")
+        if target.id == admin.id:
+            raise ProblemException(409, "SELF_DELETE_DENIED", "不能删除当前用户", "请由另一名管理员操作。")
+        if target.archived_at is not None:
+            return {"deleted": True, "user_id": target.id, "history_preserved": True}
+        if target.role.value == "admin":
+            remaining_admins = db.scalar(
+                select(func.count()).select_from(User).where(
+                    User.role == "admin", User.active.is_(True), User.id != target.id
+                )
+            ) or 0
+            if remaining_admins == 0:
+                raise ProblemException(409, "LAST_ADMIN_DENIED", "不能删除最后一名管理员", "请先创建或提升另一名管理员。")
+        impact = user_deletion_impact(db, target)
+        receiver = db.get(User, transfer_to) if transfer_to else None
+        if impact["requires_transfer"] and (not receiver or not receiver.active or receiver.id == target.id):
+            raise ProblemException(
+                409,
+                "USER_TRANSFER_REQUIRED",
+                "删除前必须移交责任",
+                "请选择一名启用用户接收事项负责人、审核人与步骤负责人责任。",
+                extra={"impact": impact},
             )
-        ) or 0
-        if remaining_admins == 0:
-            raise ProblemException(409, "LAST_ADMIN_DENIED", "不能删除最后一名管理员", "请先创建或提升另一名管理员。")
-    impact = user_deletion_impact(db, target)
-    receiver = db.get(User, transfer_to) if transfer_to else None
-    if impact["requires_transfer"] and (not receiver or not receiver.active or receiver.id == target.id):
-        raise ProblemException(
-            409,
-            "USER_TRANSFER_REQUIRED",
-            "删除前必须移交责任",
-            "请选择一名启用用户接收事项负责人、审核人与步骤负责人责任。",
-            extra={"impact": impact},
+        if receiver:
+            for task in db.scalars(select(Task).where(Task.owner_id == target.id)).all():
+                task.owner_id = receiver.id
+                task.version += 1
+            for task in db.scalars(select(Task).where(Task.reviewer_id == target.id)).all():
+                task.reviewer_id = receiver.id
+                task.version += 1
+            for step in db.scalars(select(TaskStep).where(TaskStep.assignee_id == target.id)).all():
+                step.assignee_id = receiver.id
+                step.version += 1
+        now = utcnow()
+        target.active = False
+        target.archived_at = now
+        target.archived_by = admin.id
+        target.version += 1
+        revoke_account_sessions(db, target.id)
+        revoke_recovery_credentials(db, target.id)
+        for grant in db.scalars(select(DeviceGrant).where(DeviceGrant.user_id == target.id, DeviceGrant.active.is_(True))).all():
+            grant.active = False
+            grant.version += 1
+        write_audit(
+            db,
+            admin,
+            "user.archive",
+            "user",
+            target.id,
+            {"transfer_to": receiver.id if receiver else None, "impact": impact["counts"]},
+            client_ip(request),
         )
-    if receiver:
-        for task in db.scalars(select(Task).where(Task.owner_id == target.id)).all():
-            task.owner_id = receiver.id
-            task.version += 1
-        for task in db.scalars(select(Task).where(Task.reviewer_id == target.id)).all():
-            task.reviewer_id = receiver.id
-            task.version += 1
-        for step in db.scalars(select(TaskStep).where(TaskStep.assignee_id == target.id)).all():
-            step.assignee_id = receiver.id
-            step.version += 1
-    now = utcnow()
-    target.active = False
-    target.archived_at = now
-    target.archived_by = admin.id
-    target.version += 1
-    for session in db.scalars(select(LoginSession).where(LoginSession.user_id == target.id, LoginSession.revoked_at.is_(None))).all():
-        session.revoked_at = now
-    for grant in db.scalars(select(DeviceGrant).where(DeviceGrant.user_id == target.id, DeviceGrant.active.is_(True))).all():
-        grant.active = False
-        grant.version += 1
-    write_audit(
-        db,
-        admin,
-        "user.archive",
-        "user",
-        target.id,
-        {"transfer_to": receiver.id if receiver else None, "impact": impact["counts"]},
-        client_ip(request),
-    )
-    db.commit()
-    return {"deleted": True, "user_id": target.id, "transferred_to": receiver.id if receiver else None, "history_preserved": True}
+        return {"deleted": True, "user_id": target.id, "transferred_to": receiver.id if receiver else None, "history_preserved": True}
 
 
 @router.post("/users/{user_id}/restore", response_model=UserOut)
@@ -445,18 +445,18 @@ def archive_user(
 def restore_user(
     user_id: str,
     request: Request,
-    admin: User = Depends(require_admin),
     db: Session = Depends(get_session),
 ) -> User:
-    target = db.get(User, user_id)
-    if not target:
-        raise ProblemException(404, "USER_NOT_FOUND", "用户不存在", "未找到该用户。")
-    target.active = True
-    target.archived_at = None
-    target.archived_by = None
-    target.version += 1
-    write_audit(db, admin, "user.restore", "user", target.id, {}, client_ip(request))
-    db.commit()
+    with credential_transaction(db):
+        admin = require_admin(get_current_user(request, db))
+        target = db.get(User, user_id)
+        if not target:
+            raise ProblemException(404, "USER_NOT_FOUND", "用户不存在", "未找到该用户。")
+        target.active = True
+        target.archived_at = None
+        target.archived_by = None
+        target.version += 1
+        write_audit(db, admin, "user.restore", "user", target.id, {}, client_ip(request))
     db.refresh(target)
     return target
 
@@ -466,23 +466,18 @@ def reset_user_password(
     user_id: str,
     payload: PasswordReset,
     request: Request,
-    admin: User = Depends(require_admin),
     db: Session = Depends(get_session),
 ) -> dict:
-    target = db.get(User, user_id)
-    if not target:
-        raise ProblemException(404, "USER_NOT_FOUND", "用户不存在", "未找到该用户。")
-    target.password_hash = hash_password(payload.password)
-    target.version += 1
-    for session in db.scalars(
-        select(LoginSession).where(
-            LoginSession.user_id == target.id,
-            LoginSession.revoked_at.is_(None),
-        )
-    ).all():
-        session.revoked_at = utcnow()
-    write_audit(db, admin, "user.password_reset", "user", target.id, {}, client_ip(request))
-    db.commit()
+    with credential_transaction(db):
+        admin = require_admin(get_current_user(request, db))
+        target = db.get(User, user_id)
+        if not target:
+            raise ProblemException(404, "USER_NOT_FOUND", "用户不存在", "未找到该用户。")
+        target.password_hash = hash_password(payload.password)
+        target.version += 1
+        revoke_account_sessions(db, target.id)
+        revoke_recovery_credentials(db, target.id)
+        write_audit(db, admin, "user.password_reset", "user", target.id, {}, client_ip(request))
     return {"reset": True, "user_id": user_id}
 
 

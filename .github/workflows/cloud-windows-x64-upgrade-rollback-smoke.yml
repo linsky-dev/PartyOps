@@ -1,0 +1,107 @@
+name: RC1 actual RC6 upgrade and synthetic-data rollback test (HOSTED_ONLY)
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/cloud-windows-x64-upgrade-rollback-smoke.yml'
+      - 'scripts/rc1-windows-upgrade-rollback-smoke.ps1'
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: rc1-windows-upgrade-rollback-${{ github.event.pull_request.head.sha }}
+  cancel-in-progress: false
+
+jobs:
+  upgrade-rollback:
+    name: Actual RC6 -> RC1 -> RC6 installer on disposable hosted Windows
+    runs-on: windows-2025
+    timeout-minutes: 80
+    steps:
+      - name: Read current QA script source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Python 3.12 for synthetic SQLite file-retention canaries
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+          architecture: x64
+      - name: Download and verify pinned RC6 and actual RC1 unsigned candidate installers
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $work = Join-Path $env:RUNNER_TEMP 'partyops-rc1-upgrade-inputs'
+          New-Item -ItemType Directory -Path $work -Force | Out-Null
+          $candidateName = 'partyops-windows-x64-BUILD_ONLY-7ed8367b7b6e7a36a4eee1db8e818d4643bf5f72'
+          & gh run download 45096682908 -R linsky-dev/PartyOps --name $candidateName --dir $work
+          if ($LASTEXITCODE -ne 0) { throw '[UPGRADE_QA_NEW_EXE_DOWNLOAD_FAILED]' }
+          $new = @(Get-ChildItem -LiteralPath $work -Recurse -File -Filter 'PartyOps_1.4.6-rc.1_windows_amd64_BUILD_ONLY_UNVERIFIED.exe')
+          $receipt = @(Get-ChildItem -LiteralPath $work -Recurse -File -Filter 'PartyOps_1.4.6-rc.1_windows_amd64_BUILD_ONLY_UNVERIFIED.candidate.json')
+          $shaFile = @(Get-ChildItem -LiteralPath $work -Recurse -File -Filter 'PartyOps_1.4.6-rc.1_windows_amd64_BUILD_ONLY_UNVERIFIED.exe.sha256')
+          if ($new.Count -ne 1 -or $receipt.Count -ne 1 -or $shaFile.Count -ne 1) {
+            throw '[UPGRADE_QA_NEW_EXE_ARTIFACTS_MISSING]'
+          }
+          $record = Get-Content -Raw -LiteralPath $receipt[0].FullName | ConvertFrom-Json
+          $newSha = (Get-FileHash -Algorithm SHA256 -LiteralPath $new[0].FullName).Hash.ToLowerInvariant()
+          $line = [IO.File]::ReadAllText($shaFile[0].FullName).Trim()
+          if ($line -notmatch '^([0-9a-fA-F]{64})\s+' -or $newSha -ne $Matches[1].ToLowerInvariant() -or
+              $newSha -ne $record.sha256 -or $record.source_commit -ne '7ed8367b7b6e7a36a4eee1db8e818d4643bf5f72' -or
+              $record.release_ready -or $record.signed) {
+            throw '[UPGRADE_QA_NEW_EXE_HASH_OR_PROVENANCE_INVALID]'
+          }
+          $oldPath = Join-Path $work 'PartyOps_1.4.5-rc.6_windows_amd64_startup-20261018.exe'
+          $oldUrl = 'https://github.com/linsky-dev/PartyOps/releases/download/v1.4.5-rc.6/PartyOps_1.4.5-rc.6_windows_amd64_startup-20261018.exe'
+          & curl.exe --fail --location --retry 3 --retry-all-errors --connect-timeout 45 --max-time 1800 --output $oldPath $oldUrl
+          if ($LASTEXITCODE -ne 0) { throw '[UPGRADE_QA_RC6_DOWNLOAD_FAILED]' }
+          $oldSha = 'e3e2ea45ccd38acff059b5713826a78f998a56ccef75341633f67bd4e17e57da'
+          if ((Get-FileHash -LiteralPath $oldPath -Algorithm SHA256).Hash.ToLowerInvariant() -ne $oldSha -or
+              (Get-Item -LiteralPath $oldPath).Length -ne 449988807) {
+            throw '[UPGRADE_QA_RC6_ORIGINAL_HASH_MISMATCH]'
+          }
+          "RC1_UPGRADE_OLD=$oldPath" >> $env:GITHUB_ENV
+          "RC1_UPGRADE_OLD_SHA=$oldSha" >> $env:GITHUB_ENV
+          "RC1_UPGRADE_NEW=$($new[0].FullName)" >> $env:GITHUB_ENV
+          "RC1_UPGRADE_NEW_SHA=$newSha" >> $env:GITHUB_ENV
+          'RC1_UPGRADE_BOTH_ORIGINAL_INSTALLERS_SHA_VERIFIED'
+      - name: PowerShell syntax and administrative test-host check
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $errors = $null
+          $tokens = $null
+          [Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path -LiteralPath 'scripts/rc1-windows-upgrade-rollback-smoke.ps1').Path,
+            [ref]$tokens,[ref]$errors
+          ) | Out-Null
+          if ($errors.Count) { throw '[RC1_UPGRADE_QA_POWER_SHELL_SYNTAX_ERROR] ' + ($errors -join ',') }
+
+      - name: ACTUAL RC6 install, RC1 overlay upgrade, RC6 program rollback and synthetic marker retention
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $arguments = @{
+            OldInstaller = $env:RC1_UPGRADE_OLD
+            OldSha256 = $env:RC1_UPGRADE_OLD_SHA
+            NewInstaller = $env:RC1_UPGRADE_NEW
+            NewSha256 = $env:RC1_UPGRADE_NEW_SHA
+            OutputDirectory = (Join-Path $env:RUNNER_TEMP 'partyops-rc1-hosted-upgrade')
+            ConfirmEphemeralHostedRunner = $true
+          }
+          & ./scripts/rc1-windows-upgrade-rollback-smoke.ps1 @arguments
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Upload exact hosted program upgrade and rollback evidence, no private data
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: partyops-rc1-program-upgrade-rollback-hosted-only-${{ github.event.pull_request.head.sha }}
+          path: ${{ runner.temp }}/partyops-rc1-hosted-upgrade
+          if-no-files-found: warn
+          retention-days: 14

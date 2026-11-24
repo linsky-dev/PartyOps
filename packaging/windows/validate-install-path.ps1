@@ -87,12 +87,23 @@ function Assert-SecureDirectoryAcl {
     if ($canDeleteChild -or
         (-not $isVolumeRoot -and $canDeleteObject) -or
         $canChangeProgramContent) {
-      Stop-InstallPathValidation "INSTALL_DIR_EXISTING_ACL_UNSAFE" "现有 PartyOps 程序目录允许其他普通用户修改内容：$DirectoryPath（主体 $sid）。安装器无法确认其中旧文件可信；请先卸载旧版本或选择空目录。" 6
+      Stop-InstallPathValidation "INSTALL_DIR_EXISTING_ACL_UNSAFE" "现有 PartyOps 程序目录允许其他普通用户修改内容：$DirectoryPath（主体 $sid）。安装器无法确认其中旧文件可信；为保护原业务数据，请保留旧版安装及数据，联系管理员核对旧安装文件并修复异常目录权限后重试，不要直接卸载。" 6
     }
   }
 }
 
 try {
+  # Avoid .NET silently resolving relative or drive-relative paths
+  # against the elevated installer's current directory. Inno supplies an
+  # absolute local path; UNC / network / device namespaces are not writable
+  # program roots for services. Reject those BEFORE DriveInfo's constructor.
+  if ([string]::IsNullOrEmpty($Path) -or
+      $Path -notmatch '^[A-Za-z]:\\') {
+    if ($Path -match '^\\\\') {
+      Stop-InstallPathValidation "INSTALL_DIR_NOT_FIXED" "所选安装目录是网络共享或设备路径：$Path。PartyOps 主机服务必须安装在本机固定磁盘；请选择 C:\Program Files\PartyOps 或其他本机固定磁盘。" 2
+    }
+    Stop-InstallPathValidation "INSTALL_DIR_INVALID" "安装目录必须是完整的本机磁盘绝对路径（例如 C:\Program Files\PartyOps），不能使用相对路径或盘符相对路径。" 2
+  }
   $fullPath = [IO.Path]::GetFullPath($Path)
   $root = [IO.Path]::GetPathRoot($fullPath)
   if ([string]::IsNullOrEmpty($root)) {
@@ -103,7 +114,8 @@ try {
   }
   $drive = New-Object IO.DriveInfo($root)
   if ($drive.DriveType -ne [IO.DriveType]::Fixed) {
-    Stop-InstallPathValidation "INSTALL_DIR_NOT_FIXED" "程序目录必须位于本机固定磁盘。" 2
+    $type = [string]$drive.DriveType
+    Stop-InstallPathValidation "INSTALL_DIR_NOT_FIXED" "所选目录：$fullPath；磁盘根目录：$root；Windows 识别的磁盘类型：$type（非 Fixed）。安装程序未修改该目录，请选择本机固定磁盘，例如 C:\Program Files\PartyOps。若该盘确为内置硬盘，请检查其挂载方式后重试。" 2
   }
 
   # 从目标向上检查全部已存在父目录，避免解析路径后把目录联接隐藏掉。

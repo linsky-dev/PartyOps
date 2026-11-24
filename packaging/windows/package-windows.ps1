@@ -7,8 +7,8 @@ $ErrorActionPreference = "Stop"
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 . (Join-Path $PSScriptRoot "prepare-ocr-runtime.ps1")
 . (Join-Path $PSScriptRoot "prepare-dotnet48-runtime.ps1")
-$releaseVersion = "1.4.5-rc.6"
-$releaseTag = "v1.4.5-rc.6"
+$releaseVersion = "1.4.6-rc.1"
+$releaseTag = "v1.4.6-rc.1"
 $runtimeRoot = Join-Path $repoRoot "artifacts\windows-runtime"
 $artifactRoot = Join-Path $repoRoot "artifacts"
 $bundleRoot = Join-Path $artifactRoot "PartyOps-$releaseVersion-windows-amd64"
@@ -169,6 +169,13 @@ Add-VerifiedPartyOpsDotNet48Prerequisite `
   -RepoRoot $repoRoot `
   -Destination (Join-Path $bundleRoot "prerequisites")
 
+$generatedManifest = Join-Path $bundleRoot "release-manifest.json"
+$generatedManifestSize = (Get-Item -LiteralPath $generatedManifest -ErrorAction Stop).Length
+Write-Host "PARTYOPS_RELEASE_MANIFEST_BYTES=$generatedManifestSize"
+if ($generatedManifestSize -gt 8MB) {
+  throw "[WINDOWS_RELEASE_MANIFEST_TOO_LARGE] 运行时清单超过 8 MiB 安全读取上限，拒绝输出无法启动的安装包。"
+}
+
 $expectedSqliteHash = $expectedSqliteSha256
 $bundledSqliteHash = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $internalRoot "sqlite3.dll")).Hash
 if ($expectedSqliteHash -ne $bundledSqliteHash) {
@@ -193,7 +200,7 @@ if ($LASTEXITCODE -ne 0) {
   throw "Inno Setup 安装器构建失败，退出码：$LASTEXITCODE"
 }
 
-$installer = Join-Path $artifactRoot "PartyOps_1.4.5-rc.6_windows_amd64.exe"
+$installer = Join-Path $artifactRoot "PartyOps_1.4.6-rc.1_windows_amd64.exe"
 if (-not (Test-Path -LiteralPath $installer)) {
   throw "Inno 返回成功但未找到预期安装器：$installer"
 }
@@ -220,7 +227,7 @@ $candidate = [ordered]@{
   limitations = @("Windows 10 未实机验证", "未签名候选版")
 }
 [System.IO.File]::WriteAllText(
-  (Join-Path $artifactRoot "PartyOps_1.4.5-rc.6_windows_amd64.candidate.json"),
+  (Join-Path $artifactRoot "PartyOps_1.4.6-rc.1_windows_amd64.candidate.json"),
   ($candidate | ConvertTo-Json -Depth 5),
   (New-Object System.Text.UTF8Encoding($false))
 )

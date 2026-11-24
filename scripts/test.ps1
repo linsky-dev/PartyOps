@@ -1,7 +1,8 @@
 param(
   [string]$DocumentFormatterSource = $env:PARTYOPS_DOCUMENT_FORMATTER_SOURCE,
   [string]$DocumentFormatterParitySource = $env:PARTYOPS_DOCUMENT_FORMATTER_PARITY_SOURCE,
-  [string]$DocumentFormatterParityGolden = $env:PARTYOPS_DOCUMENT_FORMATTER_PARITY_GOLDEN
+  [string]$DocumentFormatterParityGolden = $env:PARTYOPS_DOCUMENT_FORMATTER_PARITY_GOLDEN,
+  [ValidateSet("Full", "Package", "WpsOnly")][string]$Scope = "Full"
 )
 
 $ErrorActionPreference = "Stop"
@@ -12,25 +13,18 @@ $corepackCommand = Get-Command "corepack" -ErrorAction SilentlyContinue
 if (-not (Test-Path -LiteralPath $python)) {
   throw "缺少后端 Python 环境：$python。请先按开发说明安装锁定依赖。"
 }
-if (-not $corepackCommand) {
+# Real-WPS goldens are independent of frontend and website tooling.
+if (-not $corepackCommand -and $Scope -ne "WpsOnly") {
   throw "未找到 Corepack。请安装 Node.js 22 并启用 package.json 指定的 pnpm 版本。"
 }
-$corepack = $corepackCommand.Source
+$corepack = if ($corepackCommand) { $corepackCommand.Source } else { "" }
 
-if ([string]::IsNullOrWhiteSpace($DocumentFormatterSource)) {
-  $DocumentFormatterSource = Join-Path $root "vendor\document-formatter-source"
-}
 if ([string]::IsNullOrWhiteSpace($DocumentFormatterParitySource)) {
   $DocumentFormatterParitySource = Join-Path $root "backend\tests\fixtures\document-formatter-source\input-manual-break.docx"
 }
 if ([string]::IsNullOrWhiteSpace($DocumentFormatterParityGolden)) {
   $DocumentFormatterParityGolden = Join-Path $root "backend\tests\fixtures\document-formatter-source\expected-source-formatted.docx"
 }
-$formatterBuild = Join-Path $DocumentFormatterSource "tools\Build-Windows.ps1"
-if (-not (Test-Path -LiteralPath $formatterBuild)) {
-  throw "缺少新排版工具唯一功能规格：$DocumentFormatterSource。打包门禁要求先完成其 x64/x86 源码构建与功能回归。"
-}
-
 function Invoke-Checked {
   param(
     [Parameter(Mandatory = $true)][scriptblock]$Command,
@@ -104,13 +98,25 @@ function Initialize-TestTempRoot {
   return $resolved
 }
 
-# 先重新构建并运行用户提供的新工具原始 x64/x86 功能契约，避免仅验证迁移后的
+# Windows 功能契约和宿主使用同一份核验过的上游源码。
+$sourceVerifier = Join-Path $root "scripts\verify-document-formatter-source-snapshot.py"
+$sourceArguments = @("--source", $DocumentFormatterSource)
+if ([string]::IsNullOrWhiteSpace($DocumentFormatterSource)) {
+  $DocumentFormatterSource = Join-Path $root ("artifacts\formatter-sources\" + [Guid]::NewGuid().ToString("N"))
+  $sourceArguments = @(
+    "--source", (Join-Path $root "vendor\document-formatter-source"),
+    "--stage-upstream", $DocumentFormatterSource
+  )
+}
 Invoke-Checked {
-  & $python (Join-Path $root "scripts\verify-document-formatter-source-snapshot.py") `
-    --source $DocumentFormatterSource
+  & $python $sourceVerifier @sourceArguments
 } "内嵌公文排版源码上游一致性校验"
 
-# 自有测试而漏掉规格源中的能力变化。此步骤不会发布或启动外部产品窗口。
+$formatterBuild = Join-Path $DocumentFormatterSource "tools\Build-Windows.ps1"
+if (-not (Test-Path -LiteralPath $formatterBuild -PathType Leaf)) {
+  throw "缺少新排版工具唯一功能规格：$DocumentFormatterSource。打包门禁要求先完成其 x64/x86 源码构建与功能回归。"
+}
+
 # 禁止 MSBuild 节点在两次构建后常驻。发布机可能同时运行本地模型，遗留
 # 编译进程会挤满 Windows 提交内存并让后续审计无法启动。
 $env:MSBUILDDISABLENODEREUSE = "1"
@@ -173,8 +179,19 @@ finally {
     Stop-Process -Force -ErrorAction SilentlyContinue
 }
 
+# All original x64/x86 WPS builds, goldens, and six-function 12-scenario
+# end-to-end checks have run above. This opt-in path is NOT a package release
+# test. It must stop before audit, full-function receipt and installer build.
+if ($Scope -eq "WpsOnly") {
+  Write-Host "[NATIVE_WPS_ONLY_FINISHED] WPS 测试完成；全量安全、发布和打包门禁未执行。"
+  return
+}
 Invoke-Checked { & $corepack pnpm --dir (Join-Path $root "frontend") audit --prod --audit-level high } "前端生产依赖审计"
-Invoke-Checked { & $corepack pnpm --dir (Join-Path $root "website") audit --prod --audit-level high } "官网生产依赖审计"
+# Windows/package QA must remain independently executable when the separately
+# maintained website checkout has not yet been restored. Full remains default.
+if ($Scope -eq "Full") {
+  Invoke-Checked { & $corepack pnpm --dir (Join-Path $root "website") audit --prod --audit-level high } "官网生产依赖审计"
+}
 Invoke-Checked { & $python -m pip check } "Python 依赖一致性检查"
 Invoke-CheckedWithRetry {
   & $python -m pip_audit -r (Join-Path $root "backend\requirements-release.txt")
@@ -194,15 +211,19 @@ finally {
 }
 Invoke-Checked { & $corepack pnpm --dir (Join-Path $root "frontend") run typecheck } "前端类型检查"
 Invoke-Checked { & $corepack pnpm --dir (Join-Path $root "frontend") run test:coverage } "前端覆盖率测试"
-Invoke-Checked { & $corepack pnpm --dir (Join-Path $root "frontend") run test:sites } "静态入口测试"
 Invoke-Checked { & $corepack pnpm --dir (Join-Path $root "frontend") run build } "前端生产构建"
-# 官网源码按发布策略不进入主仓库，发布门禁显式限制单 Worker，避免构建机
-# 同时驻留本地模型时 V8 并发预留耗尽 Windows 提交内存。
-Invoke-Checked {
-  & $corepack pnpm --dir (Join-Path $root "website") exec vitest run --coverage --minWorkers=1 --maxWorkers=1
-} "官网覆盖率测试"
-Invoke-Checked { & $corepack pnpm --dir (Join-Path $root "website") run test:sites } "官网静态入口测试"
-Invoke-Checked { & $corepack pnpm --dir (Join-Path $root "website") run build } "官网生产构建"
+Invoke-Checked { & $corepack pnpm --dir (Join-Path $root "frontend") run test:sites } "静态入口测试"
+# The website is a separate publication boundary. Only Full may audit/build it.
+# Package still runs ALL original WPS golden/six-function, backend, frontend,
+# dependency/security and native-package tests unchanged.
+if ($Scope -eq "Full") {
+  # 限制单 Worker，避免构建机同时驻留模型时 V8 并发占满提交内存。
+  Invoke-Checked {
+    & $corepack pnpm --dir (Join-Path $root "website") exec vitest run --coverage --minWorkers=1 --maxWorkers=1
+  } "官网覆盖率测试"
+  Invoke-Checked { & $corepack pnpm --dir (Join-Path $root "website") run build } "官网生产构建"
+  Invoke-Checked { & $corepack pnpm --dir (Join-Path $root "website") run test:sites } "官网静态入口测试"
+}
 $testTempRoot = Initialize-TestTempRoot
 $previousTemp = $env:TEMP
 $previousTmp = $env:TMP
@@ -231,7 +252,9 @@ finally {
     $env:TMP = $previousTmp
 }
 
-# 只有前述全量功能、覆盖率、安全与生产构建全部通过，才写入平台打包门禁。
+# Package evidence certifies ONLY the installer source scope; it can never
+# satisfy website/full release verification. Default Full is unchanged.
+$gateScope = $Scope.ToLowerInvariant()
 Invoke-Checked {
-  & $python (Join-Path $root "scripts\verify-full-function-gate.py") record --root $root
-} "记录全功能测试门禁"
+  & $python (Join-Path $root "scripts\verify-full-function-gate.py") record --root $root --scope $gateScope
+} "记录指定范围全功能测试门禁"

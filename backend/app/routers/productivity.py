@@ -83,7 +83,12 @@ from ..task_service import (
 )
 from ..time_utils import beijing_now
 from ..workspace import search_workspace_files
-from ..workspace_access import workspace_root_permissions
+from ..workspace_access import (
+    browsable_workspace_root_ids,
+    recent_workspace_files,
+    workspace_request_device_id,
+    workspace_root_permissions,
+)
 
 router = APIRouter(tags=["productivity"])
 
@@ -116,6 +121,7 @@ def _transition_matches(current: TaskStatus, action: str, target: TaskStatus) ->
 
 @router.get("/workbench", response_model=dict)
 def workbench(
+    request: Request,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_session),
 ) -> dict:
@@ -134,9 +140,8 @@ def workbench(
     devices = db.scalars(
         select(Device).where(Device.active.is_(True)).order_by(Device.last_seen_at.desc())
     ).all()
-    recent_files = db.scalars(
-        select(WorkspaceFile).order_by(WorkspaceFile.last_seen_at.desc()).limit(12)
-    ).all()
+    workspace_device_id = workspace_request_device_id(request, request_device(request, db))
+    recent_files = recent_workspace_files(db, user, workspace_device_id, limit=12)
     return {
         "updated_at": serialize_api_datetime(utcnow()),
         "dashboard": board.model_dump(mode="json"),
@@ -229,16 +234,20 @@ def global_search(
             break
 
     if len(items) < limit and keyword:
-        current = request_device(request, db)
-        for file in search_workspace_files(db, keyword, limit=limit - len(items)):
-            if file.is_directory:
+        workspace_device_id = workspace_request_device_id(request, request_device(request, db))
+        allowed_root_ids = browsable_workspace_root_ids(db, user, workspace_device_id)
+        for file in search_workspace_files(
+            db, keyword, limit=limit - len(items),
+            allowed_root_ids=allowed_root_ids, include_directories=False,
+        ):
+            if file.is_directory or not file.in_scope:
                 continue
             root = db.get(WorkspaceRoot, file.root_id)
             if not root or not workspace_root_permissions(
                 db,
                 root,
                 user,
-                current.id if current else None,
+                workspace_device_id,
             )["browse"]:
                 continue
             items.append(
@@ -837,11 +846,15 @@ def create_handover(
             WorkspaceLink.entity_id.in_(task_ids or [""]),
         )
     ).all()
+    workspace_device_id = workspace_request_device_id(request, request_device(request, db))
+    allowed_root_ids = browsable_workspace_root_ids(db, user, workspace_device_id) if links else []
     workspace_files = {
         item.id: item
         for item in db.scalars(
             select(WorkspaceFile).where(
-                WorkspaceFile.id.in_([link.file_id for link in links] or [""])
+                WorkspaceFile.id.in_([link.file_id for link in links]),
+                WorkspaceFile.in_scope.is_(True),
+                WorkspaceFile.root_id.in_(allowed_root_ids),
             )
         ).all()
     }

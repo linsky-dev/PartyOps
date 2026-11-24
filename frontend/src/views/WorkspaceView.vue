@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
+import { useRoute } from "vue-router";
 import {
   IconDownload,
   IconDelete,
@@ -38,8 +39,10 @@ import type {
 } from "../types";
 import { formatServerTime } from "../utils/datetime";
 import { zhLabel } from "../utils/labels";
+import { focusNotificationTarget } from "../utils/notificationNavigation";
 
 const session = useSessionStore();
+const route = useRoute();
 const roots = ref<WorkspaceRoot[]>([]);
 const rootLifecycle = ref<"active" | "disabled">("active");
 const files = ref<WorkspaceFile[]>([]);
@@ -219,6 +222,48 @@ async function changeRoot(rootId: string) {
   checkedIds.value = [];
   keyword.value = "";
   if (rootLifecycle.value === "active") await loadFiles();
+}
+
+async function locateNotificationFile() {
+  const rootId = route?.query.noticeRoot;
+  const targetId = route?.query.noticeTarget;
+  if (typeof rootId !== "string" || typeof targetId !== "string") return;
+  try {
+    if (rootLifecycle.value === "disabled") {
+      rootLifecycle.value = "active";
+      await loadRoots();
+    }
+    if (!roots.value.some((item) => item.id === rootId && item.permissions.browse)) return;
+    if (rootId === targetId) {
+      await changeRoot(rootId);
+      await focusNotificationTarget(`notice-workspace-${rootId}`);
+      return;
+    }
+    let item = await api.get<WorkspaceFile>(`/workspace/files/${encodeURIComponent(targetId)}`);
+    if (item.root_id !== rootId) return;
+    const target = item;
+    const ancestors: WorkspaceFile[] = [];
+    const seen = new Set([target.id]);
+    while (item.parent_id) {
+      const parentId = item.parent_id;
+      if (seen.has(parentId)) return;
+      seen.add(parentId);
+      item = await api.get<WorkspaceFile>(`/workspace/files/${encodeURIComponent(parentId)}`);
+      if (item.root_id !== rootId || !item.is_directory) return;
+      ancestors.unshift(item);
+    }
+    if (route?.query.noticeTarget !== targetId || route.query.noticeRoot !== rootId) return;
+    selectedRootId.value = rootId;
+    pathStack.value = ancestors;
+    keyword.value = "";
+    checkedIds.value = [];
+    selectedFile.value = target.is_directory ? null : target;
+    tagsText.value = target.tags.join("、");
+    await loadFiles();
+    await focusNotificationTarget(`notice-workspace-${target.id}`);
+  } catch {
+    Message.warning("共享对象暂不可访问，请返回通知重试定位。");
+  }
 }
 
 async function changeRootLifecycle(value: string | number | boolean) {
@@ -935,7 +980,11 @@ async function openWithDefaultApp() {
   }
 }
 
-onMounted(load);
+watch([() => route?.query.noticeRoot, () => route?.query.noticeTarget], locateNotificationFile);
+onMounted(async () => {
+  await load();
+  await locateNotificationFile();
+});
 onBeforeUnmount(() => {
   if (scanMonitorTimer !== undefined) window.clearTimeout(scanMonitorTimer);
   if (openGrantTimer !== undefined) window.clearTimeout(openGrantTimer);
@@ -990,6 +1039,7 @@ onBeforeUnmount(() => {
     <section v-if="roots.length" class="root-strip">
       <button
         v-for="root in roots"
+        :id="`notice-workspace-${root.id}`"
         :key="root.id"
         type="button"
         :class="{ active: selectedRootId === root.id }"
@@ -1038,6 +1088,7 @@ onBeforeUnmount(() => {
         <a-spin :loading="loading" class="file-spin">
           <button
             v-for="item in files"
+            :id="`notice-workspace-${item.id}`"
             :key="item.id"
             type="button"
             class="file-row"

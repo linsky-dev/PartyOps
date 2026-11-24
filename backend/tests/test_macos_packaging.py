@@ -22,6 +22,65 @@ ROOT = Path(__file__).resolve().parents[2]
 MACOS = ROOT / "packaging" / "macos"
 
 
+@pytest.mark.parametrize(
+    ("architecture", "archive_dir", "archive_arch", "digest"),
+    [
+        (
+            "x86_64",
+            "x86_64",
+            "x86-64",
+            "bb3c35d628780510915ad9e759d7ed898094d7985d01b2181bd1d4ecd94fd159",
+        ),
+        (
+            "arm64",
+            "aarch64",
+            "aarch64",
+            "de943203795e5057785f65515063e2db5eb60b0bb6d8e2534fec59e5cc5fb988",
+        ),
+    ],
+)
+def test_macos_office_source_requires_the_pinned_manifest_and_bundle(
+    tmp_path: Path, architecture: str, archive_dir: str, archive_arch: str, digest: str
+) -> None:
+    script = (ROOT / "scripts" / "prepare-libreoffice-macos.sh").read_text(encoding="utf-8")
+    version = "26.8.3.1"
+    assert f"VERSION='{version}'" in script
+    assert f"EXPECTED_SHA256='{digest}'" in script
+    # 执行准备和打包共用的核验代码，测试与本机操作系统无关。
+    verifier = script.split("<<'VERIFY_SOURCE'\n", 1)[1].split("\nVERIFY_SOURCE", 1)[0]
+    url = (
+        f"https://downloadarchive.documentfoundation.org/libreoffice/old/{version}/mac/{archive_dir}/"
+        f"LibreOffice_{version}_MacOS_{archive_arch}.dmg"
+    )
+    manifest = tmp_path / "SOURCE.json"
+    metadata = {
+        "upstream": url,
+        "archive_sha256": digest,
+        "version": version,
+        "architecture": architecture,
+        "platform": "macos",
+        "minimum_macos": "11.0",
+    }
+    plist = tmp_path / "LibreOffice.app" / "Contents" / "Info.plist"
+    plist.parent.mkdir(parents=True)
+    plist.write_bytes(plistlib.dumps({"CFBundleShortVersionString": version}))
+    command = [sys.executable, "-c", verifier, str(manifest), url, digest, version, architecture]
+    manifest.write_text(json.dumps(metadata), encoding="utf-8")
+    subprocess.run(command, capture_output=True, check=True)
+
+    for key, stale_value in (("version", "26.2.5.2"), ("architecture", "wrong"), ("archive_sha256", "0" * 64)):
+        manifest.write_text(json.dumps(metadata | {key: stale_value}), encoding="utf-8")
+        result = subprocess.run(command, capture_output=True, check=False)
+        assert result.returncode != 0
+        assert b"MACOS_OFFICE_SOURCE_MISMATCH" in result.stderr
+
+    manifest.write_text(json.dumps(metadata), encoding="utf-8")
+    plist.write_bytes(plistlib.dumps({"CFBundleShortVersionString": "26.2.5.2"}))
+    result = subprocess.run(command, capture_output=True, check=False)
+    assert result.returncode != 0
+    assert b"MACOS_OFFICE_BUNDLE_VERSION_MISMATCH" in result.stderr
+
+
 def test_macos_package_selftest_uses_bundle_resources(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -83,7 +142,7 @@ def test_macos_build_is_native_strict_signed_and_notarized() -> None:
     assert "MACOS_ARCH_MISMATCH" in validation
     assert 'bundle_identifier="cn.partyops.desktop"' in spec
     assert '"CFBundleExecutable": "partyops-desktop"' in spec
-    assert '"CFBundleVersion": "1.4.5.6"' in spec
+    assert '"CFBundleVersion": "1.4.6.1"' in spec
     # ARM 候选与 Intel 使用各自固定基线，不能由调用环境任意提高。
     assert 'deployment_targets = {"arm64": "15.0", "x86_64": "11.0"}' in spec
     assert 'minimum_system_version = deployment_targets[target_arch]' in spec
@@ -369,6 +428,7 @@ def test_macos_unsigned_candidate_and_remote_native_builder_are_explicit() -> No
     assert "office-${{ matrix.architecture }}" in workflow
     assert 'file -b "$RUNTIME/program/soffice"' in office
     assert 'program/soffice.bin' not in office
+    assert '--architecture "$TARGET_ARCH" --verify-source "$OFFICE_RUNTIME/SOURCE.json"' in build
     assert 'file -b "$OFFICE_RUNTIME/LibreOffice.app/Contents/MacOS/soffice"' in build
     assert 'test -f "$office/program/soffice.bin"' not in workflow
     assert 'lipo -archs "$office/program/soffice"' in workflow
@@ -406,11 +466,15 @@ def test_macos_unsigned_candidate_and_remote_native_builder_are_explicit() -> No
     assert "MACOS_OPENSSL_LEGACY_PROVIDER_REFERENCED" in build
     assert "MACOS_OPENSSL_LEGACY_PROVIDER_REMAINED" in build
     assert "/bin/rm -f \"$LEGACY_OPENSSL_PROVIDER\"" in build
-    assert "OPENSSL_VERSION='3.5.7'" in build
-    assert "a8c0d28a529ca480f9f36cf5792e2cd21984552a3c8e4aa11a24aa31aeac98e8" in build
-    assert "OPENSSL_STATIC=1 OPENSSL_DIR=\"$OPENSSL_PREFIX\"" in build
-    assert "--no-binary-package cryptography" in build
-    assert "MACOS_CRYPTOGRAPHY_OPENSSL_MISMATCH" in build
+    intel_crypto = (MACOS / "build-intel-crypto-environment.sh").read_text(encoding="utf-8")
+    smoke = (ROOT / ".github" / "workflows" / "cloud-runner-smoke.yml").read_text(encoding="utf-8")
+    assert 'bash "$SCRIPT_DIR/build-intel-crypto-environment.sh"' in build
+    assert "bash packaging/macos/build-intel-crypto-environment.sh" in smoke
+    assert "OPENSSL_VERSION='3.5.7'" in intel_crypto
+    assert "a8c0d28a529ca480f9f36cf5792e2cd21984552a3c8e4aa11a24aa31aeac98e8" in intel_crypto
+    assert "OPENSSL_STATIC=1 OPENSSL_DIR=\"$OPENSSL_PREFIX\"" in intel_crypto
+    assert "--no-binary-package cryptography" in intel_crypto
+    assert "MACOS_CRYPTOGRAPHY_OPENSSL_MISMATCH" in intel_crypto
     assert "MACOS_CRYPTOGRAPHY_DYNAMIC_OPENSSL" in build
     assert 'SOURCE_COMMIT="$(git -C "$ROOT" rev-parse HEAD)"' in build
     assert 'WORKFLOW_COMMIT="${GITHUB_SHA:-$SOURCE_COMMIT}"' in build
@@ -422,9 +486,6 @@ def test_macos_unsigned_candidate_and_remote_native_builder_are_explicit() -> No
     assert action_lines
     assert all(len(line.rsplit("@", 1)[-1]) == 40 for line in action_lines)
 
-    assert "VERSION='26.2.5.2'" in office
-    assert "c99fb4fe574437fc4cb820a4ca15271bca325920861f7139858b36d7f9df78ad" in office
-    assert "e26180298685274b54aa7fe6e1101c65465a372f457a6748ebd642720811db36" in office
     assert "downloadarchive.documentfoundation.org" in office
     assert "hdiutil attach -readonly -nobrowse" in office
     assert '"$SOURCE_APP" "$RUNTIME/LibreOffice.app"' in office

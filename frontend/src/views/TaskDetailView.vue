@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
+import { focusNotificationTarget } from "../utils/notificationNavigation";
 import {
   IconArrowLeft,
   IconCheck,
@@ -671,6 +672,18 @@ async function applyConflictDraft() {
   }
 }
 
+watch(() => route.params.id, load);
+watch(
+  [() => route.query.noticeTarget, () => route.query.noticeSection, () => task.value?.id],
+  ([id, section, taskId]) => {
+    if (!id || !taskId || taskId !== route.params.id) return;
+    if (section === "comments" || section === "materials") tab.value = section;
+    const anchor = section === "comments" && id !== taskId
+      ? `notice-comment-${id}`
+      : `notice-task-${section || "overview"}`;
+    void focusNotificationTarget(anchor);
+  },
+);
 onMounted(() => {
   load();
   window.addEventListener("partyops:refresh", load);
@@ -685,7 +698,7 @@ onBeforeUnmount(() => window.removeEventListener("partyops:refresh", load));
         <button class="back-link" type="button" @click="router.back()">
           <IconArrowLeft /> 返回事项清单
         </button>
-        <header class="task-head">
+        <header id="notice-task-overview" tabindex="-1" class="task-head">
           <div>
             <div class="head-kicker">
               <span>{{ task.task_type === "quick" ? "快捷任务" : task.task_type === "standard" ? "标准任务" : "项目任务" }}</span>
@@ -694,7 +707,7 @@ onBeforeUnmount(() => window.removeEventListener("partyops:refresh", load));
             <h1>{{ task.title }}</h1>
             <p>{{ task.source || "未填写任务来源" }}</p>
           </div>
-          <div class="head-actions">
+          <div id="notice-task-review" tabindex="-1" class="head-actions">
             <PageHelp
               title="事项详情怎么用"
               :tips="['按办理清单、材料和活动时间线推进同一事项。', '提交审核、退回、完成和重新打开都必须填写说明。', '归档前检查必备材料，避免形成不完整档案。']"
@@ -805,7 +818,7 @@ onBeforeUnmount(() => window.removeEventListener("partyops:refresh", load));
           </a-tab-pane>
 
           <a-tab-pane key="materials" title="一事一档">
-            <div class="tab-toolbar">
+            <div id="notice-task-materials" tabindex="-1" class="tab-toolbar">
               <p>一个材料项保留多版过程，但只确认一个最终版本。</p>
               <a-space v-if="task.status !== 'archived'">
                 <a-button size="small" @click="openBatchUpload"><template #icon><IconUpload /></template>批量上传文件</a-button>
@@ -864,7 +877,7 @@ onBeforeUnmount(() => window.removeEventListener("partyops:refresh", load));
           </a-tab-pane>
 
           <a-tab-pane key="comments" title="协同反馈">
-            <div class="comment-composer">
+            <div id="notice-task-comments" tabindex="-1" class="comment-composer">
               <div class="comment-input">
                 <a-alert v-if="replyTo" type="info" closable @close="replyTo = null">正在回复 {{ userNames[replyTarget?.author_id || ''] || '协同人员' }} 的说明</a-alert>
                 <a-textarea v-model="comment" :auto-size="{ minRows: 3, maxRows: 6 }" placeholder="记录关键反馈、协作说明或交接事项" />
@@ -877,7 +890,7 @@ onBeforeUnmount(() => window.removeEventListener("partyops:refresh", load));
               </a-button>
             </div>
             <div v-if="task.comments.length" class="comment-list">
-              <article v-for="row in threadedComments" :key="row.item.id" :class="{ reply: row.depth > 0 }" :style="{ marginLeft: `${Math.min(row.depth, 4) * 24}px` }">
+              <article v-for="row in threadedComments" :id="`notice-comment-${row.item.id}`" :key="row.item.id" tabindex="-1" :class="{ reply: row.depth > 0 }" :style="{ marginLeft: `${Math.min(row.depth, 4) * 24}px` }">
                 <div>
                   <strong>{{ userNames[row.item.author_id] || "协同人员" }}</strong>
                   <span><small v-if="row.item.parent_id">回复</small><time>{{ formatServerTime(row.item.created_at, "MM-DD HH:mm") }}</time></span>

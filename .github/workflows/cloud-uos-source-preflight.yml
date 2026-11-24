@@ -1,0 +1,193 @@
+name: RC1 UOS V20 focused packaging preflight (SOURCE_ONLY)
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/cloud-uos-source-preflight.yml'
+      - 'scripts/rc1_uos_preflight.py'
+      - 'backend/tests/test_rc1_uos_packaging_preflight.py'
+      - 'packaging/uos/build-portable.sh'
+      - 'packaging/uos/one-click-install.sh'
+      - 'packaging/linux/build-native.sh'
+      - 'packaging/linux/post-install-transaction.sh'
+      - 'packaging/uos/desktop-launcher.sh'
+      - 'scripts/package-uos-release.ps1'
+      - 'scripts/package-uos-build-kit.ps1'
+      - 'backend/app/package_selftest.py'
+      - 'backend/tests/test_rc1_uos_legacy_preview_wps.py'
+      - 'scripts/rc1_uos_assemble_buildonly_deb.py'
+      - 'scripts/rc1-uos-cloud-freeze.sh'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: partyops-rc1-uos-source-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  uos-packaging-source:
+    name: UOS candidate ${{ matrix.architecture }} source-only preflight
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - architecture: amd64
+            runner: ubuntu-24.04
+          - architecture: arm64
+            runner: ubuntu-24.04-arm
+    env:
+      PYTHONUTF8: '1'
+    steps:
+      - name: Checkout exact review source (no WPS changes)
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Set up native Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+          architecture: ${{ matrix.architecture == 'amd64' && 'x64' || 'arm64' }}
+
+      - name: Validate only touched UOS packaging contracts
+        shell: bash
+        env:
+          TARGET_ARCH: ${{ matrix.architecture }}
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check 'pytest==9.1.1'
+          python scripts/verify-version-consistency.py --root . --expected 1.4.6-rc.1
+          bash -n packaging/uos/build-portable.sh packaging/uos/one-click-install.sh \
+            packaging/linux/build-native.sh packaging/linux/post-install-transaction.sh
+          python -m py_compile scripts/rc1_uos_assemble_buildonly_deb.py
+          python -m py_compile scripts/rc1_linux_arm64_assemble_buildonly_deb.py
+          python -m py_compile scripts/rc1_linux_rpm_assemble_buildonly.py
+          bash -n scripts/rc1-uos-cloud-freeze.sh
+          PYTHONPATH=backend python -m pytest --noconftest -q \
+            backend/tests/test_rc1_uos_packaging_preflight.py \
+            backend/tests/test_rc1_uos_legacy_preview_wps.py
+          mkdir -p artifacts/uos-source
+          python scripts/rc1_uos_preflight.py --architecture "$TARGET_ARCH" \
+            --output "artifacts/uos-source/preflight-$TARGET_ARCH.json"
+          python - "$TARGET_ARCH" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+          record = json.loads((Path("artifacts/uos-source") / f"preflight-{sys.argv[1]}.json").read_text(encoding="utf-8"))
+          assert record["checks_passed"] is True
+          assert record["status"] == "PASS_SOURCE_CONTRACT_ONLY"
+          assert record["native_uos_install"] == "NOT_RUN"
+          assert record["native_uos_wps_gold_samples"] == "NOT_RUN"
+          assert record["authentic_uos_deb_artifact"] is False
+          assert record["release_ready"] is False
+          print(f"UOS_SOURCE_ONLY_PASS arch={sys.argv[1]} sha={record['source_commit']}")
+          PY
+
+      - name: Publish source-only metadata, never call this a UOS DEB
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: partyops-uos-${{ matrix.architecture }}-SOURCE_ONLY-${{ github.event.pull_request.head.sha || github.sha }}
+          path: artifacts/uos-source/preflight-${{ matrix.architecture }}.json
+          if-no-files-found: warn
+          retention-days: 14
+
+  windows-kit-synthetic-qa:
+    name: Windows PowerShell validates UOS kit assembly only (synthetic files)
+    runs-on: windows-2025
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact review source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: PowerShell parse and isolated fake-input integrity smoke
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          foreach ($path in @('scripts/package-uos-release.ps1', 'scripts/package-uos-build-kit.ps1')) {
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              (Resolve-Path -LiteralPath $path).Path, [ref]$tokens, [ref]$errors
+            ) | Out-Null
+            if ($errors.Count) { throw "[UOS_KIT_PS_PARSER_FAILED] $path : $($errors -join '; ')" }
+          }
+          $root = (Get-Location).Path
+          $fixture = Join-Path $env:RUNNER_TEMP ('partyops-uos-kit-qa-' + [Guid]::NewGuid().ToString('N'))
+          $enc = New-Object System.Text.UTF8Encoding($false)
+          try {
+            foreach ($subdir in @('scripts', 'packaging/uos', 'artifacts')) {
+              New-Item -ItemType Directory -Path (Join-Path $fixture $subdir) -Force | Out-Null
+            }
+            Copy-Item -LiteralPath (Join-Path $root 'scripts/package-uos-release.ps1') -Destination (Join-Path $fixture 'scripts')
+            Copy-Item -LiteralPath (Join-Path $root 'packaging/uos/one-click-install.sh') -Destination (Join-Path $fixture 'packaging/uos')
+            Copy-Item -LiteralPath (Join-Path $root 'docs') -Destination (Join-Path $fixture 'docs') -Recurse
+            foreach ($file in @('install.sh', '一键安装党建智办.sh')) {
+              Copy-Item -LiteralPath (Join-Path $root $file) -Destination $fixture
+            }
+            $version = '1.4.6-rc.1'
+            foreach ($arch in @('amd64', 'arm64')) {
+              $debName = "PartyOps_$version" + "_linux_$arch.deb"
+              $tarName = "PartyOps-linux-$arch.tar.zst"
+              $deb = Join-Path $fixture "artifacts/$debName"
+              $tar = Join-Path $fixture "artifacts/$tarName"
+              [IO.File]::WriteAllText($deb, "SYNTHETIC_TEST_DEB_$arch", $enc)
+              [IO.File]::WriteAllText($tar, "SYNTHETIC_TEST_TAR_$arch", $enc)
+              $debHash = (Get-FileHash -LiteralPath $deb -Algorithm SHA256).Hash.ToLowerInvariant()
+              $tarHash = (Get-FileHash -LiteralPath $tar -Algorithm SHA256).Hash.ToLowerInvariant()
+              [IO.File]::WriteAllText("$deb.sha256", ($debHash + '  ' + $debName + [char]10), $enc)
+              [IO.File]::WriteAllText((Join-Path $fixture "artifacts/SHA256SUMS.$arch"), ($tarHash + '  ' + $tarName + [char]10), $enc)
+            }
+            $kitScript = Join-Path $fixture 'scripts/package-uos-release.ps1'
+            & $kitScript
+            $zipName = 'PartyOps-1.4.6-rc.1-UOS-amd64-arm64-offline'
+            $zip = Join-Path $fixture "artifacts/$zipName.zip"
+            if (-not (Test-Path -LiteralPath $zip -PathType Leaf)) { throw '[UOS_KIT_MISSING]' }
+            $extracted = Join-Path $fixture 'extracted'
+            Expand-Archive -LiteralPath $zip -DestinationPath $extracted
+            $kit = Join-Path $extracted $zipName
+            $manifest = Join-Path $kit 'BUILD-KIT-SHA256SUMS'
+            if (-not (Test-Path -LiteralPath $manifest -PathType Leaf)) { throw '[UOS_KIT_INTEGRITY_MANIFEST_MISSING]' }
+            $lines = @(Get-Content -LiteralPath $manifest)
+            foreach ($line in $lines) {
+              if ($line -notmatch '^([0-9a-f]{64})  (.+)$') { throw '[UOS_KIT_MANIFEST_LINE_INVALID]' }
+              $expected = $Matches[1]
+              $rel = $Matches[2]
+              $member = Join-Path $kit $rel
+              if (-not (Test-Path -LiteralPath $member -PathType Leaf)) { throw "[UOS_KIT_ENTRY_MISSING] $rel" }
+              if ((Get-FileHash -LiteralPath $member -Algorithm SHA256).Hash.ToLowerInvariant() -ne $expected) {
+                throw "[UOS_KIT_MEMBER_HASH_MISMATCH] $rel"
+              }
+            }
+            $fileCount = @(Get-ChildItem -LiteralPath $kit -File -Recurse -Force | Where-Object { $_.FullName -ne $manifest }).Count
+            if ($fileCount -ne $lines.Count) { throw '[UOS_KIT_MANIFEST_INCOMPLETE]' }
+            foreach ($arch in @('amd64', 'arm64')) {
+              $checksumLines = @(Get-Content -LiteralPath (Join-Path $kit "artifacts/SHA256SUMS.$arch"))
+              if ($checksumLines.Count -ne 2) { throw "[UOS_KIT_TAR_AND_DEB_NOT_BOTH_COVERED] $arch" }
+              $debNeedle = "PartyOps_$version" + "_linux_$arch.deb"
+              if (-not ($checksumLines | Where-Object { $_.EndsWith($debNeedle) })) { throw "[UOS_KIT_DEB_CHECKSUM_MISSING] $arch" }
+            }
+            $damagedDeb = Join-Path $fixture 'artifacts/PartyOps_1.4.6-rc.1_linux_amd64.deb'
+            [IO.File]::AppendAllText($damagedDeb, 'CORRUPT', $enc)
+            $denied = $false
+            try { & $kitScript } catch {
+              if ($_.Exception.Message -match 'UOS_RELEASE_HASH_MISMATCH') { $denied = $true } else { throw }
+            }
+            if (-not $denied) { throw '[UOS_KIT_TAMPER_WAS_NOT_REJECTED]' }
+            Write-Output 'UOS_KIT_SYNTHETIC_SOURCE_ONLY=PASS'
+            Write-Output 'NO_REAL_UOS_INSTALL_NO_NATIVE_WPS_NO_REAL_DEB_ASSET'
+          }
+          finally {
+            if (Test-Path -LiteralPath $fixture -PathType Container) {
+              Remove-Item -LiteralPath $fixture -Recurse -Force
+            }
+          }

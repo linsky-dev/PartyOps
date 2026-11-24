@@ -311,13 +311,13 @@ def test_windows_process_architecture_key_and_installer_branches(monkeypatch, tm
 def test_artifact_manifest_version_snapshot_and_queue_guards(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(update_executor, "_verify_manifest_signature", lambda _manifest: True)
     package = tmp_path / "release.partyops-update"
-    name = "partyops_1.4.2_amd64.deb"
+    name = "partyops_1.4.6_amd64.deb"
     payload = b"signed-deb"
     with zipfile.ZipFile(package, "w") as archive:
         archive.writestr(name, payload)
 
     base = {
-        "version": "1.4.5",
+        "version": "1.4.6",
         "architecture_artifacts": {"amd64": name},
         "artifacts": {
             name: {

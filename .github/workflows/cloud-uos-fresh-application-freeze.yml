@@ -1,0 +1,412 @@
+name: RC1 UOS V20 source-matched executable freeze (APP_ONLY BUILD_ONLY)
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/cloud-uos-fresh-application-freeze.yml'
+      - 'scripts/rc1-uos-cloud-freeze.sh'
+      - 'scripts/rc1_linux_arm64_assemble_buildonly_deb.py'
+      - 'scripts/rc1_linux_rpm_assemble_buildonly.py'
+      - 'backend/app/package_selftest.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: partyops-rc1-uos-fresh-app-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fresh-native-app:
+    name: Actual RC1 fresh PyInstaller app only ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 105
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+            platform: x86_64
+            python_archive_sha: 0604cd029b142dc223e131f17f5941c0c8d2d5074997c8178b515b19eea2a6c2
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+            platform: aarch64
+            python_archive_sha: 9ac18c9a761e91e6c6452bc0ef0082922a00a3fdec734555635d57c3169309b7
+
+    env:
+      SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      PARTYOPS_BUILD_ARCH: ${{ matrix.arch }}
+      PARTYOPS_UOS_APP_ONLY: '1'
+      CPU_PLATFORM: ${{ matrix.platform }}
+      PY_ARCHIVE_SHA: ${{ matrix.python_archive_sha }}
+      PYTHONUTF8: '1'
+      PYTHONNOUSERSITE: '1'
+
+    steps:
+      - name: Checkout exact immutable RC1 source commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Setup native CPython host
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.11'
+          architecture: ${{ matrix.arch == 'amd64' && 'x64' || 'arm64' }}
+
+      - name: Build current RC1 Vue frontend, not historical RC6 files
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/verify-version-consistency.py --root . --expected 1.4.6-rc.1
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          corepack enable
+          corepack prepare 'pnpm@11.9.0' --activate
+          pnpm --dir frontend install --frozen-lockfile
+          pnpm --dir frontend run build
+          test -f frontend/dist/client/index.html
+
+      - name: Fetch native glibc 2.28 Python wheels and original pinned Python
+        shell: bash
+        run: |
+          set -euo pipefail
+          input="artifacts/uos-app-inputs/$PARTYOPS_BUILD_ARCH"
+          mkdir -p "$input/wheels" "$input/python"
+          python -m pip download --disable-pip-version-check \
+            --dest "$input/wheels" --python-version 311 --implementation cp \
+            --abi cp311 --only-binary=:all: \
+            --platform "manylinux_2_28_$CPU_PLATFORM" \
+            --platform "manylinux2014_$CPU_PLATFORM" \
+            -r backend/requirements.txt -r backend/requirements-local-ai.txt \
+            -r packaging/uos/requirements-build.txt
+          file="cpython-3.11.15+20260623-${CPU_PLATFORM}-unknown-linux-gnu-install_only_stripped.tar.gz"
+          curl --fail --location --retry 3 --proto '=https' --tlsv1.2 \
+            --output "$input/$file" \
+            "https://github.com/astral-sh/python-build-standalone/releases/download/20260623/cpython-3.11.15%2B20260623-${CPU_PLATFORM}-unknown-linux-gnu-install_only_stripped.tar.gz"
+          printf '%s  %s\n' "$PY_ARCHIVE_SHA" "$input/$file" | sha256sum --check
+          tar -xzf "$input/$file" -C "$input/python"
+          test -x "$input/python/python/bin/python3.11"
+
+      - name: Fetch unmodified SQLite source and pysqlite3 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          input="artifacts/uos-app-inputs/$PARTYOPS_BUILD_ARCH"
+          curl --fail --location --retry 3 --proto '=https' --tlsv1.2 \
+            --output "$input/sqlite-amalgamation-3510300.zip" \
+            https://www.sqlite.org/2026/sqlite-amalgamation-3510300.zip
+          python -m pip download --disable-pip-version-check \
+            --dest "$input" --no-deps --no-binary=:all: 'pysqlite3==0.5.4'
+          python - "$input" <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile
+          import sys
+          p=Path(sys.argv[1])
+          with ZipFile(p/'sqlite-amalgamation-3510300.zip') as z:
+              assert 'sqlite-amalgamation-3510300/sqlite3.c' in z.namelist()
+              assert 'sqlite-amalgamation-3510300/sqlite3.h' in z.namelist()
+          assert (p/'pysqlite3-0.5.4.tar.gz').is_file()
+          print('UOS_SQLITE_SOURCE_ARCHIVES=PASS')
+          PY
+
+      - name: Freeze real four-entry app within native glibc 2.28 Docker, completely offline
+        id: actual-freeze
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="quay.io/pypa/manylinux_2_28_$CPU_PLATFORM:latest"
+          docker pull "$image"
+          pinned="$(docker inspect --format '{{ index .RepoDigests 0 }}' "$image")"
+          [[ "$pinned" == *@sha256:* ]] || { echo 'UOS_IMAGE_DIGEST_UNPINNED'; exit 2; }
+          mkdir -p "artifacts/uos-app-freeze/$PARTYOPS_BUILD_ARCH"
+          printf '%s\n' "$pinned" > "artifacts/uos-app-freeze/$PARTYOPS_BUILD_ARCH/builder-image-digest.txt"
+          docker run --rm --network none \
+            --volume "$GITHUB_WORKSPACE:/workspace" --workdir /workspace \
+            --env PARTYOPS_UOS_APP_ONLY=1 --env PARTYOPS_BUILD_ARCH="$PARTYOPS_BUILD_ARCH" \
+            --env SOURCE_SHA="$SOURCE_SHA" --env PYTHONUTF8=1 \
+            "$pinned" /bin/bash -c \
+              'set -euo pipefail; git config --global --add safe.directory /workspace; bash scripts/rc1-uos-cloud-freeze.sh'
+          echo 'UOS_FRESH_RC1_SOURCE_EXECUTABLES=BUILT'
+
+      - name: Record SOURCE SHA, real executable hashes and explicit nonrelease scope
+        if: always()
+        shell: bash
+        env:
+          FREEZE_OUTCOME: ${{ steps.actual-freeze.outcome }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib,json,os,pathlib
+          arch=os.environ['PARTYOPS_BUILD_ARCH']
+          root=pathlib.Path('artifacts/uos-app-freeze')/arch
+          source=pathlib.Path('artifacts/uos-app-inputs')/arch
+          root.mkdir(parents=True,exist_ok=True)
+          def digest(p):
+              h=hashlib.sha256()
+              with p.open('rb') as f:
+                  for buf in iter(lambda:f.read(1024*1024),b''):
+                      h.update(buf)
+              return h.hexdigest()
+          exes=root/'dist'/'PartyOps'
+          executable_hashes={name:digest(exes/name) for name in
+              ['partyops','partyops-client','partyops-wizard','partyops-updater']
+              if (exes/name).is_file()}
+          input_hashes={p.name:digest(p) for p in source.glob('*.zip')} | {
+              p.name:digest(p) for p in source.glob('*.tar.gz')}
+          passed=os.environ['FREEZE_OUTCOME']=='success' and len(executable_hashes)==4
+          report={
+              'status':'PASS_FRESH_APP_ONLY' if passed else 'BLOCKED_FRESH_APP_BUILD',
+              'source_sha':os.environ['SOURCE_SHA'],
+              'version':'1.4.6-rc.1',
+              'target_os':'UOS Desktop V20 glibc 2.28',
+              'architecture':arch,
+              'source_matched_executable_sha256':executable_hashes,
+              'source_input_sha256':input_hashes,
+              'builder_image_digest':(root/'builder-image-digest.txt').read_text().strip()
+                  if (root/'builder-image-digest.txt').exists() else None,
+              'full_native_deb_built':False,
+              'original_wps_host_rebuilt_or_retested':False,
+              'formatter_historical_provenance_approved':False,
+              'native_uos_install_tested':False,
+              'release_ready':False,
+          }
+          (root/'result.json').write_text(json.dumps(report,indent=2,ensure_ascii=False)+'\n')
+          print('UOS_SOURCE_MATCHED_BINARIES='+str(len(executable_hashes)))
+          print('UOS_CLOUD_FREEZE_STATUS='+report['status'])
+          PY
+
+      - name: Upload explicit source-matched app freeze report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: partyops-uos-${{ matrix.arch }}-APP-FREEZE-RECEIPT-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            artifacts/uos-app-freeze/${{ matrix.arch }}/result.json
+            artifacts/uos-app-freeze/${{ matrix.arch }}/builder-image-digest.txt
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Archive ACTUAL new app payload, explicitly without historical native formatter
+        if: steps.actual-freeze.outcome == 'success'
+        shell: bash
+        run: |
+          set -euo pipefail
+          target="artifacts/uos-app-freeze/$PARTYOPS_BUILD_ARCH"
+          tar -C "$target/dist" -czf "$target/PartyOps_RC1_UOS_${PARTYOPS_BUILD_ARCH}_APP_ONLY_NOT_DEB.tar.gz" PartyOps
+          sha256sum "$target/PartyOps_RC1_UOS_${PARTYOPS_BUILD_ARCH}_APP_ONLY_NOT_DEB.tar.gz" |
+            tee "$target/application-payload.sha256"
+
+      - name: Upload real new RC1 app, NOT a user-installable DEB
+        if: steps.actual-freeze.outcome == 'success'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: partyops-uos-${{ matrix.arch }}-FRESH-APP-ONLY-NOT-DEB-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            artifacts/uos-app-freeze/${{ matrix.arch }}/PartyOps_RC1_UOS_*_APP_ONLY_NOT_DEB.tar.gz
+            artifacts/uos-app-freeze/${{ matrix.arch }}/application-payload.sha256
+            artifacts/uos-app-freeze/${{ matrix.arch }}/result.json
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+
+      - name: Download authentic RC6 UOS V20 AMD64 donor, byte-verify before staging
+        if: matrix.arch == 'amd64' && steps.actual-freeze.outcome == 'success'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          input="artifacts/uos-app-inputs/amd64"
+          gh release download v1.4.5-rc.6 --repo "$GITHUB_REPOSITORY" \
+            --pattern 'PartyOps_1.4.5-rc.6_linux_amd64.deb' --dir "$input" --clobber
+          printf '%s  %s\n' \
+            4557129b9f081c1b525d6dd6c6d444f7e0d35d63021b4b1c20c8daeffd4c30ae \
+            "$input/PartyOps_1.4.5-rc.6_linux_amd64.deb" | sha256sum --check
+
+      - name: Assemble REAL new RC1 UOS AMD64 DEB using byte-identical prior native WPS
+        if: matrix.arch == 'amd64' && steps.actual-freeze.outcome == 'success'
+        id: actual-preview-deb
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m py_compile scripts/rc1_uos_assemble_buildonly_deb.py
+          input="artifacts/uos-app-inputs/amd64"
+          freeze="artifacts/uos-app-freeze/amd64"
+          out="artifacts/uos-deb-buildonly"
+          mkdir -p "$out"
+          python scripts/rc1_uos_assemble_buildonly_deb.py \
+            --donor "$input/PartyOps_1.4.5-rc.6_linux_amd64.deb" \
+            --app "$freeze/dist/PartyOps" \
+            --app-receipt "$freeze/result.json" \
+            --output "$out/PartyOps_1.4.6-rc.1_uos_v20_amd64_BUILD_ONLY_UNVERIFIED.deb"
+          (cd "$out" && sha256sum --check PartyOps_1.4.6-rc.1_uos_v20_amd64_BUILD_ONLY_UNVERIFIED.deb.sha256)
+          # The upstream Office carries its own manifest-verified glibc 2.34
+          # private loader. Check real startup in the target glibc 2.28
+          # namespace; no WPS, user data, GUI, or conversion is run here.
+          mkdir -p "$out/probe-extracted"
+          dpkg-deb --extract "$out/PartyOps_1.4.6-rc.1_uos_v20_amd64_BUILD_ONLY_UNVERIFIED.deb" "$out/probe-extracted"
+          image="quay.io/pypa/manylinux_2_28_x86_64:latest"
+          docker pull "$image"
+          image_digest="$(docker inspect --format '{{ index .RepoDigests 0 }}' "$image")"
+          test -n "$image_digest"
+          docker run --rm --network none \
+            --volume "$GITHUB_WORKSPACE/$out/probe-extracted:/candidate:ro" \
+            "$image_digest" /bin/bash -c \
+            'set -euo pipefail; test "$(getconf GNU_LIBC_VERSION)" = "glibc 2.28"; timeout 60 /candidate/opt/partyops/office-runtime/program/soffice --headless --version'
+          echo 'UOS_OFFICE_PRIVATE_LOADER_GLIBC_228_SMOKE=PASS'
+          rm -rf -- "$out/probe-extracted"
+          dpkg-deb --field "$out/PartyOps_1.4.6-rc.1_uos_v20_amd64_BUILD_ONLY_UNVERIFIED.deb" \
+            Package Version Architecture
+          echo 'UOS_HOSTED_NATIVE_DEB_ASSEMBLED=BUILD_ONLY_NOT_UOS_INSTALLED'
+
+      - name: Upload genuine RC1 UOS AMD64 DEB installer for local upgrade QA
+        if: matrix.arch == 'amd64' && steps.actual-preview-deb.outcome == 'success'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: partyops-uos-v20-amd64-RC1-ACTUAL-DEB-BUILD_ONLY-UNVERIFIED-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            artifacts/uos-deb-buildonly/*.deb
+            artifacts/uos-deb-buildonly/*.sha256
+            artifacts/uos-deb-buildonly/buildonly-receipt.json
+          compression-level: 0
+          retention-days: 14
+          if-no-files-found: error
+
+      - name: Download exact Kylin ARM64 original package for shared Kylin/UOS ARM64 candidate
+        if: matrix.arch == 'arm64' && steps.actual-freeze.outcome == 'success'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/uos-app-inputs/arm64
+          gh release download v1.4.5-rc.6 --repo "$GITHUB_REPOSITORY" \
+            --pattern 'PartyOps_1.4.5-rc.6_linux_arm64_kylin-full-20261016.deb' \
+            --dir artifacts/uos-app-inputs/arm64 --clobber
+          printf '%s  %s\n' \
+            17d0e3a3acf060d3c65299c012078435bacc0da3f1f0a909fe3cc997cbbee69c \
+            artifacts/uos-app-inputs/arm64/PartyOps_1.4.5-rc.6_linux_arm64_kylin-full-20261016.deb |
+            sha256sum --check
+
+      - name: Build real Kylin/UOS ARM64 DEB candidate from fresh RC1 arm64 source
+        if: matrix.arch == 'arm64' && steps.actual-freeze.outcome == 'success'
+        id: actual-arm64-deb
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m py_compile scripts/rc1_linux_arm64_assemble_buildonly_deb.py
+          mkdir -p artifacts/rc1-arm64-deb-buildonly
+          python scripts/rc1_linux_arm64_assemble_buildonly_deb.py \
+            --donor artifacts/uos-app-inputs/arm64/PartyOps_1.4.5-rc.6_linux_arm64_kylin-full-20261016.deb \
+            --app artifacts/uos-app-freeze/arm64/dist/PartyOps \
+            --app-receipt artifacts/uos-app-freeze/arm64/result.json \
+            --output artifacts/rc1-arm64-deb-buildonly/PartyOps_1.4.6-rc.1_kylin_uos_arm64_BUILD_ONLY_UNVERIFIED.deb
+          cd artifacts/rc1-arm64-deb-buildonly
+          sha256sum --check PartyOps_1.4.6-rc.1_kylin_uos_arm64_BUILD_ONLY_UNVERIFIED.deb.sha256
+          test "$(dpkg-deb --field PartyOps_1.4.6-rc.1_kylin_uos_arm64_BUILD_ONLY_UNVERIFIED.deb Architecture)" = arm64
+          echo 'Kylin/UOS ARM64 real DEB BUILD_ONLY=PASS_NOT_NATIVE_INSTALLED'
+
+      - name: Check native arm64 LibreOffice private loader in glibc 2.28 target
+        if: matrix.arch == 'arm64' && steps.actual-arm64-deb.outcome == 'success'
+        shell: bash
+        run: |
+          set -euo pipefail
+          out=artifacts/rc1-arm64-deb-buildonly
+          mkdir -p "$out/probe"
+          dpkg-deb -x "$out/PartyOps_1.4.6-rc.1_kylin_uos_arm64_BUILD_ONLY_UNVERIFIED.deb" "$out/probe"
+          image=quay.io/pypa/manylinux_2_28_aarch64:latest
+          docker pull "$image"
+          pinned="$(docker inspect --format '{{ index .RepoDigests 0 }}' "$image")"
+          test -n "$pinned"
+          docker run --rm --network none \
+            --volume "$GITHUB_WORKSPACE/$out/probe:/candidate:ro" "$pinned" /bin/bash -c \
+            'set -euo pipefail; test "$(getconf GNU_LIBC_VERSION)" = "glibc 2.28"; timeout 90 /candidate/opt/partyops/office-runtime/program/soffice --headless --version'
+          echo 'Kylin/UOS arm64 private Office loader smoke=PASS'
+          rm -rf "$out/probe"
+
+      - name: Upload genuine new ARM64 DEB for Kylin/UOS non-production install QA
+        if: matrix.arch == 'arm64' && steps.actual-arm64-deb.outcome == 'success'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: partyops-RC1-kylin-uos-arm64-ACTUAL-DEB-BUILD_ONLY-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            artifacts/rc1-arm64-deb-buildonly/*.deb
+            artifacts/rc1-arm64-deb-buildonly/*.sha256
+            artifacts/rc1-arm64-deb-buildonly/buildonly-receipt.json
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+
+      - name: Install RPM packaging and archive tools for target openEuler architecture
+        if: steps.actual-freeze.outcome == 'success'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq rpm cpio
+          command -v rpmbuild
+          command -v rpm2cpio
+          command -v cpio
+
+      - name: Fetch pinned public RC6 openEuler RPM donor with unchanged WPS
+        if: steps.actual-freeze.outcome == 'success'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p "artifacts/uos-app-inputs/$PARTYOPS_BUILD_ARCH"
+          if [[ "$PARTYOPS_BUILD_ARCH" == amd64 ]]; then
+            donor=PartyOps-1.4.5-0.rc.6.1.x86_64.rpm
+            expected=e7c34a6090689f40dfae3aa3403b7b6ad0b5d4c3748e07005bb73ed1b32632ac
+          else
+            donor=PartyOps-1.4.5-0.rc.6.1.aarch64.rpm
+            expected=f507da109c1110e2c553ac9cb44a7f05205156132fb241ba057028571344e4f4
+          fi
+          gh release download v1.4.5-rc.6 --repo "$GITHUB_REPOSITORY" \
+            --pattern "$donor" --dir "artifacts/uos-app-inputs/$PARTYOPS_BUILD_ARCH" --clobber
+          printf '%s  %s\n' "$expected" "artifacts/uos-app-inputs/$PARTYOPS_BUILD_ARCH/$donor" |
+            sha256sum --check
+
+      - name: Rebuild real source-matched RC1 RPM with original native WPS and explicit rollback seed
+        if: steps.actual-freeze.outcome == 'success'
+        id: actual-rpm
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m py_compile scripts/rc1_linux_rpm_assemble_buildonly.py
+          if [[ "$PARTYOPS_BUILD_ARCH" == amd64 ]]; then
+            donor=PartyOps-1.4.5-0.rc.6.1.x86_64.rpm
+            target=x86_64
+          else
+            donor=PartyOps-1.4.5-0.rc.6.1.aarch64.rpm
+            target=aarch64
+          fi
+          out="artifacts/rc1-rpm-buildonly/$PARTYOPS_BUILD_ARCH"
+          mkdir -p "$out"
+          python scripts/rc1_linux_rpm_assemble_buildonly.py \
+            --donor "artifacts/uos-app-inputs/$PARTYOPS_BUILD_ARCH/$donor" \
+            --app "artifacts/uos-app-freeze/$PARTYOPS_BUILD_ARCH/dist/PartyOps" \
+            --app-receipt "artifacts/uos-app-freeze/$PARTYOPS_BUILD_ARCH/result.json" \
+            --architecture "$PARTYOPS_BUILD_ARCH" \
+            --output "$out/PartyOps-1.4.6-0.rc.1.1.$target-BUILD_ONLY_UNVERIFIED.rpm"
+          (cd "$out" && sha256sum --check *.rpm.sha256)
+          rpm -qp --queryformat '%{NAME}|%{VERSION}|%{RELEASE}|%{ARCH}\n' "$out/"*.rpm
+          echo 'OPENEULER_RPM_BUILT=TRUE_UNSIGNED_HOSTED_ONLY'
+
+      - name: Upload real RC1 openEuler RPM for architecture-specific local acceptance
+        if: steps.actual-rpm.outcome == 'success'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: partyops-RC1-openeuler-${{ matrix.platform }}-RPM-BUILD_ONLY-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            artifacts/rc1-rpm-buildonly/${{ matrix.arch }}/*.rpm
+            artifacts/rc1-rpm-buildonly/${{ matrix.arch }}/*.sha256
+            artifacts/rc1-rpm-buildonly/${{ matrix.arch }}/buildonly-receipt.json
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14

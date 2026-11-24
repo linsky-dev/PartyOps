@@ -1,6 +1,7 @@
 param(
   [ValidateSet("amd64", "arm64", "all")]
-  [string]$Architecture = "all"
+  [string]$Architecture = "all",
+  [ValidateSet("full", "uos-v20")][string]$RuntimeProfile = "full"
 )
 
 $ErrorActionPreference = "Stop"
@@ -13,13 +14,13 @@ $sqliteArchive = Join-Path $vendor "sqlite-amalgamation-3510300.zip"
 $pysqliteArchive = Join-Path $vendor "pysqlite3-0.5.4.tar.gz"
 $targets = @{
   amd64 = @{
-    PipPlatforms = @("manylinux_2_28_x86_64", "manylinux2014_x86_64")
+    PipPlatforms = @("manylinux2014_x86_64")
     PythonArchive = "cpython-3.11.15+20260623-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz"
     PythonUrl = "https://github.com/astral-sh/python-build-standalone/releases/download/20260623/cpython-3.11.15%2B20260623-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz"
     PythonSha256 = "0604cd029b142dc223e131f17f5941c0c8d2d5074997c8178b515b19eea2a6c2"
   }
   arm64 = @{
-    PipPlatforms = @("manylinux_2_28_aarch64", "manylinux2014_aarch64")
+    PipPlatforms = @("manylinux2014_aarch64")
     PythonArchive = "cpython-3.11.15+20260623-aarch64-unknown-linux-gnu-install_only_stripped.tar.gz"
     PythonUrl = "https://github.com/astral-sh/python-build-standalone/releases/download/20260623/cpython-3.11.15%2B20260623-aarch64-unknown-linux-gnu-install_only_stripped.tar.gz"
     PythonSha256 = "9ac18c9a761e91e6c6452bc0ef0082922a00a3fdec734555635d57c3169309b7"
@@ -52,7 +53,14 @@ function Prepare-Architecture([string]$TargetArchitecture) {
     "--abi", "cp311",
     "--only-binary=:all:"
   )
-  foreach ($platform in $target.PipPlatforms) {
+  # UOS V20 is glibc 2.28; do not relax older Linux profile.
+  $targetMachine = if ($TargetArchitecture -eq "amd64") { "x86_64" } else { "aarch64" }
+  $pipPlatforms = if ($RuntimeProfile -eq "uos-v20") {
+    @("manylinux_2_28_$targetMachine") + $target.PipPlatforms
+  } else {
+    $target.PipPlatforms
+  }
+  foreach ($platform in $pipPlatforms) {
     $pipArgs += @("--platform", $platform)
   }
   $pipArgs += @(
@@ -67,6 +75,7 @@ function Prepare-Architecture([string]$TargetArchitecture) {
 
   & $python (Join-Path $root "scripts\validate-uos-wheelhouse.py") `
     --architecture $TargetArchitecture `
+    --runtime-profile $RuntimeProfile `
     --wheelhouse $wheelhouse `
     --requirements `
     (Join-Path $root "backend\requirements.txt") `

@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 ARTIFACTS="$ROOT/artifacts"
 RUNTIME_PROFILE="${PARTYOPS_RUNTIME_PROFILE:-full}"
-[[ "$RUNTIME_PROFILE" == full || "$RUNTIME_PROFILE" == core ]] || {
+[[ "$RUNTIME_PROFILE" == full || "$RUNTIME_PROFILE" == core || "$RUNTIME_PROFILE" == uos-v20 ]] || {
   echo "未知 Linux 包档：$RUNTIME_PROFILE" >&2; exit 2;
 }
 if [[ -z "${PYTHON_BIN:-}" && -f "$ROOT/.partyops-build.env" ]]; then
@@ -23,8 +23,8 @@ if [[ -z "$PYTHON_BIN" || ! -x "$PYTHON_BIN" ]]; then
   exit 2
 fi
 "$PYTHON_BIN" "$ROOT/scripts/verify-version-consistency.py" \
-  --root "$ROOT" --expected "1.4.5-rc.6"
-APP_VERSION="1.4.5-rc.6"
+  --root "$ROOT" --expected "1.4.6-rc.1"
+APP_VERSION="1.4.6-rc.1"
 BUILD_PARENT="${PARTYOPS_BUILD_BASE:-$ROOT/.build-uos}"
 mkdir -p "$BUILD_PARENT"
 BUILD_PARENT="$(cd "$BUILD_PARENT" && pwd -P)"
@@ -171,11 +171,11 @@ if ! "$PYTHON_BIN" - "$GLIBC_VERSION" "$RUNTIME_PROFILE" <<'PY'
 import sys
 
 current = tuple(int(part) for part in sys.argv[1].split(".")[:2])
-expected = (2, 38) if sys.argv[2] == "core" else (2, 17)
+expected = (2, 38) if sys.argv[2] == "core" else (2, 28) if sys.argv[2] == "uos-v20" else (2, 17)
 raise SystemExit(0 if current == expected else 1)
 PY
 then
-  echo "构建机 glibc 与 $RUNTIME_PROFILE 档不匹配：当前 $GLIBC_VERSION，core 要求 2.38，full 要求 2.17。" >&2
+  echo "构建机 glibc 与 $RUNTIME_PROFILE 档不匹配：当前 $GLIBC_VERSION，core 要求 2.38，full 要求 2.17，uos-v20 要求 2.28。" >&2
   exit 2
 fi
 if [[ "$RUNTIME_PROFILE" == core ]] &&
@@ -215,10 +215,13 @@ if [[ ! -f "$LOCAL_AI_RUNTIME/LICENSE" || ! -f "$LOCAL_AI_RUNTIME/SOURCE.json" ]
   exit 2
 fi
 fi
-# 部分 Windows 解压/重打包工具会把清单改成 CRLF。校验前只规范行尾，
-# 避免 sha256sum 把不可见的 \r 误认为文件名的一部分。
-sed -i 's/\r$//' "$ROOT/vendor/SHA256SUMS"
-(cd "$ROOT/vendor" && sha256sum -c SHA256SUMS)
+# 部分 Windows 解压/重打包工具会把清单改成 CRLF。只规范校验时的
+# 输入流，不得通过 sed -i 修改供应链清单原件，否则会在“只读源码 /
+# 签名构建套件”上失败，也会让正式源码 SHA 与构建时内容不一致。
+(
+  cd "$ROOT/vendor"
+  sed 's/\r$//' SHA256SUMS | sha256sum -c -
+)
 OCR_ARCHIVE_ROOT=tesseract-5.5.3
 if [[ "$RUNTIME_PROFILE" == core ]]; then
   OCR_ARCHIVE_ROOT=tesseract-5.5.0-deepin-loong64
@@ -466,7 +469,7 @@ USER_DOCUMENTS=(
   "installation-checklist.md"
   "backup-restore.md"
   "operations-runbook.md"
-  "release-notes-v1.4.5-rc.6.md"
+  "release-notes-v1.4.6-rc.1.md"
 )
 for document in "${USER_DOCUMENTS[@]}"; do
   [[ -f "$ROOT/docs/$document" ]] || {

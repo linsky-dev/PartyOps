@@ -16,7 +16,7 @@
 
 ## 运行
 
-使用仓库后端 Python 3.11 环境，另装本目录 requirements.txt 中锁定的实验室依赖。所有命令从仓库根目录执行。
+使用仓库后端 Python 3.11 环境，另装本目录 requirements.txt 中锁定的实验室依赖。所有命令从仓库根目录执行。本节保留的旧环境、E 盘、WSL 研究和虚拟机步骤仅供历史核对。1.4.6-rc.1 的构建和大规模验收使用托管 Runner 或经授权的远程环境。
 
 Linux 已完成真实重启但尚未通过重启后业务检查时，可使用 `scripts/exercise-linux-business.py <target> after-reboot --reboot-execution <本轮 execution.json 的绝对路径>` 单独续接。该入口核验同一业务链、包、恢复代次、业务依赖和真实前后 boot ID，仅接受 UEFI vars 的可变哈希过渡；成功后记录过渡并推进业务指针，保留原失败报告。不得手动修改指针或用新控制器的 `run --resume` 代替此续接，后者可能因控制器指纹变化重新恢复干净基线。此阶段成功不等于完整生命周期通过。
 
@@ -112,7 +112,7 @@ UOS 1070 默认签名策略曾拒绝未签名 DEB；用户明确授权在安全�
 
 ARM64 本地构建使用独立克隆：`scripts/linux-build-guest.py create uos-deb-arm64` 只从已冷启动且停机的原版基础快照导出独立 qcow2，不使用会随原盘变化的 backing file。依次使用同脚本的 `start`、`bind` 后，才可在克隆内安装构建工具；`bind` 同时核对硬件 UUID 和来自基础盘的 SSH 主机密钥，将 Guest 标记为 `disposable-build`。构建克隆不加入必需验收环境，身份门禁拒绝把它的运行证据导入验收目标。基础盘保持原样；`stop` 后保留工具克隆以便续建。
 
-默认目录 `D:/PartyOps-VM-Lab`；下载、基础盘、活动盘、专用 SSH 密钥、报告分目录保存，不进 Git。不写 C 盘大镜像。D 盘空间不足时可以对命令显式传 `--root E:/codex/PartyOps/.partyops-vm-lab`，当前不会自动搬动正在运行的 VM。
+默认目录 `D:/PartyOps-VM-Lab`，后备目录为同目录下的 `fallback`。已有远程实验室可用 `PARTYOPS_LAB_ROOT`、`PARTYOPS_LAB_FALLBACK_ROOT` 和 `PARTYOPS_LAB_QEMU_HOME` 配置已登记的目录。
 
 `config/media.yaml` 与本地 `.local/media.yaml` 登记来源、架构及哈希，实际下载后逐字节校验。Win7 来源为用户指定的第三方归档；哈希一致不能描述为微软官方真实性认证。旧 qcow2 记录仅供历史追溯。UOS ARM64 若不支持 QEMU 虚拟硬件则保留阻断，不换用 Deepin。
 

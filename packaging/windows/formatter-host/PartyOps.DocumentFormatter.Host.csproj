@@ -22,7 +22,6 @@
     <Prefer32Bit Condition=" '$(Platform)' == 'AnyCPU' Or '$(Platform)' == 'Any CPU' ">false</Prefer32Bit>
     <OutputPath>bin\$(Platform)\$(Configuration)\</OutputPath>
     <IntermediateOutputPath>obj\$(Platform)\$(Configuration)\</IntermediateOutputPath>
-    <DocumentFormatterSource Condition=" '$(DocumentFormatterSource)' == '' ">$(MSBuildProjectDirectory)\..\..\..\vendor\document-formatter-source</DocumentFormatterSource>
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="System" />
@@ -46,12 +45,15 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
   </ItemGroup>
-  <ItemGroup>
+  <ItemGroup Condition=" '$(DocumentFormatterSource)' != '' ">
     <ProjectReference Include="$(DocumentFormatterSource)\src\PartyOps.DocumentFormatter.AddIn\PartyOps.DocumentFormatter.AddIn.csproj">
       <Project>{8A4E1C33-1D9F-4EA2-9CF1-2673D0A2A591}</Project>
       <Name>PartyOps.DocumentFormatter.AddIn</Name>
       <Private>true</Private>
     </ProjectReference>
   </ItemGroup>
+  <Target Name="RequireDocumentFormatterSource" BeforeTargets="PrepareForBuild" Condition=" '$(DocumentFormatterSource)' == '' ">
+    <Error Text="请使用 scripts/build-document-formatter-host.ps1 核验并选择排版源码。" />
+  </Target>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>

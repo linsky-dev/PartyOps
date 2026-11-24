@@ -245,6 +245,205 @@ def _validate_mac_object_evidence(payload: dict[str, object], host: Path) -> dic
     return payload
 
 
+
+# The UOS V20 AMD64 preview may preserve the byte-identical, historically
+# validated RC6 native WPS host. This is NOT a new WPS acceptance, nor an
+# exemption for arbitrary old binaries: only the exact official donor hashes
+# in an unsigned 1.4.6-rc.1 BUILD_ONLY package are admitted.
+_UOS_RC6_LEGACY_HOST = "26fba25f527dc66c4ca5b6197e89c873d0397765d6e88e7fb739710374e3da4f"
+_UOS_RC6_LEGACY_SOURCE_RECORD = "b4fba6efaa24034f02aa242e4b41433e542bf9f6f681f8bdeae2e7c70310abf7"
+_UOS_RC6_LEGACY_EVIDENCE = "77dcfc30c2244a18870c838c479a3f1ef32c0bb754c04e7e3604b087330f348f"
+_UOS_RC6_LEGACY_SOURCE_SNAPSHOT = "15c21b886f6a958fb61a3b106266b446a2b959b0085510015eeb790efaa770d3"
+_UOS_RC6_DONOR_DEB = "4557129b9f081c1b525d6dd6c6d444f7e0d35d63021b4b1c20c8daeffd4c30ae"
+
+
+def _allow_pinned_uos_rc6_formatter_preview(
+    host_binary: Path, source_record: Path, record: dict[str, object]
+) -> bool:
+    """Only RC1 UOS AMD64 BUILD_ONLY may carry the exact unchanged RC6 host.
+
+    The historical evidence remains historical; never report a new WPS test.
+    Real released packages must use the current frozen formatter source.
+    """
+    if os.name == "nt" or sys.platform != "linux" or _source_formatter_architecture() != "amd64":
+        return False
+    if record.get("source_snapshot_sha256") != _UOS_RC6_LEGACY_SOURCE_SNAPSHOT:
+        return False
+    runtime = host_binary.parent.parent
+    manifest = runtime / "release-manifest.json"
+    receipt = runtime / "UOS-RC1-BUILD-ONLY.json"
+    evidence = host_binary.parent / "runtime-evidence.json"
+    required = (manifest, receipt, evidence, source_record, host_binary)
+    if any(path.is_symlink() or not path.is_file() for path in required):
+        return False
+    try:
+        release = json.loads(manifest.read_text(encoding="utf-8"))
+        metadata = json.loads(receipt.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return False
+    if not isinstance(release, dict) or not isinstance(metadata, dict):
+        return False
+    sha = release.get("source_commit")
+    if not isinstance(sha, str) or not re.fullmatch(r"[0-9a-f]{40}", sha):
+        return False
+    expected_metadata = {
+        "schema_version": 1,
+        "status": "BUILD_ONLY_UNVERIFIED",
+        "version": "1.4.6-rc.1",
+        "architecture": "amd64",
+        "target_os": "UOS Desktop V20 1070",
+        "source_sha": sha,
+        "historical_donor_deb_sha256": _UOS_RC6_DONOR_DEB,
+        "historical_wps_host_sha256": _UOS_RC6_LEGACY_HOST,
+        "historical_wps_source_record_sha256": _UOS_RC6_LEGACY_SOURCE_RECORD,
+        "historical_wps_evidence_sha256": _UOS_RC6_LEGACY_EVIDENCE,
+        "historical_wps_snapshot_sha256": _UOS_RC6_LEGACY_SOURCE_SNAPSHOT,
+        "historical_wps_host_unchanged": True,
+        "wps_native_tests_rerun": False,
+        "release_ready": False,
+    }
+    if any(metadata.get(key) != value for key, value in expected_metadata.items()):
+        return False
+    expected_release = {
+        "schema_version": 1,
+        "product": "PartyOps",
+        "version": "1.4.6-rc.1",
+        "platform": "linux-deb",
+        "architecture": "amd64",
+        "runtime_profile": "uos-v20",
+        "signed": False,
+    }
+    if any(release.get(key) != value for key, value in expected_release.items()):
+        return False
+    files = release.get("files")
+    if not isinstance(files, list):
+        return False
+    file_hashes = {
+        item.get("path"): item.get("sha256")
+        for item in files if isinstance(item, dict)
+    }
+    expected_files = {
+        "formatter-host/partyops-document-formatter-host": _UOS_RC6_LEGACY_HOST,
+        "formatter-host/source-host.json": _UOS_RC6_LEGACY_SOURCE_RECORD,
+        "formatter-host/runtime-evidence.json": _UOS_RC6_LEGACY_EVIDENCE,
+    }
+    if any(file_hashes.get(name) != digest for name, digest in expected_files.items()):
+        return False
+    return (
+        _sha256(host_binary) == _UOS_RC6_LEGACY_HOST
+        and _sha256(source_record) == _UOS_RC6_LEGACY_SOURCE_RECORD
+        and _sha256(evidence) == _UOS_RC6_LEGACY_EVIDENCE
+    )
+
+
+
+# Cross-distribution BUILD_ONLY preview: strict official RC6 donor provenance.
+# These records NEVER constitute fresh native WPS acceptance and MUST NOT
+# loosen the release signing, full-function, or device-native gates.
+_PINNED_RC6_LINUX_PREVIEWS = {
+    ("linux-deb", "arm64"): {
+        "target_os": "Kylin Desktop V10 SP1 2503 / UOS V20 ARM64",
+        "donor_sha": "17d0e3a3acf060d3c65299c012078435bacc0da3f1f0a909fe3cc997cbbee69c",
+        "host_sha": "c84b21908e542218d1ac20c5f5e2f7b13f3f9e6f9f07ec3e08ebd103fa31ad22",
+        "source_sha": "754319a3095aa5646db337a0ba723603ec2394f4333da397904df96c444dd19d",
+        "evidence_sha": "f1b48d33f6eb068ee3ce57b810722355c4b583f2da41cf47ca816856cc8f9247",
+    },
+    ("linux-rpm", "amd64"): {
+        "target_os": "openEuler 24.03 LTS-SP2 x86_64",
+        "donor_sha": "e7c34a6090689f40dfae3aa3403b7b6ad0b5d4c3748e07005bb73ed1b32632ac",
+        "host_sha": "26fba25f527dc66c4ca5b6197e89c873d0397765d6e88e7fb739710374e3da4f",
+        "source_sha": "b4fba6efaa24034f02aa242e4b41433e542bf9f6f681f8bdeae2e7c70310abf7",
+        "evidence_sha": "77dcfc30c2244a18870c838c479a3f1ef32c0bb754c04e7e3604b087330f348f",
+    },
+    ("linux-rpm", "arm64"): {
+        "target_os": "openEuler 24.03 LTS-SP2 aarch64",
+        "donor_sha": "f507da109c1110e2c553ac9cb44a7f05205156132fb241ba057028571344e4f4",
+        "host_sha": "76ae4182c03e5cf7e7399379cee614b6055d01e170b4258f3d6b2493cb98adb7",
+        "source_sha": "95ba0649d3156ba655bed2ecf5ae084de8b5e11c75720de8a7b8fa899ff25f1a",
+        "evidence_sha": "cc9ab788ca58b98ae462b8d55e06ef5a4dec169f8cb0fcfe0b8799a93b2c8403",
+    },
+}
+
+
+def _allow_pinned_rc6_linux_preview(
+    host_binary: Path, source_record: Path, record: dict[str, object]
+) -> bool:
+    """Allow only source/host/evidence SHA-exact historical files in RC1 test builds."""
+    if os.name == "nt" or sys.platform != "linux":
+        return False
+    if record.get("source_snapshot_sha256") != _UOS_RC6_LEGACY_SOURCE_SNAPSHOT:
+        return False
+    runtime = host_binary.parent.parent
+    receipt = runtime / "RC1-LINUX-BUILD-ONLY.json"
+    manifest = runtime / "release-manifest.json"
+    evidence = host_binary.parent / "runtime-evidence.json"
+    required = (receipt, manifest, evidence, host_binary, source_record)
+    if any(p.is_symlink() or not p.is_file() for p in required):
+        return False
+    try:
+        m = json.loads(manifest.read_text(encoding="utf-8"))
+        r = json.loads(receipt.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return False
+    if not isinstance(m, dict) or not isinstance(r, dict):
+        return False
+    arch = _source_formatter_architecture()
+    expected = _PINNED_RC6_LINUX_PREVIEWS.get((m.get("platform"), arch))
+    if expected is None:
+        return False
+    source_sha = m.get("source_commit")
+    if not isinstance(source_sha, str) or not re.fullmatch(r"[0-9a-f]{40}", source_sha):
+        return False
+    expected_receipt = {
+        "schema_version": 1,
+        "status": "BUILD_ONLY_UNVERIFIED",
+        "version": "1.4.6-rc.1",
+        "architecture": arch,
+        "target_os": expected["target_os"],
+        "source_sha": source_sha,
+        "original_package_sha256": expected["donor_sha"],
+        "historical_wps_host_sha256": expected["host_sha"],
+        "historical_wps_source_record_sha256": expected["source_sha"],
+        "historical_wps_evidence_sha256": expected["evidence_sha"],
+        "historical_wps_snapshot_sha256": _UOS_RC6_LEGACY_SOURCE_SNAPSHOT,
+        "historical_wps_host_unchanged": True,
+        "wps_native_tests_rerun": False,
+        "release_ready": False,
+    }
+    if any(r.get(key) != value for key, value in expected_receipt.items()):
+        return False
+    expected_manifest = {
+        "schema_version": 1,
+        "product": "PartyOps",
+        "version": "1.4.6-rc.1",
+        "platform": m["platform"],
+        "architecture": arch,
+        "runtime_profile": "uos-v20",
+        "signed": False,
+    }
+    if any(m.get(key) != value for key, value in expected_manifest.items()):
+        return False
+    entries = m.get("files")
+    if not isinstance(entries, list):
+        return False
+    hashes = {row.get("path"): row.get("sha256") for row in entries if isinstance(row, dict)}
+    pinned = {
+        "formatter-host/partyops-document-formatter-host": expected["host_sha"],
+        "formatter-host/source-host.json": expected["source_sha"],
+        "formatter-host/runtime-evidence.json": expected["evidence_sha"],
+    }
+    if any(hashes.get(name) != digest for name, digest in pinned.items()):
+        return False
+    return all(
+        _sha256(file) == digest for file, digest in (
+            (host_binary, expected["host_sha"]),
+            (source_record, expected["source_sha"]),
+            (evidence, expected["evidence_sha"]),
+        )
+    )
+
+
+
 def _validate_source_formatter_record(
     host_binary: Path,
     rules_binary: Path | None,
@@ -268,7 +467,9 @@ def _validate_source_formatter_record(
         record.get("schema") != 2
         or record.get("timezone") != "Asia/Shanghai"
         or record.get("source_project") != "PartyOps.DocumentFormatter.AddIn"
-        or record.get("source_snapshot_sha256") != FORMATTER_SOURCE_SNAPSHOT_SHA256
+        or (record.get("source_snapshot_sha256") != FORMATTER_SOURCE_SNAPSHOT_SHA256
+            and not _allow_pinned_uos_rc6_formatter_preview(host_binary, source_record, record)
+            and not _allow_pinned_rc6_linux_preview(host_binary, source_record, record))
         or record.get("source_snapshot_files") != FORMATTER_SOURCE_SNAPSHOT_FILES
         or record.get("platform") != _source_formatter_platform()
         or record.get("architecture") != _source_formatter_architecture()

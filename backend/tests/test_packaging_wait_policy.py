@@ -343,7 +343,7 @@ def test_linux_auxiliary_entrypoints_share_onedir_runtime() -> None:
     assert "partyops partyops-client partyops-wizard partyops-updater" in native_runtime
     assert "create-0023-upgrade-fixture.py" in native_runtime
     assert "NATIVE_0023_UPGRADE_FAILED" in native_runtime
-    assert '[[ "$revision" == 0026' in native_runtime
+    assert '[[ "$revision" == 0028' in native_runtime
     assert "runtime_root != expected_root" in wizard
     assert 'runtime_root.rglob("*.so*")' in wizard
 
@@ -497,7 +497,7 @@ def test_native_linux_packages_embed_upgrade_and_selftest_lifecycle() -> None:
     assert "post-install-transaction.sh %s deb" in build
     assert "sed 's/\\r$//'" in build
     assert "桌面入口换行规范化失败" in build
-    assert 'DEB_VERSION="1.4.5~rc.6"' in build
+    assert 'DEB_VERSION="1.4.6~rc.1"' in build
     assert "Version: $DEB_VERSION" in build
     assert "systemd, util-linux, coreutils, iproute2" in build
     assert "systemd, util-linux, coreutils, iproute" in build
@@ -541,8 +541,8 @@ def test_native_linux_packages_embed_upgrade_and_selftest_lifecycle() -> None:
     one_click = (ROOT / "packaging" / "uos" / "one-click-install.sh").read_text(
         encoding="utf-8"
     )
-    assert 'VERSION="${PARTYOPS_VERSION:-1.4.5-rc.6}"' in one_click
-    assert 'PACKAGE_VERSION="${PARTYOPS_PACKAGE_VERSION:-1.4.5~rc.6}"' in one_click
+    assert 'VERSION="${PARTYOPS_VERSION:-1.4.6-rc.1}"' in one_click
+    assert 'PACKAGE_VERSION="${PARTYOPS_PACKAGE_VERSION:-1.4.6~rc.1}"' in one_click
     assert 'DEB="$ARTIFACTS/PartyOps_${VERSION}_linux_${ARCH}.deb"' in one_click
     assert '[[ "$installed_version" == "$PACKAGE_VERSION" ]]' in one_click
     assert 'chown -R "$CURRENT_USER' not in one_click
@@ -550,7 +550,7 @@ def test_native_linux_packages_embed_upgrade_and_selftest_lifecycle() -> None:
     acceptance = (ROOT / "packaging" / "uos" / "target-acceptance.sh").read_text(
         encoding="utf-8"
     )
-    assert 'PACKAGE_VERSION="${PARTYOPS_PACKAGE_VERSION:-1.4.5~rc.6}"' in acceptance
+    assert 'PACKAGE_VERSION="${PARTYOPS_PACKAGE_VERSION:-1.4.6~rc.1}"' in acceptance
     assert 'test "$INSTALLED_VERSION" = "$PACKAGE_VERSION"' in acceptance
     assert "LD_LIBRARY_PATH=/opt/partyops/ocr/lib" in acceptance
 
@@ -765,7 +765,34 @@ def test_windows_installer_is_chinese_branded_and_preserves_custom_paths() -> No
     assert 'Name: "chinesesimp"' in installer
     assert "ChineseSimplified.isl" in installer
     assert "欢迎使用党建智办 PartyOps 安装向导" in installer
-    assert "UsePreviousAppDir=yes" in installer
+    # Inno must not blindly reuse an installation on a detached E: drive.
+    assert "UsePreviousAppDir=no" in installer
+    assert "RemoveBackslashUnlessRoot(ExpandFileName(WizardDirValue))" in installer
+    assert "RemoveBackslashUnlessRoot(ExpandFileName(PreviousAppInstallDir))" in installer
+    assert "procedure ReportWizardError" in installer
+    assert "Log('[UNINSTALL_DATAACTION_INVALID]" in installer
+    assert "Log('[UNINSTALL_DATA_PREFLIGHT_FAILED]" in installer
+    assert "if UninstallSilent then" in installer
+    assert "RaiseException(Message);" in installer
+    # /VERYSILENT has no editable page: false-return alone must not stall.
+    assert "ReportWizardError('[PARTYOPS_OLD_DATA_DISK_MISSING]" in installer
+    assert "if WizardSilent then" in installer
+    assert "PARTYOPS_OLD_DATA_DISK_ACKNOWLEDGED" in installer
+    # The hidden wizard path page must not duplicate costly PowerShell probes.
+    # This is safe only because the mandatory pre-extraction security check
+    # still precedes service manipulation and payload replacement.
+    assert "PARTYOPS_SILENT_INSTALL_PRECHECK_DEFERRED" in installer
+    assert "Result := ValidateAndSecureInstallDirectory;" in installer
+    assert installer.index("PARTYOPS_SILENT_INSTALL_PRECHECK_DEFERRED") < (
+        installer.index("function ValidateAndSecureInstallDirectory")
+    )
+    assert installer.index("Result := ValidateAndSecureInstallDirectory;") < (
+        installer.index("HostServiceExistedBeforeInstall := ServiceExists")
+    )
+    assert "CompareText(ExpandConstant('{param:ALLOWMISSINGDATA|0}'), '1')" in installer
+    assert "DefaultDirName={code:GetSuggestedProgramDir}" in installer
+    assert "function GetSuggestedProgramDir" in installer
+    assert "FindExistingPartyOpsInstallDirectory(" in installer
     assert "LoadStringsFromFile(" in installer
     assert "SaveStringsToUTF8File(" in installer
     assert "function LoadConfiguredDataDir" in installer
@@ -826,9 +853,16 @@ def test_windows_installer_is_chinese_branded_and_preserves_custom_paths() -> No
     assert "ExecAndLogOutput(" in installer
     install_path_flow = installer.split(
         "function ValidateAndSecureInstallDirectory", maxsplit=1
-    )[1].split("function PrepareToInstall", maxsplit=1)[0]
+    )[1].split("function VerifyExtractedInstallDirectory", maxsplit=1)[0]
     assert "Exec(PowerShell" not in install_path_flow
+    # Three preparatory checks run before payload extraction. The separately
+    # named post-extraction read-only verification is not a fourth rewrite.
     assert install_path_flow.count("RunInstallPathValidator(") == 3
+    post_extract = installer.split(
+        "function VerifyExtractedInstallDirectory", maxsplit=1
+    )[1].split("function PrepareToInstall", maxsplit=1)[0]
+    assert post_extract.count("RunInstallPathValidator(") == 1
+    assert "release-manifest.json" in post_extract
     assert "partyops-install-path-diagnostic.txt" in installer
     assert "*S-1-5-18:(OI)(CI)F" in installer
     assert "*S-1-5-32-544:(OI)(CI)F" in installer
@@ -838,7 +872,7 @@ def test_windows_installer_is_chinese_branded_and_preserves_custom_paths() -> No
     assert "INSTALL_DIR_TREE_ACL_VERIFY_FAILED" in installer
     assert "INSTALL_DIR_INTEGRITY_DENIED" in installer
     assert " /setintegritylevel (OI)(CI)H /T /C /Q" in installer
-    assert "VersionInfoVersion=1.4.5.3" in installer
+    assert "VersionInfoVersion=1.4.6.1" in installer
     assert "MinVersion=10.0" in installer
     assert "MinVersion=6.1sp1" in installer
     assert "此安装包仅支持 Windows 10/11" in installer
@@ -909,7 +943,11 @@ def test_windows_installer_is_chinese_branded_and_preserves_custom_paths() -> No
     assert 'DiagnosticFile = ""' in validator
     assert "安装位置由用户自由选择" in validator
     assert "祖先目录的通用 ACL" in validator
-    assert installer.count("ErrorMessage := ValidateAndSecureInstallDirectory") == 1
+    assert installer.count("ErrorMessage := ValidateAndSecureInstallDirectory") == 0
+    assert installer.count("ErrorMessage := VerifyExtractedInstallDirectory") == 1
+    assert "ProgramDirectorySecuredBeforeExtraction := True;" in installer
+    assert "if not ProgramDirectorySecuredBeforeExtraction then" in installer
+    assert " -VerifyTargetAcl" in installer
 
 
 def test_frozen_windows_wizard_has_real_gui_self_test_gate() -> None:
@@ -1081,7 +1119,7 @@ def test_linux_bundle_only_includes_current_user_documents() -> None:
     )
 
     assert 'cp -a "$ROOT/docs" "$RUNTIME/"' not in script
-    assert '"release-notes-v1.4.5-rc.6.md"' in script
+    assert '"release-notes-v1.4.6-rc.1.md"' in script
     for document in (
         "user-guide.md",
         "deployment.md",
@@ -1149,7 +1187,7 @@ def test_linux_rpm_rollback_seed_keeps_current_release_generation() -> None:
         encoding="utf-8"
     )
 
-    assert 'RPM_RELEASE="0.rc.6.1"' in script
+    assert 'RPM_RELEASE="0.rc.1.1"' in script
     assert 'SEED_RELEASE="0.rc.2.0"' in script
 
 
@@ -1184,7 +1222,7 @@ def test_arm64_native_package_is_host_wrapped_then_chroot_tested() -> None:
     assert "bash packaging/linux/build-native.sh deb" in script
     assert "rpm) bash packaging/linux/build-native.sh rpm" in script
     assert "test-native-package-runtime.sh" in script
-    assert "artifacts/PartyOps-1.4.5-0.rc.6.1.aarch64.rpm arm64" in script
+    assert "artifacts/PartyOps-1.4.6-0.rc.1.1.aarch64.rpm arm64" in script
     assert "artifacts/PartyOps-1.4.5-0.rc.1.1.aarch64.rpm" not in script
     assert "deb|rpm) bash packaging/linux/build-native.sh '$ACTION'" not in script
 

@@ -10,6 +10,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from fastapi.testclient import TestClient
 
+from app.backups import SCHEMA_VERSION
 from app.config import get_settings
 from app.versioning import parse_release_version
 
@@ -235,7 +236,7 @@ def test_update_package_validation_and_queue(client: TestClient, admin: dict, mo
         "format_version": 2,
         "version": update_version,
         "min_version": "1.1.1",
-            "schema_revision": "0026",
+            "schema_revision": SCHEMA_VERSION,
         "architecture_artifacts": {
             "amd64": f"partyops_{update_version}_amd64.deb",
             "arm64": f"partyops_{update_version}_arm64.deb",

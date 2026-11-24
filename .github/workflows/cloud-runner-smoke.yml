@@ -1,0 +1,405 @@
+name: Cloud runner smoke
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloud-runner-smoke-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  runner-smoke:
+    name: ${{ matrix.label }}
+    runs-on: ${{ matrix.label }}
+    timeout-minutes: ${{ matrix.label == 'macos-15-intel' && 45 || matrix.label == 'windows-11-arm' && 55 || 20 }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: windows-2025
+            python_architecture: x64
+          - label: windows-11-arm
+            python_architecture: arm64
+          - label: ubuntu-24.04
+            python_architecture: x64
+          - label: ubuntu-24.04-arm
+            python_architecture: arm64
+          - label: macos-15-intel
+            python_architecture: x64
+          - label: macos-15
+            python_architecture: arm64
+    steps:
+      - name: Check out the triggering commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Report runner and available disk space
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $os = [System.Runtime.InteropServices.RuntimeInformation]::OSDescription
+          $architecture = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture
+          $availableBytes = (Get-Item $env:GITHUB_WORKSPACE).PSDrive.Free
+          if ($availableBytes -lt 2GB) {
+            throw "Less than 2 GiB remains after checkout: $availableBytes bytes"
+          }
+          [pscustomobject]@{
+            Commit = $env:GITHUB_SHA
+            Runner = $env:RUNNER_NAME
+            OperatingSystem = $os
+            Architecture = $architecture
+            FreeBytesAfterCheckout = $availableBytes
+          } | ConvertTo-Json | Write-Output
+
+      - name: Verify runtime availability
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python --version
+          node --version
+          git --version
+
+      - name: Set up native Python
+        id: native-python
+        continue-on-error: true
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: ${{ matrix.label == 'macos-15-intel' && '3.11' || '3.12' }}
+          architecture: ${{ matrix.python_architecture }}
+
+      - name: Install the pinned native cryptography wheel
+        id: crypto-install
+        if: ${{ steps.native-python.outcome == 'success' && matrix.label != 'macos-15-intel' }}
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python -m pip install --disable-pip-version-check --only-binary=:all: 'cryptography==50.0.0' 2>&1 |
+            Tee-Object -FilePath "$env:GITHUB_WORKSPACE/cryptography-install.log"
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
+
+      - name: Build pinned Windows ARM64 cryptography from source when wheel is missing
+        id: arm64-source-build
+        if: ${{ matrix.label == 'windows-11-arm' && steps.native-python.outcome == 'success' && steps.crypto-install.outcome != 'success' }}
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          ./scripts/build-windows-arm64-crypto-probe.ps1 -OutputDirectory (Join-Path $env:RUNNER_TEMP 'partyops-arm64-crypto')
+
+      - name: Probe SM3 and SM4-GCM runtime support
+        if: ${{ always() && matrix.label != 'macos-15-intel' }}
+        shell: pwsh
+        env:
+          CRYPTO_INSTALL_OUTCOME: ${{ steps.crypto-install.outcome }}
+          ARM64_SOURCE_OUTCOME: ${{ steps.arm64-source-build.outcome }}
+          NATIVE_PYTHON_OUTCOME: ${{ steps.native-python.outcome }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $output = Join-Path $env:GITHUB_WORKSPACE 'crypto-runtime.json'
+          if ($env:NATIVE_PYTHON_OUTCOME -ne 'success') {
+            python scripts/probe-sm-crypto-runtime.py --output $output `
+              --installation-error 'Native Python 3.12 was unavailable'
+            exit 1
+          }
+          if ($env:CRYPTO_INSTALL_OUTCOME -ne 'success' -and $env:ARM64_SOURCE_OUTCOME -ne 'success') {
+            python scripts/probe-sm-crypto-runtime.py --output $output `
+              --installation-error 'Pinned cryptography wheel unavailable; native ARM64 source fallback did not pass'
+            exit 1
+          }
+          python scripts/probe-sm-crypto-runtime.py --output $output
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
+
+      - name: Validate original signed model-pack verifier with ephemeral ARM64 test key
+        if: ${{ matrix.label == 'windows-11-arm' && (steps.arm64-source-build.outcome == 'success' || steps.crypto-install.outcome == 'success') }}
+        shell: pwsh
+        env:
+          PYTHONUTF8: '1'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python scripts/probe_arm64_signed_modelpack.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Install isolated native ARM64 synthetic inference dependencies
+        if: ${{ matrix.label == 'windows-11-arm' && (steps.arm64-source-build.outcome == 'success' || steps.crypto-install.outcome == 'success') }}
+        shell: pwsh
+        env:
+          PYTHONUTF8: '1'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python -m pip install --disable-pip-version-check --only-binary=:all: 'numpy==2.3.5' 'onnxruntime==1.24.2' 'onnx==1.23.2' 'tokenizers==0.23.3'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m pip check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Run real PartyOps source chain signed test pack to ONNX inference
+        if: ${{ matrix.label == 'windows-11-arm' && (steps.arm64-source-build.outcome == 'success' || steps.crypto-install.outcome == 'success') }}
+        shell: pwsh
+        env:
+          PYTHONUTF8: '1'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python scripts/probe_arm64_signed_embedding_chain.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Install isolated ARM64 ORM and settings dependencies for real model lifecycle
+        if: ${{ matrix.label == 'windows-11-arm' && (steps.arm64-source-build.outcome == 'success' || steps.crypto-install.outcome == 'success') }}
+        shell: pwsh
+        env:
+          PYTHONUTF8: '1'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python -m pip install --disable-pip-version-check --only-binary=:all: 'SQLAlchemy==2.0.43' 'pydantic==2.13.4' 'pydantic-settings==2.10.1' 'fastapi==0.140.7'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m pip check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Run native ARM64 real PartyOps model pack install activation and integrity in isolated SQLite
+        if: ${{ matrix.label == 'windows-11-arm' && (steps.arm64-source-build.outcome == 'success' || steps.crypto-install.outcome == 'success') }}
+        shell: pwsh
+        env:
+          PYTHONUTF8: '1'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python scripts/probe_arm64_modelpack_db_lifecycle.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Audit authentic RC2-signed BGE package with original trusted ARM64 verifier
+        if: ${{ matrix.label == 'windows-11-arm' && (steps.arm64-source-build.outcome == 'success' || steps.crypto-install.outcome == 'success') }}
+        shell: pwsh
+        env:
+          PYTHONUTF8: '1'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python scripts/probe_arm64_official_bge_signature.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Import activate and infer authentic official BGE on native ARM64 in isolated SQLite
+        if: ${{ matrix.label == 'windows-11-arm' && (steps.arm64-source-build.outcome == 'success' || steps.crypto-install.outcome == 'success') }}
+        shell: pwsh
+        env:
+          PYTHONUTF8: '1'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python scripts/probe_arm64_official_bge_lifecycle.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Build pinned Intel OpenSSL and cryptography from source
+        id: intel-source-build
+        if: ${{ matrix.label == 'macos-15-intel' && steps.native-python.outcome == 'success' }}
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          LOG="$GITHUB_WORKSPACE/intel-source-build.log"
+          python3.11 --version 2>&1 | tee "$LOG"
+          UV_TOOL_VENV="$RUNNER_TEMP/partyops-uv-tool"
+          python3.11 -m venv "$UV_TOOL_VENV"
+          "$UV_TOOL_VENV/bin/python" -m pip install --disable-pip-version-check 'uv==0.11.7' 2>&1 | tee -a "$LOG"
+          export PARTYOPS_MACOS_PYTHON=python3.11
+          export PARTYOPS_UV="$UV_TOOL_VENV/bin/uv"
+          export MACOSX_DEPLOYMENT_TARGET=11.0
+          BUILD_ROOT="$RUNNER_TEMP/partyops-intel-crypto"
+          mkdir -p "$BUILD_ROOT"
+          bash packaging/macos/build-intel-crypto-environment.sh \
+            "$GITHUB_WORKSPACE" "$BUILD_ROOT" "$BUILD_ROOT/venv" 2>&1 | tee -a "$LOG"
+
+      - name: Probe Intel source-built SM3 and SM4-GCM support
+        if: ${{ always() && matrix.label == 'macos-15-intel' }}
+        shell: bash
+        env:
+          INTEL_SOURCE_BUILD_OUTCOME: ${{ steps.intel-source-build.outcome }}
+        run: |
+          set -euo pipefail
+          OUTPUT="$GITHUB_WORKSPACE/crypto-runtime.json"
+          BUILD_ROOT="$RUNNER_TEMP/partyops-intel-crypto"
+          PROBE_PYTHON=python3.11
+          if ! command -v "$PROBE_PYTHON" >/dev/null 2>&1; then PROBE_PYTHON=python; fi
+          "$PROBE_PYTHON" - "$GITHUB_WORKSPACE/intel-source-build.json" "$INTEL_SOURCE_BUILD_OUTCOME" <<'PY'
+          import json
+          import os
+          import sys
+          from pathlib import Path
+
+          path, outcome = sys.argv[1:]
+          Path(path).write_text(
+              json.dumps(
+                  {
+                      "schema_version": 1,
+                      "status": "PASS" if outcome == "success" else "FAIL",
+                      "runner": os.environ.get("RUNNER_NAME", "unknown"),
+                      "architecture": os.uname().machine,
+                      "python": sys.version.split()[0],
+                      "source_build_step_outcome": outcome,
+                      "source": "OpenSSL 3.5.7 pinned source + cryptography uv source build",
+                  },
+                  ensure_ascii=False,
+                  indent=2,
+              )
+              + "\n",
+              encoding="utf-8",
+          )
+          PY
+          if [[ "$INTEL_SOURCE_BUILD_OUTCOME" != 'success' ]]; then
+            "$PROBE_PYTHON" scripts/probe-sm-crypto-runtime.py --output "$OUTPUT" \
+              --installation-error "Pinned Intel OpenSSL/cryptography source build failed: $INTEL_SOURCE_BUILD_OUTCOME"
+            exit 1
+          fi
+          "$BUILD_ROOT/venv/bin/python" scripts/probe-sm-crypto-runtime.py --output "$OUTPUT"
+
+      - name: Upload unsigned ARM64 source-built wheel for review (BUILD_ONLY)
+        if: ${{ always() && matrix.label == 'windows-11-arm' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: arm64-crypto-build-only-${{ github.sha }}
+          path: |
+            artifacts/arm64-crypto-probe/build-manifest.json
+            artifacts/arm64-crypto-probe/wheelhouse/*.whl
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Upload crypto runtime evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: crypto-runtime-${{ matrix.label }}-${{ github.sha }}
+          path: |
+            crypto-runtime.json
+            cryptography-install.log
+            arm64-source-build.log
+            artifacts/arm64-crypto-probe/modelpack-signature.json
+            artifacts/arm64-crypto-probe/signed-embedding-chain.json
+            artifacts/arm64-crypto-probe/modelpack-db-lifecycle.json
+            artifacts/arm64-crypto-probe/official-bge-signature-audit.json
+            artifacts/arm64-crypto-probe/official-bge-lifecycle.json
+            intel-source-build.log
+            intel-source-build.json
+          if-no-files-found: warn
+          retention-days: 30
+
+  macos-office-smoke:
+    name: LibreOffice headless (${{ matrix.architecture }})
+    runs-on: ${{ matrix.label }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: macos-15-intel
+            architecture: x86_64
+            python_architecture: x64
+          - label: macos-15
+            architecture: arm64
+            python_architecture: arm64
+    env:
+      OFFICE_ARCHITECTURE: ${{ matrix.architecture }}
+    steps:
+      - name: Check out the triggering commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Set up native Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.11'
+          architecture: ${{ matrix.python_architecture }}
+
+      - name: Verify the official DMG and extract the app
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence="$RUNNER_TEMP/macos-office-evidence"
+          stage="$RUNNER_TEMP/macos-office"
+          mkdir -p "$evidence"
+          available_kib="$(df -Pk "$RUNNER_TEMP" | awk 'END{print $4}')"
+          if [[ ! "$available_kib" =~ ^[0-9]+$ ]] || (( available_kib < 4 * 1024 * 1024 )); then
+            printf '%s\n' '[MACOS_OFFICE_DISK_INSUFFICIENT] Need 4 GiB free for the DMG and extracted app.' |
+              tee "$evidence/prepare.log" >&2
+            exit 2
+          fi
+          bash scripts/prepare-libreoffice-macos.sh \
+            --architecture "$OFFICE_ARCHITECTURE" --output-root "$stage" \
+            2>&1 | tee "$evidence/prepare.log"
+          runtime="$stage/office-$OFFICE_ARCHITECTURE"
+          cp "$runtime/SOURCE.json" "$evidence/SOURCE.json"
+
+      - name: Probe the original signed headless entry point
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence="$RUNNER_TEMP/macos-office-evidence"
+          runtime="$RUNNER_TEMP/macos-office/office-$OFFICE_ARCHITECTURE"
+          app="$runtime/LibreOffice.app"
+          {
+            uname -m
+            sw_vers
+            printf '%s\n' 'scope=standalone upstream app on this runner; minimum_os_runtime_verified=false'
+            /usr/bin/codesign --verify --deep --strict --verbose=2 "$app"
+            /usr/bin/codesign --display --verbose=4 "$app"
+            /usr/bin/otool -l "$app/Contents/MacOS/soffice" |
+              /usr/bin/awk '/LC_BUILD_VERSION|LC_VERSION_MIN_MACOSX/{lines=5} lines>0{print;lines--}'
+            python3.11 - "$runtime" <<'PY'
+          import json
+          import os
+          import subprocess
+          import sys
+          import tempfile
+          from pathlib import Path
+
+          runtime = Path(sys.argv[1])
+          source = json.loads((runtime / "SOURCE.json").read_text(encoding="utf-8"))
+          with tempfile.TemporaryDirectory(prefix="office-profile-", dir=os.environ["RUNNER_TEMP"]) as temporary:
+              home = Path(temporary)
+              env = {
+                  "HOME": temporary,
+                  "TMPDIR": temporary,
+                  "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+                  "LANG": "en_US.UTF-8",
+              }
+              result = subprocess.run(
+                  [
+                      str(runtime / "LibreOffice.app" / "Contents" / "MacOS" / "soffice"),
+                      f"-env:UserInstallation={(home / 'profile').as_uri()}",
+                      "--headless",
+                      "--version",
+                  ],
+                  cwd=home,
+                  env=env,
+                  stdin=subprocess.DEVNULL,
+                  capture_output=True,
+                  text=True,
+                  timeout=90,
+              )
+          print(f"soffice exit_code={result.returncode}")
+          print(result.stdout.strip())
+          if result.stderr:
+              print(result.stderr.strip(), file=sys.stderr)
+          if result.returncode != 0 or result.stdout.split()[:2] != ["LibreOffice", source["version"]]:
+              raise SystemExit("[MACOS_OFFICE_HEADLESS_FAILED] 退出码或实际版本与锁定来源不一致。")
+          PY
+          } 2>&1 | tee "$evidence/headless-version.log"
+
+      - name: Upload LibreOffice source manifest and logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: macos-office-${{ matrix.architecture }}-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/macos-office-evidence/SOURCE.json
+            ${{ runner.temp }}/macos-office-evidence/prepare.log
+            ${{ runner.temp }}/macos-office-evidence/headless-version.log
+          if-no-files-found: warn
+          retention-days: 30

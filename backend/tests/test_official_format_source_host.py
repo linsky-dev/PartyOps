@@ -390,6 +390,10 @@ def test_all_production_features_route_to_source_host(
     options: dict[str, object],
 ) -> None:
     monkeypatch.delenv("PARTYOPS_FORMATTER_TEST_LOCAL_ENGINE", raising=False)
+    monkeypatch.setattr(
+        "app.official_format._font_inventory",
+        lambda: "方正小标宋简体 仿宋_GB2312 楷体_GB2312 黑体",
+    )
     source = tmp_path / f"source{suffix}"
     output = tmp_path / "host-output.docx"
     if suffix == ".docx":
