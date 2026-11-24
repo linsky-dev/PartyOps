@@ -1,0 +1,50 @@
+name: RC1 Loong64 frozen ELF target ABI audit (NOT DEB)
+on:
+  pull_request:
+    branches: [feature/1.4.6-rc1-cloud-rebuild]
+    paths:
+      - '.github/workflows/cloud-rc1-loong64-target-abi.yml'
+      - 'scripts/rc1_loong64_target_abi.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Recover verified actual new freeze and original target DEB
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/loong-abi"
+          mkdir -p "$root/fresh" "$root/donor" "$root/old"
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/45370917168" > "$root/run.json"
+          jq -e --arg repo "$GITHUB_REPOSITORY" '.head_sha=="f1a766d89b06182c91e6521d85717644e71e0ec2" and .head_repository.full_name==$repo and .conclusion=="success" and .path==".github/workflows/cloud-rc1-loong64-emulated-runtime.yml"' "$root/run.json"
+          gh run download 45370917168 --repo "$GITHUB_REPOSITORY" --name 'partyops-RC1-loong64-EMULATED-RUNTIME-PROBE-96d1c9bd553b70b0bef0c934b6196d8fee0a265f' --dir "$root/fresh"
+          name=PartyOps_1.4.5-rc.6_linux_loong64.deb
+          gh release download v1.4.5-rc.6 --repo "$GITHUB_REPOSITORY" --pattern "$name" --dir "$root/donor"
+          echo "bec5993a12a9a66800fa039045f45329ecc486934cd1d1106c10d5e2ecf78017  $root/donor/$name" | sha256sum --check
+          test "$(dpkg-deb -f "$root/donor/$name" Architecture)" = loong64
+          dpkg-deb -x "$root/donor/$name" "$root/old"
+          dpkg-deb -f "$root/donor/$name" > "$root/donor-control.txt"
+      - name: Compare actual ELF requirements against existing glibc 2.38 gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/loong-abi"
+          python scripts/rc1_loong64_target_abi.py "$root/fresh" "$root/old/opt/partyops" artifacts/loong64-target-abi
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: RC1-loong64-target-ABI-NOT-DEB-${{ github.event.pull_request.head.sha || github.sha }}
+          path: artifacts/loong64-target-abi
+          if-no-files-found: warn
+          retention-days: 14
