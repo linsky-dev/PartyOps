@@ -24,7 +24,7 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       PYTHONUTF8: '1'
-      SOURCE_SHA: 4cb9484f155635dd9bc1ca58fead00bb41b9cd0a
+      SOURCE_SHA: 5ea9c6a128f3d8aa71ff77e7e549f4fbd6115fdb
       CLOSURE_RUN: '45370727222'
       CLOSURE_SHA: '2122c220fd3af2e8040f4b8ffab01c778c70da88'
     steps:

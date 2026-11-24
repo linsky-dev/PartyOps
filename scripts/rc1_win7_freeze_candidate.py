@@ -68,6 +68,22 @@ def freeze(out, arch):
     dist = pathlib.Path(os.environ["RUNNER_TEMP"]) / "win7-freeze-dist"
     out = out.resolve()
     common = ["sqlalchemy.dialects.sqlite.pysqlite", "uvicorn.logging", "uvicorn.loops.asyncio", "uvicorn.protocols.http.h11_impl", "cryptography", "cryptography.fernet", "httpx", "win32timezone"]
+    # On x64 NumPy 1.24.4 ships BLAS DLLs beside its package, not just
+    # Python extension modules. Verify the installed wheel's actual files.
+    numpy_dlls = []
+    if arch == "amd64":
+        import importlib.metadata
+        import numpy
+        check(numpy.__version__ == "1.24.4", "unexpected NumPy runtime")
+        check(float(numpy.dot([1., 2.], [3., 4.])) == 11., "NumPy native BLAS smoke")
+        distribution = importlib.metadata.distribution("numpy")
+        for relative in distribution.files or ():
+            p = distribution.locate_file(relative).resolve()
+            if p.is_file() and p.suffix.lower() == ".dll":
+                rel = pathlib.PurePosixPath(relative.as_posix())
+                check(not rel.is_absolute() and ".." not in rel.parts, "unsafe NumPy wheel path")
+                numpy_dlls.append((p, rel, digest(p)))
+        check(bool(numpy_dlls), "NumPy wheel native DLL closure empty")
     for name, entry, gui in entries:
         args = [sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean", "--onedir",
                 "--name", name, "--paths", str(root / "backend"), "--distpath", str(dist),
@@ -81,6 +97,10 @@ def freeze(out, arch):
             args += ["--hidden-import", module]
         for module in ("numpy", "onnxruntime", "tokenizers"):
             args += ["--hidden-import" if arch == "amd64" else "--exclude-module", module]
+        if arch == "amd64" and name == "PartyOps":
+            args += ["--collect-all", "numpy"]
+            for source, relative, _sha in numpy_dlls:
+                args += ["--add-binary", str(source) + ";" + relative.parent.as_posix()]
         if name == "PartyOps":
             for path, target in (("frontend/dist/client", "frontend"), ("backend/alembic", "alembic"), ("backend/alembic.ini", ".")):
                 args += ["--add-data", str(root / path) + ";" + target]
@@ -95,6 +115,18 @@ def freeze(out, arch):
                 shutil.copytree(str(p), str(dest), dirs_exist_ok=True)
             else:
                 shutil.copy2(p, dest)
+    if arch == "amd64":
+        inventory = []
+        for source, relative, expected_hash in numpy_dlls:
+            target = bundle / "_internal" / pathlib.Path(relative)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            # Keep NumPy's wheel-relative load location even after all nine
+            # onedir payloads have been merged.
+            if not target.is_file() or digest(target) != expected_hash:
+                shutil.copy2(source, target)
+            check(digest(target) == expected_hash, "NumPy frozen DLL mismatch")
+            inventory.append({"path": target.relative_to(bundle).as_posix(), "sha256": expected_hash})
+        (out / "numpy-native-dll-closure.json").write_text(json.dumps(inventory, indent=2), encoding="utf-8")
     # Hosted-only smoke checks; never claim target Win7 or release PE pass.
     report = out / "wizard.json"
     env = dict(os.environ, PARTYOPS_WIZARD_SELFTEST_REPORT=str(report), PYINSTALLER_RESET_ENVIRONMENT="1")
