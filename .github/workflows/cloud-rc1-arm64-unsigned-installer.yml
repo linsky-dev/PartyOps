@@ -1,0 +1,149 @@
+name: RC1 Windows 11 ARM64 actual unsigned EXE candidate (NOT RELEASE)
+on:
+  pull_request:
+    branches: [feature/1.4.6-rc1-cloud-rebuild]
+    paths:
+      - '.github/workflows/cloud-rc1-arm64-unsigned-installer.yml'
+      - 'scripts/rc1_arm64_assemble_installer.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  verify-source:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 100
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Require exact successful source freeze and full native regression before allocating installer runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh run watch 45417334158 --repo "$GH_REPO" --exit-status --interval 30
+          gh api "repos/$GH_REPO/actions/runs/45417334158" | jq -e --arg repo "$GH_REPO" '.head_repository.full_name==$repo and .head_sha=="33c609e9335eaeca813ec05a2ca546b22a8bbae2" and .conclusion=="success" and .path==".github/workflows/cloud-rc1-arm64-full-pdf-inputs.yml"'
+  package:
+    needs: verify-source
+    runs-on: windows-11-arm
+    timeout-minutes: 105
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SOURCE_SHA: 1a554181429a073e7349d73f62e1ae766d4fb479
+      PYTHONUTF8: '1'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          path: packaging-source
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+          architecture: arm64
+      - name: Download exact successful component artifacts and verify run provenance
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $root=Join-Path $env:RUNNER_TEMP 'arm64-package-inputs'
+          $items=@(
+            @{run=45417334158;sha='33c609e9335eaeca813ec05a2ca546b22a8bbae2';workflow='cloud-rc1-arm64-full-pdf-inputs.yml';name="RC1-ARM64-nine-native-entry-APP-ONLY-NOT-INSTALLER-$env:SOURCE_SHA";dir='app'},
+            @{run=45339196816;sha='61a982d7b8fd2d9658a5bf700e2060d3fa571d14';workflow='cloud-windows-arm64-libreoffice-runtime.yml';name='partyops-rc1-win-arm64-OFFICE-INPUT-NOT-INSTALLER-bc9ff1be78aeb2bcfe190577762792928da5a665';dir='office'},
+            @{run=45410093223;sha='39c5e0973634be6edd747b1fc875e91a9e8fbd6d';workflow='cloud-rc1-arm64-sqlite-runtime.yml';name='RC1-ARM64-SQLite-3.53.4-NATIVE-INPUT-NOT-INSTALLER-39c5e0973634be6edd747b1fc875e91a9e8fbd6d';dir='sqlite'},
+            @{run=45410093572;sha='39c5e0973634be6edd747b1fc875e91a9e8fbd6d';workflow='cloud-rc1-arm64-ocr-ai.yml';name='RC1-ARM64-Tesseract-NATIVE-INPUT-NOT-INSTALLER-39c5e0973634be6edd747b1fc875e91a9e8fbd6d';dir='ocr'},
+            @{run=45410093572;sha='39c5e0973634be6edd747b1fc875e91a9e8fbd6d';workflow='cloud-rc1-arm64-ocr-ai.yml';name='RC1-ARM64-llama-b10331-NATIVE-INPUT-NOT-INSTALLER-39c5e0973634be6edd747b1fc875e91a9e8fbd6d';dir='ai'},
+            @{run=45409959084;sha='e57c74be31f8291e3173f70e283962223da726a7';workflow='cloud-rc1-arm64-formatter-host.yml';name='RC1-ARM64-original-formatter-host-QA-5ea9c6a128f3d8aa71ff77e7e549f4fbd6115fdb';dir='formatter'}
+          )
+          foreach ($item in $items) {
+            $run=gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/$($item.run)" | ConvertFrom-Json
+            if ($LASTEXITCODE -ne 0 -or $run.head_sha -ne $item.sha -or $run.head_repository.full_name -ne $env:GITHUB_REPOSITORY -or $run.conclusion -ne 'success' -or $run.path -ne ".github/workflows/$($item.workflow)") { throw "INPUT_PROVENANCE_INVALID $($item.dir)" }
+            gh run download $item.run --repo $env:GITHUB_REPOSITORY --name $item.name --dir "$root/$($item.dir)"
+            if ($LASTEXITCODE -ne 0) { throw "INPUT_DOWNLOAD_FAILED $($item.dir)" }
+          }
+          if ((git -C packaging-source rev-parse HEAD).Trim() -ne $env:SOURCE_SHA) { throw 'PACKAGING_SOURCE_MISMATCH' }
+      - name: Assemble verified native payload and exercise document conversion
+        shell: pwsh
+        run: |
+          $root=Join-Path $env:RUNNER_TEMP 'arm64-package-inputs'
+          python scripts/rc1_arm64_assemble_installer.py "$root/app" "$root/office" artifacts/arm64-package "$root/sqlite" "$root/ocr" "$root/ai" "$root/formatter" packaging-source
+          if ($LASTEXITCODE -ne 0) { throw 'ARM64_ASSEMBLY_FAILED' }
+      - name: Check official Office signatures and mandatory app-local ARM64 runtime closure
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $out=Join-Path $PWD 'artifacts/arm64-package'
+          $bundle=Join-Path $out 'candidate'
+          $receipt=Get-Content "$out/office-input-evidence.json" -Raw | ConvertFrom-Json
+          foreach ($name in @('soffice.exe','soffice.com')) {
+            $sign=Get-AuthenticodeSignature -LiteralPath "$bundle/office-runtime/program/$name"
+            if ($name -eq 'soffice.exe') { $thumb=$receipt.office_executable_signer_thumbprint } else { $thumb=$receipt.office_cli_signer_thumbprint }
+            if ($sign.Status -ne 'Valid' -or $sign.SignerCertificate.Thumbprint -ne $thumb) { throw 'OFFICE_SIGNATURE_INVALID' }
+          }
+          $required=@('python312.dll','python3.dll','_sqlite3.pyd','ucrtbase.dll','vcruntime140.dll','vcruntime140_1.dll','msvcp140.dll','_tkinter.pyd','tcl86t.dll','tk86t.dll')
+          $rows=@()
+          foreach ($name in $required) {
+            $p=Join-Path "$bundle/_internal" $name
+            if (-not (Test-Path $p -PathType Leaf)) { throw "ARM64_APP_LOCAL_CLOSURE_MISSING $name" }
+            $s=[IO.File]::OpenRead($p)
+            try {
+              $rd=[IO.BinaryReader]::new($s)
+              if ($rd.ReadUInt16() -ne 0x5A4D) { throw 'INVALID_PE' }
+              $s.Position=60; $offset=$rd.ReadInt32()
+              if ($offset -lt 64 -or $offset -gt $s.Length-6) { throw 'INVALID_PE_OFFSET' }
+              $s.Position=$offset
+              if ($rd.ReadUInt32() -ne 0x4550 -or $rd.ReadUInt16() -ne 0xAA64) { throw "NON_NATIVE_RUNTIME $name" }
+            } finally { $s.Dispose() }
+            $rows+=@{name=$name;sha256=(Get-FileHash $p).Hash.ToLowerInvariant()}
+          }
+          $rows | ConvertTo-Json | Set-Content "$out/mandatory-arm64-runtime.json"
+          & "$bundle/ocr/bin/tesseract.exe" --version *> "$out/ocr-version.txt"
+          if ($LASTEXITCODE -ne 0) { throw 'OCR_RELOCATED_FAILED' }
+          & "$bundle/llama-server.exe" --version *> "$out/llama-version.txt"
+          if ($LASTEXITCODE -ne 0) { throw 'AI_RELOCATED_FAILED' }
+          python packaging-source/scripts/generate-release-manifest.py --root $bundle --output "$bundle/release-manifest.json" --version '1.4.6-rc.1' --tag 'v1.4.6-rc.1' --commit $env:SOURCE_SHA --platform windows --architecture arm64 --runtime-profile arm64-qa
+          if ($LASTEXITCODE -ne 0 -or (Get-Item "$bundle/release-manifest.json").Length -gt 8MB) { throw 'ARM64_MANIFEST_INVALID' }
+      - name: Run actual frozen startup selftest before Inno compression
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $out=Join-Path $PWD 'artifacts/arm64-package'
+          & "$out/candidate/PartyOps.exe" --startup-self-test *> "$out/startup-selftest.log"
+          if ($LASTEXITCODE -ne 0) { Get-Content "$out/startup-selftest.log" -Tail 30; throw 'ARM64_FROZEN_STARTUP_FAILED' }
+      - name: Compile actual isolated Windows 11 ARM64 Inno candidate
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $paths=@((Join-Path ([Environment]::GetFolderPath('ProgramFilesX86')) 'Inno Setup 6/ISCC.exe'),(Join-Path $env:ProgramFiles 'Inno Setup 6/ISCC.exe'))
+          $inno=$paths | Where-Object { Test-Path $_ -PathType Leaf } | Select-Object -First 1
+          if (-not $inno) {
+            choco install innosetup --version=6.7.3 --yes --no-progress
+            if ($LASTEXITCODE -ne 0) { throw 'INNO_INSTALL_FAILED' }
+            $inno=$paths | Where-Object { Test-Path $_ -PathType Leaf } | Select-Object -First 1
+          }
+          if (-not $inno) { throw 'INNO_MISSING' }
+          $env:PARTYOPS_WINDOWS_BUILD_ROOT=(Resolve-Path 'artifacts/arm64-package/candidate').Path
+          New-Item -ItemType Directory -Force artifacts/arm64-installer | Out-Null
+          $env:PARTYOPS_WINDOWS_OUTPUT_ROOT=(Resolve-Path 'artifacts/arm64-installer').Path
+          $base='PartyOps_1.4.6-rc.1_windows11_arm64_BUILD_ONLY_UNVERIFIED'
+          & $inno '/DPartyOpsArm64QA' "/DPartyOpsOutputBase=$base" 'packaging-source/packaging/windows/PartyOps.iss' *> artifacts/arm64-installer/inno.log
+          if ($LASTEXITCODE -ne 0) { Get-Content artifacts/arm64-installer/inno.log -Tail 50; throw 'INNO_ARM64_FAILED' }
+          $exe=Join-Path $env:PARTYOPS_WINDOWS_OUTPUT_ROOT "$base.exe"
+          if (-not (Test-Path $exe) -or (Get-Item $exe).Length -lt 1MB -or (Get-AuthenticodeSignature $exe).Status -ne 'NotSigned') { throw 'INVALID_UNSIGNED_INSTALLER' }
+          $hash=(Get-FileHash $exe).Hash.ToLowerInvariant()
+          "$hash  $base.exe" | Set-Content "$exe.sha256"
+          @{source_commit=$env:SOURCE_SHA;architecture='arm64';runtime_profile='arm64-qa';status='WINDOWS11_ARM64_UNSIGNED_EXE_BUILD_ONLY';sha256=$hash;installer_created=$true;native_install_tested=$false;windows10_arm64_tested=$false;current_version_native_wps_tested=$false;release_ready=$false;update_channel_enabled=$false} | ConvertTo-Json | Set-Content "$exe.candidate.json"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: RC1-Windows11-ARM64-UNSIGNED-EXE-BUILD-ONLY-${{ env.SOURCE_SHA }}
+          path: |
+            artifacts/arm64-installer/*
+            artifacts/arm64-package/*.json
+            artifacts/arm64-package/*.txt
+            artifacts/arm64-package/*.log
+          if-no-files-found: warn
+          retention-days: 14
