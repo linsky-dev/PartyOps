@@ -1,0 +1,37 @@
+name: RC1 Win7 historical backport source recovery and candidate wheel rebuild (NOT INSTALLER)
+on:
+  pull_request:
+    branches: [main, feature/1.4.6-rc1-cloud-rebuild]
+    paths:
+      - '.github/workflows/cloud-rc1-win7-backport-history.yml'
+      - 'scripts/rc1_win7_historical_backport_audit.py'
+      - 'backend/legacy/historical-backports/**'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: windows-2022
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+          architecture: x64
+      - name: Validate recovered historical patches and attempt isolated pure Python candidate wheels
+        shell: pwsh
+        run: python scripts/rc1_win7_historical_backport_audit.py --out artifacts/win7-backport-recovery
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: RC1-Win7-HISTORICAL-BACKPORT-CANDIDATES-NOT-INSTALLER-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            artifacts/win7-backport-recovery/receipt.json
+            artifacts/win7-backport-recovery/*/build.log
+            artifacts/win7-backport-recovery/*/candidate-wheels/*.whl
+          retention-days: 14
+          if-no-files-found: warn
