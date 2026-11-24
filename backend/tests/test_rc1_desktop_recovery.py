@@ -126,3 +126,30 @@ def test_team_desktop_reset_is_bound_to_saved_host_config(monkeypatch, tmp_path,
     else:
         assert result == 2 and not calls and not output.out
         assert "Synthetic-Host-Password!" not in output.err
+
+
+def test_redirected_recovery_help_on_legacy_windows_codepage(monkeypatch):
+    output = io.BytesIO()
+    stream = io.TextIOWrapper(output, encoding="cp1252")
+    monkeypatch.setattr(recovery_cli.sys, "stdout", stream)
+    monkeypatch.setattr(recovery_cli.sys, "stdin", io.StringIO())
+    monkeypatch.setattr(recovery_cli.sys, "stderr", io.StringIO())
+    with pytest.raises(SystemExit) as result:
+        recovery_cli.main(["--help"])
+    assert result.value.code == 0
+    stream.flush()
+    assert "主机管理员账号恢复" in output.getvalue().decode("utf-8")
+    assert "desktop-reset" in output.getvalue().decode("utf-8")
+
+
+def test_recovery_utf8_redirected_input_and_interactive_stream(monkeypatch):
+    value = '{"password":"合成密码123!","confirmation":"本机应急恢复"}'
+    stream = io.TextIOWrapper(io.BytesIO(value.encode("utf-8")), encoding="cp1252")
+    calls = []
+    interactive = SimpleNamespace(isatty=lambda: True, reconfigure=lambda **kw: calls.append(kw))
+    monkeypatch.setattr(recovery_cli.sys, "stdin", stream)
+    monkeypatch.setattr(recovery_cli.sys, "stdout", interactive)
+    monkeypatch.setattr(recovery_cli.sys, "stderr", None)
+    recovery_cli._configure_recovery_stdio()
+    assert stream.read() == value
+    assert calls == []

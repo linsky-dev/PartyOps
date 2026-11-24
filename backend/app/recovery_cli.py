@@ -372,7 +372,21 @@ def _run(
         lock.release()
 
 
+def _configure_recovery_stdio() -> None:
+    """Frozen Windows may ignore PYTHONUTF8; use UTF-8 for redirected recovery streams.
+
+    Keep native interactive terminal handling and never change other application entrypoints.
+    """
+    for stream in (sys.stdin, sys.stdout, sys.stderr):
+        if stream is None or stream.isatty():
+            continue
+        reconfigure = getattr(stream, "reconfigure", None)
+        if callable(reconfigure):
+            reconfigure(encoding="utf-8", errors="strict")
+
+
 def main(argv: list[str] | None = None) -> int:
+    _configure_recovery_stdio()
     parser = argparse.ArgumentParser(description="PartyOps 主机管理员账号恢复")
     parser.add_argument("action", choices=("authorize", "issue", "emergency", "desktop-reset"))
     parser.add_argument("--data-dir", required=True, type=Path)
