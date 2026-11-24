@@ -39,6 +39,15 @@ assert patch_sha == "90f3b31536dbdb96e4731ae231746f1e1cc0090be7a2e81de512b7763d6
 for args in (["git", "apply", "--check", str(patch)], ["git", "apply", str(patch)]):
     subprocess.run(args, cwd=source, check=True)
 dep_json = source / ".github" / "dependencies.json"
+# PyPI sdist omits .github; retrieve only the exact upstream Git blob.
+if not dep_json.exists():
+    url = "https://raw.githubusercontent.com/python-pillow/Pillow/bb1d8e8ab8d29048624d96e3ee53cecf7c13d13d/.github/dependencies.json"
+    with urllib.request.urlopen(url, timeout=60) as response:
+        data = response.read(4097)
+    if len(data) != 378 or hashlib.sha1(b"blob 378\0" + data).hexdigest() != "cc6e74fbac5f96fe795f653aa107bff4d9554c32":
+        raise RuntimeError("upstream dependency manifest identity mismatch")
+    dep_json.parent.mkdir(exist_ok=True)
+    dep_json.write_bytes(data)
 dep = json.loads(dep_json.read_text(encoding="utf-8"))
 # Fail closed if the historical recipe differs from source; no unpinned fallback downloads.
 assert dep["jpegturbo"] == "3.1.4.1" and dep["zlib-ng"] == "2.3.3", dep
