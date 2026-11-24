@@ -96,7 +96,7 @@ jobs:
   full-backend:
     name: Exact full PDF wheel integrated with native ARM64 backend (NOT INSTALLER)
     runs-on: windows-11-arm
-    timeout-minutes: 110
+    timeout-minutes: 180
     env:
       SOURCE_SHA: 96d1c9bd553b70b0bef0c934b6196d8fee0a265f
       GH_TOKEN: ${{ github.token }}
@@ -234,6 +234,72 @@ jobs:
             artifacts/arm64-full-regression-inputs/*.txt
           if-no-files-found: warn
           retention-days: 7
+      - name: Freeze all eight auxiliary entries natively and assemble full application runtime (NOT INSTALLER)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $out=Join-Path $PWD 'artifacts/arm64-complete-app-only'
+          New-Item -ItemType Directory -Force $out | Out-Null
+          @'
+          import hashlib, json, os, pathlib, shutil, struct, subprocess, sys
+          root=pathlib.Path.cwd()
+          out=pathlib.Path(sys.argv[1]).resolve()
+          work=pathlib.Path(os.environ["RUNNER_TEMP"]) / "arm64-all-entries"
+          work.mkdir(exist_ok=False)
+          bundle=out/"app"
+          bundle.mkdir(exist_ok=False)
+          host=root/"artifacts/arm64-application-only/dist/PartyOps-ARM64-APP-ONLY"
+          assert (host/"PartyOps-ARM64-APP-ONLY.exe").is_file()
+          for p in host.iterdir():
+              dst=bundle/("PartyOps.exe" if p.name=="PartyOps-ARM64-APP-ONLY.exe" else p.name)
+              if p.is_dir(): shutil.copytree(p,dst)
+              else: shutil.copy2(p,dst)
+          entries=[
+              ("PartyOpsAgent","packaging/uos/client_entrypoint.py",False),
+              ("PartyOpsWizard","packaging/uos/wizard_entrypoint.py",True),
+              ("PartyOpsUpdater","packaging/uos/updater_entrypoint.py",False),
+              ("PartyOpsLauncher","packaging/windows/windows_launcher.py",True),
+              ("PartyOpsDataCleanup","packaging/windows/data_cleanup.py",True),
+              ("PartyOpsFileOpen","packaging/windows/windows_file_open.py",True),
+              ("PartyOpsService","packaging/windows/windows_service.py",False),
+              ("PartyOpsUpdaterService","packaging/windows/windows_updater_service.py",False),
+          ]
+          for name, script, gui in entries:
+              args=[sys.executable,"-m","PyInstaller","--noconfirm","--clean","--onedir","--python-option","X utf8=1",
+                    "--name",name,"--paths",str(root/"backend"),"--icon",str(root/"packaging/windows/partyops.ico"),
+                    "--distpath",str(work/"dist"),"--workpath",str(work/"work"),"--specpath",str(work/"spec")]
+              for mod in ("win32timezone","uvicorn.logging","uvicorn.loops.asyncio","uvicorn.protocols.http.h11_impl","cryptography","cryptography.fernet","httpx"):
+                  args+=["--hidden-import",mod]
+              if gui: args+=["--noconsole"]
+              subprocess.check_call(args+[str(root/script)])
+              for p in (work/"dist"/name).iterdir():
+                  dst=bundle/p.name
+                  if p.is_dir(): shutil.copytree(p,dst,dirs_exist_ok=True)
+                  else: shutil.copy2(p,dst)
+          rows=[]
+          for name in ["PartyOps"]+[e[0] for e in entries]:
+              exe=bundle/(name+".exe")
+              b=exe.read_bytes()
+              off=struct.unpack_from("<I",b,60)[0]
+              assert b[:2]==b"MZ" and b[off:off+4]==b"PE\x00\x00" and struct.unpack_from("<H",b,off+4)[0]==0xaa64, name
+              rows.append({"name":exe.name,"machine":"ARM64","sha256":hashlib.sha256(b).hexdigest()})
+          report=out/"wizard-gui.json"
+          env=dict(os.environ,PARTYOPS_WIZARD_SELFTEST_REPORT=str(report),PYINSTALLER_RESET_ENVIRONMENT="1")
+          subprocess.check_call([str(bundle/"PartyOpsWizard.exe"),"--self-test"],env=env,timeout=90)
+          assert json.loads(report.read_text(encoding="utf-8"))["passed"] is True
+          help_result=subprocess.run([str(bundle/"PartyOps.exe"),"--account-recovery","--help"],env=env,capture_output=True,timeout=90)
+          assert help_result.returncode==0 and b"desktop-reset" in help_result.stdout
+          (out/"recovery-help.txt").write_bytes(help_result.stdout)
+          (out/"receipt.json").write_text(json.dumps({"source_commit":os.environ["SOURCE_SHA"],"status":"ARM64_COMPLETE_APP_ENTRIES_ONLY","entries":rows,"full_pdf_layout":True,"wizard_gui_passed":True,"release_manifest_created":False,"installer_created":False,"office_runtime_integrated":False,"release_ready":False},indent=2),encoding="utf-8")
+          '@ | python - $out
+          if ($LASTEXITCODE -ne 0) { throw 'ARM64_ALL_ENTRY_FREEZE_FAILED' }
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: RC1-ARM64-nine-native-entry-APP-ONLY-NOT-INSTALLER-${{ env.SOURCE_SHA }}
+          path: artifacts/arm64-complete-app-only
+          if-no-files-found: warn
+          retention-days: 14
       - name: Run native Windows ARM64 backend regression with original assertions
         shell: pwsh
         run: |
