@@ -35,7 +35,24 @@ jobs:
           test "$(git hash-object "$out/crimson.gpg")" = "$DEEPIN_KEY_BLOB"
           gpg --batch --show-keys --with-fingerprint "$out/crimson.gpg" > "$out/key-fingerprints.txt"
           curl --fail --location --retry 3 --max-time 90 "$DEEPIN_REPO/dists/crimson/InRelease" -o "$out/InRelease"
-          gpgv --keyring "$out/crimson.gpg" --output "$out/Release" "$out/InRelease" 2>&1 | tee "$out/release-signature.log"
+          # A dual-signed release may include an unknown older/newer key.
+          # Require the exact trusted upstream 2025 signing fingerprint; never
+          # accept BADSIG, expired/revoked signatures, unsigned or weak digests.
+          set +e
+          gpgv --keyring "$out/crimson.gpg" --status-fd 1 --output "$out/Release" "$out/InRelease" > "$out/release-signature-status.txt" 2> "$out/release-signature.log"
+          rc=$?
+          set -e
+          cat "$out/release-signature.log" "$out/release-signature-status.txt"
+          test "$rc" -eq 0 -o "$rc" -eq 2
+          python - "$out/release-signature-status.txt" <<'PY'
+          import pathlib, sys
+          lines = [line.split() for line in pathlib.Path(sys.argv[1]).read_text().splitlines() if line.startswith("[GNUPG:] ")]
+          trusted = "AD671F061CAFB9B639F1B139F5575F0BCD17A2D3"
+          assert any(len(x) >= 11 and x[1] == "VALIDSIG" and x[2] == trusted and x[9] in {"8", "9", "10"} for x in lines), "PINNED_DEEPIN_SIGNATURE_MISSING_OR_WEAK"
+          assert not any(x[1] in {"BADSIG", "EXPSIG", "EXPKEYSIG", "REVKEYSIG", "KEYEXPIRED", "SIGEXPIRED", "NODATA", "FAILURE"} for x in lines), "RELEASE_SIGNATURE_INVALID"
+          print("EXACT_PINNED_DEEPIN_SIGNATURE_PASS")
+          PY
+          test -s "$out/Release"
           grep -Eq '^Architectures:.*\bloong64\b' "$out/Release"
           sha256sum "$out/crimson.gpg" "$out/InRelease" > "$out/archive-input-sha256.txt"
       - name: Bootstrap signed Deepin Crimson loong64 sysroot without disabling apt verification
