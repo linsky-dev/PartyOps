@@ -252,6 +252,12 @@ def test_fetch_online_catalog_rejects_duplicate_json_and_encoded_response(monkey
 
 
 def test_fetch_online_catalog_rejects_ambiguous_or_incomplete_signed_contract(monkeypatch) -> None:
+    # The v1 catalog fixture exercises the existing x64 download channel.
+    # An unsupported candidate correctly returns before selecting artifacts.
+    monkeypatch.setattr(updates, "detect_platform_info", lambda: {
+        "platform_family": "windows", "distribution": "windows",
+        "architecture": "amd64", "runtime_profile": "full",
+    })
     release = _catalog()
     base_release = {
         "version": release["version"],
@@ -862,3 +868,29 @@ def test_online_download_rejects_wrong_resume_range_and_reports_large_progress(
     )
     updates._download_online_update(package.id, catalog)
     assert package.status == UpdateStatus.FAILED
+
+
+def test_arm64_source_candidate_never_selects_x64_catalog_package(monkeypatch) -> None:
+    release = _catalog()
+    document = {
+        "format": "partyops-update-channel",
+        "format_version": 1,
+        "release": release,
+        "signature": "signed",
+    }
+    monkeypatch.setattr(updates, "get_settings", lambda: SimpleNamespace(
+        update_catalog_url="https://www.partyops.cn/releases/update-v3.json",
+        update_download_hosts="www.partyops.cn",
+    ))
+    monkeypatch.setattr(updates, "_manifest_signature_valid", lambda _value: True)
+    monkeypatch.setattr(updates, "detect_platform_info", lambda: {
+        "platform_family": "windows", "distribution": "windows",
+        "architecture": "arm64", "runtime_profile": "arm64-source-candidate",
+    })
+    monkeypatch.setattr(updates, "_open_trusted_update_url",
+                        lambda _url: Response(json.dumps(document).encode()))
+    result = updates.fetch_online_update_catalog()
+    assert result["available"] is False
+    assert result["target_available"] is False
+    assert "package_url" not in result
+    assert "package_sha256" not in result

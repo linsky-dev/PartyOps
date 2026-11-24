@@ -1,6 +1,7 @@
 """Native ARM64 source candidate must not advertise an installed update channel."""
 from app import platform_info
 
+
 def test_arm64_source_candidate_has_runtime_probes_but_no_update_channel(monkeypatch):
     monkeypatch.setattr(platform_info.sys, "platform", "win32")
     monkeypatch.setattr(platform_info.sys, "frozen", False, raising=False)
@@ -12,6 +13,7 @@ def test_arm64_source_candidate_has_runtime_probes_but_no_update_channel(monkeyp
     assert "semantic_rerank" in info["capabilities"]
     assert "local_llm" in info["capabilities"]
     assert platform_info.update_platform_key(info) == ""
+
 
 def test_arm64_frozen_without_verified_package_remains_blocked(monkeypatch):
     monkeypatch.setattr(platform_info.sys, "platform", "win32")
