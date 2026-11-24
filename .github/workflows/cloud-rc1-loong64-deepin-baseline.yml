@@ -46,6 +46,20 @@ jobs:
           sha256sum "$deb" | tee "$out/arch-test-package-sha256.txt"
           sudo dpkg -i "$deb"
           arch-test loong64 | tee "$out/arch-test-loong64.txt"
+          # Noble mmdebstrap also predates the loong64 -> loongarch64 mapping.
+          # Use the signed Debian stable host tool only, not Debian target libs.
+          (cd "$aptroot/download"; apt-get "${opts[@]}" download mmdebstrap=1.5.7-1+deb13u1)
+          mmdeb="$aptroot/download/mmdebstrap_1.5.7-1+deb13u1_all.deb"
+          test "$(dpkg-deb -f "$mmdeb" Package)" = mmdebstrap
+          test "$(dpkg-deb -f "$mmdeb" Architecture)" = all
+          sha256sum "$mmdeb" | tee "$out/mmdebstrap-package-sha256.txt"
+          mkdir -p "$aptroot/mmdebstrap"
+          dpkg-deb -x "$mmdeb" "$aptroot/mmdebstrap"
+          tool="$aptroot/mmdebstrap/usr/bin/mmdebstrap"
+          test -x "$tool"
+          "$tool" --version | tee "$out/mmdebstrap-version.txt"
+          grep -Eq 'loong64.*loongarch64' "$tool"
+          echo "PARTYOPS_MMDEBSTRAP=$tool" >> "$GITHUB_ENV"
           curl --fail --location --retry 3 --max-time 90 "https://raw.githubusercontent.com/linuxdeepin/deepin-keyring/$DEEPIN_KEY_COMMIT/keyrings/deepin-archive-crimson-keyring.gpg" -o "$out/crimson.gpg"
           test "$(git hash-object "$out/crimson.gpg")" = "$DEEPIN_KEY_BLOB"
           gpg --batch --show-keys --with-fingerprint "$out/crimson.gpg" > "$out/key-fingerprints.txt"
@@ -77,7 +91,7 @@ jobs:
           root="$RUNNER_TEMP/deepin-loong64"
           out="$PWD/artifacts/loong64-deepin-baseline"
           key="$out/crimson.gpg"
-          sudo mmdebstrap --mode=root --architectures=loong64 --variant=minbase --keyring="$key" --include=ca-certificates,deepin-keyring,python3,build-essential,binutils '' "$root" "deb [signed-by=$key] $DEEPIN_REPO crimson main" 2>&1 | tee "$out/bootstrap.log"
+          sudo "$PARTYOPS_MMDEBSTRAP" --mode=root --architectures=loong64 --variant=minbase --keyring="$key" --include=ca-certificates,deepin-keyring,python3,build-essential,binutils '' "$root" "deb [signed-by=$key] $DEEPIN_REPO crimson main" 2>&1 | tee "$out/bootstrap.log"
           sudo install -m 0755 /usr/bin/qemu-loongarch64-static "$root/usr/bin/qemu-loongarch64-static"
           sudo install -D -m 0644 "$key" "$root/usr/share/keyrings/partyops-deepin-crimson-pinned.gpg"
           printf 'deb [signed-by=/usr/share/keyrings/partyops-deepin-crimson-pinned.gpg] %s crimson main\n' "$DEEPIN_REPO" | sudo tee "$root/etc/apt/sources.list"
