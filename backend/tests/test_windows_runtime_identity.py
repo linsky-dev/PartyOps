@@ -315,3 +315,21 @@ def test_online_catalog_selects_real_x64_package_under_win11_emulation(monkeypat
                   catalog_for({"windows": {"amd64": record("modern-amd64"), "arm64": record("not-published")}}))
     result = updates.fetch_online_update_catalog()
     assert result["package_url"].endswith("/modern-amd64.partyops-update")
+
+
+@pytest.mark.parametrize("version,accepted", [("10.0.19045", False), ("10.0.22000", True), ("10.0.26100", True)])
+def test_native_arm64_qa_isolated_from_update_channel(monkeypatch, tmp_path, version, accepted):
+    exe, _ = make_bundle(tmp_path, machine=0xAA64, package="windows", profile="arm64-qa", architecture="arm64")
+    monkeypatch.setattr(identity, "query_machine_types", lambda _path: ("arm64", "arm64"))
+    result = identity.installed_identity(exe, version)
+    assert (result["package_identity_status"] == "verified") is accepted
+    assert platform_info.update_platform_key({"platform_family": "windows", **result}) == ""
+    assert ("local_llm" in result["capabilities"]) is False
+
+
+def test_arm64_qa_cannot_authorize_x64_binary(monkeypatch, tmp_path):
+    exe, _ = make_bundle(tmp_path, machine=0x8664, package="windows", profile="arm64-qa", architecture="amd64")
+    monkeypatch.setattr(identity, "query_machine_types", lambda _path: ("amd64", "arm64"))
+    result = identity.installed_identity(exe, "10.0.26100")
+    assert result["package_identity_status"] == "unsupported"
+    assert platform_info.update_platform_key({"platform_family": "windows", **result}) == ""
