@@ -115,7 +115,7 @@ try {
   $manifest = Get-Content -Raw -LiteralPath $manifestPath | ConvertFrom-Json
   if ($manifest.version -ne '1.4.6-rc.1' -or
       $manifest.architecture -ne 'arm64' -or $manifest.platform -ne 'windows' -or
-      $manifest.source_commit -ne 'be7733f26e72ed4b7692d51e1bf410e9807a5808' -or
+      $manifest.source_commit -ne '740251bc84d7209a5effe24e6c6711274560fc76' -or
       $manifest.runtime_profile -ne 'arm64-qa') {
     throw '[RC1_QA_INSTALLED_VERSION_ARCH_INVALID]'
   }
