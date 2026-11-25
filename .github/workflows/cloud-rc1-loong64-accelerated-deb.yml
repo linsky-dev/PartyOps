@@ -126,48 +126,22 @@ jobs:
           sudo chroot "$root" /usr/bin/python3.12 -c 'from clang import cindex; print(cindex.__file__); print(cindex.Index.create())'
           sudo chroot "$root" /usr/bin/cmake --version
           sudo chroot "$root" /usr/bin/ninja --version
-      - name: Restore verified 40-wheel collection from exact same-source completed stage
+      - name: Restore exact previously verified complete native closure and rerun offline gates
         shell: bash
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
           test "$(git hash-object backend/uv.lock)" = 74baefd95c736728d380a03897ca43a5f7c73c45
-          python -u qa-driver/scripts/rc1_loong64_accelerated_inputs.py restore "$RUNNER_TEMP/deepin-loong64" "$PWD/artifacts/loong64-deepin-baseline"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        if: always()
-        with:
-          name: RC1-Loong64-accelerated-locked-wheel-collection-${{ env.SOURCE_SHA }}
-          path: |
-            artifacts/loong64-deepin-baseline/verified-inputs.json
-            artifacts/loong64-deepin-baseline/wheelhouse
-          if-no-files-found: warn
-          retention-days: 14
-      - name: Compile exact PyMuPDF 1.26.0 target wheel with live output
-        shell: bash
-        run: |
-          set -euo pipefail
-          python -u qa-driver/scripts/rc1_loong64_accelerated_inputs.py pdf "$RUNNER_TEMP/deepin-loong64" "$PWD/artifacts/loong64-deepin-baseline"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        if: always()
-        with:
-          name: RC1-Loong64-accelerated-PDF-build-evidence-${{ env.SOURCE_SHA }}
-          path: artifacts/loong64-deepin-baseline/pdf-native-build.log
-          if-no-files-found: warn
-          retention-days: 14
-      - name: Compile target freeze tools and validate complete offline wheelhouse
-        shell: bash
-        run: |
-          set -euo pipefail
-          python -u qa-driver/scripts/rc1_loong64_accelerated_inputs.py tools "$RUNNER_TEMP/deepin-loong64" "$PWD/artifacts/loong64-deepin-baseline"
+          python -u qa-driver/scripts/rc1_loong64_accelerated_inputs.py restore_complete "$RUNNER_TEMP/deepin-loong64" "$PWD/artifacts/loong64-deepin-baseline"
           python -u qa-driver/scripts/rc1_loong64_accelerated_inputs.py verify "$RUNNER_TEMP/deepin-loong64" "$PWD/artifacts/loong64-deepin-baseline"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
-          name: RC1-Loong64-accelerated-complete-closure-${{ env.SOURCE_SHA }}
+          name: RC1-Loong64-reused-complete-closure-${{ env.SOURCE_SHA }}
           path: |
             artifacts/loong64-deepin-baseline/closure-sha256.txt
             artifacts/loong64-deepin-baseline/wheelhouse
-            artifacts/loong64-deepin-baseline/freeze-tool-build.log
+            artifacts/loong64-deepin-baseline/reused-closure-receipt.json
           if-no-files-found: warn
           retention-days: 14
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
@@ -189,6 +163,7 @@ jobs:
           sudo cp -a frontend/dist/client "$root/tmp/rc1-freeze/frontend/dist/"
           curl --fail --location --retry 3 --proto '=https' --tlsv1.2 --output "$RUNNER_TEMP/sqlite-amalgamation-3510300.zip" https://www.sqlite.org/2026/sqlite-amalgamation-3510300.zip
           python -m pip download --no-deps --no-binary=:all: --dest "$RUNNER_TEMP" 'pysqlite3==0.5.4'
+          printf '%s  %s\n' acb1e6f5d832484bf6d32b681e858c38add8b2acdfd42ac5df24b8afb46552b4 "$RUNNER_TEMP/sqlite-amalgamation-3510300.zip" fbc69bfdc0cb43a5badd5403b126d5151371b5037e0397ba9802bb440c5b0021 "$RUNNER_TEMP/pysqlite3-0.5.4.tar.gz" | sha256sum -c -
           sha256sum "$RUNNER_TEMP/sqlite-amalgamation-3510300.zip" "$RUNNER_TEMP/pysqlite3-0.5.4.tar.gz" > "$out/sqlite-input-sha256.txt"
           python - "$RUNNER_TEMP" <<'PY'
           import pathlib,sys,tarfile,zipfile
@@ -221,6 +196,13 @@ jobs:
           out="$PWD/artifacts/loong64-deepin-baseline"
           sudo timeout 7200 unshare --net chroot --userspec=65534:65534 "$root" /usr/bin/env -i HOME=/tmp/rc1-freeze PATH=/opt/partyops-freeze-env/bin:/usr/bin:/bin LANG=C.UTF-8 PARTYOPS_RUNTIME_PROFILE=core /bin/sh -c 'cd /tmp/rc1-freeze && /opt/partyops-freeze-env/bin/python -m PyInstaller --noconfirm --clean --distpath dist --workpath work packaging/uos/partyops.spec' 2>&1 | tee "$out/actual-freeze.log"
           bundle="$root/tmp/rc1-freeze/dist/PartyOps"
+          # Mirror the real portable packager's deny-by-default POSIX modes.
+          sudo find "$bundle" -type d -exec chmod 0755 {} +
+          sudo find "$bundle" -type f -exec chmod 0644 {} +
+          for entry in partyops partyops-client partyops-wizard partyops-updater; do sudo chmod 0755 "$bundle/$entry"; done
+          test -z "$(sudo find "$bundle/_internal" -type f -perm /111 -print -quit)"
+          sudo find "$bundle" -type f -perm /111 -printf '%P\n' | sort | tee "$out/frozen-executable-allowlist.txt"
+          test "$(wc -l < "$out/frozen-executable-allowlist.txt")" -eq 4
           for name in partyops partyops-client partyops-wizard partyops-updater; do
             test -x "$bundle/$name"
             readelf -h "$bundle/$name" | tee "$out/$name-elf.txt"
@@ -230,7 +212,10 @@ jobs:
           sudo unshare --net chroot --userspec=65534:65534 "$root" /usr/bin/env -i HOME=/tmp/rc1-freeze PATH=/usr/bin:/bin LANG=C.UTF-8 /tmp/rc1-freeze/dist/PartyOps/partyops --account-recovery --help | tee "$out/frozen-recovery-help.txt"
           grep -q 'desktop-reset' "$out/frozen-recovery-help.txt"
           sudo unshare --net chroot --userspec=65534:65534 "$root" /usr/bin/env -i HOME=/tmp/rc1-freeze PATH=/usr/bin:/bin LANG=C.UTF-8 /usr/bin/xvfb-run -a /tmp/rc1-freeze/dist/PartyOps/partyops-wizard --self-test | tee "$out/frozen-wizard-gui.txt"
-          sudo unshare --net chroot --userspec=65534:65534 "$root" /usr/bin/env -i HOME=/tmp/rc1-freeze PATH=/usr/bin:/bin LANG=C.UTF-8 /tmp/rc1-freeze/dist/PartyOps/partyops-wizard --runtime-layout-self-test | tee "$out/frozen-layout.txt"
+          sudo unshare --net chroot --userspec=65534:65534 "$root" /usr/bin/env -i HOME=/tmp/rc1-freeze PATH=/usr/bin:/bin LANG=C.UTF-8 /tmp/rc1-freeze/dist/PartyOps/partyops-wizard --runtime-layout-self-test 2>&1 | tee "$out/frozen-layout.txt"
+          for name in partyops-client partyops-wizard partyops-updater; do
+            sudo unshare --net chroot --userspec=65534:65534 "$root" /usr/bin/env -i HOME=/tmp/rc1-freeze PATH=/usr/bin:/bin LANG=C.UTF-8 "/tmp/rc1-freeze/dist/PartyOps/$name" --help > "$out/$name-help.txt"
+          done
           sudo tar -C "$root/tmp/rc1-freeze/dist" -czf "$out/PartyOps-loong64-DEEPIN238-APP-ONLY.tar.gz" PartyOps
           sudo chown "$(id -u):$(id -g)" "$out/PartyOps-loong64-DEEPIN238-APP-ONLY.tar.gz"
           (cd "$out" && sha256sum PartyOps-loong64-DEEPIN238-APP-ONLY.tar.gz > frozen-app-sha256.txt)

@@ -139,6 +139,41 @@ elif stage=="restore":
     subprocess.check_call(["sudo","cp","-a",str(wheelhouse)+"/.",str(root/"tmp/wheelhouse")])
     print("RESTORED_EXACT_LOCKED_40_WHEEL_COLLECTION",flush=True)
 
+elif stage=="restore_complete":
+    # The prior run failed AFTER the completed offline closure and schema gates.
+    # Reuse only that completed stage, not its failed app/installer.
+    run,aid=45575869941,15009913031
+    head="e40d5c1182a874dea5f60347f3d4dd70ec5cde27"
+    info=gh(f"actions/runs/{run}")
+    assert info["head_sha"]==head and info["head_repository"]["full_name"]==repo
+    assert info["path"].split("@")[0]==".github/workflows/cloud-rc1-loong64-accelerated-deb.yml"
+    jobs=gh(f"actions/runs/{run}/jobs?per_page=100")["jobs"]
+    names={"Compile exact PyMuPDF 1.26.0 target wheel with live output","Compile target freeze tools and validate complete offline wheelhouse","Compile pinned SQLite and run dependency and schema gates without networking"}
+    assert any(j["name"]=="freeze" and names <= {s["name"] for s in j["steps"] if s["conclusion"]=="success"} for j in jobs)
+    a=gh(f"actions/artifacts/{aid}")
+    assert a["name"]=="RC1-Loong64-accelerated-complete-closure-"+os.environ["SOURCE_SHA"] and not a["expired"] and a["workflow_run"]["id"]==run
+    zpath=out/"complete-closure.zip"
+    with zpath.open("wb") as f:
+        subprocess.check_call(["gh","api",f"repos/{repo}/actions/artifacts/{aid}/zip"],stdout=f)
+    assert a["digest"]=="sha256:"+sha(zpath)
+    with zipfile.ZipFile(zpath) as z:
+        manifest=z.read("closure-sha256.txt").decode()
+        rows=[line.split("  ",1) for line in manifest.splitlines()]
+        assert len(rows)==46 and len({name for _,name in rows})==46
+        assert {name for _,name in rows}=={Path(n).name for n in z.namelist() if n.endswith(".whl")}
+        for digest,name in rows:
+            assert re.fullmatch("[0-9a-f]{64}",digest) and Path(name).name==name and name.endswith(".whl")
+            p=wheelhouse/name
+            p.write_bytes(z.read("wheelhouse/"+name))
+            assert sha(p)==digest
+        assert any(name=="pymupdf-1.26.0-cp312-abi3-linux_loongarch64.whl" and digest=="d7529efa8ad9dd5913209c68e463efbbcef50edd8bb0944bde4a56dcd49d3cdf" for digest,name in rows)
+        (out/"closure-sha256.txt").write_text(manifest)
+    zpath.unlink()
+    guest("mkdir","-p","/tmp/wheelhouse","/tmp/build-input")
+    subprocess.check_call(["sudo","cp","-a",str(wheelhouse)+"/.",str(root/"tmp/wheelhouse")])
+    (out/"reused-closure-receipt.json").write_text(json.dumps({"source_commit":os.environ["SOURCE_SHA"],"run":run,"artifact":aid,"artifact_digest":a["digest"],"wheel_count":len(rows),"pdf_engine":"1.26.0","release_ready":False},indent=2))
+    print("RESTORED_EXACT_COMPLETE_46_WHEEL_CLOSURE",flush=True)
+
 elif stage=="pdf":
     py="/opt/partyops-freeze-env/bin/python"
     # Build locked PDF from exact source archive. No Debian sid binary is accepted.
