@@ -11,11 +11,11 @@ permissions:
 jobs:
   baseline:
     runs-on: ubuntu-24.04
-    timeout-minutes: 180
+    timeout-minutes: 300
     strategy:
       fail-fast: false
       matrix:
-        group: [numeric, images, c-extensions, rust-extensions]
+        group: [numeric, rust-crypto, rust-calamine, rust-pydantic]
     env:
       SOURCE_SHA: 5ea9c6a128f3d8aa71ff77e7e549f4fbd6115fdb
       WHEEL_GROUP: ${{ matrix.group }}
@@ -143,13 +143,17 @@ jobs:
           sudo chroot "$root" apt-get install -y --no-install-recommends python3.12-dev=3.12.13-0deepin2 python3.12-venv python3-pip python3-tk pkg-config libffi-dev libssl-dev
           sudo chroot "$root" /usr/bin/python3.12 -c 'import platform,tkinter; assert platform.python_version()=="3.12.13"; assert platform.machine() in ("loongarch64","loong64"); print(platform.python_version(),tkinter.Tcl().eval("info patchlevel"))' | tee "$out/exact-python-tcl.txt"
           case "$WHEEL_GROUP" in
-            numeric) packages=(gfortran libopenblas-dev liblapack-dev ninja-build) ;;
+            numeric) packages=(gfortran libopenblas-dev liblapack-dev ninja-build patchelf) ;;
             images) packages=(libxml2-dev libxslt1-dev libjpeg-dev zlib1g-dev libtiff-dev libfreetype6-dev liblcms2-dev libwebp-dev libopenjp2-7-dev) ;;
             c-extensions) packages=(libffi-dev) ;;
-            rust-extensions) packages=(rustc cargo libssl-dev) ;;
+            rust-*) packages=(libssl-dev) ;;
             *) exit 2 ;;
           esac
           sudo chroot "$root" apt-get install -y --no-install-recommends "${packages[@]}"
+          if [ "$WHEEL_GROUP" = numeric ]; then
+            sudo chroot "$root" ninja --version | tee "$out/ninja-version.txt"
+            sudo chroot "$root" patchelf --version | tee "$out/patchelf-version.txt"
+          fi
           sudo chroot "$root" /usr/bin/python3.12 -m venv /opt/partyops-wheel-env
           sudo chroot "$root" getconf GNU_LIBC_VERSION | tee "$out/wheel-build-glibc.txt"
           test "$(cat "$out/wheel-build-glibc.txt")" = 'glibc 2.38'

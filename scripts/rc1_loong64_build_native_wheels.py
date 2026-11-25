@@ -16,6 +16,9 @@ GROUPS = {
     "images": ("lxml", "pillow"),
     "c-extensions": ("cffi", "argon2-cffi-bindings", "greenlet", "sqlalchemy", "markupsafe"),
     "rust-extensions": ("cryptography", "python-calamine", "pydantic-core"),
+    "rust-crypto": ("cryptography",),
+    "rust-calamine": ("python-calamine",),
+    "rust-pydantic": ("pydantic-core",),
 }
 
 
@@ -24,9 +27,79 @@ def sha(p):
         return hashlib.file_digest(f, "sha256").hexdigest()
 
 
+RUST_VERSION = "1.98.1"
+RUST_HOST = "loongarch64-unknown-linux-gnu"
+RUST_KEY = "108F66205EAEB0AAA8DD5E1C85AB96E6FA1BE5FE"
+RUST_DIST = "https://static.rust-lang.org/"
+
+
+def rust_toolchain(root, out):
+    """Install upstream host tools inside the exact signed Deepin root.
+    The Rust manifest must pass a pinned-key signature check; components
+    are hash-verified against that manifest. No weak-signature fallback.
+    """
+    with tempfile.TemporaryDirectory(prefix="partyops-rust-") as tmp:
+        tmp = Path(tmp)
+        def download(url, path):
+            if not url.startswith(RUST_DIST):
+                raise RuntimeError("unexpected Rust origin")
+            subprocess.check_call(["curl", "--proto", "=https", "--proto-redir", "=https",
+                                   "--fail", "--location", "--retry", "3", "--output", str(path), url])
+        key = tmp / "rust-key.asc"
+        download(RUST_DIST + "rust-key.gpg.ascii", key)
+        home = tmp / "gnupg"
+        home.mkdir(mode=0o700)
+        gpg = ["gpg", "--batch", "--homedir", str(home)]
+        subprocess.check_call(gpg + ["--import", str(key)])
+        manifest = out / "rust-channel.toml"
+        sig = out / "rust-channel.toml.asc"
+        url = RUST_DIST + "dist/channel-rust-" + RUST_VERSION + ".toml"
+        download(url, manifest)
+        download(url + ".asc", sig)
+        verified = subprocess.run(gpg + ["--status-fd", "1", "--verify", str(sig), str(manifest)],
+                                  capture_output=True, text=True)
+        (out / "rust-signature-status.txt").write_text(verified.stdout + verified.stderr)
+        valid = [x.split() for x in verified.stdout.splitlines() if x.startswith("[GNUPG:] VALIDSIG ")]
+        if verified.returncode or not any(len(x) >= 11 and RUST_KEY in (x[2], x[-1]) and x[9] in ("8", "9", "10") for x in valid):
+            raise RuntimeError("Rust manifest signature not valid for pinned key")
+        data = tomllib.loads(manifest.read_text())
+        if not data["pkg"]["rust"]["version"].startswith(RUST_VERSION + " "):
+            raise RuntimeError("Rust manifest version mismatch")
+        receipts = []
+        for package in ("rustc", "cargo", "rust-std"):
+            entry = data["pkg"][package]["target"][RUST_HOST]
+            if not entry["available"]:
+                raise RuntimeError("official Rust host component unavailable: " + package)
+            archive = tmp / (package + ".tar.xz")
+            download(entry["xz_url"], archive)
+            if sha(archive) != entry["xz_hash"]:
+                raise RuntimeError("Rust component hash mismatch: " + package)
+            receipts.append({"package": package, "url": entry["xz_url"], "sha256": sha(archive)})
+            (out / "rust-toolchain-inputs.json").write_text(json.dumps(receipts, indent=2))
+            extracted = tmp / package
+            extracted.mkdir()
+            subprocess.check_call(["tar", "-xJf", str(archive), "-C", str(extracted)])
+            dirs = list(extracted.iterdir())
+            if len(dirs) != 1 or not (dirs[0] / "install.sh").is_file():
+                raise RuntimeError("unexpected Rust installer layout")
+            guest = "/tmp/partyops-rust-" + package
+            subprocess.check_call(["sudo", "cp", "-a", str(dirs[0]), str(root / guest.lstrip("/"))])
+            subprocess.check_call(["sudo", "chroot", str(root), guest + "/install.sh",
+                                   "--prefix=/opt/partyops-rust", "--disable-ldconfig"])
+            subprocess.check_call(["sudo", "rm", "-rf", str(root / guest.lstrip("/"))])
+            archive.unlink()
+        report = subprocess.check_output(["sudo", "chroot", str(root), "/opt/partyops-rust/bin/rustc", "-vV"], text=True)
+        cargo = subprocess.check_output(["sudo", "chroot", str(root), "/opt/partyops-rust/bin/cargo", "--version"], text=True)
+        (out / "rust-toolchain-version.txt").write_text(report + cargo)
+        if "release: " + RUST_VERSION not in report or "host: " + RUST_HOST not in report or not cargo.startswith("cargo " + RUST_VERSION):
+            raise RuntimeError("incorrect native Rust toolchain")
+
+
 def main():
     root, out = map(lambda x: Path(x).resolve(), sys.argv[1:3])
     group = sys.argv[3]
+    if group.startswith("rust-"):
+        rust_toolchain(root, out)
     lock = tomllib.loads(Path("backend/uv.lock").read_text())
     spec = importlib.util.spec_from_file_location("abi", "scripts/verify-linux-elf-glibc.py")
     abi = importlib.util.module_from_spec(spec)
@@ -67,16 +140,26 @@ def main():
         guest_wheels = "/tmp/partyops-wheels-" + name
         subprocess.check_call(["sudo", "chroot", str(root), "mkdir", "-p", guest_wheels])
         log = out / (name + "-build.log")
-        command = ["sudo", "chroot", str(root), "/usr/bin/env",
-                   "CARGO_BUILD_JOBS=2", "CMAKE_BUILD_PARALLEL_LEVEL=2", "MAKEFLAGS=-j2",
-                   "/opt/partyops-wheel-env/bin/python", "-m", "pip", "wheel",
-                   "--no-deps", "--wheel-dir", guest_wheels, "/tmp/" + filename]
+        env = ["CARGO_BUILD_JOBS=4", "CMAKE_BUILD_PARALLEL_LEVEL=4", "MAKEFLAGS=-j4"]
+        if group.startswith("rust-"):
+            env.append("PATH=/opt/partyops-rust/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin")
+        command = ["sudo", "chroot", str(root), "/usr/bin/env", *env,
+                   "/opt/partyops-wheel-env/bin/python", "-m", "pip", "wheel", "--verbose",
+                   "--no-deps", "--wheel-dir", guest_wheels]
+        if group == "numeric":
+            command.append("--config-settings=compile-args=-j4")
+        command.append("/tmp/" + filename)
         with log.open("wb") as stream:
             try:
-                completed = subprocess.run(command, stdout=stream, stderr=subprocess.STDOUT, timeout=3600)
+                completed = subprocess.run(command, stdout=stream, stderr=subprocess.STDOUT, timeout=14400)
                 code = completed.returncode
             except subprocess.TimeoutExpired:
                 code = 124
+        if code:
+            # Expose the actual backend/compiler failure in job logs as well as artifact.
+            with log.open("rb") as stream:
+                stream.seek(max(0, log.stat().st_size - 24000))
+                print(stream.read().decode("utf-8", errors="replace"), flush=True)
         wheels = list((root / guest_wheels.lstrip("/")).glob("*.whl"))
         row = {"name": name, "version": p["version"], "exit_code": code, "status": "BUILD_BLOCKED"}
         if code == 0 and len(wheels) == 1:
