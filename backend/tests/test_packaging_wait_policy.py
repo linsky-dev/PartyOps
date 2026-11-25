@@ -855,13 +855,20 @@ def test_windows_installer_is_chinese_branded_and_preserves_custom_paths() -> No
         "function ValidateAndSecureInstallDirectory", maxsplit=1
     )[1].split("function VerifyExtractedInstallDirectory", maxsplit=1)[0]
     assert "Exec(PowerShell" not in install_path_flow
-    # Three preparatory checks run before payload extraction. The separately
-    # named post-extraction read-only verification is not a fourth rewrite.
-    assert install_path_flow.count("RunInstallPathValidator(") == 3
+    # Two read-only path checks, one exact DACL normalization, and one final
+    # read-only ACL check must precede extraction; no repeated ACL rewrites.
+    assert install_path_flow.count("RunInstallPathValidator(") == 4
+    assert install_path_flow.count("-NormalizeTargetAcl") == 1
+    assert install_path_flow.count("-VerifyTargetAcl") == 1
+    assert install_path_flow.index("ForceDirectories(AppDir)") < install_path_flow.index("-NormalizeTargetAcl")
+    assert install_path_flow.index("SetAdministratorOwnerWithFallback") < install_path_flow.index("-NormalizeTargetAcl")
+    assert install_path_flow.index("-NormalizeTargetAcl") < install_path_flow.index("-VerifyTargetAcl")
     post_extract = installer.split(
         "function VerifyExtractedInstallDirectory", maxsplit=1
     )[1].split("function PrepareToInstall", maxsplit=1)[0]
     assert post_extract.count("RunInstallPathValidator(") == 1
+    assert "-VerifyTargetAcl" in post_extract
+    assert "-NormalizeTargetAcl" not in post_extract
     assert "release-manifest.json" in post_extract
     assert "partyops-install-path-diagnostic.txt" in installer
     assert "*S-1-5-18:(OI)(CI)F" in installer
@@ -938,6 +945,10 @@ def test_windows_installer_is_chinese_branded_and_preserves_custom_paths() -> No
     assert "Assert-SecureDirectoryAcl" in validator
     assert "S-1-5-32-544" in validator
     assert "INSTALL_DIR_PARENT_UNSAFE" not in validator
+    assert "SetAccessRuleProtection($true, $false)" in validator
+    assert "PurgeAccessRules" in validator
+    assert "[IO.Directory]::SetAccessControl($fullPath,$existing)" in validator
+    assert validator.index("if ($topEntries.Length -gt 0)") < validator.index("if ($NormalizeTargetAcl)")
     assert "INSTALL_DIR_PARENT_ACL_UNSAFE" not in validator
     assert "WindowsIdentity]::GetCurrent" in validator
     assert 'DiagnosticFile = ""' in validator
