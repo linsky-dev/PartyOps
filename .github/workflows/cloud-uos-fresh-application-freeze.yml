@@ -2,7 +2,7 @@ name: RC1 UOS V20 source-matched executable freeze (APP_ONLY BUILD_ONLY)
 
 on:
   pull_request:
-    branches: [main, feature/1.4.6-rc1-cloud-rebuild]
+    branches: [main, feature/1.4.6-rc1-cloud-rebuild, qa/rc1-flexible-personal-startup-20261124]
     paths:
       - '.github/workflows/cloud-uos-fresh-application-freeze.yml'
       - 'scripts/rc1-uos-cloud-freeze.sh'

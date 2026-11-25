@@ -118,6 +118,12 @@ def run_desktop_recovery(*, host: bool = False) -> int:
             if discovered is not None:
                 pid, port, binary, _ = discovered
                 wizard._write_personal_process_marker(data, pid, binary)
+            elif os.name != "nt" and not wizard._personal_process_is_owned(data):
+                # Linux start.sh and older POSIX launchers may not have written
+                # the JSON marker. Recover only with the existing three-proof
+                # check AND the actual personal-mode health contract.
+                if wizard._personal_health_version(port):
+                    wizard._recover_legacy_personal_process_marker(data, port)
             stopped = wizard._stop_personal_process_for_data_migration(data, port)
         env = os.environ.copy()
         env.update({"PYTHONUTF8": "1", "PYINSTALLER_RESET_ENVIRONMENT": "1"})
