@@ -2283,7 +2283,9 @@ def _rewrite_personal_port(config_path: Path, port: int) -> dict[str, str]:
         if key not in seen:
             updated.append(f"{key}={value}")
     _write_private(config_path, "\n".join(updated) + "\n")
-    return load_host_environment(config_path)
+    environment = os.environ.copy()
+    environment.update(load_host_environment(config_path, inherit_environment=False))
+    return environment
 
 
 def _restart_previous_personal_process(environment: dict[str, str]) -> None:
@@ -2463,11 +2465,30 @@ def write_host_config(
     return path
 
 
+def _assert_saved_personal_source_present(config_path: Path) -> None:
+    """Do not treat a disconnected personal data volume as a new empty installation."""
+    if not config_path.is_file():
+        return
+    saved = load_host_environment(config_path, inherit_environment=False)
+    if saved.get("PARTYOPS_MODE") != "personal":
+        return
+    raw = saved.get("PARTYOPS_DATA_DIR", "").strip()
+    source = Path(raw)
+    if not raw or not source.is_absolute():
+        raise ValueError("原个人数据目录配置不完整，系统没有切换目录。")
+    if not source.is_dir():
+        raise ValueError(
+            "原业务数据所在磁盘暂时不可用。请重新连接原磁盘或从备份恢复后再切换数据目录；"
+            "原有配置和业务数据未被删除。"
+        )
+
+
 def write_personal_config(data_dir: Path, port: int = 18775) -> Path:
     """创建仅当前账号可用的回环配置，全程不申请管理员权限。"""
 
     if not 1024 <= port <= 65534:
         raise ValueError("个人模式端口必须在 1024—65534 之间")
+    _assert_saved_personal_source_present(config_root() / "personal.env")
     resolved_data_dir = (
         _validate_personal_data_dir(data_dir)
         if os.name == "nt"
@@ -2500,7 +2521,7 @@ def write_personal_config(data_dir: Path, port: int = 18775) -> Path:
         previous_mode = json.loads(previous_mode_raw).get("mode") if previous_mode_raw else ""
     except (ValueError, TypeError, json.JSONDecodeError):
         previous_mode = ""
-    previous = load_host_environment(path) if path.is_file() else {}
+    previous = load_host_environment(path, inherit_environment=False) if path.is_file() else {}
     previous_process_stopped = False
     host_deactivated: str | bool | None = None
     previous_data_dir: Path | None = None
@@ -3610,6 +3631,22 @@ def _preflight_windows_runtime_dependencies(
     package_platform = str(manifest.get("platform") or "")
     package_arch = str(manifest.get("architecture") or "")
     process_arch = "amd64" if sys.maxsize > 2**32 else "x86"
+    # ARM64 is a distinct ISA, not a synonym for 64-bit x86. Only a local
+    # hash-bound PE/IsWow64Process2 identity may authorize this QA package.
+    if package_arch == "arm64":
+        from .windows_runtime_identity import installed_identity
+
+        identity = installed_identity(executable, stdlib_platform.version())
+        if (identity.get("package_identity_status") != "verified"
+                or identity.get("execution_kind") != "native"
+                or identity.get("process_architecture") != "arm64"
+                or identity.get("runtime_profile") != "arm64-qa"):
+            raise HostStartupError(
+                RUNTIME_BINARY_INCOMPATIBLE,
+                "此 ARM64 测试包仅支持原生 Windows 11 ARM64，请安装匹配版本。",
+                detail=f"identity={identity.get('package_identity_reason', '')}",
+            )
+        process_arch = "arm64"
     if package_arch != process_arch:
         raise HostStartupError(
             RUNTIME_BINARY_INCOMPATIBLE,
@@ -3718,6 +3755,8 @@ def _preflight_windows_runtime_dependencies(
         "_internal/_tk_data/tk.tcl",
         "_internal/frontend/index.html",
     }
+    # MSVC's vcruntime140_1 is x64-only for the verified native runtime.
+    # The ARM64 candidate's PE import audit must prove no consumer needs it.
     if process_arch == "amd64":
         required_paths.add("_internal/vcruntime140_1.dll")
 
@@ -4200,6 +4239,31 @@ def launch_host(config_path: Path) -> str:
     return url
 
 
+def _launch_new_personal_process(
+    config_path: Path, executable: Path, data_dir: Path, port: int, env: dict[str, str]
+) -> str:
+    """Retry only a confirmed bind failure of our own exited child."""
+    for attempt in range(3):
+        if not _loopback_port_available(port):
+            port = _select_alternative_personal_port(port)
+            env = _rewrite_personal_port(config_path, port)
+        process = _spawn([str(executable)], data_dir / "launcher.log", env)
+        try:
+            url = wait_for_host_health(
+                "127.0.0.1", port, timeout=180.0, data_dir=data_dir,
+                service_managed=False, process=process,
+            )
+        except HostStartupError as exc:
+            if exc.code != PORT_IN_USE or process.poll() is None or attempt == 2:
+                raise
+            port = _select_alternative_personal_port(port)
+            env = _rewrite_personal_port(config_path, port)
+            continue
+        _record_personal_process(data_dir, process)
+        return url
+    raise AssertionError("unreachable personal startup retry")
+
+
 def launch_personal(config_path: Path) -> str:
     """按当前桌面账号启动本机专用进程，不注册服务、不开放局域网。"""
 
@@ -4290,39 +4354,15 @@ def launch_personal(config_path: Path) -> str:
                 if stopped:
                     if not config_rewritten:
                         env = _rewrite_personal_port(config_path, port)
-                    process = _spawn(
-                        [str(executable)],
-                        data_dir / "launcher.log",
-                        env,
+                    return _launch_new_personal_process(
+                        config_path, executable, data_dir, port, env
                     )
-                    url = wait_for_host_health(
-                        "127.0.0.1",
-                        port,
-                        timeout=180.0,
-                        data_dir=data_dir,
-                        service_managed=False,
-                        process=process,
-                    )
-                    _record_personal_process(data_dir, process)
-                    return url
-            raise HostStartupError(
-                PORT_IN_USE,
-                f"个人模式端口 {port} 已被其他程序占用，请更换端口后重试。",
-                detail=exc.detail,
-            ) from exc
+            # Keep the original diagnostic; a database/permission failure is
+            # not evidence that a third-party process owns this port.
+            raise
     if not config_rewritten and "PARTYOPS_OFFICIAL_FORMAT_PORT=" not in config_path.read_text(encoding="utf-8"):
         env = _rewrite_personal_port(config_path, port)
-    process = _spawn([str(executable)], data_dir / "launcher.log", env)
-    url = wait_for_host_health(
-        "127.0.0.1",
-        port,
-        timeout=180.0,
-        data_dir=data_dir,
-        service_managed=False,
-        process=process,
-    )
-    _record_personal_process(data_dir, process)
-    return url
+    return _launch_new_personal_process(config_path, executable, data_dir, port, env)
 
 
 MACOS_AGENT_LABELS = {
@@ -5780,6 +5820,8 @@ def main() -> None:
     )
     parser.add_argument("--output-file", default="")
     parser.add_argument("--manage-shared-roots", action="store_true")
+    parser.add_argument("--recover-account", action="store_true")
+    parser.add_argument("--recovery-host", action="store_true")
     parser.add_argument("--action-uri", default="")
     parser.add_argument("--reconfigure", action="store_true")
     parser.add_argument(
@@ -5841,6 +5883,10 @@ def main() -> None:
                 raise SystemExit(PERSONAL_HOST_REJECTED_EXIT) from exc
             raise
         raise SystemExit(0)
+    if args.recover_account or (args.manage_shared_roots and args.action_uri.rstrip("/") == "partyops-client://recover-account"):
+        from .desktop_recovery import run_desktop_recovery
+
+        raise SystemExit(run_desktop_recovery(host=args.recovery_host))
     if args.manage_shared_roots:
         action_token = ""
         if args.action_uri:

@@ -2,7 +2,7 @@ name: Cloud unit tests
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, feature/1.4.6-rc1-cloud-rebuild, qa/rc1-flexible-personal-startup-20261124]
   workflow_dispatch:
   workflow_call:
 

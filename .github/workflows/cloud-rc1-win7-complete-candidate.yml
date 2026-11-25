@@ -1,0 +1,70 @@
+name: RC1 Win7 complete isolated candidate closure and schema (NOT INSTALLER)
+on:
+  pull_request:
+    branches: [feature/1.4.6-rc1-cloud-rebuild]
+    paths:
+      - '.github/workflows/cloud-rc1-win7-complete-candidate.yml'
+      - 'scripts/rc1_win7_complete_candidate.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  closure:
+    runs-on: windows-2022
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            python: x64
+          - arch: x86
+            python: x86
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      PYTHONUTF8: '1'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.8.10'
+          architecture: ${{ matrix.python }}
+      - name: Recover only successful same-repository immutable source run artifacts
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $arch = '${{ matrix.arch }}'
+          $root = Join-Path $env:RUNNER_TEMP 'win7-complete-inputs'
+          $items = @(
+            @{id='45303617001'; sha='400dd924faaf3195aef69c24c160a2e6f109a5f0'; path='cloud-rc1-legacy-inputs.yml'; name="partyops-RC1-Win7-$arch-INPUTS-ONLY-400dd924faaf3195aef69c24c160a2e6f109a5f0"; dest='public'},
+            @{id='45339313501'; sha='4d1835959ff2056880d4c4ae984c6a8c27f1b06d'; path='cloud-rc1-win7-backport-history.yml'; name='RC1-Win7-HISTORICAL-BACKPORT-CANDIDATES-NOT-INSTALLER-4d1835959ff2056880d4c4ae984c6a8c27f1b06d'; dest='pure'},
+            @{id='45359638631'; sha='15ece8fddd7ce58fd95940ed83ea692ebb787abe'; path='cloud-rc1-win7-crypto-native.yml'; name="RC1-Win7-$arch-crypto-BUILD-ONLY-15ece8fddd7ce58fd95940ed83ea692ebb787abe"; dest='crypto'},
+            @{id='45359642527'; sha='d19d6f4288753a716c1f02647302af9120c4ac03'; path='cloud-rc1-win7-pillow-native.yml'; name="RC1-Win7-$arch-Pillow-BUILD-ONLY-d19d6f4288753a716c1f02647302af9120c4ac03"; dest='pillow'},
+            @{id='45353616828'; sha='ddaa6139045f02d605de2a0c79a05d22a646727d'; path='cloud-rc1-win7-calamine-native.yml'; name="RC1-Win7-$arch-calamine-native-BUILD-ONLY-ddaa6139045f02d605de2a0c79a05d22a646727d"; dest='calamine'}
+          )
+          foreach ($item in $items) {
+            $run = gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/$($item.id)" | ConvertFrom-Json
+            if ($LASTEXITCODE -ne 0 -or $run.head_sha -ne $item.sha -or $run.conclusion -ne 'success' -or $run.head_repository.full_name -ne $env:GITHUB_REPOSITORY -or $run.path -ne ".github/workflows/$($item.path)") { throw "WIN7_INPUT_PROVENANCE_INVALID: $($item.dest)" }
+            gh run download $item.id --repo $env:GITHUB_REPOSITORY --name $item.name --dir (Join-Path $root $item.dest)
+            if ($LASTEXITCODE -ne 0) { throw "WIN7_INPUT_DOWNLOAD_FAILED: $($item.dest)" }
+          }
+      - name: Prove complete candidate closure and actual CPython 3.8 app schema
+        shell: pwsh
+        run: |
+          python scripts/rc1_win7_complete_candidate.py (Join-Path $env:RUNNER_TEMP 'win7-complete-inputs') artifacts/win7-complete '${{ matrix.arch }}'
+          if ($LASTEXITCODE -ne 0) { throw 'WIN7_COMPLETE_CANDIDATE_BLOCKED' }
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: RC1-Win7-${{ matrix.arch }}-COMPLETE-CANDIDATE-CLOSURE-NOT-RELEASE-${{ env.SOURCE_SHA }}
+          path: |
+            artifacts/win7-complete/closure.json
+            artifacts/win7-complete/candidate-runtime.lock
+            artifacts/win7-complete/wheelhouse/*.whl
+          if-no-files-found: warn
+          retention-days: 14

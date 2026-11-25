@@ -315,3 +315,59 @@ def test_online_catalog_selects_real_x64_package_under_win11_emulation(monkeypat
                   catalog_for({"windows": {"amd64": record("modern-amd64"), "arm64": record("not-published")}}))
     result = updates.fetch_online_update_catalog()
     assert result["package_url"].endswith("/modern-amd64.partyops-update")
+
+
+@pytest.mark.parametrize("version,accepted", [("10.0.19045", False), ("10.0.22000", True), ("10.0.26100", True)])
+def test_native_arm64_qa_isolated_from_update_channel(monkeypatch, tmp_path, version, accepted):
+    exe, _ = make_bundle(tmp_path, machine=0xAA64, package="windows", profile="arm64-qa", architecture="arm64")
+    monkeypatch.setattr(identity, "query_machine_types", lambda _path: ("arm64", "arm64"))
+    result = identity.installed_identity(exe, version)
+    assert (result["package_identity_status"] == "verified") is accepted
+    assert platform_info.update_platform_key({"platform_family": "windows", **result}) == ""
+    assert ("local_llm" in result["capabilities"]) is False
+
+
+def test_arm64_qa_cannot_authorize_x64_binary(monkeypatch, tmp_path):
+    exe, _ = make_bundle(tmp_path, machine=0x8664, package="windows", profile="arm64-qa", architecture="amd64")
+    monkeypatch.setattr(identity, "query_machine_types", lambda _path: ("amd64", "arm64"))
+    result = identity.installed_identity(exe, "10.0.26100")
+    assert result["package_identity_status"] == "unsupported"
+    assert platform_info.update_platform_key({"platform_family": "windows", **result}) == ""
+
+
+@pytest.mark.parametrize("architecture,machine,profile,with_extra,accepted", [
+    ("arm64", 0xAA64, "arm64-qa", False, True),
+    ("amd64", 0x8664, "full", False, False),
+    ("amd64", 0x8664, "full", True, True),
+])
+def test_runtime_preflight_requires_x64_crt_only(monkeypatch, tmp_path, architecture, machine, profile, with_extra, accepted):
+    from app import setup_wizard as wizard
+
+    executable, manifest = make_bundle(tmp_path, machine=machine, package="windows",
+                                       profile=profile, architecture=architecture)
+    monkeypatch.setattr(identity, "query_machine_types", lambda _path: (architecture, architecture))
+    monkeypatch.setattr(wizard.stdlib_platform, "version", lambda: "10.0.26100")
+    python_dll = f"python{wizard.sys.version_info.major}{wizard.sys.version_info.minor}.dll"
+    names = [
+        "PartyOpsLauncher.exe", "PartyOpsWizard.exe", "sqlite3.dll",
+        "_internal/sqlite3.dll", "_internal/_sqlite3.pyd", "_internal/python3.dll",
+        f"_internal/{python_dll}", "_internal/ucrtbase.dll", "_internal/vcruntime140.dll",
+        "_internal/msvcp140.dll", "_internal/_tkinter.pyd", "_internal/tcl86t.dll",
+        "_internal/tk86t.dll", "_internal/_tcl_data/init.tcl", "_internal/_tk_data/tk.tcl",
+        "_internal/frontend/index.html",
+    ]
+    if with_extra:
+        names.append("_internal/vcruntime140_1.dll")
+    for name in names:
+        path = tmp_path / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(name.encode())
+        manifest["files"].append({"path": name, "size": path.stat().st_size,
+                                  "sha256": hashlib.sha256(path.read_bytes()).hexdigest()})
+    write_manifest(executable, manifest)
+    if accepted:
+        wizard._preflight_windows_runtime_dependencies(executable, force=True, windows_version=(10, 0))
+    else:
+        with pytest.raises(wizard.HostStartupError) as exc:
+            wizard._preflight_windows_runtime_dependencies(executable, force=True, windows_version=(10, 0))
+        assert "vcruntime140_1.dll" in str(exc.value.detail)

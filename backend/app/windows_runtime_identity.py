@@ -10,6 +10,8 @@ from pathlib import Path
 
 PE_MACHINES = {0x014C: "x86", 0x8664: "amd64", 0xAA64: "arm64", 0xA641: "arm64ec"}
 CORE_CAPABILITIES = ("host", "collaboration", "database", "files", "archives", "backup", "ocr")
+# Explicit isolated QA channel; deliberately excluded from production update profiles.
+ARM64_QA_PACKAGE = ("windows", "arm64", "arm64-qa")
 # 只列已经存在的包线。ARM64 原生包尚未建立，不因为宿主 ISA 为 ARM64 而添加。
 PACKAGE_PROFILES = {
     ("windows", "amd64", "full"): (*CORE_CAPABILITIES, "semantic_rerank", "local_llm"),
@@ -145,19 +147,26 @@ def installed_identity(executable: Path, version: str) -> dict[str, object]:
         manifest = read_installed_manifest(executable)
         if manifest.get("architecture") != process:
             raise ValueError("WINDOWS_PACKAGE_PROCESS_ISA_MISMATCH")
-        package_key = (manifest.get("platform"), process, manifest.get("runtime_profile"))
-        if package_key not in PACKAGE_PROFILES:
+        package_platform = manifest.get("platform")
+        runtime_profile = manifest.get("runtime_profile")
+        if not isinstance(package_platform, str) or not isinstance(runtime_profile, str):
+            raise ValueError("WINDOWS_PACKAGE_CHANNEL_UNSUPPORTED")
+        package_key = (package_platform, process, runtime_profile)
+        is_arm64_qa = package_key == ARM64_QA_PACKAGE
+        if package_key not in PACKAGE_PROFILES and not is_arm64_qa:
             raise ValueError("WINDOWS_PACKAGE_CHANNEL_UNSUPPORTED")
         # 与安装器 MinVersion 一致；未知 OS 版本不能作为已支持运行环境。
         parts = version.split(".")
         if len(parts) < 3 or not all(value.isdigit() for value in parts[:3]):
             raise ValueError("WINDOWS_OS_VERSION_UNPROVEN")
         os_version = tuple(map(int, parts[:3]))
-        minimum = (10, 0, 0) if manifest["platform"] == "windows" else (6, 1, 7601)
+        minimum = (10, 0, 22000) if is_arm64_qa else ((10, 0, 0) if manifest["platform"] == "windows" else (6, 1, 7601))
+        if is_arm64_qa and (kind != "native" or native != "arm64"):
+            raise ValueError("WINDOWS_ARM64_QA_NATIVE_REQUIRED")
         if os_version < minimum:
             raise ValueError("WINDOWS_PACKAGE_OS_VERSION_UNSUPPORTED")
         result.update(package_platform=manifest["platform"], runtime_profile=manifest["runtime_profile"],
-                      capabilities=list(PACKAGE_PROFILES[package_key]), package_identity_status="verified",
+                      capabilities=list(CORE_CAPABILITIES if is_arm64_qa else PACKAGE_PROFILES[package_key]), package_identity_status="verified",
                       package_identity_reason="")
     except (OSError, ValueError, TypeError, AttributeError) as exc:
         reason = str(exc)

@@ -1,0 +1,106 @@
+name: RC1 Win7 native CPython38 application freeze (NOT INSTALLER)
+on:
+  pull_request:
+    branches: [feature/1.4.6-rc1-cloud-rebuild]
+    paths:
+      - '.github/workflows/cloud-rc1-win7-application-freeze.yml'
+      - 'scripts/rc1_win7_freeze_candidate.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  freeze:
+    runs-on: windows-2022
+    timeout-minutes: 100
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            python: x64
+          - arch: x86
+            python: x86
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PYTHONUTF8: '1'
+      SOURCE_SHA: 5ea9c6a128f3d8aa71ff77e7e549f4fbd6115fdb
+      CLOSURE_RUN: '45370727222'
+      CLOSURE_SHA: '2122c220fd3af2e8040f4b8ffab01c778c70da88'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.8.10'
+          architecture: ${{ matrix.python }}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - name: Bind exact new recovery source, keeping candidate scripts separate
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $auth = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes("x-access-token:$env:GH_TOKEN"))
+          Write-Output "::add-mask::$auth"
+          $env:GIT_CONFIG_COUNT='1'
+          $env:GIT_CONFIG_KEY_0='http.https://github.com/.extraheader'
+          $env:GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $auth"
+          git fetch --no-tags origin $env:SOURCE_SHA
+          if ($LASTEXITCODE -ne 0) { throw 'BUSINESS_SOURCE_UNAVAILABLE' }
+          git checkout $env:SOURCE_SHA -- backend frontend packaging
+          if ($LASTEXITCODE -ne 0) { throw 'BUSINESS_SOURCE_CHECKOUT_FAILED' }
+          git diff --exit-code $env:SOURCE_SHA -- backend frontend packaging
+          if ($LASTEXITCODE -ne 0) { throw 'BUSINESS_SOURCE_MISMATCH' }
+      - name: Reuse verified native closure without modifying original lock
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $run=gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/$env:CLOSURE_RUN" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $run.head_sha -ne $env:CLOSURE_SHA -or $run.conclusion -ne 'success' -or $run.path -ne '.github/workflows/cloud-rc1-win7-complete-candidate.yml' -or $run.head_repository.full_name -ne $env:GITHUB_REPOSITORY) { throw 'CLOSURE_RUN_INVALID' }
+          $arch='${{ matrix.arch }}'
+          $dir=Join-Path $env:RUNNER_TEMP 'verified-closure'
+          gh run download $env:CLOSURE_RUN --repo $env:GITHUB_REPOSITORY --name "RC1-Win7-$arch-COMPLETE-CANDIDATE-CLOSURE-NOT-RELEASE-$env:CLOSURE_SHA" --dir $dir
+          if ($LASTEXITCODE -ne 0) { throw 'CLOSURE_DOWNLOAD_FAILED' }
+          python scripts/rc1_win7_freeze_candidate.py verify $dir $arch
+          if ($LASTEXITCODE -ne 0) { throw 'CLOSURE_VERIFY_FAILED' }
+      - name: Build current frontend with lockfile
+        shell: pwsh
+        run: |
+          corepack enable
+          corepack prepare 'pnpm@11.9.0' --activate
+          Push-Location frontend
+          try {
+            corepack pnpm install --frozen-lockfile
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            corepack pnpm run build
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          } finally { Pop-Location }
+          python scripts/validate-frontend-dist.py frontend/dist/client
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Download and record exact existing freeze toolchain before native candidate freeze
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $out=Join-Path $PWD 'artifacts/win7-app-only'
+          New-Item -ItemType Directory -Force $out | Out-Null
+          $wh=Join-Path $env:RUNNER_TEMP 'freeze-tools'
+          python -m pip download --only-binary=:all: --dest $wh -r packaging/windows/requirements-build.txt
+          if ($LASTEXITCODE -ne 0) { throw 'WIN7_FREEZE_TOOLCHAIN_UNAVAILABLE' }
+          Get-ChildItem $wh -Filter '*.whl' | ForEach-Object { "$((Get-FileHash $_.FullName).Hash.ToLowerInvariant())  $($_.Name)" } | Set-Content "$out/freeze-tool-sha256.txt"
+          python -m pip install --no-index --only-binary=:all: --find-links $wh -r packaging/windows/requirements-build.txt
+          if ($LASTEXITCODE -ne 0) { throw 'WIN7_FREEZE_TOOLCHAIN_INSTALL_FAILED' }
+          python -m pip check
+          if ($LASTEXITCODE -ne 0) { throw 'WIN7_FREEZE_TOOLCHAIN_CONFLICT' }
+          python scripts/rc1_win7_freeze_candidate.py freeze $out '${{ matrix.arch }}'
+          if ($LASTEXITCODE -ne 0) { throw 'WIN7_CANDIDATE_FREEZE_BLOCKED' }
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: RC1-Win7-${{ matrix.arch }}-APP-ONLY-NOT-INSTALLER-${{ env.SOURCE_SHA }}
+          path: artifacts/win7-app-only
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 14

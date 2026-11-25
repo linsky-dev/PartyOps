@@ -2,6 +2,7 @@
   [Parameter(Mandatory = $true)]
   [string]$Path,
   [switch]$VerifyTargetAcl,
+  [switch]$NormalizeTargetAcl,
   [string]$DiagnosticFile = ""
 )
 
@@ -166,6 +167,37 @@ try {
         }
       }
     }
+  }
+  if ($NormalizeTargetAcl) {
+    # Do not admit arbitrary nonempty directories: the existing identity,
+    # reparse and old ACL checks above MUST pass before mutation.
+    if (-not [IO.Directory]::Exists($fullPath)) {
+      Stop-InstallPathValidation "INSTALL_DIR_CREATE_FAILED" "程序目录尚未创建：$fullPath" 6
+    }
+    $existing = [IO.Directory]::GetAccessControl($fullPath,
+      [Security.AccessControl.AccessControlSections]::Access -bor
+      [Security.AccessControl.AccessControlSections]::Owner)
+    if ($existing.GetOwner([Security.Principal.SecurityIdentifier]).Value -ne 'S-1-5-32-544') {
+      Stop-InstallPathValidation "INSTALL_DIR_ACL_DENIED" "程序目录所有者未收敛至管理员组：$fullPath" 6
+    }
+    # Explicit ACEs can survive icacls /inheritance:r (observed on ARM64).
+    # Build a protected allow-list DACL, not an additive grant. The owner,
+    # group and integrity label are not replaced by this access-only update.
+    $existing.SetAccessRuleProtection($true, $false)
+    $oldRules = $existing.GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier])
+    foreach ($rule in $oldRules) {
+      $existing.PurgeAccessRules($rule.IdentityReference)
+    }
+    $inherit = [Security.AccessControl.InheritanceFlags]::ContainerInherit -bor [Security.AccessControl.InheritanceFlags]::ObjectInherit
+    foreach ($sid in @('S-1-5-18','S-1-5-32-544','S-1-5-32-545')) {
+      $rights = [Security.AccessControl.FileSystemRights]::FullControl
+      if ($sid -eq 'S-1-5-32-545') { $rights = [Security.AccessControl.FileSystemRights]::ReadAndExecute }
+      $id = New-Object Security.Principal.SecurityIdentifier($sid)
+      $rule = New-Object Security.AccessControl.FileSystemAccessRule($id, $rights, $inherit, [Security.AccessControl.PropagationFlags]::None, [Security.AccessControl.AccessControlType]::Allow)
+      $existing.AddAccessRule($rule)
+    }
+    [IO.Directory]::SetAccessControl($fullPath,$existing)
+    Assert-SecureDirectoryAcl $fullPath -ForProgramDirectory
   }
 }
 catch {

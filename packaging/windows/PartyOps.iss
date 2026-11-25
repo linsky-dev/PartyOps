@@ -19,6 +19,11 @@ AppSupportURL=https://www.partyops.cn/guide
 AppUpdatesURL=https://www.partyops.cn/
 DefaultDirName={code:GetSuggestedProgramDir}
 DefaultGroupName=党建智办
+#ifdef PartyOpsArm64QA
+ArchitecturesAllowed=arm64
+ArchitecturesInstallIn64BitMode=arm64
+MinVersion=10.0.22000
+#else
 #ifdef PartyOpsX86
 ArchitecturesAllowed=x86compatible
 #else
@@ -29,6 +34,7 @@ ArchitecturesInstallIn64BitMode=x64compatible
 MinVersion=6.1sp1
 #else
 MinVersion=10.0
+#endif
 #endif
 PrivilegesRequired=admin
 OutputDir={#OutputRoot}
@@ -91,12 +97,15 @@ Source: "{#BuildRoot}\*"; Excludes: "PartyOpsUpdater.exe,PartyOpsUpdaterService.
 Source: "{#BuildRoot}\PartyOpsUpdater.exe"; DestDir: "{app}"; Flags: ignoreversion restartreplace
 Source: "{#BuildRoot}\PartyOpsUpdaterService.exe"; DestDir: "{app}"; Flags: ignoreversion restartreplace
 Source: "{#SourcePath}\validate-install-path.ps1"; Flags: dontcopy
+#ifndef PartyOpsArm64QA
 Source: "{#BuildRoot}\prerequisites\ndp48-x86-x64-allos-enu.exe"; Flags: dontcopy
+#endif
 
 [Icons]
 Name: "{group}\党建智办"; Filename: "{app}\PartyOpsLauncher.exe"; IconFilename: "{app}\partyops.ico"
 Name: "{group}\重新配置运行模式"; Filename: "{app}\PartyOpsWizard.exe"; Parameters: "--reconfigure"; IconFilename: "{app}\partyops.ico"
 Name: "{group}\管理本机共享文件夹"; Filename: "{app}\PartyOpsWizard.exe"; Parameters: "--manage-shared-roots"; IconFilename: "{app}\partyops.ico"
+Name: "{group}\找回账号和密码"; Filename: "{app}\PartyOpsWizard.exe"; Parameters: "--recover-account"; IconFilename: "{app}\partyops.ico"
 Name: "{commondesktop}\党建智办"; Filename: "{app}\PartyOpsLauncher.exe"; IconFilename: "{app}\partyops.ico"
 
 [Run]
@@ -179,7 +188,11 @@ var
 const
   PartyOpsAppId = '{1C8EFC63-CAFC-46EF-A5E3-D3D119B5BB3A}';
   ClassesPrefix = 'Software\Classes\';
+#ifdef PartyOpsArm64QA
+  DotNet48ReleaseMinimum = 533320;
+#else
   DotNet48ReleaseMinimum = 528040;
+#endif
   DotNet48InstallerName = 'ndp48-x86-x64-allos-enu.exe';
   DotNet48InstallerSha256 = '0A3A390C47E639D0F7FC65B21195FEE6B7F65B066F80F70C60FAB191D14B7E40';
 
@@ -189,7 +202,11 @@ var
 begin
   Result :=
     RegQueryDWordValue(
+#ifdef PartyOpsArm64QA
+      HKLM64,
+#else
       HKLM32,
+#endif
       'SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full',
       'Release',
       ReleaseValue
@@ -205,6 +222,10 @@ begin
   Result := '';
   if HasDotNet48 then
     exit;
+#ifdef PartyOpsArm64QA
+  Result := '[DOTNET481_ARM64_REQUIRED] 此 Windows 11 ARM64 测试包需要原生 .NET Framework 4.8.1。请先通过 Windows 更新安装并重启。';
+  exit;
+#else
   WizardForm.StatusLabel.Caption := '正在安装公文排版所需的微软 .NET Framework 4.8…';
   try
     ExtractTemporaryFile(DotNet48InstallerName);
@@ -252,6 +273,7 @@ begin
     NeedsRestart := True;
     DotNet48RestartRequired := True;
   end;
+#endif
 end;
 
 function CanLaunchAfterInstall: Boolean;
@@ -1561,15 +1583,14 @@ begin
     Result := '[INSTALL_DIR_ACL_DENIED] 无法把程序目录所有权交给管理员，安装已停止。';
     exit;
   end;
-  if (not Exec(
-    ExpandConstant('{sys}\icacls.exe'),
-    AddQuotes(AppDir) + ' /inheritance:r /grant:r ' +
-      '*S-1-5-18:(OI)(CI)F *S-1-5-32-544:(OI)(CI)F ' +
-      '*S-1-5-32-545:(OI)(CI)RX',
-    '', SW_HIDE, ewWaitUntilTerminated, ResultCode
+  { Rebuild the exact protected root DACL. Additive icacls grants may
+    preserve unrelated explicit ACEs on Windows ARM64 and custom volumes.
+    The validator repeats all old-content and reparse checks before mutation. }
+  if (not RunInstallPathValidator(
+    PowerShell, Parameters + ' -NormalizeTargetAcl', ResultCode
   )) or (ResultCode <> 0) then
   begin
-    Result := '[INSTALL_DIR_ACL_DENIED] 无法保护程序目录写权限，安装已停止。';
+    Result := ReadInstallPathDiagnostic(DiagnosticFile, ResultCode);
     exit;
   end;
   { (OI)(CI) 是目录继承标记，不能用 /T 直接递归写到普通文件；否则文件会

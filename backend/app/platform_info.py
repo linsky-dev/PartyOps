@@ -102,11 +102,14 @@ def detect_platform_info(*, os_release_path: Path = Path("/etc/os-release")) -> 
         runtime_profile = (
             "legacy-core" if is_windows7 and architecture == "x86"
             else "legacy-smart" if is_windows7 and architecture == "amd64"
+            else "arm64-source-candidate" if not is_windows7 and architecture == "arm64"
             else "unsupported" if architecture not in {"amd64", "x86"}
             else "full"
         )
         capabilities = list(CORE_CAPABILITIES) if runtime_profile != "unsupported" else []
-        if runtime_profile == "full":
+        # Source-only ARM64 exposes the same runtime probes as other development
+        # platforms; the frozen branch above still requires a verified package.
+        if runtime_profile in {"full", "arm64-source-candidate"}:
             capabilities.extend(AI_CAPABILITIES)
         elif runtime_profile == "legacy-smart":
             capabilities.append("semantic_rerank")
@@ -181,7 +184,7 @@ def update_platform_key(info: dict[str, object]) -> str:
             if info.get("architecture") != architecture or (package, architecture, profile) not in PACKAGE_PROFILES:
                 return ""
             return package
-        if info.get("runtime_profile") == "unsupported":
+        if info.get("runtime_profile") in {"unsupported", "arm64-source-candidate"}:
             return ""
         return "windows7" if distribution == "windows7" else "windows"
     if family == "linux" and package_format in {"deb", "rpm"}:
