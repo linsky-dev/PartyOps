@@ -426,6 +426,9 @@ if [[ "${1:-}" == "--configure" ]]; then
   exit $?
 fi
 if [[ "${1:-}" == "--manage-shared-roots" ]]; then
+  if [[ "${2:-}" == "--action-uri" && ( "${3:-}" == "partyops-client://recover-account" || "${3:-}" == "partyops-client://recover-account/" ) && "$#" -eq 3 ]]; then
+    exec "$APP_ROOT/partyops-wizard" --recover-account
+  fi
   launch_browser_tool "$@"
   exit $?
 fi

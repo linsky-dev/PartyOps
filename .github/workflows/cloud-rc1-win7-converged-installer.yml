@@ -1,0 +1,271 @@
+name: RC1 converged Win7 dual architecture freeze, EXE and hosted actual install
+on:
+  pull_request:
+    branches: [feature/1.4.6-rc1-cloud-rebuild]
+    paths:
+      - '.github/workflows/cloud-rc1-win7-converged-installer.yml'
+      - 'scripts/rc1_win7_converged_package_preflight.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  freeze:
+    runs-on: windows-2022
+    timeout-minutes: 100
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            python: x64
+          - arch: x86
+            python: x86
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PYTHONUTF8: '1'
+      SOURCE_SHA: bada0183e84f14fce2a24ca281a60d9f7defe2e5
+      CLOSURE_RUN: '45370727222'
+      CLOSURE_SHA: '2122c220fd3af2e8040f4b8ffab01c778c70da88'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.8.10'
+          architecture: ${{ matrix.python }}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - name: Bind exact new recovery source, keeping candidate scripts separate
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $auth = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes("x-access-token:$env:GH_TOKEN"))
+          Write-Output "::add-mask::$auth"
+          $env:GIT_CONFIG_COUNT='1'
+          $env:GIT_CONFIG_KEY_0='http.https://github.com/.extraheader'
+          $env:GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $auth"
+          git fetch --no-tags origin $env:SOURCE_SHA
+          if ($LASTEXITCODE -ne 0) { throw 'BUSINESS_SOURCE_UNAVAILABLE' }
+          git checkout $env:SOURCE_SHA -- backend frontend packaging
+          if ($LASTEXITCODE -ne 0) { throw 'BUSINESS_SOURCE_CHECKOUT_FAILED' }
+          git diff --exit-code $env:SOURCE_SHA -- backend frontend packaging
+          if ($LASTEXITCODE -ne 0) { throw 'BUSINESS_SOURCE_MISMATCH' }
+      - name: Reuse verified native closure without modifying original lock
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $run=gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/$env:CLOSURE_RUN" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $run.head_sha -ne $env:CLOSURE_SHA -or $run.conclusion -ne 'success' -or $run.path -ne '.github/workflows/cloud-rc1-win7-complete-candidate.yml' -or $run.head_repository.full_name -ne $env:GITHUB_REPOSITORY) { throw 'CLOSURE_RUN_INVALID' }
+          $arch='${{ matrix.arch }}'
+          $dir=Join-Path $env:RUNNER_TEMP 'verified-closure'
+          gh run download $env:CLOSURE_RUN --repo $env:GITHUB_REPOSITORY --name "RC1-Win7-$arch-COMPLETE-CANDIDATE-CLOSURE-NOT-RELEASE-$env:CLOSURE_SHA" --dir $dir
+          if ($LASTEXITCODE -ne 0) { throw 'CLOSURE_DOWNLOAD_FAILED' }
+          python scripts/rc1_win7_freeze_candidate.py verify $dir $arch
+          if ($LASTEXITCODE -ne 0) { throw 'CLOSURE_VERIFY_FAILED' }
+      - name: Build current frontend with lockfile
+        shell: pwsh
+        run: |
+          corepack enable
+          corepack prepare 'pnpm@11.9.0' --activate
+          Push-Location frontend
+          try {
+            corepack pnpm install --frozen-lockfile
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            corepack pnpm run build
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          } finally { Pop-Location }
+          python scripts/validate-frontend-dist.py frontend/dist/client
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Download and record exact existing freeze toolchain before native candidate freeze
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $out=Join-Path $PWD 'artifacts/win7-app-only'
+          New-Item -ItemType Directory -Force $out | Out-Null
+          $wh=Join-Path $env:RUNNER_TEMP 'freeze-tools'
+          python -m pip download --only-binary=:all: --dest $wh -r packaging/windows/requirements-build.txt
+          if ($LASTEXITCODE -ne 0) { throw 'WIN7_FREEZE_TOOLCHAIN_UNAVAILABLE' }
+          Get-ChildItem $wh -Filter '*.whl' | ForEach-Object { "$((Get-FileHash $_.FullName).Hash.ToLowerInvariant())  $($_.Name)" } | Set-Content "$out/freeze-tool-sha256.txt"
+          python -m pip install --no-index --only-binary=:all: --find-links $wh -r packaging/windows/requirements-build.txt
+          if ($LASTEXITCODE -ne 0) { throw 'WIN7_FREEZE_TOOLCHAIN_INSTALL_FAILED' }
+          python -m pip check
+          if ($LASTEXITCODE -ne 0) { throw 'WIN7_FREEZE_TOOLCHAIN_CONFLICT' }
+          python scripts/rc1_win7_freeze_candidate.py freeze $out '${{ matrix.arch }}'
+          if ($LASTEXITCODE -ne 0) { throw 'WIN7_CANDIDATE_FREEZE_BLOCKED' }
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: RC1-Win7-${{ matrix.arch }}-APP-ONLY-NOT-INSTALLER-${{ env.SOURCE_SHA }}
+          path: artifacts/win7-app-only
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 14
+
+  preflight:
+    needs: freeze
+    runs-on: windows-2022
+    timeout-minutes: 160
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            python: x64
+            donor_sha: 996159794407f2171de170fbbf95c3b1f3fe234c026116f35113c2d8d3591d7f
+          - arch: x86
+            python: x86
+            donor_sha: b3b77f2a5a319906c641ca693df31b93c3fbcb56e28eaae7a52bdfa94913bf88
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PYTHONUTF8: '1'
+      ARCH: ${{ matrix.arch }}
+      DONOR_SHA: ${{ matrix.donor_sha }}
+      PARTYOPS_QA_EXPECTED_SOURCE: bada0183e84f14fce2a24ca281a60d9f7defe2e5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.8.10'
+          architecture: ${{ matrix.python }}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: RC1-Win7-${{ matrix.arch }}-APP-ONLY-NOT-INSTALLER-bada0183e84f14fce2a24ca281a60d9f7defe2e5
+          path: ${{ runner.temp }}/win7-package-input/fresh
+      - name: Recover exact native app, original RC6 installer and verified extractor
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $root=Join-Path $env:RUNNER_TEMP 'win7-package-input'
+          if (-not (Test-Path "$root/fresh/freeze-receipt.json")) { throw 'SAME_RUN_FREEZE_RECEIPT_MISSING' }
+          if ($env:ARCH -eq 'amd64') {
+            $closure=gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/45370727222" | ConvertFrom-Json
+            if ($LASTEXITCODE -ne 0 -or $closure.head_sha -ne '2122c220fd3af2e8040f4b8ffab01c778c70da88' -or $closure.conclusion -ne 'success' -or $closure.head_repository.full_name -ne $env:GITHUB_REPOSITORY -or $closure.path -ne '.github/workflows/cloud-rc1-win7-complete-candidate.yml') { throw 'NUMPY_CLOSURE_RUN_INVALID' }
+            gh run download 45370727222 --repo $env:GITHUB_REPOSITORY --name 'RC1-Win7-amd64-COMPLETE-CANDIDATE-CLOSURE-NOT-RELEASE-2122c220fd3af2e8040f4b8ffab01c778c70da88' --dir "$root/verified-closure"
+            if ($LASTEXITCODE -ne 0) { throw 'NUMPY_CLOSURE_DOWNLOAD_FAILED' }
+          }
+          $file="PartyOps_1.4.5-rc.6_windows7_$env:ARCH.exe"
+          gh release download v1.4.5-rc.6 --repo $env:GITHUB_REPOSITORY --pattern $file --dir $root
+          if ($LASTEXITCODE -ne 0 -or (Get-FileHash "$root/$file").Hash.ToLowerInvariant() -ne $env:DONOR_SHA) { throw 'RC6_DONOR_INVALID' }
+          curl.exe --fail --location --retry 3 --output "$root/extractor.zip" 'https://github.com/UserUnknownFactor/innoextract_win/releases/download/670/innoextract670.zip'
+          if ($LASTEXITCODE -ne 0 -or (Get-FileHash "$root/extractor.zip").Hash.ToLowerInvariant() -ne '79b69b9b1fcd98f42ccd4b245efdf6a03bcfb674ba6af482f5a46891c9ed4d14') { throw 'EXTRACTOR_INVALID' }
+          Expand-Archive "$root/extractor.zip" "$root/extractor-unpacked"
+          New-Item -ItemType Directory -Force "$root/extractor" | Out-Null
+          $hashes=@{'innoextract.exe'='0dab51583e403970065db49f87a6a2bf683ab6ebfdf27bede2bf633dd232a1a2';'libbz2-1.dll'='b79cd3a7102e359ef6324e98966a67939e58ec2b651ae2847cae84a4dfa453f7'}
+          foreach ($name in $hashes.Keys) {
+            $files=@(Get-ChildItem "$root/extractor-unpacked" -Recurse -File -Filter $name)
+            if ($files.Count -ne 1 -or (Get-FileHash $files[0].FullName).Hash.ToLowerInvariant() -ne $hashes[$name]) { throw 'EXTRACTOR_COMPONENT_INVALID' }
+            Copy-Item $files[0].FullName "$root/extractor/$name"
+          }
+          & "$root/extractor/innoextract.exe" --extract --output-dir "$root/donor" "$root/$file"
+          if ($LASTEXITCODE -ne 0) { throw 'DONOR_EXTRACT_FAILED' }
+      - name: Verify old manifest and recover only unchanged named native prerequisites
+        shell: pwsh
+        run: |
+          $root=Join-Path $env:RUNNER_TEMP 'win7-package-input'
+          python -m pip install 'pefile==2023.2.7'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python scripts/rc1_win7_converged_package_preflight.py "$root/fresh" "$root/donor" artifacts/win7-package-preflight $env:ARCH
+          if ($LASTEXITCODE -ne 0) { throw 'WIN7_PACKAGE_PREFLIGHT_BLOCKED' }
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: 'bada0183e84f14fce2a24ca281a60d9f7defe2e5'
+          path: packaging-source
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+          architecture: x64
+      - name: Stage unchanged manifest-verified Office and OCR and brand assets
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $root=Join-Path $env:RUNNER_TEMP 'win7-package-input'
+          $bundle=(Resolve-Path 'artifacts/win7-package-preflight/app-with-prerequisites').Path
+          python scripts/rc1_win7_assemble_installer.py "$root/donor" $bundle packaging-source $env:ARCH
+          if ($LASTEXITCODE -ne 0) { throw 'WIN7_ASSEMBLY_INPUTS_INVALID' }
+      - name: Build exact unchanged upstream formatter and verify official .NET offline prerequisite
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $bundle=(Resolve-Path 'artifacts/win7-package-preflight/app-with-prerequisites').Path
+          $repo=(Resolve-Path packaging-source).Path
+          $arch=if ($env:ARCH -eq 'amd64') {'x64'} else {'x86'}
+          $python=(python -c 'import sys;print(sys.executable)').Trim()
+          & "$repo/scripts/build-document-formatter-host.ps1" -Platform $arch -StageDirectory "$repo/artifacts/win7-formatter-host" -PythonPath $python
+          if ($LASTEXITCODE -ne 0) { throw 'FORMATTER_BUILD_FAILED' }
+          Copy-Item -LiteralPath "$repo/artifacts/win7-formatter-host" -Destination "$bundle/formatter-host" -Recurse
+          # The helper intentionally restricts its destination to the exact source repo.
+          . "$repo/packaging/windows/prepare-dotnet48-runtime.ps1"
+          Add-VerifiedPartyOpsDotNet48Prerequisite -RepoRoot $repo -Destination "$repo/artifacts/win7-prerequisites"
+          Copy-Item -LiteralPath "$repo/artifacts/win7-prerequisites" -Destination "$bundle/prerequisites" -Recurse
+          @{status='HISTORICAL_WPS_REFERENCE_ONLY';architecture=$arch;current_version_native_wps_tested=$false;full_function_gate_passed=$false;release_ready=$false} | ConvertTo-Json | Set-Content "$bundle/formatter-host/qa-status.json"
+      - name: Apply original full package PE gate and make exact new release manifest
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          python -m pip install 'pefile==2024.8.26'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $bundle=(Resolve-Path 'artifacts/win7-package-preflight/app-with-prerequisites').Path
+          python packaging-source/scripts/validate-win7-pe.py --root $bundle --architecture $env:ARCH
+          if ($LASTEXITCODE -ne 0) { throw 'FULL_WIN7_PE_GATE_BLOCKED' }
+          # Match original packaging: the installer-only prerequisite must not enter the installed manifest.
+          $prerequisites=Join-Path $env:RUNNER_TEMP 'win7-manifest-prerequisites'
+          Move-Item -LiteralPath "$bundle/prerequisites" -Destination $prerequisites
+          $profile=if ($env:ARCH -eq 'amd64') {'legacy-smart'} else {'legacy-core'}
+          python packaging-source/scripts/generate-release-manifest.py --root $bundle --output "$bundle/release-manifest.json" --version '1.4.6-rc.1' --tag 'v1.4.6-rc.1' --commit 'bada0183e84f14fce2a24ca281a60d9f7defe2e5' --platform windows7 --architecture $env:ARCH --runtime-profile $profile
+          if ($LASTEXITCODE -ne 0 -or (Get-Item "$bundle/release-manifest.json").Length -gt 8MB) { throw 'RELEASE_MANIFEST_INVALID' }
+          Move-Item -LiteralPath $prerequisites -Destination "$bundle/prerequisites"
+      - name: Compile actual original Win7 Inno installer as an unsigned QA candidate
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $paths=@((Join-Path ([Environment]::GetFolderPath('ProgramFilesX86')) 'Inno Setup 6/ISCC.exe'), (Join-Path $env:ProgramFiles 'Inno Setup 6/ISCC.exe'))
+          $inno=$paths | Where-Object { Test-Path $_ -PathType Leaf } | Select-Object -First 1
+          if (-not $inno) {
+            choco install innosetup --version=6.7.3 --yes --no-progress
+            if ($LASTEXITCODE -ne 0) { throw 'INNO_SETUP_UNAVAILABLE' }
+            $inno=$paths | Where-Object { Test-Path $_ -PathType Leaf } | Select-Object -First 1
+          }
+          if (-not $inno) { throw 'INNO_COMPILER_MISSING' }
+          $env:PARTYOPS_WINDOWS_BUILD_ROOT=(Resolve-Path 'artifacts/win7-package-preflight/app-with-prerequisites').Path
+          New-Item -ItemType Directory -Force artifacts/win7-installer | Out-Null
+          $env:PARTYOPS_WINDOWS_OUTPUT_ROOT=(Resolve-Path 'artifacts/win7-installer').Path
+          # Use current installer template, not old RC6 payload or old business code.
+          # The QA build is conspicuously named; do not publish or sign.
+          $base="PartyOps_1.4.6-rc.1_windows7_$env:ARCH" + '_BUILD_ONLY_UNVERIFIED'
+          $defines=@('/DPartyOpsLegacy',"/DPartyOpsOutputBase=$base")
+          if ($env:ARCH -eq 'x86') { $defines+= '/DPartyOpsX86' }
+          & $inno @defines 'packaging-source/packaging/windows/PartyOps.iss' *> artifacts/win7-installer/inno.log
+          if ($LASTEXITCODE -ne 0) { Get-Content artifacts/win7-installer/inno.log -Tail 60; throw 'WIN7_INNO_BUILD_FAILED' }
+          $exe=Join-Path $env:PARTYOPS_WINDOWS_OUTPUT_ROOT "$base.exe"
+          if (-not (Test-Path $exe) -or (Get-Item $exe).Length -lt 1MB) { throw 'INSTALLER_MISSING' }
+          $hash=(Get-FileHash $exe).Hash.ToLowerInvariant()
+          "$hash  $base.exe" | Set-Content "$exe.sha256"
+          if ((Get-AuthenticodeSignature $exe).Status -ne 'NotSigned') { throw 'UNEXPECTED_INSTALLER_SIGNATURE' }
+          @{status='UNSIGNED_WIN7_INSTALLER_BUILD_ONLY';architecture=$env:ARCH;source_commit='bada0183e84f14fce2a24ca281a60d9f7defe2e5';sha256=$hash;installer_created=$true;full_pe_gate_passed=$true;native_win7_os_tested=$false;current_version_native_wps_tested=$false;security_backports_approved=$false;release_ready=$false;published=$false} | ConvertTo-Json | Set-Content "$exe.candidate.json"
+      - name: Actually install the exact same-run EXE and verify launcher and uninstall
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $exe=(Resolve-Path "artifacts/win7-installer/PartyOps_1.4.6-rc.1_windows7_$($env:ARCH)_BUILD_ONLY_UNVERIFIED.exe").Path
+          $receipt=Get-Content "$exe.candidate.json" -Raw | ConvertFrom-Json
+          if ($receipt.source_commit -ne $env:PARTYOPS_QA_EXPECTED_SOURCE -or $receipt.architecture -ne $env:ARCH -or (Get-FileHash $exe).Hash.ToLowerInvariant() -ne $receipt.sha256 -or $receipt.release_ready) { throw 'SAME_RUN_CANDIDATE_RECEIPT_INVALID' }
+          & ./scripts/rc1-win7-hosted-installed-smoke.ps1 -Installer $exe -ExpectedSha256 $receipt.sha256 -OutputDirectory "$env:RUNNER_TEMP/win7-hosted-evidence" -LegacyArchitecture $env:ARCH -ConfirmEphemeralHostedRunner
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: RC1-Win7-${{ matrix.arch }}-CONVERGED-UNSIGNED-EXE-BUILD-ONLY-${{ env.PARTYOPS_QA_EXPECTED_SOURCE }}
+          path: |
+            artifacts/win7-installer/*
+            artifacts/win7-package-preflight/*json
+            ${{ runner.temp }}/win7-hosted-evidence
+          if-no-files-found: warn
+          retention-days: 14

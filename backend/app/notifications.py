@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy import select
+from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy.orm import Session
 
 from .audit import emit_event
@@ -59,26 +60,37 @@ def add_notification(
     section: str | None = None,
     child_id: str | None = None,
 ) -> bool:
-    if db.scalar(select(Notification.id).where(Notification.dedupe_key == dedupe_key)):
-        return False
-    item = Notification(
-        user_id=user_id,
-        notification_type=notification_type,
-        title=title,
-        body=body,
-        entity_type=entity_type,
-        entity_id=entity_id,
-        target=notification_target(
-            entity_type, entity_id, section or TASK_SECTIONS.get(notification_type, "overview"), child_id
-        ),
-        dedupe_key=dedupe_key,
-    )
-    db.add(item)
+    # The API and scheduler can concurrently reconcile the same deadline.
+    # Flush pending history-key changes first (Session has autoflush=False),
+    # then let SQLite enforce the unique dedupe key atomically. Ignore only
+    # that specific conflict; other constraint errors must still propagate.
     db.flush()
+    statement = (
+        insert(Notification)
+        .values(
+            user_id=user_id,
+            notification_type=notification_type,
+            title=title,
+            body=body,
+            entity_type=entity_type,
+            entity_id=entity_id,
+            target=notification_target(
+                entity_type, entity_id,
+                section or TASK_SECTIONS.get(notification_type, "overview"),
+                child_id,
+            ),
+            dedupe_key=dedupe_key,
+        )
+        .on_conflict_do_nothing(index_elements=[Notification.dedupe_key])
+        .returning(Notification.id)
+    )
+    item_id = db.scalar(statement)
+    if item_id is None:
+        return False
     emit_event(
         db,
         "notification.created",
-        item.id,
+        item_id,
         {"user_id": user_id, "entity_type": entity_type, "entity_id": entity_id, "type": notification_type},
     )
     return True

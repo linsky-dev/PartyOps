@@ -991,6 +991,9 @@ def test_notification_disabled_preference_and_daily_refresh_branches(client, adm
             assert _refresh_daily(db, user, task, "coverage", "跨日刷新", "新正文", key, now) is True
             db.commit()
         finally:
+            # Recover the test transaction before restoring shared preferences,
+            # even if an assertion or SQL constraint failed during the probe.
+            db.rollback()
             preference.enabled = original_enabled
             preference.desktop_enabled = original_desktop_enabled
             db.commit()

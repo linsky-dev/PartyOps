@@ -1,0 +1,62 @@
+name: RC1 Win7 actual candidate EXE hosted installation and uninstall
+on:
+  pull_request:
+    branches: [feature/1.4.6-rc1-cloud-rebuild]
+    paths:
+      - '.github/workflows/cloud-rc1-win7-hosted-install.yml'
+      - 'scripts/rc1-win7-hosted-installed-smoke.ps1'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  install:
+    runs-on: windows-2022
+    timeout-minutes: 55
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, x86]
+    env:
+      GH_TOKEN: ${{ github.token }}
+      ARCH: ${{ matrix.arch }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Download exact completed candidate installer and verify receipt
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $run=gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/45566131017" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $run.head_sha -ne 'a707657c6e089cd78ad4a6e8f1db14aff4898b92' -or $run.conclusion -ne 'success' -or $run.head_repository.full_name -ne $env:GITHUB_REPOSITORY -or $run.path -ne '.github/workflows/cloud-rc1-win7-converged-installer.yml') { throw 'CANDIDATE_PROVENANCE_INVALID' }
+          $root=Join-Path $env:RUNNER_TEMP 'win7-hosted-installer'
+          $id=if ($env:ARCH -eq 'amd64') {15001037990} else {15000379253}
+          $artifact=gh api "repos/$env:GITHUB_REPOSITORY/actions/artifacts/$id" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $artifact.expired -or $artifact.workflow_run.id -ne 45566131017 -or $artifact.name -ne "RC1-Win7-$env:ARCH-CONVERGED-UNSIGNED-EXE-BUILD-ONLY-740251bc84d7209a5effe24e6c6711274560fc76" -or $artifact.digest -notmatch '^sha256:[0-9a-f]{64}$') { throw 'CANDIDATE_ARTIFACT_INVALID' }
+          $zip=Join-Path $env:RUNNER_TEMP 'win7-verified.zip'
+          cmd /d /c "gh api repos/$env:GITHUB_REPOSITORY/actions/artifacts/$id/zip > `"$zip`""
+          if ($LASTEXITCODE -ne 0 -or (Get-FileHash $zip).Hash.ToLowerInvariant() -ne $artifact.digest.Substring(7)) { throw 'CANDIDATE_ARTIFACT_DIGEST_INVALID' }
+          Expand-Archive -LiteralPath $zip -DestinationPath $root
+          $name="PartyOps_1.4.6-rc.1_windows7_$env:ARCH" + '_BUILD_ONLY_UNVERIFIED.exe'
+          $matches=@(Get-ChildItem $root -Recurse -File -Filter $name)
+          if ($matches.Count -ne 1) { throw 'CANDIDATE_EXE_MISSING_OR_AMBIGUOUS' }
+          $exe=$matches[0].FullName
+          $receipt=Get-Content "$exe.candidate.json" -Raw | ConvertFrom-Json
+          if ($receipt.architecture -ne $env:ARCH -or $receipt.source_commit -ne '740251bc84d7209a5effe24e6c6711274560fc76' -or $receipt.status -ne 'UNSIGNED_WIN7_INSTALLER_BUILD_ONLY' -or -not $receipt.full_pe_gate_passed -or $receipt.release_ready -or $receipt.native_win7_os_tested -or (Get-FileHash $exe).Hash.ToLowerInvariant() -ne $receipt.sha256) { throw 'CANDIDATE_RECEIPT_INVALID' }
+          "WIN7_TEST_EXE=$exe" >> $env:GITHUB_ENV
+          "WIN7_TEST_SHA=$($receipt.sha256)" >> $env:GITHUB_ENV
+          "PARTYOPS_QA_EXPECTED_SOURCE=$($receipt.source_commit)" >> $env:GITHUB_ENV
+      - name: Actually install with Unicode path, verify launcher and uninstall on disposable hosted Windows
+        shell: pwsh
+        run: |
+          & ./scripts/rc1-win7-hosted-installed-smoke.ps1 -Installer $env:WIN7_TEST_EXE -ExpectedSha256 $env:WIN7_TEST_SHA -OutputDirectory "$env:RUNNER_TEMP/win7-hosted-evidence" -LegacyArchitecture $env:ARCH -ConfirmEphemeralHostedRunner
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: RC1-Win7-${{ matrix.arch }}-HOSTED-INSTALL-EVIDENCE-NOT-WIN7-OS-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/win7-hosted-evidence
+          if-no-files-found: warn
+          retention-days: 14

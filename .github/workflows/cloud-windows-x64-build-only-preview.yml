@@ -1,7 +1,7 @@
 name: RC1 Windows x64 safe-PDF unsigned EXE (BUILD_ONLY)
 on:
   pull_request:
-    branches: [main]
+    branches: [main, feature/1.4.6-rc1-cloud-rebuild, qa/rc1-flexible-personal-startup-20261124]
     paths:
       - '.github/workflows/cloud-windows-x64-build-only-preview.yml'
       - 'packaging/windows/build-windows.ps1'

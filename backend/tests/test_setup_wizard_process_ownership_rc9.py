@@ -20,6 +20,8 @@ def run_result(stdout: str = "") -> SimpleNamespace:
 def test_listener_pid_windows_filters_every_untrusted_shape(
     monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    # Simulate the Windows-only constant when exercising this parser on POSIX.
+    monkeypatch.setattr(setup_wizard.subprocess, "CREATE_NO_WINDOW", 0x08000000, raising=False)
     monkeypatch.setattr(setup_wizard.os, "name", "nt")
     monkeypatch.setattr(setup_wizard.sys, "platform", "win32")
     output = "\n".join(
@@ -85,6 +87,8 @@ def test_listener_pid_darwin_linux_and_command_failure(
 def test_windows_listener_port_inventory_filters_untrusted_rows(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    # Simulate the Windows-only constant when exercising this parser on POSIX.
+    monkeypatch.setattr(setup_wizard.subprocess, "CREATE_NO_WINDOW", 0x08000000, raising=False)
     monkeypatch.setattr(setup_wizard.os, "name", "nt")
     output = "\n".join(
         [
@@ -112,6 +116,8 @@ def test_windows_listener_port_inventory_filters_untrusted_rows(
 def test_windows_listener_port_inventory_tolerates_command_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    # Simulate the Windows-only constant when exercising this parser on POSIX.
+    monkeypatch.setattr(setup_wizard.subprocess, "CREATE_NO_WINDOW", 0x08000000, raising=False)
     monkeypatch.setattr(setup_wizard.os, "name", "nt")
     monkeypatch.setattr(
         setup_wizard.subprocess,
@@ -361,7 +367,7 @@ def test_record_port_selection_and_atomic_rewrite(
     monkeypatch.setattr(
         setup_wizard,
         "load_host_environment",
-        lambda path: {"content": path.read_text(encoding="utf-8")},
+        lambda path, **_kwargs: {"content": path.read_text(encoding="utf-8")},
     )
     result = setup_wizard._rewrite_personal_port(config, 18779)
     assert "PARTYOPS_PORT=18779" in result["content"]
@@ -459,13 +465,14 @@ def test_windows_restart_manager_failure_matrix(
             return 0
 
     for stage in ("start", "register", "empty", "unexpected", "second"):
-        monkeypatch.setattr(ctypes, "WinDLL", lambda *_args, s=stage: Manager(s))
+        monkeypatch.setattr(ctypes, "WinDLL", lambda *_args, s=stage: Manager(s), raising=False)
         assert setup_wizard._windows_data_lock_owner_pids(tmp_path) == set()
 
     monkeypatch.setattr(
         ctypes,
         "WinDLL",
         lambda *_args: (_ for _ in ()).throw(OSError("Restart Manager unavailable")),
+        raising=False,
     )
     assert setup_wizard._windows_data_lock_owner_pids(tmp_path) == set()
 
