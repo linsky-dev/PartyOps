@@ -12,7 +12,7 @@ permissions:
 jobs:
   preflight:
     runs-on: windows-2022
-    timeout-minutes: 130
+    timeout-minutes: 160
     strategy:
       fail-fast: false
       matrix:
@@ -28,6 +28,7 @@ jobs:
       PYTHONUTF8: '1'
       ARCH: ${{ matrix.arch }}
       DONOR_SHA: ${{ matrix.donor_sha }}
+      PARTYOPS_QA_EXPECTED_SOURCE: 5ea9c6a128f3d8aa71ff77e7e549f4fbd6115fdb
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
@@ -41,11 +42,11 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
-          $run=gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/45382439314" | ConvertFrom-Json
-          if ($LASTEXITCODE -ne 0 -or $run.head_sha -ne 'cb069938de12c194b9e85a259fcb8c92883a3016' -or $run.conclusion -ne 'success' -or $run.head_repository.full_name -ne $env:GITHUB_REPOSITORY -or $run.path -ne '.github/workflows/cloud-rc1-win7-application-freeze.yml') { throw 'APP_FREEZE_PROVENANCE_INVALID' }
+          $run=gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/45417203694" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $run.head_sha -ne '8fca40a840e94bbfed8436fd1242b24cf4fd8c89' -or $run.conclusion -ne 'success' -or $run.head_repository.full_name -ne $env:GITHUB_REPOSITORY -or $run.path -ne '.github/workflows/cloud-rc1-win7-application-freeze.yml') { throw 'APP_FREEZE_PROVENANCE_INVALID' }
           $root=Join-Path $env:RUNNER_TEMP 'win7-package-input'
           New-Item -ItemType Directory -Force $root | Out-Null
-          gh run download 45382439314 --repo $env:GITHUB_REPOSITORY --name "RC1-Win7-$env:ARCH-APP-ONLY-NOT-INSTALLER-4cb9484f155635dd9bc1ca58fead00bb41b9cd0a" --dir "$root/fresh"
+          gh run download 45417203694 --repo $env:GITHUB_REPOSITORY --name "RC1-Win7-$env:ARCH-APP-ONLY-NOT-INSTALLER-5ea9c6a128f3d8aa71ff77e7e549f4fbd6115fdb" --dir "$root/fresh"
           if ($LASTEXITCODE -ne 0) { throw 'APP_FREEZE_DOWNLOAD_FAILED' }
           $file="PartyOps_1.4.5-rc.6_windows7_$env:ARCH.exe"
           gh release download v1.4.5-rc.6 --repo $env:GITHUB_REPOSITORY --pattern $file --dir $root
@@ -72,7 +73,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'WIN7_PACKAGE_PREFLIGHT_BLOCKED' }
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
-          ref: '4cb9484f155635dd9bc1ca58fead00bb41b9cd0a'
+          ref: '5ea9c6a128f3d8aa71ff77e7e549f4fbd6115fdb'
           path: packaging-source
           persist-credentials: false
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
@@ -116,7 +117,7 @@ jobs:
           $prerequisites=Join-Path $env:RUNNER_TEMP 'win7-manifest-prerequisites'
           Move-Item -LiteralPath "$bundle/prerequisites" -Destination $prerequisites
           $profile=if ($env:ARCH -eq 'amd64') {'legacy-smart'} else {'legacy-core'}
-          python packaging-source/scripts/generate-release-manifest.py --root $bundle --output "$bundle/release-manifest.json" --version '1.4.6-rc.1' --tag 'v1.4.6-rc.1' --commit '4cb9484f155635dd9bc1ca58fead00bb41b9cd0a' --platform windows7 --architecture $env:ARCH --runtime-profile $profile
+          python packaging-source/scripts/generate-release-manifest.py --root $bundle --output "$bundle/release-manifest.json" --version '1.4.6-rc.1' --tag 'v1.4.6-rc.1' --commit '5ea9c6a128f3d8aa71ff77e7e549f4fbd6115fdb' --platform windows7 --architecture $env:ARCH --runtime-profile $profile
           if ($LASTEXITCODE -ne 0 -or (Get-Item "$bundle/release-manifest.json").Length -gt 8MB) { throw 'RELEASE_MANIFEST_INVALID' }
           Move-Item -LiteralPath $prerequisites -Destination "$bundle/prerequisites"
       - name: Compile actual original Win7 Inno installer as an unsigned QA candidate
@@ -146,7 +147,16 @@ jobs:
           $hash=(Get-FileHash $exe).Hash.ToLowerInvariant()
           "$hash  $base.exe" | Set-Content "$exe.sha256"
           if ((Get-AuthenticodeSignature $exe).Status -ne 'NotSigned') { throw 'UNEXPECTED_INSTALLER_SIGNATURE' }
-          @{status='UNSIGNED_WIN7_INSTALLER_BUILD_ONLY';architecture=$env:ARCH;source_commit='4cb9484f155635dd9bc1ca58fead00bb41b9cd0a';sha256=$hash;installer_created=$true;full_pe_gate_passed=$true;native_win7_os_tested=$false;current_version_native_wps_tested=$false;security_backports_approved=$false;release_ready=$false;published=$false} | ConvertTo-Json | Set-Content "$exe.candidate.json"
+          @{status='UNSIGNED_WIN7_INSTALLER_BUILD_ONLY';architecture=$env:ARCH;source_commit='5ea9c6a128f3d8aa71ff77e7e549f4fbd6115fdb';sha256=$hash;installer_created=$true;full_pe_gate_passed=$true;native_win7_os_tested=$false;current_version_native_wps_tested=$false;security_backports_approved=$false;release_ready=$false;published=$false} | ConvertTo-Json | Set-Content "$exe.candidate.json"
+      - name: Actually install the exact same-run EXE and verify launcher and uninstall
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $exe=(Resolve-Path "artifacts/win7-installer/PartyOps_1.4.6-rc.1_windows7_$($env:ARCH)_BUILD_ONLY_UNVERIFIED.exe").Path
+          $receipt=Get-Content "$exe.candidate.json" -Raw | ConvertFrom-Json
+          if ($receipt.source_commit -ne $env:PARTYOPS_QA_EXPECTED_SOURCE -or $receipt.architecture -ne $env:ARCH -or (Get-FileHash $exe).Hash.ToLowerInvariant() -ne $receipt.sha256 -or $receipt.release_ready) { throw 'SAME_RUN_CANDIDATE_RECEIPT_INVALID' }
+          & ./scripts/rc1-win7-hosted-installed-smoke.ps1 -Installer $exe -ExpectedSha256 $receipt.sha256 -OutputDirectory "$env:RUNNER_TEMP/win7-hosted-evidence" -LegacyArchitecture $env:ARCH -ConfirmEphemeralHostedRunner
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
@@ -154,5 +164,6 @@ jobs:
           path: |
             artifacts/win7-installer/*
             artifacts/win7-package-preflight/*json
+            ${{ runner.temp }}/win7-hosted-evidence
           if-no-files-found: warn
           retention-days: 14

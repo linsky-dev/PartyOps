@@ -118,7 +118,7 @@ try {
   $report['installed_manifest_size_bytes'] = (Get-Item -LiteralPath $manifestPath).Length
   $manifest = Get-Content -Raw -LiteralPath $manifestPath | ConvertFrom-Json
   if ($manifest.version -ne '1.4.6-rc.1' -or
-      $manifest.architecture -ne $LegacyArchitecture -or $manifest.platform -ne 'windows7' -or $manifest.source_commit -ne '4cb9484f155635dd9bc1ca58fead00bb41b9cd0a') {
+      $manifest.architecture -ne $LegacyArchitecture -or $manifest.platform -ne 'windows7' -or $manifest.source_commit -ne $(if ($env:PARTYOPS_QA_EXPECTED_SOURCE) { $env:PARTYOPS_QA_EXPECTED_SOURCE } else { '4cb9484f155635dd9bc1ca58fead00bb41b9cd0a' })) {
     throw '[RC1_QA_INSTALLED_VERSION_ARCH_INVALID]'
   }
   $entry = @($manifest.files | Where-Object { $_.path -eq 'PartyOps.exe' })

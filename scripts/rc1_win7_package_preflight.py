@@ -36,7 +36,7 @@ def main():
     arch = sys.argv[4]
     out.mkdir(parents=True)
     receipt = read(one(fresh, "freeze-receipt.json"))
-    require(receipt["source_commit"] == "4cb9484f155635dd9bc1ca58fead00bb41b9cd0a"
+    require(receipt["source_commit"] == "5ea9c6a128f3d8aa71ff77e7e549f4fbd6115fdb"
             and receipt["architecture"] == arch and receipt["status"] == "HOSTED_APP_ONLY_NOT_WIN7_OS"
             and receipt["wizard_gui_passed"] and receipt["frozen_recovery_entry_passed"]
             and receipt["release_ready"] is False, "fresh receipt")
@@ -52,6 +52,17 @@ def main():
     app = one(fresh, "PartyOps.exe").parent
     bundle = out / "app-with-prerequisites"
     shutil.copytree(str(app), str(bundle))
+    if arch == "amd64":
+        inventory = read(one(fresh, "numpy-native-dll-closure.json"))
+        require(isinstance(inventory, list) and bool(inventory), "missing NumPy DLL inventory")
+        seen = set()
+        for row in inventory:
+            rel = Path(row["path"])
+            require(not rel.is_absolute() and not rel.drive and ".." not in rel.parts and rel.parts[0] == "_internal" and rel.suffix.lower() == ".dll", "unsafe NumPy DLL path")
+            require(str(rel).casefold() not in seen, "duplicate NumPy DLL path")
+            seen.add(str(rel).casefold())
+            target = bundle / rel
+            require(target.is_file() and not target.is_symlink() and sha(target) == row["sha256"], "NumPy DLL input mismatch: " + str(rel))
     records = []
 
     def verified(relative):
