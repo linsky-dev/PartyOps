@@ -1583,15 +1583,14 @@ begin
     Result := '[INSTALL_DIR_ACL_DENIED] 无法把程序目录所有权交给管理员，安装已停止。';
     exit;
   end;
-  if (not Exec(
-    ExpandConstant('{sys}\icacls.exe'),
-    AddQuotes(AppDir) + ' /inheritance:r /grant:r ' +
-      '*S-1-5-18:(OI)(CI)F *S-1-5-32-544:(OI)(CI)F ' +
-      '*S-1-5-32-545:(OI)(CI)RX',
-    '', SW_HIDE, ewWaitUntilTerminated, ResultCode
+  { Rebuild the exact protected root DACL. Additive icacls grants may
+    preserve unrelated explicit ACEs on Windows ARM64 and custom volumes.
+    The validator repeats all old-content and reparse checks before mutation. }
+  if (not RunInstallPathValidator(
+    PowerShell, Parameters + ' -NormalizeTargetAcl', ResultCode
   )) or (ResultCode <> 0) then
   begin
-    Result := '[INSTALL_DIR_ACL_DENIED] 无法保护程序目录写权限，安装已停止。';
+    Result := ReadInstallPathDiagnostic(DiagnosticFile, ResultCode);
     exit;
   end;
   { (OI)(CI) 是目录继承标记，不能用 /T 直接递归写到普通文件；否则文件会

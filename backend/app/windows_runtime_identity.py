@@ -147,7 +147,11 @@ def installed_identity(executable: Path, version: str) -> dict[str, object]:
         manifest = read_installed_manifest(executable)
         if manifest.get("architecture") != process:
             raise ValueError("WINDOWS_PACKAGE_PROCESS_ISA_MISMATCH")
-        package_key = (manifest.get("platform"), process, manifest.get("runtime_profile"))
+        package_platform = manifest.get("platform")
+        runtime_profile = manifest.get("runtime_profile")
+        if not isinstance(package_platform, str) or not isinstance(runtime_profile, str):
+            raise ValueError("WINDOWS_PACKAGE_CHANNEL_UNSUPPORTED")
+        package_key = (package_platform, process, runtime_profile)
         is_arm64_qa = package_key == ARM64_QA_PACKAGE
         if package_key not in PACKAGE_PROFILES and not is_arm64_qa:
             raise ValueError("WINDOWS_PACKAGE_CHANNEL_UNSUPPORTED")

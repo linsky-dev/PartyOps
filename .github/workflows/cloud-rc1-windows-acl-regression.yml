@@ -1,0 +1,28 @@
+name: RC1 Windows native ACL exact allow-list regression
+on:
+  pull_request:
+    branches: [feature/1.4.6-rc1-cloud-rebuild]
+    paths:
+      - 'packaging/windows/validate-install-path.ps1'
+      - 'scripts/rc1-windows-install-acl-regression.ps1'
+      - '.github/workflows/cloud-rc1-windows-acl-regression.yml'
+permissions:
+  contents: read
+jobs:
+  acl:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [windows-2025, windows-11-arm]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Test explicit writable ACE, safe existing and unsafe existing directories
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          & scripts/rc1-windows-install-acl-regression.ps1 -ConfirmEphemeralHostedRunner
