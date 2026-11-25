@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import shutil
 import sys
+import zipfile
 
 
 def sha(path):
@@ -55,6 +56,24 @@ def main():
     if arch == "amd64":
         inventory = read(one(fresh, "numpy-native-dll-closure.json"))
         require(isinstance(inventory, list) and bool(inventory), "missing NumPy DLL inventory")
+        # upload-artifact excludes dot-prefixed directories by default. Restore
+        # only absent exact DLL members from the same hash-locked wheel closure,
+        # never overwrite a mismatching file or accept a different dependency.
+        closure_root = fresh.parent / "verified-closure"
+        closure = read(one(closure_root, "closure.json"))
+        require(closure["source_commit"] == receipt["dependency_source"]
+                == "2122c220fd3af2e8040f4b8ffab01c778c70da88"
+                and closure["arch"] == arch
+                and closure["status"] == "HOSTED_CPYTHON38_FULL_APPLICATION_SCHEMA_PASS_NOT_WIN7_OS"
+                and closure["release_ready"] is False, "NumPy closure provenance")
+        numpy = closure["packages"]["numpy"]
+        require(numpy["version"] == "1.24.4"
+                and sha(one(closure_root, "candidate-runtime.lock")) == closure["candidate_lock_sha256"]
+                and sha(Path("backend/legacy/requirements-windows7-amd64.lock")) == closure["original_lock_sha256"],
+                "NumPy closure lock identity")
+        wheel = one(closure_root, numpy["filename"])
+        require(sha(wheel) == numpy["sha256"], "NumPy wheel hash")
+        restored = []
         seen = set()
         for row in inventory:
             rel = Path(row["path"])
@@ -62,7 +81,21 @@ def main():
             require(str(rel).casefold() not in seen, "duplicate NumPy DLL path")
             seen.add(str(rel).casefold())
             target = bundle / rel
+            if not target.exists() and not target.is_symlink():
+                member = Path(*rel.parts[1:]).as_posix()
+                require(member.startswith("numpy/") or member.startswith("numpy.libs/"), "unexpected NumPy member")
+                with zipfile.ZipFile(wheel) as archive:
+                    require(archive.namelist().count(member) == 1, "ambiguous NumPy DLL member")
+                    data = archive.read(member)
+                require(hashlib.sha256(data).hexdigest() == row["sha256"], "NumPy wheel DLL hash")
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(data)
+                restored.append({"path": rel.as_posix(), "sha256": row["sha256"]})
             require(target.is_file() and not target.is_symlink() and sha(target) == row["sha256"], "NumPy DLL input mismatch: " + str(rel))
+        (out / "numpy-closure-transfer-receipt.json").write_text(json.dumps({
+            "dependency_source": closure["source_commit"], "wheel_sha256": numpy["sha256"],
+            "restored_missing_dlls": restored, "verified_dll_count": len(seen)
+        }, indent=2), encoding="utf-8")
     records = []
 
     def verified(relative):

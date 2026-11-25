@@ -48,6 +48,12 @@ jobs:
           New-Item -ItemType Directory -Force $root | Out-Null
           gh run download 45417203694 --repo $env:GITHUB_REPOSITORY --name "RC1-Win7-$env:ARCH-APP-ONLY-NOT-INSTALLER-5ea9c6a128f3d8aa71ff77e7e549f4fbd6115fdb" --dir "$root/fresh"
           if ($LASTEXITCODE -ne 0) { throw 'APP_FREEZE_DOWNLOAD_FAILED' }
+          if ($env:ARCH -eq 'amd64') {
+            $closure=gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/45370727222" | ConvertFrom-Json
+            if ($LASTEXITCODE -ne 0 -or $closure.head_sha -ne '2122c220fd3af2e8040f4b8ffab01c778c70da88' -or $closure.conclusion -ne 'success' -or $closure.head_repository.full_name -ne $env:GITHUB_REPOSITORY -or $closure.path -ne '.github/workflows/cloud-rc1-win7-complete-candidate.yml') { throw 'NUMPY_CLOSURE_RUN_INVALID' }
+            gh run download 45370727222 --repo $env:GITHUB_REPOSITORY --name 'RC1-Win7-amd64-COMPLETE-CANDIDATE-CLOSURE-NOT-RELEASE-2122c220fd3af2e8040f4b8ffab01c778c70da88' --dir "$root/verified-closure"
+            if ($LASTEXITCODE -ne 0) { throw 'NUMPY_CLOSURE_DOWNLOAD_FAILED' }
+          }
           $file="PartyOps_1.4.5-rc.6_windows7_$env:ARCH.exe"
           gh release download v1.4.5-rc.6 --repo $env:GITHUB_REPOSITORY --pattern $file --dir $root
           if ($LASTEXITCODE -ne 0 -or (Get-FileHash "$root/$file").Hash.ToLowerInvariant() -ne $env:DONOR_SHA) { throw 'RC6_DONOR_INVALID' }

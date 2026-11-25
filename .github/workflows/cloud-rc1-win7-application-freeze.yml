@@ -101,5 +101,6 @@ jobs:
         with:
           name: RC1-Win7-${{ matrix.arch }}-APP-ONLY-NOT-INSTALLER-${{ env.SOURCE_SHA }}
           path: artifacts/win7-app-only
+          include-hidden-files: true
           if-no-files-found: warn
           retention-days: 14
