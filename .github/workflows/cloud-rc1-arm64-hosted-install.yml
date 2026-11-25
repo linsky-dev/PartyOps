@@ -15,9 +15,9 @@ jobs:
     timeout-minutes: 60
     env:
       GH_TOKEN: ${{ github.token }}
-      SOURCE: 740251bc84d7209a5effe24e6c6711274560fc76
-      PACKAGE_RUN: '45557652490'
-      ARTIFACT_ID: '14999007338'
+      SOURCE: bada0183e84f14fce2a24ca281a60d9f7defe2e5
+      PACKAGE_RUN: '45634021387'
+      ARTIFACT_ID: '15037195478'
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
@@ -28,7 +28,15 @@ jobs:
         run: |
           $ErrorActionPreference='Stop'
           $run=gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/$env:PACKAGE_RUN" | ConvertFrom-Json
-          if ($LASTEXITCODE -ne 0 -or $run.head_sha -ne '392a687f86e898329849f39ed963bd24e3e0cb8f' -or $run.conclusion -ne 'success' -or $run.head_repository.full_name -ne $env:GITHUB_REPOSITORY -or $run.path -ne '.github/workflows/cloud-rc1-arm64-converged-install.yml') { throw 'ARM64_PACKAGE_RUN_INVALID' }
+          if ($LASTEXITCODE -ne 0 -or $run.head_sha -ne '6d24dbca738280d5bc873a922c74591141bb7fb4' -or $run.status -ne 'completed' -or $run.head_repository.full_name -ne $env:GITHUB_REPOSITORY -or $run.path -ne '.github/workflows/cloud-rc1-arm64-converged-install.yml') { throw 'ARM64_PACKAGE_RUN_INVALID' }
+          # A failed later smoke is not an invalid built EXE. Require completed
+          # upstream freeze and the actual EXE build/upload steps to have passed.
+          $jobs=(gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/$env:PACKAGE_RUN/jobs?per_page=100" | ConvertFrom-Json).jobs
+          if ($LASTEXITCODE -ne 0 -or -not @($jobs | Where-Object { $_.name -like 'Exact full PDF*' -and $_.conclusion -eq 'success' }).Count) { throw 'ARM64_UPSTREAM_FREEZE_NOT_PASSED' }
+          $build=@($jobs | Where-Object { $_.name -eq 'package' })
+          if ($build.Count -ne 1 -or -not @($build[0].steps | Where-Object { $_.name -eq 'Install exact same-run candidate and exercise native runtime, launcher and uninstall' -and $_.conclusion -eq 'failure' }).Count) { throw 'ARM64_EXPECTED_SMOKE_ONLY_FAILURE_MISSING' }
+          $prior=@($build[0].steps | Where-Object { $_.number -lt (@($build[0].steps | Where-Object { $_.name -eq 'Install exact same-run candidate and exercise native runtime, launcher and uninstall' })[0].number) -and $_.conclusion -ne 'success' })
+          if ($prior.Count) { throw 'ARM64_EARLIER_BUILD_STEP_FAILED' }
           $a=gh api "repos/$env:GITHUB_REPOSITORY/actions/artifacts/$env:ARTIFACT_ID" | ConvertFrom-Json
           if ($LASTEXITCODE -ne 0 -or $a.expired -or $a.workflow_run.id -ne [long]$env:PACKAGE_RUN -or $a.name -ne "RC1-Windows11-ARM64-UNSIGNED-EXE-BUILD-ONLY-$env:SOURCE" -or $a.digest -notmatch '^sha256:[0-9a-f]{64}$') { throw 'ARM64_ARTIFACT_IDENTITY_INVALID' }
           $zip=Join-Path $env:RUNNER_TEMP 'arm64-verified.zip'
