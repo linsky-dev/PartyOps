@@ -71,6 +71,152 @@ jobs:
           $root=Join-Path $env:RUNNER_TEMP 'arm64-package-inputs'
           python scripts/rc1_arm64_assemble_installer.py "$root/app" "$root/office" artifacts/arm64-package "$root/sqlite" "$root/ocr" "$root/ai" "$root/formatter" packaging-source
           if ($LASTEXITCODE -ne 0) { throw 'ARM64_ASSEMBLY_FAILED' }
+      - name: Resolve app-local CRT from Microsoft ARM64 redistributable directory
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $out=Join-Path $PWD 'artifacts/arm64-package'
+          $internal=Join-Path $out 'candidate/_internal'
+          function Read-PeMachine([string]$File) {
+            $stream=[IO.File]::OpenRead($File)
+            try {
+              $reader=[IO.BinaryReader]::new($stream)
+              if ($reader.ReadUInt16() -ne 0x5A4D) { throw "CRT_INVALID_MZ $File" }
+              $stream.Position=60; $offset=$reader.ReadInt32()
+              if ($offset -lt 64 -or $offset -gt $stream.Length-6) { throw "CRT_INVALID_PE_OFFSET $File" }
+              $stream.Position=$offset
+              if ($reader.ReadUInt32() -ne 0x4550) { throw "CRT_INVALID_PE $File" }
+              return $reader.ReadUInt16()
+            } finally { $stream.Dispose() }
+          }
+          $names=@('vcruntime140.dll','vcruntime140_1.dll','msvcp140.dll')
+          $before=@(foreach ($name in $names) {
+            $p=Join-Path $internal $name
+            if (-not (Test-Path $p -PathType Leaf)) { throw "CRT_INPUT_MISSING $name" }
+            @{name=$name;machine=('0x{0:X4}' -f (Read-PeMachine $p));sha256=(Get-FileHash $p).Hash.ToLowerInvariant();version=(Get-Item $p).VersionInfo.FileVersionRaw.ToString()}
+          })
+          ConvertTo-Json -InputObject $before | Set-Content "$out/crt-before.json"
+          if (@($before | Where-Object { $_.machine -ne '0xAA64' }).Count -eq 0) { return }
+          $vswhere=Join-Path ([Environment]::GetFolderPath('ProgramFilesX86')) 'Microsoft Visual Studio/Installer/vswhere.exe'
+          if (-not (Test-Path $vswhere -PathType Leaf)) { throw 'VSWHERE_MISSING' }
+          $installs=@(& $vswhere -all -products '*' -property installationPath)
+          if ($LASTEXITCODE -ne 0 -or $installs.Count -eq 0) { throw 'VS_INSTALLATION_MISSING' }
+          $candidates=@(foreach ($installation in $installs) {
+            $redist=Join-Path $installation 'VC/Redist/MSVC'
+            if (Test-Path $redist -PathType Container) {
+              foreach ($versionDir in (Get-ChildItem $redist -Directory | Where-Object { $_.Name -match '^\d+\.\d+\.\d+(\.\d+)?
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $out=Join-Path $PWD 'artifacts/arm64-package'
+          $bundle=Join-Path $out 'candidate'
+          $receipt=Get-Content "$out/office-input-evidence.json" -Raw | ConvertFrom-Json
+          foreach ($name in @('soffice.exe','soffice.com')) {
+            $sign=Get-AuthenticodeSignature -LiteralPath "$bundle/office-runtime/program/$name"
+            if ($name -eq 'soffice.exe') { $thumb=$receipt.office_executable_signer_thumbprint } else { $thumb=$receipt.office_cli_signer_thumbprint }
+            if ($sign.Status -ne 'Valid' -or $sign.SignerCertificate.Thumbprint -ne $thumb) { throw 'OFFICE_SIGNATURE_INVALID' }
+          }
+          $required=@('python312.dll','python3.dll','_sqlite3.pyd','ucrtbase.dll','vcruntime140.dll','vcruntime140_1.dll','msvcp140.dll','_tkinter.pyd','tcl86t.dll','tk86t.dll')
+          $rows=@()
+          foreach ($name in $required) {
+            $p=Join-Path "$bundle/_internal" $name
+            if (-not (Test-Path $p -PathType Leaf)) { throw "ARM64_APP_LOCAL_CLOSURE_MISSING $name" }
+            $s=[IO.File]::OpenRead($p)
+            try {
+              $rd=[IO.BinaryReader]::new($s)
+              if ($rd.ReadUInt16() -ne 0x5A4D) { throw 'INVALID_PE' }
+              $s.Position=60; $offset=$rd.ReadInt32()
+              if ($offset -lt 64 -or $offset -gt $s.Length-6) { throw 'INVALID_PE_OFFSET' }
+              $s.Position=$offset
+              if ($rd.ReadUInt32() -ne 0x4550 -or $rd.ReadUInt16() -ne 0xAA64) { throw "NON_NATIVE_RUNTIME $name" }
+            } finally { $s.Dispose() }
+            $rows+=@{name=$name;sha256=(Get-FileHash $p).Hash.ToLowerInvariant()}
+          }
+          $rows | ConvertTo-Json | Set-Content "$out/mandatory-arm64-runtime.json"
+          & "$bundle/ocr/bin/tesseract.exe" --version *> "$out/ocr-version.txt"
+          if ($LASTEXITCODE -ne 0) { throw 'OCR_RELOCATED_FAILED' }
+          & "$bundle/llama-server.exe" --version *> "$out/llama-version.txt"
+          if ($LASTEXITCODE -ne 0) { throw 'AI_RELOCATED_FAILED' }
+          python packaging-source/scripts/generate-release-manifest.py --root $bundle --output "$bundle/release-manifest.json" --version '1.4.6-rc.1' --tag 'v1.4.6-rc.1' --commit $env:SOURCE_SHA --platform windows --architecture arm64 --runtime-profile arm64-qa
+          if ($LASTEXITCODE -ne 0 -or (Get-Item "$bundle/release-manifest.json").Length -gt 8MB) { throw 'ARM64_MANIFEST_INVALID' }
+      - name: Run actual frozen startup selftest before Inno compression
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $out=Join-Path $PWD 'artifacts/arm64-package'
+          & "$out/candidate/PartyOps.exe" --startup-self-test *> "$out/startup-selftest.log"
+          if ($LASTEXITCODE -ne 0) { Get-Content "$out/startup-selftest.log" -Tail 30; throw 'ARM64_FROZEN_STARTUP_FAILED' }
+      - name: Compile actual isolated Windows 11 ARM64 Inno candidate
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $paths=@((Join-Path ([Environment]::GetFolderPath('ProgramFilesX86')) 'Inno Setup 6/ISCC.exe'),(Join-Path $env:ProgramFiles 'Inno Setup 6/ISCC.exe'))
+          $inno=$paths | Where-Object { Test-Path $_ -PathType Leaf } | Select-Object -First 1
+          if (-not $inno) {
+            choco install innosetup --version=6.7.3 --yes --no-progress
+            if ($LASTEXITCODE -ne 0) { throw 'INNO_INSTALL_FAILED' }
+            $inno=$paths | Where-Object { Test-Path $_ -PathType Leaf } | Select-Object -First 1
+          }
+          if (-not $inno) { throw 'INNO_MISSING' }
+          $env:PARTYOPS_WINDOWS_BUILD_ROOT=(Resolve-Path 'artifacts/arm64-package/candidate').Path
+          New-Item -ItemType Directory -Force artifacts/arm64-installer | Out-Null
+          $env:PARTYOPS_WINDOWS_OUTPUT_ROOT=(Resolve-Path 'artifacts/arm64-installer').Path
+          $base='PartyOps_1.4.6-rc.1_windows11_arm64_BUILD_ONLY_UNVERIFIED'
+          & $inno '/DPartyOpsArm64QA' "/DPartyOpsOutputBase=$base" 'packaging-source/packaging/windows/PartyOps.iss' *> artifacts/arm64-installer/inno.log
+          if ($LASTEXITCODE -ne 0) { Get-Content artifacts/arm64-installer/inno.log -Tail 50; throw 'INNO_ARM64_FAILED' }
+          $exe=Join-Path $env:PARTYOPS_WINDOWS_OUTPUT_ROOT "$base.exe"
+          if (-not (Test-Path $exe) -or (Get-Item $exe).Length -lt 1MB -or (Get-AuthenticodeSignature $exe).Status -ne 'NotSigned') { throw 'INVALID_UNSIGNED_INSTALLER' }
+          $hash=(Get-FileHash $exe).Hash.ToLowerInvariant()
+          "$hash  $base.exe" | Set-Content "$exe.sha256"
+          @{source_commit=$env:SOURCE_SHA;architecture='arm64';runtime_profile='arm64-qa';status='WINDOWS11_ARM64_UNSIGNED_EXE_BUILD_ONLY';sha256=$hash;installer_created=$true;native_install_tested=$false;windows10_arm64_tested=$false;current_version_native_wps_tested=$false;release_ready=$false;update_channel_enabled=$false} | ConvertTo-Json | Set-Content "$exe.candidate.json"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: RC1-Windows11-ARM64-UNSIGNED-EXE-BUILD-ONLY-${{ env.SOURCE_SHA }}
+          path: |
+            artifacts/arm64-installer/*
+            artifacts/arm64-package/*.json
+            artifacts/arm64-package/*.txt
+            artifacts/arm64-package/*.log
+          if-no-files-found: warn
+          retention-days: 14
+ })) {
+                $armDir=Join-Path $versionDir.FullName 'arm64'
+                if (Test-Path $armDir -PathType Container) {
+                  Get-ChildItem $armDir -Directory -Filter 'Microsoft.VC*.CRT' | ForEach-Object {
+                    [pscustomobject]@{path=$_.FullName;version=[version]$versionDir.Name}
+                  }
+                }
+              }
+            }
+          })
+          $selected=$null
+          foreach ($candidate in ($candidates | Sort-Object version -Descending)) {
+            $rows=@()
+            foreach ($name in $names) {
+              $p=Join-Path $candidate.path $name
+              if (-not (Test-Path $p -PathType Leaf) -or (Read-PeMachine $p) -ne 0xAA64) { break }
+              $signature=Get-AuthenticodeSignature -LiteralPath $p
+              if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch '(?i)(^|,\s*)O=Microsoft Corporation(,|$)') { break }
+              $version=(Get-Item $p).VersionInfo.FileVersionRaw
+              $previous=[version]($before | Where-Object { $_.name -eq $name }).version
+              if ($version -lt $previous) { break }
+              $rows+=@{name=$name;source=$p;machine='0xAA64';sha256=(Get-FileHash $p).Hash.ToLowerInvariant();version=$version.ToString();signer=$signature.SignerCertificate.Subject;thumbprint=$signature.SignerCertificate.Thumbprint}
+            }
+            if ($rows.Count -eq $names.Count) { $selected=$rows; break }
+          }
+          if (-not $selected) { throw 'SIGNED_NATIVE_ARM64_CRT_CLOSURE_UNAVAILABLE' }
+          foreach ($row in $selected) {
+            $target=Join-Path $internal $row.name
+            Copy-Item -LiteralPath $row.source -Destination $target -Force
+            if ((Get-FileHash $target).Hash.ToLowerInvariant() -ne $row.sha256 -or (Read-PeMachine $target) -ne 0xAA64) { throw "CRT_COPY_MISMATCH $($row.name)" }
+            $rootTarget=Join-Path "$out/candidate" $row.name
+            if (Test-Path $rootTarget -PathType Leaf) {
+              Copy-Item -LiteralPath $row.source -Destination $rootTarget -Force
+              if ((Get-FileHash $rootTarget).Hash.ToLowerInvariant() -ne $row.sha256) { throw "CRT_ROOT_COPY_MISMATCH $($row.name)" }
+            }
+          }
+          ConvertTo-Json -InputObject $selected -Depth 4 | Set-Content "$out/crt-microsoft-arm64-source.json"
       - name: Check official Office signatures and mandatory app-local ARM64 runtime closure
         shell: pwsh
         run: |
