@@ -1,4 +1,4 @@
-name: RC1 Loong64 original Office OCR formatter closure audit and staged DEB candidate
+name: RC1 Loong64 historical native runtime independent preflight (NOT DEB)
 on:
   pull_request:
     branches: [feature/1.4.6-rc1-cloud-rebuild]
@@ -14,10 +14,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 240
     env:
-      SOURCE_SHA: e72e4c321f94b9cb3189d5e5bdff7dde9b343deb
+      SOURCE_SHA: 740251bc84d7209a5effe24e6c6711274560fc76
       GH_TOKEN: ${{ github.token }}
-      FREEZE_RUN: '45529573847'
-      FREEZE_HEAD: 54a0f9fbf57da6b0effd7549f418fc0912006433
       DEEPIN_REPO: https://community-packages.deepin.com/deepin/beige/
       DEEPIN_KEY_COMMIT: b0946c78978ecc567118254fa0ff7806a6406f99
       DEEPIN_KEY_BLOB: 1c3772a66d9af84c99e0ffb46e8c07d1df71befc
@@ -130,41 +128,52 @@ jobs:
           path: artifacts/loong64-deepin-baseline/donor-*.json
           if-no-files-found: error
           retention-days: 14
-      - name: Await exact approved Deepin freeze and verify immutable artifact digest
+      - name: Check unchanged historical WPS metadata against current package selftest contract
         shell: bash
         run: |
           set -euo pipefail
-          gh run watch "$FREEZE_RUN" --repo "$GITHUB_REPOSITORY" --exit-status --interval 60
-          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$FREEZE_RUN" | jq -e --arg repo "$GITHUB_REPOSITORY" --arg head "$FREEZE_HEAD" '.head_sha==$head and .head_repository.full_name==$repo and .conclusion=="success" and .path==".github/workflows/cloud-rc1-loong64-deepin-freeze.yml"'
-          name="RC1-Loong64-Deepin238-APP-FREEZE-NOT-RELEASE-$FREEZE_HEAD"
-          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$FREEZE_RUN/artifacts?per_page=100" | jq -e --arg name "$name" '[.artifacts[]|select(.name==$name and (.expired|not))] | if length==1 then .[0] else error("artifact not unique") end' > "$RUNNER_TEMP/freeze-artifact.json"
-          id="$(jq -r .id "$RUNNER_TEMP/freeze-artifact.json")"
-          digest="$(jq -r .digest "$RUNNER_TEMP/freeze-artifact.json")"
-          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
-          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$id/zip" > "$RUNNER_TEMP/freeze.zip"
-          printf '%s  %s\n' "${digest#sha256:}" "$RUNNER_TEMP/freeze.zip" | sha256sum -c -
-          python qa-driver/scripts/rc1_loong64_stage_deb.py stage "$RUNNER_TEMP/freeze.zip" "$RUNNER_TEMP/loong-package-stage" "$PWD/artifacts/loong64-deepin-baseline"
-      - name: Exercise full staged package in signed Deepin QEMU root before sealing
+          out="$PWD/artifacts/loong64-deepin-baseline"
+          runtime="$RUNNER_TEMP/loong-package-stage/opt/partyops"
+          PYTHONPATH=backend python - "$runtime" <<'PY' 2>&1 | tee "$out/current-source-formatter-metadata.log"
+          import hashlib,json,sys
+          from pathlib import Path
+          from app import package_selftest as st
+          # Host-only metadata audit for target ISA; actual execution is separate.
+          st._source_formatter_architecture=lambda:"loong64"
+          root=Path(sys.argv[1])
+          host,rules,record=st._source_formatter_runtime(root)
+          for path in (host,record,st._source_formatter_evidence(root)):
+              print(path.name,st._sha256(path),flush=True)
+          payload=json.loads(record.read_text())
+          print("historical_snapshot",payload.get("source_snapshot_sha256"),"current_snapshot",st.FORMATTER_SOURCE_SNAPSHOT_SHA256,flush=True)
+          source=st._validate_source_formatter_record(host,rules,record)
+          evidence=st._validate_source_formatter_evidence(st._source_formatter_evidence(root),host,source["adapter"])
+          print("CURRENT_METADATA_GATE_PASS",evidence["verified_at"])
+          PY
+      - name: Run OCR, Office and formatter actual emulated native probes with isolated writable profile
         shell: bash
         run: |
           set -euo pipefail
           root="$RUNNER_TEMP/deepin-loong64"
           out="$PWD/artifacts/loong64-deepin-baseline"
           sudo chroot "$root" apt-get install -y --no-install-recommends xvfb xauth libgtk-3-0 libx11-6 libxext6 libxrender1 libfontconfig1 libfreetype6 libnss3 libdbus-1-3 libgl1 libxinerama1 libxrandr2 libxfixes3 libcups2 libsm6 libice6 libopenblas0 libgfortran5
-          sudo mkdir -p "$root/opt" "$root/tmp/partyops-pkg-selftest"
+          sudo mkdir -p "$root/opt" "$root/tmp/partyops-native-probe"
           sudo cp -a "$RUNNER_TEMP/loong-package-stage/opt/partyops" "$root/opt/"
-          sudo chown 65534:65534 "$root/tmp/partyops-pkg-selftest"
-          sudo unshare --net chroot --userspec=65534:65534 "$root" /usr/bin/env -i HOME=/tmp/partyops-pkg-selftest PATH=/usr/bin:/bin LANG=C.UTF-8 PARTYOPS_DATA_DIR=/tmp/partyops-pkg-selftest PARTYOPS_ENVIRONMENT=production PARTYOPS_STRICT_SQLITE=true PARTYOPS_SEED_DEMO=false /usr/bin/xvfb-run -a /opt/partyops/partyops --package-self-test 2>&1 | tee "$out/full-package-selftest.log"
-          printf 'PASS\n' > "$out/full-package-selftest.status"
-      - name: Seal unsigned candidate DEB only after full emulated runtime gate
-        shell: bash
-        run: |
-          set -euo pipefail
-          python qa-driver/scripts/rc1_loong64_stage_deb.py seal "$RUNNER_TEMP/loong-package-stage" "$PWD/artifacts/loong64-deepin-baseline"
+          sudo chown 65534:65534 "$root/tmp/partyops-native-probe"
+          # No service start, no real user data or external network access.
+          sudo unshare --net chroot --userspec=65534:65534 "$root" /usr/bin/env -i HOME=/tmp/partyops-native-probe PATH=/usr/bin:/bin LANG=C.UTF-8 LD_LIBRARY_PATH=/opt/partyops/ocr/lib TESSDATA_PREFIX=/opt/partyops/ocr/tessdata /opt/partyops/ocr/bin/tesseract --list-langs 2>&1 | tee "$out/ocr-languages.log"
+          grep -qx chi_sim "$out/ocr-languages.log"
+          grep -qx eng "$out/ocr-languages.log"
+          sudo unshare --net chroot --userspec=65534:65534 "$root" /usr/bin/env -i HOME=/tmp/partyops-native-probe PATH=/usr/bin:/bin LANG=C.UTF-8 LD_LIBRARY_PATH=/opt/partyops /opt/partyops/office-runtime/program/soffice --headless -env:UserInstallation=file:///tmp/partyops-native-probe/office-profile --version 2>&1 | tee "$out/office-version.log"
+          grep -F '24.2.0.3' "$out/office-version.log"
+          sudo unshare --net chroot --userspec=65534:65534 "$root" /usr/bin/env -i HOME=/tmp/partyops-native-probe PATH=/usr/bin:/bin LANG=C.UTF-8 LD_LIBRARY_PATH=/opt/partyops /opt/partyops/formatter-host/partyops-document-formatter-host --self-test /tmp/partyops-native-probe/formatter-selftest.json 2>&1 | tee "$out/formatter-selftest.log"
+          sudo cat "$root/tmp/partyops-native-probe/formatter-selftest.json" > "$out/formatter-selftest.json"
+          jq -e '.schema==1 and .passed==true and .source_project=="PartyOps.DocumentFormatter.AddIn" and (.features|length)==6' "$out/formatter-selftest.json"
+          printf 'PASS\n' > "$out/native-component-probes.status"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
-          name: RC1-Loong64-Deepin238-UNSIGNED-DEB-CANDIDATE-${{ env.SOURCE_SHA }}
+          name: RC1-Loong64-independent-native-component-preflight-${{ env.SOURCE_SHA }}
           path: artifacts/loong64-deepin-baseline
           if-no-files-found: warn
           retention-days: 14
