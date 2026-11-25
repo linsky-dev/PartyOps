@@ -1,0 +1,210 @@
+name: RC1 Loong64 signed Debian rootfs and emulated runtime probe (NOT DEEPIN)
+on:
+  pull_request:
+    branches: [main, feature/1.4.6-rc1-cloud-rebuild]
+    paths:
+      - '.github/workflows/cloud-rc1-loong64-emulated-runtime.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  emulated-runtime:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SOURCE_SHA: 96d1c9bd553b70b0bef0c934b6196d8fee0a265f
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          persist-credentials: false
+      - name: Prepare Ubuntu signed QEMU and Debian bootstrap tooling
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/loong64-emulated
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends qemu-user-static binfmt-support debootstrap debian-archive-keyring
+          test -x /usr/bin/qemu-loongarch64-static
+          /usr/bin/qemu-loongarch64-static --version | tee artifacts/loong64-emulated/qemu-version.txt
+          sudo update-binfmts --enable qemu-loongarch64
+          cat /proc/sys/fs/binfmt_misc/qemu-loongarch64 | tee artifacts/loong64-emulated/binfmt.txt
+          test -r /usr/share/keyrings/debian-archive-keyring.gpg
+      - name: Bootstrap signed Debian LoongArch64 sysroot, not claimed as Deepin
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/loong64-root"
+          sudo debootstrap --foreign --arch=loong64 --variant=minbase --keyring=/usr/share/keyrings/debian-archive-keyring.gpg sid "$root" https://deb.debian.org/debian 2>&1 | tee artifacts/loong64-emulated/bootstrap.log
+          sudo install -m 0755 /usr/bin/qemu-loongarch64-static "$root/usr/bin/qemu-loongarch64-static"
+          sudo chroot "$root" /debootstrap/debootstrap --second-stage 2>&1 | tee artifacts/loong64-emulated/second-stage.log
+          sudo chroot "$root" dpkg --print-architecture | tee artifacts/loong64-emulated/architecture.txt
+          test "$(cat artifacts/loong64-emulated/architecture.txt)" = loong64
+          sudo chroot "$root" getconf GNU_LIBC_VERSION | tee artifacts/loong64-emulated/glibc.txt
+          sudo chroot "$root" apt-get update
+          sudo chroot "$root" apt-get install -y --no-install-recommends python3 ca-certificates
+          sudo chroot "$root" apt-cache policy python3 python3-venv python3-dev python3-cryptography python3-pymupdf python3-onnxruntime python3-tokenizers python3-numpy python3-pyinstaller tesseract-ocr libreoffice-writer | tee artifacts/loong64-emulated/package-availability.txt
+      - name: Exercise exact new source syntax and architecture Python, offline
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          root="$RUNNER_TEMP/loong64-root"
+          sudo mkdir -p "$root/partyops-source"
+          sudo cp -a backend/app backend/alembic "$root/partyops-source/"
+          sudo chmod -R a+rX "$root/partyops-source"
+          sudo unshare --net chroot --userspec=65534:65534 "$root" /usr/bin/python3 -c 'import platform,sqlite3,ssl,pathlib; assert platform.machine() in ("loongarch64","loong64"); files=list(pathlib.Path("/partyops-source").rglob("*.py")); assert files; [compile(f.read_bytes(),str(f),"exec") for f in files]; print(platform.machine(),sqlite3.sqlite_version,ssl.OPENSSL_VERSION,"RC1_SOURCE_COMPILED",len(files))' | tee artifacts/loong64-emulated/source-syntax.txt
+      - name: Exercise native Debian packaged PDF, crypto, ONNX and tokenizers in QEMU (separate from PartyOps lock)
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/loong64-root"
+          sudo chroot "$root" apt-get install -y --no-install-recommends python3-cryptography python3-pymupdf python3-fitz python3-onnxruntime python3-tokenizers python3-numpy python3-pyinstaller
+          sudo unshare --net chroot --userspec=65534:65534 "$root" /usr/bin/python3 -c 'import platform,fitz,pymupdf,numpy,onnxruntime,tokenizers,cryptography; assert fitz.open is pymupdf.open; assert platform.machine() in ("loongarch64","loong64"); d=fitz.open(); p=d.new_page(); p.insert_text((72,72),"PartyOps LoongArch64"); assert "PartyOps LoongArch64" in p.get_text(); print("LOONG64_DEBIAN_DEPENDENCIES_IMPORT_PASS",fitz.VersionBind,numpy.__version__,onnxruntime.__version__,tokenizers.__version__,cryptography.__version__)' | tee artifacts/loong64-emulated/native-debian-dependency-smoke.txt
+          sudo chroot "$root" dpkg-query -W -f='\${Package}\t\${Version}\t\${Architecture}\n' > artifacts/loong64-emulated/installed-packages.tsv
+      - name: Verify historical donor hash and execute original Loong64 wizard and updater offline
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/loong64-root"
+          donor=PartyOps_1.4.5-rc.6_linux_loong64.deb
+          gh release download v1.4.5-rc.6 --repo "$GITHUB_REPOSITORY" --pattern "$donor" --dir "$RUNNER_TEMP"
+          printf '%s  %s\n' bec5993a12a9a66800fa039045f45329ecc486934cd1d1106c10d5e2ecf78017 "$RUNNER_TEMP/$donor" | sha256sum -c -
+          test "$(dpkg-deb -f "$RUNNER_TEMP/$donor" Architecture)" = loong64
+          mkdir -p "$RUNNER_TEMP/donor-extracted"
+          dpkg-deb -x "$RUNNER_TEMP/$donor" "$RUNNER_TEMP/donor-extracted"
+          sudo mkdir -p "$root/opt"
+          sudo cp -a "$RUNNER_TEMP/donor-extracted/opt/partyops" "$root/opt/"
+          sudo chmod -R a+rX "$root/opt/partyops"
+          # Keep original donor execution separate from RC1 source validation.
+          # Use a writable isolated home, no network or inherited host credentials.
+          sudo mkdir -p "$root/tmp/partyops-probe-home"
+          sudo chown 65534:65534 "$root/tmp/partyops-probe-home"
+          sudo find "$root/opt/partyops" -maxdepth 1 -printf '%f\n' | tee artifacts/loong64-emulated/donor-entrypoints.txt
+          failed=0
+          for entry in partyops-wizard partyops-updater; do
+            file="$root/opt/partyops/$entry"
+            if ! test -f "$file"; then echo "DONOR_ENTRY_MISSING: $entry"; failed=1; continue; fi
+            readelf -h -l -d "$file" > "artifacts/loong64-emulated/$entry-elf.txt"
+            set +e
+            sudo timeout 120 unshare --net chroot --userspec=65534:65534 "$root" /usr/bin/env -i HOME=/tmp/partyops-probe-home PATH=/usr/bin:/bin LANG=C.UTF-8 "/opt/partyops/$entry" --help > "artifacts/loong64-emulated/$entry-help.txt" 2>&1
+            rc=$?
+            set -e
+            cat "artifacts/loong64-emulated/$entry-help.txt"
+            printf '%s\n' "$rc" > "artifacts/loong64-emulated/$entry-exit-code.txt"
+            if [[ "$rc" != 0 ]] || ! test -s "artifacts/loong64-emulated/$entry-help.txt"; then failed=1; fi
+          done
+          test "$failed" = 0
+          python - <<'PY'
+          import json,os,pathlib
+          p=pathlib.Path('artifacts/loong64-emulated')
+          (p/'receipt.json').write_text(json.dumps({'status':'EMULATED_HISTORICAL_RUNTIME_AND_RC1_SOURCE_SYNTAX_ONLY',
+              'source_commit':os.environ['SOURCE_SHA'],'target_architecture':'loong64','system':'Debian sid QEMU user-mode',
+              'historical_donor':'RC6','historical_runtime_executed':True,'new_application_frozen':False,
+              'native_deepin_tested':False,'installer_created':False,'release_ready':False},indent=2)+'\n')
+          PY
+      - name: Probe current RC1 application dependency availability and import in emulated Loong64 Debian
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/loong64-root"
+          out="$PWD/artifacts/loong64-emulated"
+          packages=(python3-fastapi python3-starlette python3-uvicorn python3-sqlalchemy python3-alembic python3-pydantic-settings python3-argon2 python3-python-multipart python3-sse-starlette python3-docx python3-lxml python3-openpyxl python3-python-calamine python3-pil python3-pytesseract python3-defusedxml python3-httpx python3-packaging python3-tk python3-pysqlite3)
+          available=()
+          for name in "${packages[@]}"; do
+            # Missing package names may cause apt-cache to return 100; record
+            # each result instead of aborting the whole availability inventory.
+            set +e
+            policy="$(sudo chroot "$root" apt-cache policy "$name" 2>&1)"
+            policy_rc=$?
+            set -e
+            printf '%s\n%s\n' "$name (exit $policy_rc)" "$policy" >> "$out/current-app-apt-policy.log"
+            candidate="$(awk '/Candidate:/ {print $2; exit}' <<< "$policy")"
+            printf '%s\t%s\n' "$name" "${candidate:-MISSING}" | tee -a "$out/current-app-dependencies.tsv"
+            if [[ -n "$candidate" && "$candidate" != '(none)' ]]; then available+=("$name"); fi
+          done
+          test "${#available[@]}" -gt 0
+          sudo chroot "$root" apt-get install -y --no-install-recommends "${available[@]}" 2>&1 | tee "$out/current-app-apt-install.log"
+          sudo unshare --net chroot --userspec=65534:65534 "$root" /usr/bin/python3 -c 'import python_multipart; from python_multipart.multipart import parse_options_header; print("LOONG64_CORRECT_MULTIPART",python_multipart.__version__)' | tee "$out/current-multipart.txt"
+          # Debian sid has no packaged python-calamine under the checked name.
+          # Build the actual RC1 locked sdist, with native LoongArch Rust and CPython.
+          sudo chroot "$root" apt-get install -y --no-install-recommends cargo rustc python3-dev python3-venv build-essential pkg-config
+          sudo chroot "$root" /usr/bin/python3 -m venv --system-site-packages /opt/rc1-source-env
+          sudo chroot "$root" /opt/rc1-source-env/bin/python -c 'import hashlib,pathlib,urllib.request; u="https://files.pythonhosted.org/packages/10/36/473a55063a6af3739cdf4b879869d3067e677f3dfb52ec8fadac23941a33/python_calamine-0.8.2.tar.gz"; data=urllib.request.urlopen(u,timeout=90).read(1048577); assert len(data)==227187 and hashlib.sha256(data).hexdigest()=="b2000c085722afd01d973af3d58325d26cfd798b3665bb0924e3a658351ebfad"; pathlib.Path("/tmp/python_calamine-0.8.2.tar.gz").write_bytes(data)'
+          sudo chroot "$root" /usr/bin/env CARGO_BUILD_JOBS=2 /opt/rc1-source-env/bin/python -m pip wheel --no-deps --wheel-dir /tmp/rc1-loong-wheels /tmp/python_calamine-0.8.2.tar.gz 2>&1 | tee "$out/calamine-native-build.log"
+          sudo chroot "$root" /bin/sh -c '/opt/rc1-source-env/bin/python -m pip install --no-index --no-deps /tmp/rc1-loong-wheels/python_calamine-0.8.2-*.whl'
+          sudo chroot "$root" /opt/rc1-source-env/bin/python -c 'import platform,importlib.metadata,python_calamine; assert platform.machine() in ("loongarch64","loong64"); assert importlib.metadata.version("python-calamine")=="0.8.2"; print("LOONG64_LOCKED_CALAMINE_NATIVE_IMPORT_PASS")' | tee "$out/calamine-native-import.txt"
+          sudo cp -a "$root/tmp/rc1-loong-wheels" "$out/"
+          sudo chown -R "$(id -u):$(id -g)" "$out/rc1-loong-wheels"
+          (cd "$out/rc1-loong-wheels" && sha256sum *.whl) | tee "$out/calamine-wheel-sha256.txt"
+          sudo mkdir -p "$root/tmp/rc1-app-data"
+          sudo chown 65534:65534 "$root/tmp/rc1-app-data"
+          set +e
+          sudo timeout 180 unshare --net chroot --userspec=65534:65534 "$root" /usr/bin/env -i HOME=/tmp/rc1-app-data PATH=/usr/bin:/bin LANG=C.UTF-8 PYTHONPATH=/partyops-source PARTYOPS_DATA_DIR=/tmp/rc1-app-data PARTYOPS_ENVIRONMENT=test PARTYOPS_MODE=personal /opt/rc1-source-env/bin/python -c 'import platform,sys; print(sys.version); assert platform.machine() in ("loongarch64","loong64"); import app.main; assert app.main.app.version=="1.4.6-rc.1"; print("RC1_LOONG64_DEBIAN_SOURCE_IMPORT_PASS")' > "$out/current-app-import.log" 2>&1
+          rc=$?
+          set -e
+          cat "$out/current-app-import.log"
+          printf '%s\n' "$rc" > "$out/current-app-import-exit.txt"
+          sudo chroot "$root" dpkg-query -W > "$out/current-app-sysroot-packages.tsv"
+          # Source dependency discovery only: Debian sid and its Python version
+          # are not the pinned Deepin core release build environment.
+          test "$rc" = 0
+      - name: Run actual Alembic migration on synthetic data in isolated LoongArch64 environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/loong64-root"
+          sudo cp backend/alembic.ini "$root/partyops-source/"
+          sudo unshare --net chroot --userspec=65534:65534 "$root" /usr/bin/env -i HOME=/tmp/rc1-app-data PATH=/usr/bin:/bin LANG=C.UTF-8 PYTHONPATH=/partyops-source PARTYOPS_DATA_DIR=/tmp/rc1-app-data PARTYOPS_ENVIRONMENT=test PARTYOPS_MODE=personal /opt/rc1-source-env/bin/python -c 'import pathlib,sqlite3; from app.database import DatabaseRuntime; DatabaseRuntime().create_schema(); db=sqlite3.connect("/tmp/rc1-app-data/partyops.db"); assert db.execute("select version_num from alembic_version").fetchone()[0]=="0028"; assert db.execute("pragma integrity_check").fetchone()[0]=="ok"; print("LOONG64_SCHEMA_0028_INTEGRITY_PASS")' | tee artifacts/loong64-emulated/schema.log
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - name: Build current frontend and prepare existing Loong64 core freeze spec
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/loong64-root"
+          corepack enable
+          corepack prepare 'pnpm@11.9.0' --activate
+          (cd frontend && corepack pnpm install --frozen-lockfile && corepack pnpm run build)
+          test -f frontend/dist/client/index.html
+          sudo mkdir -p "$root/tmp/rc1-freeze/backend" "$root/tmp/rc1-freeze/packaging/uos" "$root/tmp/rc1-freeze/frontend/dist"
+          sudo cp -a backend/app backend/alembic backend/alembic.ini "$root/tmp/rc1-freeze/backend/"
+          sudo cp -a packaging/uos/*.py packaging/uos/partyops.spec "$root/tmp/rc1-freeze/packaging/uos/"
+          sudo cp -a frontend/dist/client "$root/tmp/rc1-freeze/frontend/dist/"
+          sudo chown -R 65534:65534 "$root/tmp/rc1-freeze"
+          sudo chroot "$root" apt-get install -y --no-install-recommends binutils xvfb xauth
+      - name: Freeze actual native LoongArch64 core executable and wizard (Debian ABI only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/loong64-root"
+          out="$PWD/artifacts/loong64-emulated"
+          sudo timeout 4800 unshare --net chroot --userspec=65534:65534 "$root" /usr/bin/env -i HOME=/tmp/rc1-freeze PATH=/opt/rc1-source-env/bin:/usr/bin:/bin LANG=C.UTF-8 PARTYOPS_RUNTIME_PROFILE=core /bin/sh -c 'cd /tmp/rc1-freeze && /opt/rc1-source-env/bin/python -m PyInstaller --noconfirm --clean --distpath dist --workpath work packaging/uos/partyops.spec' 2>&1 | tee "$out/actual-freeze.log"
+          bundle="$root/tmp/rc1-freeze/dist/PartyOps"
+          for name in partyops partyops-wizard partyops-client partyops-updater; do
+            test -x "$bundle/$name"
+            readelf -h "$bundle/$name" | tee "$out/frozen-$name-elf.txt"
+            grep -qi 'LoongArch' "$out/frozen-$name-elf.txt"
+          done
+          sudo find "$bundle/_internal" -type f -name '*.so*' -exec chmod a-x {} +
+          sudo unshare --net chroot --userspec=65534:65534 "$root" /usr/bin/env -i HOME=/tmp/rc1-freeze PATH=/usr/bin:/bin LANG=C.UTF-8 /tmp/rc1-freeze/dist/PartyOps/partyops --account-recovery --help | tee "$out/frozen-recovery-help.txt"
+          grep -q 'desktop-reset' "$out/frozen-recovery-help.txt"
+          sudo unshare --net chroot --userspec=65534:65534 "$root" /usr/bin/env -i HOME=/tmp/rc1-freeze PATH=/usr/bin:/bin LANG=C.UTF-8 /usr/bin/xvfb-run -a /tmp/rc1-freeze/dist/PartyOps/partyops-wizard --self-test | tee "$out/frozen-wizard-gui.txt"
+          sudo unshare --net chroot --userspec=65534:65534 "$root" /usr/bin/env -i HOME=/tmp/rc1-freeze PATH=/usr/bin:/bin LANG=C.UTF-8 /tmp/rc1-freeze/dist/PartyOps/partyops-wizard --runtime-layout-self-test | tee "$out/frozen-layout.txt"
+          sudo tar -C "$root/tmp/rc1-freeze/dist" -czf "$out/PartyOps-loong64-DEBIAN-SID-APP-ONLY.tar.gz" PartyOps
+          sudo chown "$(id -u):$(id -g)" "$out/PartyOps-loong64-DEBIAN-SID-APP-ONLY.tar.gz"
+          sha256sum "$out/PartyOps-loong64-DEBIAN-SID-APP-ONLY.tar.gz" > "$out/frozen-app-sha256.txt"
+          python - <<'PY'
+          import json,os,pathlib
+          p=pathlib.Path('artifacts/loong64-emulated')
+          (p/'freeze-receipt.json').write_text(json.dumps({'source_commit':os.environ['SOURCE_SHA'],'status':'DEBIAN_SID_EMULATED_CORE_FREEZE_ONLY','schema_0028':True,'new_application_frozen':True,'native_deepin_tested':False,'target_abi_approved':False,'installer_created':False,'release_ready':False},indent=2)+'\n')
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: partyops-RC1-loong64-EMULATED-RUNTIME-PROBE-${{ env.SOURCE_SHA }}
+          path: artifacts/loong64-emulated
+          retention-days: 14
+          if-no-files-found: warn
