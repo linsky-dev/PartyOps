@@ -126,7 +126,7 @@ jobs:
           sudo chroot "$root" /usr/bin/python3.12 -c 'from clang import cindex; print(cindex.__file__); print(cindex.Index.create())'
           sudo chroot "$root" /usr/bin/cmake --version
           sudo chroot "$root" /usr/bin/ninja --version
-      - name: Restore verified 39-wheel collection from exact same-source completed stage
+      - name: Restore verified 40-wheel collection from exact same-source completed stage
         shell: bash
         run: |
           set -euo pipefail

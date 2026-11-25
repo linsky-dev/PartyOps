@@ -121,7 +121,7 @@ elif stage=="restore":
     assert a["digest"]=="sha256:"+sha(zpath)
     with zipfile.ZipFile(zpath) as z:
         rows=json.loads(z.read("verified-inputs.json"))
-        assert len(rows)==39 and len({x["name"] for x in rows})==39
+        assert len(rows)==40 and len({x["name"] for x in rows})==40
         assert {x["wheel"] for x in rows}=={Path(n).name for n in z.namelist() if n.endswith(".whl")}
         for row in rows:
             name=row["name"]
@@ -137,7 +137,7 @@ elif stage=="restore":
     zpath.unlink()
     guest("mkdir","-p","/tmp/wheelhouse","/tmp/build-input")
     subprocess.check_call(["sudo","cp","-a",str(wheelhouse)+"/.",str(root/"tmp/wheelhouse")])
-    print("RESTORED_EXACT_LOCKED_39_WHEEL_COLLECTION",flush=True)
+    print("RESTORED_EXACT_LOCKED_40_WHEEL_COLLECTION",flush=True)
 
 elif stage=="pdf":
     py="/opt/partyops-freeze-env/bin/python"
