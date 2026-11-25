@@ -16,7 +16,7 @@ jobs:
     runs-on: windows-11-arm
     timeout-minutes: 180
     env:
-      SOURCE_SHA: 740251bc84d7209a5effe24e6c6711274560fc76
+      SOURCE_SHA: bada0183e84f14fce2a24ca281a60d9f7defe2e5
       GH_TOKEN: ${{ github.token }}
       PYTHONUTF8: '1'
       FULL_RUN: '45352811769'
@@ -253,7 +253,7 @@ jobs:
     timeout-minutes: 105
     env:
       GH_TOKEN: ${{ github.token }}
-      SOURCE_SHA: 740251bc84d7209a5effe24e6c6711274560fc76
+      SOURCE_SHA: bada0183e84f14fce2a24ca281a60d9f7defe2e5
       PYTHONUTF8: '1'
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
