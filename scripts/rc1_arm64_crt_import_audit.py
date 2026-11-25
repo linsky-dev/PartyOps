@@ -71,7 +71,7 @@ def audit(bundle, report):
     if len(rows) < 10:
         problems.append("incomplete PE inventory")
     evidence = {"scope": "native frozen shared runtime only; independent Office/formatter untouched",
-                "source_commit": "1a554181429a073e7349d73f62e1ae766d4fb479",
+                "source_commit": __import__("os").environ["SOURCE_SHA"],
                 "pe_count": len(rows), "files": rows, "problems": problems,
                 "removed": [], "native_startup_verified": False, "release_ready": False}
     report.write_text(json.dumps(evidence, indent=2), encoding="utf-8")

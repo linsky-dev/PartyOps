@@ -1,0 +1,399 @@
+name: RC1 converged source ARM64 full freeze, installer and actual hosted install
+on:
+  pull_request:
+    branches: [qa/rc1-arm64-full-pdf-inputs-20261124]
+    paths:
+      - '.github/workflows/cloud-rc1-arm64-converged-install.yml'
+      - 'scripts/rc1_arm64_crt_import_audit.py'
+      - 'scripts/rc1-windows-arm64-converged-smoke.ps1'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  full-backend:
+    name: Exact full PDF wheel integrated with native ARM64 backend (NOT INSTALLER)
+    runs-on: windows-11-arm
+    timeout-minutes: 180
+    env:
+      SOURCE_SHA: be7733f26e72ed4b7692d51e1bf410e9807a5808
+      GH_TOKEN: ${{ github.token }}
+      PYTHONUTF8: '1'
+      FULL_RUN: '45352811769'
+      FULL_SOURCE: '6f6d74a5431ca05e48932e1f6b1afb3c45ba98b0'
+      FULL_WHEEL_SHA: c117b49cef11815a89f1d3bf6bc137e771ab06dee7fedffb96115c83dbdc40b3
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+          architecture: arm64
+      - name: Verify selected unified business source before using prior native inputs
+        shell: pwsh
+        run: |
+          if ((git rev-parse HEAD).Trim() -ne $env:SOURCE_SHA) { throw 'ARM64_UNIFIED_SOURCE_MISMATCH' }
+      - name: Obtain prior successful full wheel by exact run, source and hash
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $run = gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/$env:FULL_RUN" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $run.head_sha -ne $env:FULL_SOURCE -or $run.head_repository.full_name -ne $env:GITHUB_REPOSITORY -or $run.conclusion -ne 'success' -or $run.path -ne '.github/workflows/cloud-rc1-arm64-full-pdf-inputs.yml') { throw 'FULL_PDF_PROVENANCE_INVALID' }
+          $dir = Join-Path $env:RUNNER_TEMP 'full-pdf'
+          gh run download $env:FULL_RUN --repo $env:GITHUB_REPOSITORY --name "RC1-ARM64-full-PDF-exact-companions-$env:FULL_SOURCE" --dir $dir
+          if ($LASTEXITCODE -ne 0) { throw 'FULL_PDF_DOWNLOAD_FAILED' }
+          $wheel = @(Get-ChildItem $dir -Recurse -Filter 'pymupdf-2.1-*-win_arm64.whl')
+          if ($wheel.Count -ne 1 -or (Get-FileHash $wheel[0].FullName).Hash.ToLowerInvariant() -ne $env:FULL_WHEEL_SHA) { throw 'FULL_PDF_HASH_INVALID' }
+          "FULL_PDF_WHEEL=$($wheel[0].FullName)" >> $env:GITHUB_ENV
+      - name: Build pinned native crypto and install existing ARM64 candidate closure
+        shell: pwsh
+        run: |
+          ./scripts/build-windows-arm64-crypto-probe.ps1 -OutputDirectory (Join-Path $env:RUNNER_TEMP 'rc1-arm64-crypto')
+          python -m pip install --disable-pip-version-check 'packaging==25.0'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python scripts/rc1_arm64_candidate_runtime.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Install actual full PDF without changing unrelated candidate pins
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $out = Join-Path $PWD 'artifacts/arm64-full-regression-inputs'
+          New-Item -ItemType Directory -Force $out | Out-Null
+          python -m pip uninstall -y pymupdf-lite
+          if ($LASTEXITCODE -ne 0) { throw 'LITE_REMOVAL_FAILED' }
+          python -m pip install --no-deps --no-index $env:FULL_PDF_WHEEL
+          if ($LASTEXITCODE -ne 0) { throw 'FULL_WHEEL_INSTALL_FAILED' }
+          # These are the six additional packages observed in the successful
+          # full wheel run. Preserve all unrelated candidate runtime pins.
+          $pins = @('networkx==3.7','pymupdf-layout==2.1','pymupdf4llm==2.1','psutil==7.2.2','pyyaml==6.0.4','tabulate==0.10.0')
+          python -m pip download --no-deps --only-binary=:all: --dest $out @pins
+          if ($LASTEXITCODE -ne 0) { throw 'FULL_PDF_COMPANION_WHEELS_MISSING' }
+          Get-ChildItem $out -Filter '*.whl' | ForEach-Object { "$((Get-FileHash $_.FullName).Hash.ToLowerInvariant())  $($_.Name)" } | Set-Content "$out/sha256.txt"
+          python -m pip install --no-index --no-deps --find-links $out @pins
+          if ($LASTEXITCODE -ne 0) { throw 'FULL_PDF_COMPANION_INSTALL_FAILED' }
+          python -m pip check
+          if ($LASTEXITCODE -ne 0) { throw 'FULL_DEPENDENCY_CONFLICT' }
+          python -c "import importlib.metadata as m, pymupdf, pymupdf.layout, pymupdf4llm; assert m.version('pymupdf')=='2.1'; d=pymupdf.open(); p=d.new_page(); p.insert_text((72,72),'PartyOps full native PDF'); assert 'PartyOps full native PDF' in pymupdf4llm.to_markdown(d)"
+          if ($LASTEXITCODE -ne 0) { throw 'FULL_PDF_FUNCTION_FAILED' }
+          python scripts/probe_arm64_partyops_intake.py
+          if ($LASTEXITCODE -ne 0) { throw 'INTAKE_REGRESSION_FAILED' }
+          python -m pip freeze | Set-Content "$out/runtime-freeze.txt"
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - name: Freeze unified host and current frontend with actual full PDF
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $out = Join-Path $PWD 'artifacts/arm64-application-only'
+          $wh = Join-Path $env:RUNNER_TEMP 'arm64-pyinstaller'
+          New-Item -ItemType Directory $wh | Out-Null
+          python -m pip download --no-deps --only-binary=:all: --dest $wh 'pyinstaller==6.21.0'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $wheel = Join-Path $wh 'pyinstaller-6.21.0-py3-none-win_arm64.whl'
+          if ((Get-FileHash $wheel).Hash.ToLowerInvariant() -ne 'f13c95c9c03fb567217135919f93815c305813126780b0ed6e0123cb8acaf025') { throw 'ARM64_BOOTLOADER_HASH_MISMATCH' }
+          python -m pip install --only-binary=:all: $wheel
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          corepack enable
+          corepack prepare 'pnpm@11.9.0' --activate
+          Push-Location frontend
+          try {
+            corepack pnpm install --frozen-lockfile
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            corepack pnpm run build
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          } finally { Pop-Location }
+          # PyInstaller resolves datas and pathex relative to the generated spec,
+          # which lives outside the checkout on RUNNER_TEMP.
+          $backend = (Resolve-Path -LiteralPath 'backend').Path
+          $frontend = (Resolve-Path -LiteralPath 'frontend/dist/client').Path
+          $alembic = (Resolve-Path -LiteralPath 'backend/alembic').Path
+          $alembicIni = (Resolve-Path -LiteralPath 'backend/alembic.ini').Path
+          $entry = (Resolve-Path -LiteralPath 'packaging/uos/entrypoint.py').Path
+          if (-not (Test-Path -LiteralPath (Join-Path $frontend 'index.html'))) { throw 'ARM64_FRONTEND_BUILD_MISSING' }
+          python -m PyInstaller --noconfirm --clean --onedir --python-option 'X utf8=1' --name PartyOps-ARM64-APP-ONLY --paths "$backend" --distpath "$out/dist" --workpath "$env:RUNNER_TEMP/arm64-pyi-work" --specpath "$env:RUNNER_TEMP" --add-data "$frontend;frontend" --add-data "$alembic;alembic" --add-data "$alembicIni;." --hidden-import win32timezone --hidden-import uvicorn.logging --hidden-import uvicorn.loops.asyncio --hidden-import uvicorn.protocols.http.h11_impl --collect-all pymupdf --collect-all pymupdf4llm --collect-all tokenizers --collect-all numpy --collect-all onnxruntime "$entry"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $exe = Join-Path $out 'dist/PartyOps-ARM64-APP-ONLY/PartyOps-ARM64-APP-ONLY.exe'
+          python -c "import pathlib,struct,sys; b=pathlib.Path(sys.argv[1]).read_bytes(); off=struct.unpack_from('<I',b,60)[0]; assert b[off:off+4]==b'PE\x00\x00'; assert struct.unpack_from('<H',b,off+4)[0]==0xaa64" $exe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          # Frozen PyInstaller does not inherit PYTHONUTF8. Verify actual bytes
+          # when redirected, and that non-interactive credential issuance remains denied.
+          @'
+          import os, pathlib, subprocess, sys
+          exe, output = sys.argv[1:]
+          env = dict(os.environ)
+          env.pop("PYTHONUTF8", None)
+          env.pop("PYTHONIOENCODING", None)
+          root = pathlib.Path(output)
+          help_result = subprocess.run([exe, "--account-recovery", "--help"], env=env, stdin=subprocess.DEVNULL, capture_output=True, timeout=90)
+          text = help_result.stdout.decode("utf-8", errors="strict")
+          (root / "recovery-help.txt").write_text(text, encoding="utf-8")
+          assert help_result.returncode == 0 and "emergency" in text and "主机管理员账号恢复" in text, help_result.stderr
+          invalid = root / "nonexistent-recovery-data"
+          assert not invalid.exists()
+          denied = subprocess.run([exe, "--account-recovery", "emergency", "--data-dir", str(invalid)], env=env, stdin=subprocess.DEVNULL, capture_output=True, timeout=90)
+          assert denied.returncode == 2 and "交互终端" in denied.stderr.decode("utf-8", errors="strict")
+          assert not invalid.exists()
+          print("ARM64_FROZEN_RECOVERY_UTF8_AND_NONINTERACTIVE_DENIAL_PASS")
+          '@ | python - $exe $out
+          if ($LASTEXITCODE -ne 0) { throw 'ARM64_FROZEN_RECOVERY_HELP_FAILED' }
+          @{source_commit=$env:SOURCE_SHA; status='FULL_PDF_APP_ONLY_BUILD_ONLY'; architecture='ARM64'; host_exe_sha256=(Get-FileHash $exe).Hash.ToLowerInvariant(); installer_created=$false; full_pdf_layout=$true; release_ready=$false} | ConvertTo-Json | Set-Content "$out/freeze-receipt.json"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: RC1-ARM64-full-PDF-application-only-NOT-INSTALLER-${{ env.SOURCE_SHA }}
+          path: |
+            artifacts/arm64-application-only/*.json
+            artifacts/arm64-application-only/*.txt
+            artifacts/arm64-application-only/dist
+            artifacts/arm64-crypto-probe/build-manifest.json
+            artifacts/arm64-full-regression-inputs/*.txt
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Freeze all eight auxiliary entries natively and assemble full application runtime (NOT INSTALLER)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $out=Join-Path $PWD 'artifacts/arm64-complete-app-only'
+          New-Item -ItemType Directory -Force $out | Out-Null
+          @'
+          import hashlib, json, os, pathlib, shutil, struct, subprocess, sys
+          root=pathlib.Path.cwd()
+          out=pathlib.Path(sys.argv[1]).resolve()
+          work=pathlib.Path(os.environ["RUNNER_TEMP"]) / "arm64-all-entries"
+          work.mkdir(exist_ok=False)
+          bundle=out/"app"
+          bundle.mkdir(exist_ok=False)
+          host=root/"artifacts/arm64-application-only/dist/PartyOps-ARM64-APP-ONLY"
+          assert (host/"PartyOps-ARM64-APP-ONLY.exe").is_file()
+          for p in host.iterdir():
+              dst=bundle/("PartyOps.exe" if p.name=="PartyOps-ARM64-APP-ONLY.exe" else p.name)
+              if p.is_dir(): shutil.copytree(p,dst)
+              else: shutil.copy2(p,dst)
+          entries=[
+              ("PartyOpsAgent","packaging/uos/client_entrypoint.py",False),
+              ("PartyOpsWizard","packaging/uos/wizard_entrypoint.py",True),
+              ("PartyOpsUpdater","packaging/uos/updater_entrypoint.py",False),
+              ("PartyOpsLauncher","packaging/windows/windows_launcher.py",True),
+              ("PartyOpsDataCleanup","packaging/windows/data_cleanup.py",True),
+              ("PartyOpsFileOpen","packaging/windows/windows_file_open.py",True),
+              ("PartyOpsService","packaging/windows/windows_service.py",False),
+              ("PartyOpsUpdaterService","packaging/windows/windows_updater_service.py",False),
+          ]
+          for name, script, gui in entries:
+              args=[sys.executable,"-m","PyInstaller","--noconfirm","--clean","--onedir","--python-option","X utf8=1",
+                    "--name",name,"--paths",str(root/"backend"),"--icon",str(root/"packaging/windows/partyops.ico"),
+                    "--distpath",str(work/"dist"),"--workpath",str(work/"work"),"--specpath",str(work/"spec")]
+              for mod in ("win32timezone","uvicorn.logging","uvicorn.loops.asyncio","uvicorn.protocols.http.h11_impl","cryptography","cryptography.fernet","httpx"):
+                  args+=["--hidden-import",mod]
+              if gui: args+=["--noconsole"]
+              subprocess.check_call(args+[str(root/script)])
+              for p in (work/"dist"/name).iterdir():
+                  dst=bundle/p.name
+                  if p.is_dir(): shutil.copytree(p,dst,dirs_exist_ok=True)
+                  else: shutil.copy2(p,dst)
+          rows=[]
+          for name in ["PartyOps"]+[e[0] for e in entries]:
+              exe=bundle/(name+".exe")
+              b=exe.read_bytes()
+              off=struct.unpack_from("<I",b,60)[0]
+              assert b[:2]==b"MZ" and b[off:off+4]==b"PE\x00\x00" and struct.unpack_from("<H",b,off+4)[0]==0xaa64, name
+              rows.append({"name":exe.name,"machine":"ARM64","sha256":hashlib.sha256(b).hexdigest()})
+          report=out/"wizard-gui.json"
+          env=dict(os.environ,PARTYOPS_WIZARD_SELFTEST_REPORT=str(report),PYINSTALLER_RESET_ENVIRONMENT="1")
+          subprocess.check_call([str(bundle/"PartyOpsWizard.exe"),"--self-test"],env=env,timeout=90)
+          assert json.loads(report.read_text(encoding="utf-8"))["passed"] is True
+          help_result=subprocess.run([str(bundle/"PartyOps.exe"),"--account-recovery","--help"],env=env,capture_output=True,timeout=90)
+          assert help_result.returncode==0 and b"desktop-reset" in help_result.stdout
+          (out/"recovery-help.txt").write_bytes(help_result.stdout)
+          (out/"receipt.json").write_text(json.dumps({"source_commit":os.environ["SOURCE_SHA"],"status":"ARM64_COMPLETE_APP_ENTRIES_ONLY","entries":rows,"full_pdf_layout":True,"wizard_gui_passed":True,"release_manifest_created":False,"installer_created":False,"office_runtime_integrated":False,"release_ready":False},indent=2),encoding="utf-8")
+          '@ | python - $out
+          if ($LASTEXITCODE -ne 0) { throw 'ARM64_ALL_ENTRY_FREEZE_FAILED' }
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: RC1-ARM64-nine-native-entry-APP-ONLY-NOT-INSTALLER-${{ env.SOURCE_SHA }}
+          path: artifacts/arm64-complete-app-only
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Run native Windows ARM64 backend regression with original assertions
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python -m pip install --only-binary=:all: 'pytest==9.1.1' 'pytest-cov==6.2.1' 'pytest-asyncio==1.4.0' 'pefile==2023.2.7' -r qa/vm-lab/requirements.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m pip check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          New-Item -ItemType Directory -Force artifacts/arm64-full-regression | Out-Null
+          Push-Location backend
+          try {
+            python -m pytest tests -rs --cov=app --cov-branch --cov-report=json:../artifacts/arm64-full-regression/coverage.json --junitxml=../artifacts/arm64-full-regression/junit.xml 2>&1 | Tee-Object -FilePath ../artifacts/arm64-full-regression/pytest.log
+            if ($LASTEXITCODE -ne 0) { throw 'ARM64_FULL_PDF_BACKEND_REGRESSION_FAILED' }
+          } finally { Pop-Location }
+          python scripts/verify-coverage.py artifacts/arm64-full-regression/coverage.json --line 95 --branch 92
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          @{status='NATIVE_ARM64_FULL_PDF_BACKEND_REGRESSION_ONLY'; source_commit=$env:SOURCE_SHA; source_wheel_sha256=$env:FULL_WHEEL_SHA; full_layout_engine=$true; installer_created=$false; release_ready=$false} | ConvertTo-Json | Set-Content artifacts/arm64-full-regression/receipt.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: RC1-ARM64-full-PDF-regression-NOT-RELEASE-${{ env.SOURCE_SHA }}
+          path: |
+            artifacts/arm64-full-regression
+            artifacts/arm64-full-regression-inputs
+            artifacts/arm64-application-only/runtime-receipt.json
+          if-no-files-found: warn
+          retention-days: 14
+
+  package:
+    needs: full-backend
+    runs-on: windows-11-arm
+    timeout-minutes: 105
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SOURCE_SHA: be7733f26e72ed4b7692d51e1bf410e9807a5808
+      PYTHONUTF8: '1'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          path: packaging-source
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+          architecture: arm64
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: RC1-ARM64-nine-native-entry-APP-ONLY-NOT-INSTALLER-${{ env.SOURCE_SHA }}
+          path: ${{ runner.temp }}/arm64-package-inputs/app
+      - name: Download exact successful component artifacts and verify run provenance
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $root=Join-Path $env:RUNNER_TEMP 'arm64-package-inputs'
+          $items=@(
+            @{run=45339196816;sha='61a982d7b8fd2d9658a5bf700e2060d3fa571d14';workflow='cloud-windows-arm64-libreoffice-runtime.yml';name='partyops-rc1-win-arm64-OFFICE-INPUT-NOT-INSTALLER-bc9ff1be78aeb2bcfe190577762792928da5a665';dir='office'},
+            @{run=45410093223;sha='39c5e0973634be6edd747b1fc875e91a9e8fbd6d';workflow='cloud-rc1-arm64-sqlite-runtime.yml';name='RC1-ARM64-SQLite-3.53.4-NATIVE-INPUT-NOT-INSTALLER-39c5e0973634be6edd747b1fc875e91a9e8fbd6d';dir='sqlite'},
+            @{run=45410093572;sha='39c5e0973634be6edd747b1fc875e91a9e8fbd6d';workflow='cloud-rc1-arm64-ocr-ai.yml';name='RC1-ARM64-Tesseract-NATIVE-INPUT-NOT-INSTALLER-39c5e0973634be6edd747b1fc875e91a9e8fbd6d';dir='ocr'},
+            @{run=45410093572;sha='39c5e0973634be6edd747b1fc875e91a9e8fbd6d';workflow='cloud-rc1-arm64-ocr-ai.yml';name='RC1-ARM64-llama-b10331-NATIVE-INPUT-NOT-INSTALLER-39c5e0973634be6edd747b1fc875e91a9e8fbd6d';dir='ai'},
+            @{run=45409959084;sha='e57c74be31f8291e3173f70e283962223da726a7';workflow='cloud-rc1-arm64-formatter-host.yml';name='RC1-ARM64-original-formatter-host-QA-5ea9c6a128f3d8aa71ff77e7e549f4fbd6115fdb';dir='formatter'}
+          )
+          foreach ($item in $items) {
+            $run=gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/$($item.run)" | ConvertFrom-Json
+            if ($LASTEXITCODE -ne 0 -or $run.head_sha -ne $item.sha -or $run.head_repository.full_name -ne $env:GITHUB_REPOSITORY -or $run.conclusion -ne 'success' -or $run.path -ne ".github/workflows/$($item.workflow)") { throw "INPUT_PROVENANCE_INVALID $($item.dir)" }
+            gh run download $item.run --repo $env:GITHUB_REPOSITORY --name $item.name --dir "$root/$($item.dir)"
+            if ($LASTEXITCODE -ne 0) { throw "INPUT_DOWNLOAD_FAILED $($item.dir)" }
+          }
+          if ((git -C packaging-source rev-parse HEAD).Trim() -ne $env:SOURCE_SHA) { throw 'PACKAGING_SOURCE_MISMATCH' }
+      - name: Assemble verified native payload and exercise document conversion
+        shell: pwsh
+        run: |
+          $root=Join-Path $env:RUNNER_TEMP 'arm64-package-inputs'
+          python scripts/rc1_arm64_assemble_installer.py "$root/app" "$root/office" artifacts/arm64-package "$root/sqlite" "$root/ocr" "$root/ai" "$root/formatter" packaging-source
+          if ($LASTEXITCODE -ne 0) { throw 'ARM64_ASSEMBLY_FAILED' }
+      - name: Audit native PE import graph and isolate only proven unused x64 CRT
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $out=Join-Path $PWD 'artifacts/arm64-package'
+          python -m pip install 'pefile==2024.8.26'
+          if ($LASTEXITCODE -ne 0) { throw 'PE_IMPORT_AUDITOR_UNAVAILABLE' }
+          python scripts/rc1_arm64_crt_import_audit.py "$out/candidate" "$out/crt-import-audit.json"
+          if ($LASTEXITCODE -ne 0) { throw 'ARM64_CRT_IMPORT_AUDIT_BLOCKED' }
+          foreach ($name in @('vcruntime140.dll','msvcp140.dll')) {
+            $p=Join-Path "$out/candidate/_internal" $name
+            $sign=Get-AuthenticodeSignature -LiteralPath $p
+            if ($sign.Status -ne 'Valid' -or $sign.SignerCertificate.Subject -notmatch '(?i)(^|,\s*)O=Microsoft Corporation(,|$)') { throw "ARM64_CRT_SIGNATURE_INVALID $name" }
+          }
+      - name: Check official Office signatures and mandatory app-local ARM64 runtime closure
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $out=Join-Path $PWD 'artifacts/arm64-package'
+          $bundle=Join-Path $out 'candidate'
+          $receipt=Get-Content "$out/office-input-evidence.json" -Raw | ConvertFrom-Json
+          foreach ($name in @('soffice.exe','soffice.com')) {
+            $sign=Get-AuthenticodeSignature -LiteralPath "$bundle/office-runtime/program/$name"
+            if ($name -eq 'soffice.exe') { $thumb=$receipt.office_executable_signer_thumbprint } else { $thumb=$receipt.office_cli_signer_thumbprint }
+            if ($sign.Status -ne 'Valid' -or $sign.SignerCertificate.Thumbprint -ne $thumb) { throw 'OFFICE_SIGNATURE_INVALID' }
+          }
+          $required=@('python312.dll','python3.dll','_sqlite3.pyd','ucrtbase.dll','vcruntime140.dll','msvcp140.dll','_tkinter.pyd','tcl86t.dll','tk86t.dll')
+          $rows=@()
+          foreach ($name in $required) {
+            $p=Join-Path "$bundle/_internal" $name
+            if (-not (Test-Path $p -PathType Leaf)) { throw "ARM64_APP_LOCAL_CLOSURE_MISSING $name" }
+            $s=[IO.File]::OpenRead($p)
+            try {
+              $rd=[IO.BinaryReader]::new($s)
+              if ($rd.ReadUInt16() -ne 0x5A4D) { throw 'INVALID_PE' }
+              $s.Position=60; $offset=$rd.ReadInt32()
+              if ($offset -lt 64 -or $offset -gt $s.Length-6) { throw 'INVALID_PE_OFFSET' }
+              $s.Position=$offset
+              if ($rd.ReadUInt32() -ne 0x4550 -or $rd.ReadUInt16() -ne 0xAA64) { throw "NON_NATIVE_RUNTIME $name" }
+            } finally { $s.Dispose() }
+            $rows+=@{name=$name;sha256=(Get-FileHash $p).Hash.ToLowerInvariant()}
+          }
+          $rows | ConvertTo-Json | Set-Content "$out/mandatory-arm64-runtime.json"
+          & "$bundle/ocr/bin/tesseract.exe" --version *> "$out/ocr-version.txt"
+          if ($LASTEXITCODE -ne 0) { throw 'OCR_RELOCATED_FAILED' }
+          & "$bundle/llama-server.exe" --version *> "$out/llama-version.txt"
+          if ($LASTEXITCODE -ne 0) { throw 'AI_RELOCATED_FAILED' }
+          python packaging-source/scripts/generate-release-manifest.py --root $bundle --output "$bundle/release-manifest.json" --version '1.4.6-rc.1' --tag 'v1.4.6-rc.1' --commit $env:SOURCE_SHA --platform windows --architecture arm64 --runtime-profile arm64-qa
+          if ($LASTEXITCODE -ne 0 -or (Get-Item "$bundle/release-manifest.json").Length -gt 8MB) { throw 'ARM64_MANIFEST_INVALID' }
+      - name: Run actual frozen startup selftest before Inno compression
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $out=Join-Path $PWD 'artifacts/arm64-package'
+          & "$out/candidate/PartyOps.exe" --startup-self-test *> "$out/startup-selftest.log"
+          if ($LASTEXITCODE -ne 0) { Get-Content "$out/startup-selftest.log" -Tail 30; throw 'ARM64_FROZEN_STARTUP_FAILED' }
+      - name: Compile actual isolated Windows 11 ARM64 Inno candidate
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $paths=@((Join-Path ([Environment]::GetFolderPath('ProgramFilesX86')) 'Inno Setup 6/ISCC.exe'),(Join-Path $env:ProgramFiles 'Inno Setup 6/ISCC.exe'))
+          $inno=$paths | Where-Object { Test-Path $_ -PathType Leaf } | Select-Object -First 1
+          if (-not $inno) {
+            choco install innosetup --version=6.7.3 --yes --no-progress
+            if ($LASTEXITCODE -ne 0) { throw 'INNO_INSTALL_FAILED' }
+            $inno=$paths | Where-Object { Test-Path $_ -PathType Leaf } | Select-Object -First 1
+          }
+          if (-not $inno) { throw 'INNO_MISSING' }
+          $env:PARTYOPS_WINDOWS_BUILD_ROOT=(Resolve-Path 'artifacts/arm64-package/candidate').Path
+          New-Item -ItemType Directory -Force artifacts/arm64-installer | Out-Null
+          $env:PARTYOPS_WINDOWS_OUTPUT_ROOT=(Resolve-Path 'artifacts/arm64-installer').Path
+          $base='PartyOps_1.4.6-rc.1_windows11_arm64_BUILD_ONLY_UNVERIFIED'
+          & $inno '/DPartyOpsArm64QA' "/DPartyOpsOutputBase=$base" 'packaging-source/packaging/windows/PartyOps.iss' *> artifacts/arm64-installer/inno.log
+          if ($LASTEXITCODE -ne 0) { Get-Content artifacts/arm64-installer/inno.log -Tail 50; throw 'INNO_ARM64_FAILED' }
+          $exe=Join-Path $env:PARTYOPS_WINDOWS_OUTPUT_ROOT "$base.exe"
+          if (-not (Test-Path $exe) -or (Get-Item $exe).Length -lt 1MB -or (Get-AuthenticodeSignature $exe).Status -ne 'NotSigned') { throw 'INVALID_UNSIGNED_INSTALLER' }
+          $hash=(Get-FileHash $exe).Hash.ToLowerInvariant()
+          "$hash  $base.exe" | Set-Content "$exe.sha256"
+          @{source_commit=$env:SOURCE_SHA;architecture='arm64';runtime_profile='arm64-qa';status='WINDOWS11_ARM64_UNSIGNED_EXE_BUILD_ONLY';sha256=$hash;installer_created=$true;native_install_tested=$false;windows10_arm64_tested=$false;current_version_native_wps_tested=$false;release_ready=$false;update_channel_enabled=$false} | ConvertTo-Json | Set-Content "$exe.candidate.json"
+      - name: Install exact same-run candidate and exercise native runtime, launcher and uninstall
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $exe=(Resolve-Path 'artifacts/arm64-installer/PartyOps_1.4.6-rc.1_windows11_arm64_BUILD_ONLY_UNVERIFIED.exe').Path
+          $receipt=Get-Content -LiteralPath "$exe.candidate.json" -Raw | ConvertFrom-Json
+          if ($receipt.source_commit -ne $env:SOURCE_SHA -or $receipt.release_ready -or $receipt.architecture -ne 'arm64') { throw 'SAME_RUN_RECEIPT_INVALID' }
+          & scripts/rc1-windows-arm64-converged-smoke.ps1 -Installer $exe -ExpectedSha256 $receipt.sha256 -OutputDirectory "$env:RUNNER_TEMP/arm64-install-evidence" -ConfirmEphemeralHostedRunner
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: RC1-Windows11-ARM64-UNSIGNED-EXE-BUILD-ONLY-${{ env.SOURCE_SHA }}
+          path: |
+            artifacts/arm64-installer/*
+            artifacts/arm64-package/*.json
+            artifacts/arm64-package/*.txt
+            artifacts/arm64-package/*.log
+            ${{ runner.temp }}/arm64-install-evidence
+          if-no-files-found: warn
+          retention-days: 14
