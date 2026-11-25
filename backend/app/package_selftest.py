@@ -341,6 +341,13 @@ def _allow_pinned_uos_rc6_formatter_preview(
 # These records NEVER constitute fresh native WPS acceptance and MUST NOT
 # loosen the release signing, full-function, or device-native gates.
 _PINNED_RC6_LINUX_PREVIEWS = {
+    ("linux-deb", "loong64"): {
+        "target_os": "Deepin crimson Loong64 GLIBC 2.38",
+        "donor_sha": "bec5993a12a9a66800fa039045f45329ecc486934cd1d1106c10d5e2ecf78017",
+        "host_sha": "272338c94d791103e5ab8ac5f6419aff03c76a9e30d1e0e7863a8f8d4a133438",
+        "source_sha": "6490037fcb2a3d2e684daad01cdd3231468b205347d55e36310f3efbfc0bf36c",
+        "evidence_sha": "c6742a87299b56d8cd62978cee43d7cdfc33d35470ed85121533462a8140cb73",
+    },
     ("linux-deb", "arm64"): {
         "target_os": "Kylin Desktop V10 SP1 2503 / UOS V20 ARM64",
         "donor_sha": "17d0e3a3acf060d3c65299c012078435bacc0da3f1f0a909fe3cc997cbbee69c",
@@ -418,7 +425,7 @@ def _allow_pinned_rc6_linux_preview(
         "version": "1.4.6-rc.1",
         "platform": m["platform"],
         "architecture": arch,
-        "runtime_profile": "uos-v20",
+        "runtime_profile": "core" if arch == "loong64" else "uos-v20",
         "signed": False,
     }
     if any(m.get(key) != value for key, value in expected_manifest.items()):
@@ -427,6 +434,8 @@ def _allow_pinned_rc6_linux_preview(
     if not isinstance(entries, list):
         return False
     hashes = {row.get("path"): row.get("sha256") for row in entries if isinstance(row, dict)}
+    if len(hashes) != len(entries):
+        return False
     pinned = {
         "formatter-host/partyops-document-formatter-host": expected["host_sha"],
         "formatter-host/source-host.json": expected["source_sha"],

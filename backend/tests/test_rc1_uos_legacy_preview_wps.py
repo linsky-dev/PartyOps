@@ -121,6 +121,7 @@ def test_legacy_preview_refuses_symlinked_source_record(preview):
 
 @pytest.mark.parametrize("package_format,arch", [
     ("linux-deb", "arm64"),
+    ("linux-deb", "loong64"),
     ("linux-rpm", "amd64"),
     ("linux-rpm", "arm64"),
 ])
@@ -164,7 +165,7 @@ def test_pinned_cross_distro_wps_preview_rejects_tampering(
     manifest = {
         "schema_version": 1, "product": "PartyOps",
         "version": "1.4.6-rc.1", "platform": package_format,
-        "architecture": arch, "runtime_profile": "uos-v20",
+        "architecture": arch, "runtime_profile": "core" if arch == "loong64" else "uos-v20",
         "source_commit": head, "signed": False,
         "files": [
             {"path": f"formatter-host/{name}", "sha256": digest}
@@ -176,4 +177,18 @@ def test_pinned_cross_distro_wps_preview_rejects_tampering(
     assert pkg._allow_pinned_rc6_linux_preview(host, source, record)
     receipt["historical_wps_host_sha256"] = "0" * 64
     (root / "RC1-LINUX-BUILD-ONLY.json").write_text(json.dumps(receipt))
+    assert not pkg._allow_pinned_rc6_linux_preview(host, source, record)
+
+    # Restore the exact receipt, then prove neither signed release nor wrong
+    # profile nor duplicate manifest path can use the historical exception.
+    receipt["historical_wps_host_sha256"] = pin["host_sha"]
+    (root / "RC1-LINUX-BUILD-ONLY.json").write_text(json.dumps(receipt))
+    for field, wrong in (("signed", True), ("runtime_profile", "full"), ("architecture", "x86")):
+        good = manifest[field]
+        manifest[field] = wrong
+        (root / "release-manifest.json").write_text(json.dumps(manifest))
+        assert not pkg._allow_pinned_rc6_linux_preview(host, source, record)
+        manifest[field] = good
+    manifest["files"].append(manifest["files"][0].copy())
+    (root / "release-manifest.json").write_text(json.dumps(manifest))
     assert not pkg._allow_pinned_rc6_linux_preview(host, source, record)
