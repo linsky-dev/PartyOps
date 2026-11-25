@@ -29,17 +29,22 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
-          $run=gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/45395050440" | ConvertFrom-Json
-          if ($LASTEXITCODE -ne 0 -or $run.head_sha -ne '19b19af512b960e48d42a5a287518a495d3816f2' -or $run.conclusion -ne 'success' -or $run.head_repository.full_name -ne $env:GITHUB_REPOSITORY -or $run.path -ne '.github/workflows/cloud-rc1-win7-unsigned-installer.yml') { throw 'CANDIDATE_PROVENANCE_INVALID' }
+          $run=gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/45540455747" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $run.head_sha -ne 'f8e76d9ff01fc27ff256056853cabe81dafd546b' -or $run.conclusion -ne 'success' -or $run.head_repository.full_name -ne $env:GITHUB_REPOSITORY -or $run.path -ne '.github/workflows/cloud-rc1-win7-converged-installer.yml') { throw 'CANDIDATE_PROVENANCE_INVALID' }
           $root=Join-Path $env:RUNNER_TEMP 'win7-hosted-installer'
-          gh run download 45395050440 --repo $env:GITHUB_REPOSITORY --name "RC1-Win7-$env:ARCH-UNSIGNED-EXE-BUILD-ONLY-19b19af512b960e48d42a5a287518a495d3816f2" --dir $root
-          if ($LASTEXITCODE -ne 0) { throw 'CANDIDATE_DOWNLOAD_FAILED' }
+          $id=if ($env:ARCH -eq 'amd64') {14990901190} else {14989564598}
+          $artifact=gh api "repos/$env:GITHUB_REPOSITORY/actions/artifacts/$id" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $artifact.expired -or $artifact.workflow_run.id -ne 45540455747 -or $artifact.name -ne "RC1-Win7-$env:ARCH-CONVERGED-UNSIGNED-EXE-BUILD-ONLY-be7733f26e72ed4b7692d51e1bf410e9807a5808" -or $artifact.digest -notmatch '^sha256:[0-9a-f]{64}$') { throw 'CANDIDATE_ARTIFACT_INVALID' }
+          $zip=Join-Path $env:RUNNER_TEMP 'win7-verified.zip'
+          cmd /d /c "gh api repos/$env:GITHUB_REPOSITORY/actions/artifacts/$id/zip > `"$zip`""
+          if ($LASTEXITCODE -ne 0 -or (Get-FileHash $zip).Hash.ToLowerInvariant() -ne $artifact.digest.Substring(7)) { throw 'CANDIDATE_ARTIFACT_DIGEST_INVALID' }
+          Expand-Archive -LiteralPath $zip -DestinationPath $root
           $name="PartyOps_1.4.6-rc.1_windows7_$env:ARCH" + '_BUILD_ONLY_UNVERIFIED.exe'
           $matches=@(Get-ChildItem $root -Recurse -File -Filter $name)
           if ($matches.Count -ne 1) { throw 'CANDIDATE_EXE_MISSING_OR_AMBIGUOUS' }
           $exe=$matches[0].FullName
           $receipt=Get-Content "$exe.candidate.json" -Raw | ConvertFrom-Json
-          if ($receipt.architecture -ne $env:ARCH -or $receipt.source_commit -ne '4cb9484f155635dd9bc1ca58fead00bb41b9cd0a' -or $receipt.status -ne 'UNSIGNED_WIN7_INSTALLER_BUILD_ONLY' -or -not $receipt.full_pe_gate_passed -or $receipt.release_ready -or $receipt.native_win7_os_tested -or (Get-FileHash $exe).Hash.ToLowerInvariant() -ne $receipt.sha256) { throw 'CANDIDATE_RECEIPT_INVALID' }
+          if ($receipt.architecture -ne $env:ARCH -or $receipt.source_commit -ne 'be7733f26e72ed4b7692d51e1bf410e9807a5808' -or $receipt.status -ne 'UNSIGNED_WIN7_INSTALLER_BUILD_ONLY' -or -not $receipt.full_pe_gate_passed -or $receipt.release_ready -or $receipt.native_win7_os_tested -or (Get-FileHash $exe).Hash.ToLowerInvariant() -ne $receipt.sha256) { throw 'CANDIDATE_RECEIPT_INVALID' }
           "WIN7_TEST_EXE=$exe" >> $env:GITHUB_ENV
           "WIN7_TEST_SHA=$($receipt.sha256)" >> $env:GITHUB_ENV
       - name: Actually install with Unicode path, verify launcher and uninstall on disposable hosted Windows
