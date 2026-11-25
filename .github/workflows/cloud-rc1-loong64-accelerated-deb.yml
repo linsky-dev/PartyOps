@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 350
     env:
-      SOURCE_SHA: 740251bc84d7209a5effe24e6c6711274560fc76
+      SOURCE_SHA: bada0183e84f14fce2a24ca281a60d9f7defe2e5
       GH_TOKEN: ${{ github.token }}
       DEEPIN_REPO: https://community-packages.deepin.com/deepin/beige/
       DEEPIN_KEY_COMMIT: b0946c78978ecc567118254fa0ff7806a6406f99
@@ -237,7 +237,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 240
     env:
-      SOURCE_SHA: 740251bc84d7209a5effe24e6c6711274560fc76
+      SOURCE_SHA: bada0183e84f14fce2a24ca281a60d9f7defe2e5
       GH_TOKEN: ${{ github.token }}
       DEEPIN_REPO: https://community-packages.deepin.com/deepin/beige/
       DEEPIN_KEY_COMMIT: b0946c78978ecc567118254fa0ff7806a6406f99
@@ -373,7 +373,7 @@ jobs:
           sudo mkdir -p "$root/opt" "$root/tmp/partyops-pkg-selftest"
           sudo cp -a "$RUNNER_TEMP/loong-package-stage/opt/partyops" "$root/opt/"
           sudo chown 65534:65534 "$root/tmp/partyops-pkg-selftest"
-          sudo unshare --net chroot --userspec=65534:65534 "$root" /usr/bin/env -i HOME=/tmp/partyops-pkg-selftest PATH=/usr/bin:/bin LANG=C.UTF-8 PARTYOPS_DATA_DIR=/tmp/partyops-pkg-selftest PARTYOPS_ENVIRONMENT=production PARTYOPS_STRICT_SQLITE=true PARTYOPS_SEED_DEMO=false /usr/bin/xvfb-run -a /opt/partyops/partyops --package-self-test 2>&1 | tee "$out/full-package-selftest.log"
+          sudo unshare --mount --net --pid --fork /bin/bash -c 'set -e; root="$1"; shift; mount --make-rprivate /; mount -t proc -o nosuid,nodev,noexec proc "$root/proc"; exec chroot --userspec=65534:65534 "$root" "$@"' _ "$root" /usr/bin/env -i HOME=/tmp/partyops-pkg-selftest PATH=/usr/bin:/bin LANG=C.UTF-8 PARTYOPS_DATA_DIR=/tmp/partyops-pkg-selftest PARTYOPS_ENVIRONMENT=production PARTYOPS_STRICT_SQLITE=true PARTYOPS_SEED_DEMO=false /usr/bin/xvfb-run -a /opt/partyops/partyops --package-self-test 2>&1 | tee "$out/full-package-selftest.log"
           printf 'PASS\n' > "$out/full-package-selftest.status"
       - name: Seal unsigned candidate DEB only after full emulated runtime gate
         shell: bash

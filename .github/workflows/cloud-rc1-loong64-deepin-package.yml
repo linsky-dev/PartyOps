@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 240
     env:
-      SOURCE_SHA: 740251bc84d7209a5effe24e6c6711274560fc76
+      SOURCE_SHA: bada0183e84f14fce2a24ca281a60d9f7defe2e5
       GH_TOKEN: ${{ github.token }}
       DEEPIN_REPO: https://community-packages.deepin.com/deepin/beige/
       DEEPIN_KEY_COMMIT: b0946c78978ecc567118254fa0ff7806a6406f99
@@ -134,6 +134,8 @@ jobs:
           set -euo pipefail
           out="$PWD/artifacts/loong64-deepin-baseline"
           runtime="$RUNNER_TEMP/loong-package-stage/opt/partyops"
+          # Metadata-only isolated donor staging; never upload this old app as RC1.
+          python qa-driver/scripts/rc1_loong64_stage_deb.py preview_manifest "$runtime"
           PYTHONPATH=backend python - "$runtime" <<'PY' 2>&1 | tee "$out/current-source-formatter-metadata.log"
           import hashlib,json,sys
           from pathlib import Path
@@ -161,12 +163,12 @@ jobs:
           sudo cp -a "$RUNNER_TEMP/loong-package-stage/opt/partyops" "$root/opt/"
           sudo chown 65534:65534 "$root/tmp/partyops-native-probe"
           # No service start, no real user data or external network access.
-          sudo unshare --net chroot --userspec=65534:65534 "$root" /usr/bin/env -i HOME=/tmp/partyops-native-probe PATH=/usr/bin:/bin LANG=C.UTF-8 LD_LIBRARY_PATH=/opt/partyops/ocr/lib TESSDATA_PREFIX=/opt/partyops/ocr/tessdata /opt/partyops/ocr/bin/tesseract --list-langs 2>&1 | tee "$out/ocr-languages.log"
+          sudo unshare --mount --net --pid --fork /bin/bash -c 'set -e; root="$1"; shift; mount --make-rprivate /; mount -t proc -o nosuid,nodev,noexec proc "$root/proc"; exec chroot --userspec=65534:65534 "$root" "$@"' _ "$root" /usr/bin/env -i HOME=/tmp/partyops-native-probe PATH=/usr/bin:/bin LANG=C.UTF-8 LD_LIBRARY_PATH=/opt/partyops/ocr/lib TESSDATA_PREFIX=/opt/partyops/ocr/tessdata /opt/partyops/ocr/bin/tesseract --list-langs 2>&1 | tee "$out/ocr-languages.log"
           grep -qx chi_sim "$out/ocr-languages.log"
           grep -qx eng "$out/ocr-languages.log"
-          sudo unshare --net chroot --userspec=65534:65534 "$root" /usr/bin/env -i HOME=/tmp/partyops-native-probe PATH=/usr/bin:/bin LANG=C.UTF-8 LD_LIBRARY_PATH=/opt/partyops /opt/partyops/office-runtime/program/soffice --headless -env:UserInstallation=file:///tmp/partyops-native-probe/office-profile --version 2>&1 | tee "$out/office-version.log"
-          grep -F '24.2.0.3' "$out/office-version.log"
-          sudo unshare --net chroot --userspec=65534:65534 "$root" /usr/bin/env -i HOME=/tmp/partyops-native-probe PATH=/usr/bin:/bin LANG=C.UTF-8 LD_LIBRARY_PATH=/opt/partyops /opt/partyops/formatter-host/partyops-document-formatter-host --self-test /tmp/partyops-native-probe/formatter-selftest.json 2>&1 | tee "$out/formatter-selftest.log"
+          sudo unshare --mount --net --pid --fork /bin/bash -c 'set -e; root="$1"; shift; mount --make-rprivate /; mount -t proc -o nosuid,nodev,noexec proc "$root/proc"; exec chroot --userspec=65534:65534 "$root" "$@"' _ "$root" /usr/bin/env -i HOME=/tmp/partyops-native-probe PATH=/usr/bin:/bin LANG=C.UTF-8 LD_LIBRARY_PATH=/opt/partyops /opt/partyops/office-runtime/program/soffice --headless -env:UserInstallation=file:///tmp/partyops-native-probe/office-profile --version 2>&1 | tee "$out/office-version.log"
+          grep -F "$(jq -r .office_version "$out/donor-receipt.json")" "$out/office-version.log"
+          sudo unshare --mount --net --pid --fork /bin/bash -c 'set -e; root="$1"; shift; mount --make-rprivate /; mount -t proc -o nosuid,nodev,noexec proc "$root/proc"; exec chroot --userspec=65534:65534 "$root" "$@"' _ "$root" /usr/bin/env -i HOME=/tmp/partyops-native-probe PATH=/usr/bin:/bin LANG=C.UTF-8 LD_LIBRARY_PATH=/opt/partyops /opt/partyops/formatter-host/partyops-document-formatter-host --self-test /tmp/partyops-native-probe/formatter-selftest.json 2>&1 | tee "$out/formatter-selftest.log"
           sudo cat "$root/tmp/partyops-native-probe/formatter-selftest.json" > "$out/formatter-selftest.json"
           jq -e '.schema==1 and .passed==true and .source_project=="PartyOps.DocumentFormatter.AddIn" and (.features|length)==6' "$out/formatter-selftest.json"
           printf 'PASS\n' > "$out/native-component-probes.status"

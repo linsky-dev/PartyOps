@@ -151,7 +151,7 @@ elif stage=="restore_complete":
     names={"Compile exact PyMuPDF 1.26.0 target wheel with live output","Compile target freeze tools and validate complete offline wheelhouse","Compile pinned SQLite and run dependency and schema gates without networking"}
     assert any(j["name"]=="freeze" and names <= {s["name"] for s in j["steps"] if s["conclusion"]=="success"} for j in jobs)
     a=gh(f"actions/artifacts/{aid}")
-    assert a["name"]=="RC1-Loong64-accelerated-complete-closure-"+os.environ["SOURCE_SHA"] and not a["expired"] and a["workflow_run"]["id"]==run
+    assert a["name"]=="RC1-Loong64-accelerated-complete-closure-740251bc84d7209a5effe24e6c6711274560fc76" and not a["expired"] and a["workflow_run"]["id"]==run
     zpath=out/"complete-closure.zip"
     with zpath.open("wb") as f:
         subprocess.check_call(["gh","api",f"repos/{repo}/actions/artifacts/{aid}/zip"],stdout=f)

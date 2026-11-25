@@ -59,6 +59,19 @@ def audit(donor,stage,out):
     require(len(files)>100,"native runtime inventory incomplete")
     write(out/"donor-inventory.json",files)
     write(out/"donor-receipt.json",{"donor_sha256":DONOR,"host_sha256":host,"office_version":office.get("version"),"ocr_version":ocr.get("version"),"native_files":len(files),"historical_wps_only":True,"release_ready":False})
+def preview_manifest(runtime):
+    # Same historical-preview contract as other Linux QA packages; do not
+    # rewrite native evidence or substitute a current snapshot claim.
+    pins={"formatter-host/partyops-document-formatter-host":"272338c94d791103e5ab8ac5f6419aff03c76a9e30d1e0e7863a8f8d4a133438",
+          "formatter-host/source-host.json":"6490037fcb2a3d2e684daad01cdd3231468b205347d55e36310f3efbfc0bf36c",
+          "formatter-host/runtime-evidence.json":"c6742a87299b56d8cd62978cee43d7cdfc33d35470ed85121533462a8140cb73"}
+    for name,digest in pins.items():
+        file=runtime/name
+        require(file.is_file() and not file.is_symlink() and sha(file)==digest,"WPS historical pin "+name)
+    write(runtime/"RC1-LINUX-BUILD-ONLY.json",{"schema_version":1,"status":"BUILD_ONLY_UNVERIFIED","version":"1.4.6-rc.1","architecture":"loong64","target_os":"Deepin crimson Loong64 GLIBC 2.38","source_sha":SOURCE,"original_package_sha256":DONOR,"historical_wps_host_sha256":pins["formatter-host/partyops-document-formatter-host"],"historical_wps_source_record_sha256":pins["formatter-host/source-host.json"],"historical_wps_evidence_sha256":pins["formatter-host/runtime-evidence.json"],"historical_wps_snapshot_sha256":"15c21b886f6a958fb61a3b106266b446a2b959b0085510015eeb790efaa770d3","historical_wps_host_unchanged":True,"wps_native_tests_rerun":False,"release_ready":False})
+    args=[sys.executable,"scripts/generate-release-manifest.py","--root",str(runtime),"--output",str(runtime/"release-manifest.json"),"--version","1.4.6-rc.1","--tag","v1.4.6-rc.1","--commit",SOURCE,"--platform","linux-deb","--architecture","loong64","--runtime-profile","core"]
+    for name in ("partyops",*pins,"RC1-LINUX-BUILD-ONLY.json"): args+=["--only-file",name]
+    subprocess.check_call(args)
 def stage_new(archive,stage,out):
     runtime=stage/"opt/partyops"
     old=json.loads((out/"donor-inventory.json").read_text())
@@ -125,7 +138,7 @@ def stage_new(archive,stage,out):
     write(runtime/"RC1-LOONG64-BUILD-ONLY.json",{"source_commit":SOURCE,"donor_sha256":DONOR,"historical_wps_only":True,"release_ready":False})
     (runtime/"release-manifest.json").unlink(missing_ok=True)
     (runtime/"release-files.sha256").unlink(missing_ok=True)
-    subprocess.check_call([sys.executable,"scripts/generate-release-manifest.py","--root",str(runtime),"--output",str(runtime/"release-manifest.json"),"--version","1.4.6-rc.1","--tag","v1.4.6-rc.1","--commit",SOURCE,"--platform","linux-deb","--architecture","loong64","--runtime-profile","core","--only-file","partyops"])
+    preview_manifest(runtime)
     (runtime/"release-files.sha256").write_text("".join(f"{sha(p)}  ./{p.relative_to(runtime).as_posix()}\n" for p in sorted(runtime.rglob("*")) if p.is_file() and not p.is_symlink() and p.name!="release-files.sha256"))
     subprocess.check_call(["sha256sum","-c","--strict","release-files.sha256"],cwd=runtime,stdout=subprocess.DEVNULL)
     subprocess.check_call([sys.executable,"scripts/verify-linux-elf-glibc.py","--root",str(runtime),"--max-glibc","2.38"])
@@ -143,4 +156,4 @@ def seal(stage,out):
 if __name__=="__main__":
     action=sys.argv[1]
     args=[Path(x).resolve() for x in sys.argv[2:]]
-    {"audit":audit,"stage":stage_new,"seal":seal}[action](*args)
+    {"audit":audit,"stage":stage_new,"seal":seal,"preview_manifest":preview_manifest}[action](*args)
