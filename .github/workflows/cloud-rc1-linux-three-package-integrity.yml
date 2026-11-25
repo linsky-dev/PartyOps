@@ -54,8 +54,8 @@ jobs:
             wps_evidence: cc9ab788ca58b98ae462b8d55e06ef5a4dec169f8cb0fcfe0b8799a93b2c8403
     env:
       GH_TOKEN: ${{ github.token }}
-      SOURCE: e72e4c321f94b9cb3189d5e5bdff7dde9b343deb
-      CANDIDATE_RUN: '45520525339'
+      SOURCE: 740251bc84d7209a5effe24e6c6711274560fc76
+      CANDIDATE_RUN: '45557628895'
       ARCH: ${{ matrix.arch }}
       FORMAT: ${{ matrix.format }}
       PACKAGE: ${{ matrix.package }}
