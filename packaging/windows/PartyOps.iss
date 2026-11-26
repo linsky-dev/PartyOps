@@ -91,15 +91,17 @@ Name: "{commonappdata}\PartyOps"; Permissions: admins-full system-full
 Name: "{commonappdata}\PartyOps-System"; Permissions: admins-full system-full
 
 [Files]
-Source: "{#BuildRoot}\*"; Excludes: "PartyOpsUpdater.exe,PartyOpsUpdaterService.exe,prerequisites\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
+; Temporary preflight inputs must precede bulk payload in solid archives.
+; Separate streams avoid decompressing hundreds of MB on random access.
+Source: "{#SourcePath}\validate-install-path.ps1"; Flags: dontcopy solidbreak
+#ifndef PartyOpsArm64QA
+Source: "{#BuildRoot}\prerequisites\ndp48-x86-x64-allos-enu.exe"; Flags: dontcopy solidbreak
+#endif
+Source: "{#BuildRoot}\*"; Excludes: "PartyOpsUpdater.exe,PartyOpsUpdaterService.exe,prerequisites\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion solidbreak
 ; 主机应用内升级期间这两个进程仍承载事务。Windows 不能覆盖正在运行的
 ; EXE，因此仅它们使用系统重启替换；主程序、前端和其余组件立即生效。
 Source: "{#BuildRoot}\PartyOpsUpdater.exe"; DestDir: "{app}"; Flags: ignoreversion restartreplace
 Source: "{#BuildRoot}\PartyOpsUpdaterService.exe"; DestDir: "{app}"; Flags: ignoreversion restartreplace
-Source: "{#SourcePath}\validate-install-path.ps1"; Flags: dontcopy
-#ifndef PartyOpsArm64QA
-Source: "{#BuildRoot}\prerequisites\ndp48-x86-x64-allos-enu.exe"; Flags: dontcopy
-#endif
 
 [Icons]
 Name: "{group}\党建智办"; Filename: "{app}\PartyOpsLauncher.exe"; IconFilename: "{app}\partyops.ico"
@@ -1403,8 +1405,7 @@ end;
 
 function NextButtonClick(CurPageID: Integer): Boolean;
 var
-  AppDir, Validator, PowerShell, Parameters, DiagnosticFile, Detail: String;
-  ResultCode: Integer;
+  AppDir, Detail: String;
 begin
   Result := True;
   if CurPageID = DataDirPage.ID then
@@ -1458,43 +1459,52 @@ begin
   end;
   if WizardSilent then
   begin
-    { The unattended wizard has no editable path page. Do not execute the
-      redundant slow PowerShell UI-only validator here: the mandatory
-      ValidateAndSecureInstallDirectory still executes in PrepareToInstall
-      BEFORE stopping services, extracting payload or writing program files.
-      Interactive installs retain the early feedback check. }
+    { All heavy checks remain in PrepareToInstall. Silent mode does not
+      need interactive drive classification. No security gate is bypassed. }
     Log('[PARTYOPS_SILENT_INSTALL_PRECHECK_DEFERRED] Mandatory pre-extraction ' +
       'path, reparse and ACL checks remain enabled in PrepareToInstall.');
     exit;
   end;
-  { Validate the USER'S chosen program path before switching to the data
-    directory page. Invalid removable/network/relative paths stay editable
-    in the wizard instead of causing a fatal PrepareToInstall screen. This
-    check must not create paths, change ACLs or stop PartyOps services. }
+  { Keep interactive navigation lightweight. Only classify the selected
+    drive and path here; full recursive identity/reparse/ACL checks run
+    in PrepareToInstall before service changes or payload extraction. }
   AppDir := WizardDirValue;
-  ExtractTemporaryFile('validate-install-path.ps1');
-  Validator := ExpandConstant('{tmp}\validate-install-path.ps1');
-  PowerShell := ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe');
-  DiagnosticFile := ExpandConstant('{tmp}\partyops-wizard-path-diagnostic.txt');
-  DeleteFile(DiagnosticFile);
-  if not FileExists(PowerShell) then
+  if not IsAvailableFixedDiskPath(AppDir) then
   begin
-    ReportWizardError('Windows PowerShell 不可用，无法安全验证程序目录；请检查 Windows 组件。');
+    ReportWizardError('所选 PartyOps 程序目录无法使用：' + #13#10 +
+      '[INSTALL_DIR_INVALID] 请返回当前页面改选本机固定磁盘中的目录，例如 C:\Program Files\PartyOps。');
     Result := False;
     exit;
   end;
-  Parameters := '-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ' +
-    AddQuotes(Validator) + ' -Path ' + AddQuotes(AppDir) +
-    ' -DiagnosticFile ' + AddQuotes(DiagnosticFile);
-  ResultCode := 5;
-  if (not RunInstallPathValidator(PowerShell, Parameters, ResultCode)) or
-     (ResultCode <> 0) then
+  if CompareText(RemoveBackslashUnlessRoot(ExpandFileName(AppDir)),
+    Copy(AppDir, 1, 3)) = 0 then
   begin
-    Detail := ReadInstallPathDiagnostic(DiagnosticFile, ResultCode);
-    ReportWizardError('所选 PartyOps 程序目录无法使用：' + #13#10 +
-      Detail + #13#10 + #13#10 +
-      '请返回当前页面改选本机固定磁盘中的目录，例如 C:\Program Files\PartyOps。');
+    ReportWizardError('[INSTALL_DIR_ROOT_DENIED] 程序目录不能直接使用磁盘根目录。');
     Result := False;
+    exit;
+  end;
+  Log('[PARTYOPS_INTERACTIVE_PREFLIGHT_DEFERRED] Full recursive path validation before install.');
+end;
+
+procedure CurPageChanged(CurPageID: Integer);
+var
+  PageName: String;
+begin
+  if CurPageID = wpWelcome then PageName := 'welcome'
+  else if CurPageID = wpSelectDir then PageName := 'program'
+  else if CurPageID = DataDirPage.ID then PageName := 'data'
+  else if CurPageID = wpReady then PageName := 'ready'
+  else PageName := IntToStr(CurPageID);
+  Log('[PARTYOPS_WIZARD_PAGE] page=' + PageName);
+end;
+
+procedure EnsureInstallPathValidatorExtracted;
+begin
+  if not FileExists(ExpandConstant('{tmp}\validate-install-path.ps1')) then
+  begin
+    Log('[PARTYOPS_PATH_VALIDATOR_EXTRACT_BEGIN]');
+    ExtractTemporaryFile('validate-install-path.ps1');
+    Log('[PARTYOPS_PATH_VALIDATOR_EXTRACT_END]');
   end;
 end;
 
@@ -1543,7 +1553,7 @@ var
 begin
   Result := '';
   AppDir := ExpandConstant('{app}');
-  ExtractTemporaryFile('validate-install-path.ps1');
+  EnsureInstallPathValidatorExtracted;
   Validator := ExpandConstant('{tmp}\validate-install-path.ps1');
   PowerShell := ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe');
   DiagnosticFile := ExpandConstant('{tmp}\partyops-install-path-diagnostic.txt');
@@ -1675,7 +1685,7 @@ begin
       '让用户首次启动时才发现清单缺失。程序目录：' + AppDir;
     exit;
   end;
-  ExtractTemporaryFile('validate-install-path.ps1');
+  EnsureInstallPathValidatorExtracted;
   Validator := ExpandConstant('{tmp}\validate-install-path.ps1');
   PowerShell := ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe');
   DiagnosticFile := ExpandConstant('{tmp}\partyops-postinstall-path-diagnostic.txt');
@@ -1720,7 +1730,9 @@ begin
   end;
 #endif
   WizardForm.StatusLabel.Caption := '正在检查并保护自定义程序目录…';
+  Log('[PARTYOPS_INSTALL_SECURITY_CHECK_BEGIN]');
   Result := ValidateAndSecureInstallDirectory;
+  Log('[PARTYOPS_INSTALL_SECURITY_CHECK_END] ' + Result);
   if Result <> '' then
     exit;
   ProgramDirectorySecuredBeforeExtraction := True;

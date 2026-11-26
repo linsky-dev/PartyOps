@@ -154,3 +154,21 @@ def test_installation_uses_one_full_acl_repair_then_a_readonly_post_extract_guar
     assert "ErrorMessage := VerifyExtractedInstallDirectory;" in source
     assert "RunRuntimeStartupSelfTest;" in source
     assert "StopServiceBeforeUpgrade(" in source
+
+def test_interactive_navigation_never_extracts_or_runs_full_path_validator() -> None:
+    source = INSTALLER.read_text(encoding="utf-8-sig")
+    files = source.split("[Files]", 1)[1].split("[Icons]", 1)[0]
+    assert files.index("validate-install-path.ps1") < files.index('Source: "{#BuildRoot}\\*"')
+    assert files.index("ndp48-x86-x64-allos-enu.exe") < files.index('Source: "{#BuildRoot}\\*"')
+    assert "dontcopy solidbreak" in files
+    nav = source.split("function NextButtonClick", 1)[1].split("procedure CurPageChanged", 1)[0]
+    for blocking in ("ExtractTemporaryFile", "RunInstallPathValidator(", "Exec(", "ExecAndLogOutput(", "ForceDirectories", "Sleep("):
+        assert blocking not in nav, blocking
+    assert "IsAvailableFixedDiskPath(AppDir)" in nav
+    assert "PARTYOPS_INTERACTIVE_PREFLIGHT_DEFERRED" in nav
+    assert "ValidateUpgradeLocations" in nav
+    pre = source.split("function PrepareToInstall", 1)[1].split("procedure RemoveOwnedProtocol", 1)[0]
+    assert pre.index("Result := ValidateAndSecureInstallDirectory;") < pre.index("HostServiceExistedBeforeInstall := ServiceExists")
+    assert pre.index("Result := ValidateAndSecureInstallDirectory;") < pre.index("Result := StopServiceBeforeUpgrade")
+    assert source.count("ExtractTemporaryFile('validate-install-path.ps1')") == 1
+    assert source.count("EnsureInstallPathValidatorExtracted;") == 3
