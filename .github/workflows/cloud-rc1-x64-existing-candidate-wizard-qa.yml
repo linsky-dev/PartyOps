@@ -1,0 +1,65 @@
+name: RC1 x64 existing installer interactive wizard verification (NO REBUILD)
+on:
+  pull_request:
+    types: [opened]
+    branches: [qa/rc1-windows-interactive-wizard-fix-20261126]
+    paths:
+      - '.github/workflows/cloud-rc1-x64-existing-candidate-wizard-qa.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  wizard:
+    runs-on: windows-2025
+    timeout-minutes: 20
+    env:
+      SOURCE: 2cfe443d5dea292260baf17d116c2a1451ee7032
+      GH_TOKEN: ${{ github.token }}
+      PYTHONUTF8: '1'
+      PYTHONIOENCODING: utf-8
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+          architecture: x64
+      - name: Validate original build job and exact immutable artifact
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $raw=gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/45782494136"
+          if ($LASTEXITCODE -ne 0) { throw 'RUN_LOOKUP_FAILED' }
+          $run=$raw | ConvertFrom-Json
+          if ($run.head_sha -ne '439c799c40d1bf616e198d61118cc0d85b77b054' -or $run.status -ne 'completed' -or $run.head_repository.full_name -ne $env:GITHUB_REPOSITORY -or $run.path.Split('@')[0] -ne '.github/workflows/cloud-rc1-windows-interactive-wizard-fix.yml') { throw 'ORIGINAL_RUN_MISMATCH' }
+          $raw=gh api "repos/$env:GITHUB_REPOSITORY/actions/jobs/139781085792"
+          if ($LASTEXITCODE -ne 0) { throw 'JOB_LOOKUP_FAILED' }
+          $job=$raw | ConvertFrom-Json
+          if ($job.run_id -ne 45782494136 -or $job.conclusion -ne 'success') { throw 'ORIGINAL_BUILD_NOT_PASSED' }
+          $raw=gh api "repos/$env:GITHUB_REPOSITORY/actions/artifacts/15100751176"
+          if ($LASTEXITCODE -ne 0) { throw 'ARTIFACT_LOOKUP_FAILED' }
+          $a=$raw | ConvertFrom-Json
+          if ($a.expired -or $a.workflow_run.id -ne 45782494136 -or $a.name -ne "partyops-windows-x64-BUILD_ONLY-$env:SOURCE" -or $a.digest -ne 'sha256:aa24d54f34e00c2b30de68dda1a33b3f3b53f5d957f3119f20aa54d933039fbd') { throw 'ORIGINAL_ARTIFACT_MISMATCH' }
+          $candidate=Join-Path $env:RUNNER_TEMP 'wizard-candidate'
+          gh run download 45782494136 --repo $env:GITHUB_REPOSITORY --name $a.name --dir $candidate
+          if ($LASTEXITCODE -ne 0) { throw 'ORIGINAL_ARTIFACT_DOWNLOAD_FAILED' }
+          $exe=@(Get-ChildItem -LiteralPath $candidate -Filter '*_BUILD_ONLY_UNVERIFIED.exe')
+          if ($exe.Count -ne 1 -or (Get-FileHash $exe[0].FullName).Hash.ToLowerInvariant() -ne 'b47e60b54863fa5c952491d8f32bb942986622013208c9eea37a3063417a897b') { throw 'INSTALLER_HASH_MISMATCH' }
+      - name: Repeat actual non-silent wizard navigation on identical installer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          python scripts/rc1_windows_interactive_wizard_qa.py "$env:RUNNER_TEMP/wizard-candidate" "$env:RUNNER_TEMP/wizard-evidence" $env:SOURCE
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $r=Get-Content -Raw -Encoding UTF8 "$env:RUNNER_TEMP/wizard-evidence/interactive-wizard-receipt.json" | ConvertFrom-Json
+          if ($r.status -ne 'PASS' -or $r.source_commit -ne $env:SOURCE -or $r.installer_sha256 -ne 'b47e60b54863fa5c952491d8f32bb942986622013208c9eea37a3063417a897b' -or $r.navigation.Count -ne 6 -or -not $r.browse_open_close_passed) { throw 'WIZARD_EVIDENCE_INCOMPLETE' }
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: RC1-x64-existing-installer-wizard-retest-2cfe443d5dea292260baf17d116c2a1451ee7032
+          path: ${{ runner.temp }}/wizard-evidence
+          if-no-files-found: error
+          retention-days: 14

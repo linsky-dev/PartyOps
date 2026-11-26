@@ -186,7 +186,8 @@ def main():
         assert "[PARTYOPS_PATH_VALIDATOR_EXTRACT_BEGIN]" not in text
         assert "[PARTYOPS_INSTALL_SECURITY_CHECK_BEGIN]" not in text
         report["status"]="PASS"
-        print("INTERACTIVE_WIZARD_NAVIGATION_PASS",json.dumps(report,ensure_ascii=False))
+        # ASCII-safe console output on cp1252/cp936 hosted runners; JSON receipt stays UTF-8.
+        print("INTERACTIVE_WIZARD_NAVIGATION_PASS",json.dumps(report,ensure_ascii=True))
     except Exception as exc:
         report["status"]="FAILED"
         report["error"]=repr(exc)
