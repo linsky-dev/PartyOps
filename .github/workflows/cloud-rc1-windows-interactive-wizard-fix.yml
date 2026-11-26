@@ -1,6 +1,12 @@
 name: RC1 Windows x64 wizard and recovery packaging (MANUAL AFTER PREPACKAGE GATE)
 on:
+  pull_request:
+    types: [opened]
+    branches: [qa/rc1-windows-interactive-wizard-fix-20261126]
+    paths:
+      - '.github/workflows/cloud-rc1-windows-interactive-wizard-fix.yml'
   workflow_dispatch:
+
 permissions:
   contents: read
   actions: read
@@ -18,7 +24,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           PARTYOPS_GATE_REPO: ${{ github.repository }}
-          PARTYOPS_GATE_SHA: ${{ github.sha }}
+          PARTYOPS_GATE_SHA: 2cfe443d5dea292260baf17d116c2a1451ee7032
         run: |
           $ErrorActionPreference = 'Stop'
           $repo = $env:PARTYOPS_GATE_REPO
@@ -44,7 +50,7 @@ jobs:
       - name: Checkout exact source, never production branch
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
-          ref: ${{ github.sha }}
+          ref: 2cfe443d5dea292260baf17d116c2a1451ee7032
           persist-credentials: false
       - name: Python 3.12 x64
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
@@ -232,7 +238,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: partyops-windows-x64-BUILD_ONLY-${{ github.sha }}
+          name: partyops-windows-x64-BUILD_ONLY-2cfe443d5dea292260baf17d116c2a1451ee7032
           path: |
             artifacts/PartyOps_1.4.6-rc.1_windows_amd64_BUILD_ONLY_UNVERIFIED.exe
             artifacts/PartyOps_1.4.6-rc.1_windows_amd64_BUILD_ONLY_UNVERIFIED.exe.sha256
@@ -254,19 +260,19 @@ jobs:
       - name: Checkout exact matching candidate source
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
-          ref: ${{ github.sha }}
+          ref: 2cfe443d5dea292260baf17d116c2a1451ee7032
           persist-credentials: false
       - name: Download THIS RUN's immutable unsigned installer
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
-          name: partyops-windows-x64-BUILD_ONLY-${{ github.sha }}
+          name: partyops-windows-x64-BUILD_ONLY-2cfe443d5dea292260baf17d116c2a1451ee7032
           path: ${{ runner.temp }}/partyops-new-candidate-exact
       - name: Verify build source, installer bytes and nonrelease receipt
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           $sourceSha = (git rev-parse HEAD).Trim()
-          if ($LASTEXITCODE -ne 0 -or $sourceSha -ne '${{ github.sha }}') {
+          if ($LASTEXITCODE -ne 0 -or $sourceSha -ne '2cfe443d5dea292260baf17d116c2a1451ee7032') {
             throw '[RC1_SAME_RUN_SOURCE_MISMATCH]'
           }
           $root = Join-Path $env:RUNNER_TEMP 'partyops-new-candidate-exact'
@@ -307,7 +313,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: partyops-current-source-fresh-installed-${{ github.sha }}
+          name: partyops-current-source-fresh-installed-2cfe443d5dea292260baf17d116c2a1451ee7032
           path: ${{ runner.temp }}/partyops-current-installed-qa
           if-no-files-found: warn
           retention-days: 14
@@ -321,7 +327,7 @@ jobs:
       - name: Checkout same-source QA code and in-place upgrade rules
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
-          ref: ${{ github.sha }}
+          ref: 2cfe443d5dea292260baf17d116c2a1451ee7032
           persist-credentials: false
       - name: Setup Python 3.12 for synthetic SQLite data-retention checks
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
@@ -331,14 +337,14 @@ jobs:
       - name: Download THIS RUN's exact source installer bytes
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
-          name: partyops-windows-x64-BUILD_ONLY-${{ github.sha }}
+          name: partyops-windows-x64-BUILD_ONLY-2cfe443d5dea292260baf17d116c2a1451ee7032
           path: ${{ runner.temp }}/partyops-same-run-qa
       - name: Download SHA-pinned original RC6 installer and bind fresh RC1 candidate
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           $sha = (git rev-parse HEAD).Trim()
-          if ($LASTEXITCODE -ne 0 -or $sha -ne '${{ github.sha }}') {
+          if ($LASTEXITCODE -ne 0 -or $sha -ne '2cfe443d5dea292260baf17d116c2a1451ee7032') {
             throw '[RC1_UPGRADE_CURRENT_SOURCE_SHA_MISMATCH]'
           }
           $root = Join-Path $env:RUNNER_TEMP 'partyops-same-run-qa'
@@ -390,7 +396,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: partyops-current-source-inplace-upgrade-${{ github.sha }}
+          name: partyops-current-source-inplace-upgrade-2cfe443d5dea292260baf17d116c2a1451ee7032
           path: ${{ runner.temp }}/partyops-same-source-upgrade-report
           if-no-files-found: warn
           retention-days: 14
@@ -404,19 +410,19 @@ jobs:
       - name: Checkout exact candidate source for detached E drive scenario
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
-          ref: ${{ github.sha }}
+          ref: 2cfe443d5dea292260baf17d116c2a1451ee7032
           persist-credentials: false
       - name: Download new EXE from THIS SAME commit and workflow
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
-          name: partyops-windows-x64-BUILD_ONLY-${{ github.sha }}
+          name: partyops-windows-x64-BUILD_ONLY-2cfe443d5dea292260baf17d116c2a1451ee7032
           path: ${{ runner.temp }}/partyops-detached-drive-input
       - name: Verify program SHA, original source SHA and PowerShell test syntax
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           $source = (git rev-parse HEAD).Trim()
-          if ($source -ne '${{ github.sha }}') { throw '[DETACHED_DRIVE_QA_SOURCE_COMMIT_MISMATCH]' }
+          if ($source -ne '2cfe443d5dea292260baf17d116c2a1451ee7032') { throw '[DETACHED_DRIVE_QA_SOURCE_COMMIT_MISMATCH]' }
           $root = Join-Path $env:RUNNER_TEMP 'partyops-detached-drive-input'
           $exe = @(Get-ChildItem -LiteralPath $root -Recurse -File -Filter 'PartyOps_1.4.6-rc.1_windows_amd64_BUILD_ONLY_UNVERIFIED.exe')
           $hashFile = @(Get-ChildItem -LiteralPath $root -Recurse -File -Filter 'PartyOps_1.4.6-rc.1_windows_amd64_BUILD_ONLY_UNVERIFIED.exe.sha256')
@@ -460,7 +466,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: partyops-rc1-detached-drive-real-install-evidence-${{ github.sha }}
+          name: partyops-rc1-detached-drive-real-install-evidence-2cfe443d5dea292260baf17d116c2a1451ee7032
           path: ${{ runner.temp }}/partyops-detached-drive-results
           if-no-files-found: warn
           retention-days: 14
@@ -473,7 +479,7 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
-          ref: ${{ github.sha }}
+          ref: 2cfe443d5dea292260baf17d116c2a1451ee7032
           persist-credentials: false
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         with:
@@ -481,18 +487,18 @@ jobs:
           architecture: x64
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
-          name: partyops-windows-x64-BUILD_ONLY-${{ github.sha }}
+          name: partyops-windows-x64-BUILD_ONLY-2cfe443d5dea292260baf17d116c2a1451ee7032
           path: ${{ runner.temp }}/wizard-candidate
       - name: Exercise real native installer without silent flags
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
-          python scripts/rc1_windows_interactive_wizard_qa.py "$env:RUNNER_TEMP/wizard-candidate" "$env:RUNNER_TEMP/wizard-evidence" "${{ github.sha }}"
+          python scripts/rc1_windows_interactive_wizard_qa.py "$env:RUNNER_TEMP/wizard-candidate" "$env:RUNNER_TEMP/wizard-evidence" "2cfe443d5dea292260baf17d116c2a1451ee7032"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
-          name: RC1-Windows-x64-interactive-wizard-evidence-${{ github.sha }}
+          name: RC1-Windows-x64-interactive-wizard-evidence-2cfe443d5dea292260baf17d116c2a1451ee7032
           path: ${{ runner.temp }}/wizard-evidence
           if-no-files-found: warn
           retention-days: 14
