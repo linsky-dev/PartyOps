@@ -169,7 +169,7 @@ def test_demo_seed_is_opt_in_by_default() -> None:
     assert config.Settings.model_fields["seed_demo"].default is False
 
 
-def test_session_csrf_uses_double_submit_token_and_keeps_legacy_session() -> None:
+def test_session_csrf_uses_double_submit_token_and_rejects_legacy_write() -> None:
     token = "session-bound-csrf-token"
     valid = _request_from(
         "127.0.0.1",
@@ -192,5 +192,39 @@ def test_session_csrf_uses_double_submit_token_and_keeps_legacy_session() -> Non
         security.validate_session_csrf(forged, record)
     assert captured.value.code == "SESSION_CSRF_INVALID"
 
-    # 旧会话仍由生产同源中间件保护；用户下一次登录后自动具备新令牌。
-    security.validate_session_csrf(valid, SimpleNamespace(csrf_token_hash=None))
+    with pytest.raises(ProblemException) as captured:
+        security.validate_session_csrf(valid, SimpleNamespace(csrf_token_hash=None))
+    assert captured.value.code == "SESSION_CSRF_INVALID"
+
+
+
+def test_optional_cookie_auth_requires_csrf_for_production_writes(monkeypatch):
+    from datetime import timedelta
+    from app.models import utcnow
+
+    record = SimpleNamespace(revoked_at=None, expires_at=utcnow() + timedelta(hours=1),
+                             user_id="u", csrf_token_hash=security.hash_token("csrf"))
+    user = SimpleNamespace(active=True)
+    db = SimpleNamespace(scalar=lambda _: record, get=lambda *_: user)
+    monkeypatch.setattr(security, "get_settings", lambda: SimpleNamespace(environment="production"))
+    req = _request_from("127.0.0.1", [(b"cookie", b"partyops_session=token")])
+    with pytest.raises(ProblemException) as captured:
+        security.get_current_user_optional(req, db)
+    assert captured.value.code == "SESSION_CSRF_INVALID"
+    valid = _request_from("127.0.0.1", [
+        (b"cookie", b"partyops_session=token; partyops_csrf=csrf"),
+        (b"x-partyops-csrf", b"csrf"),
+    ])
+    assert security.get_current_user_optional(valid, db) is user
+
+
+@pytest.mark.parametrize("header,value,allowed", [
+    (b"referer", b"https://partyops.local:18765/a?tab=1#x", True),
+    (b"origin", b"https://partyops.local:18765/?tab=1", False),
+    (b"origin", b"https://partyops.local:18765/#x", False),
+    (b"referer", b"https://other.invalid/a?tab=1", False),
+])
+def test_referer_checks_origin_not_page_parameters(monkeypatch, header, value, allowed):
+    from app import main
+    monkeypatch.setattr(main.settings, "environment", "production")
+    assert main._origin_allowed(_request_from("127.0.0.1", [(header, value)])) is allowed

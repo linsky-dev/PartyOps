@@ -514,8 +514,7 @@ def _origin_allowed(request: Request) -> bool:
         or parsed.username
         or parsed.password
         or (not allow_path and parsed.path not in {"", "/"})
-        or parsed.query
-        or parsed.fragment
+        or (not allow_path and (parsed.query or parsed.fragment))
     ):
         return False
     normalized = f"{parsed.scheme.lower()}://{parsed.netloc.lower()}"

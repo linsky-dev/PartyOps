@@ -79,9 +79,10 @@ def validate_session_csrf(request: Request, record: LoginSession) -> None:
         return
     expected_hash = (record.csrf_token_hash or "").strip()
     if not expected_hash:
-        # 0021 前创建的会话继续由严格同源中间件保护；重新登录后自动升级
-        # 为双重提交令牌，避免版本升级时把正在使用的账号直接踢出。
-        return
+        raise ProblemException(
+            403, "SESSION_CSRF_INVALID", "安全校验未通过",
+            "此会话来自旧版本，请重新登录后继续操作。",
+        )
     supplied_header = request.headers.get(CSRF_HEADER, "").strip()
     supplied_cookie = request.cookies.get(CSRF_COOKIE, "").strip()
     if (
@@ -141,6 +142,8 @@ def get_current_user_optional(
         or _ensure_aware(record.expires_at) <= utcnow()
     ):
         return None
+    if get_settings().environment == "production":
+        validate_session_csrf(request, record)
     user = db.get(User, record.user_id)
     return user if user and user.active else None
 

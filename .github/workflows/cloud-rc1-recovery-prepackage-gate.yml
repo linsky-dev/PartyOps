@@ -1,10 +1,9 @@
 name: RC1 prepackage gate - full Windows regression (NO INSTALLER)
 on:
   pull_request:
-    branches: [qa/rc1-cross-platform-source-convergence-20261125]
+    branches: [qa/rc1-cross-platform-source-convergence-20261125, qa/rc1-windows-interactive-wizard-fix-20261126]
     paths:
-      - 'backend/app/recovery_cli.py'
-      - 'backend/app/desktop_recovery.py'
+      - 'backend/app/**'
       - 'backend/tests/**'
       - 'packaging/windows/**'
       - '.github/workflows/cloud-rc1-recovery-prepackage-gate.yml'
