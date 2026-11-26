@@ -1,0 +1,213 @@
+{
+  "schema_version": 1,
+  "version": "1.4.6-rc.1",
+  "business_source_commit": "2cfe443d5dea292260baf17d116c2a1451ee7032",
+  "source_regression_run": 45764904788,
+  "source_regression_artifact": 15090784806,
+  "source_regression": {
+    "passed": 2676,
+    "failed": 0,
+    "skipped": 41,
+    "line_coverage": 96.23,
+    "branch_coverage": 92.08
+  },
+  "candidate_only": true,
+  "release_ready": false,
+  "installer_count": 11,
+  "native_scenario_count": 14,
+  "windows_x64_wizard_retest": {
+    "run_id": 45797507595,
+    "job_id": 139831835469,
+    "artifact_id": 15104489781,
+    "installer_sha256": "b47e60b54863fa5c952491d8f32bb942986622013208c9eea37a3063417a897b",
+    "status": "PASS"
+  },
+  "targets": [
+    {
+      "target": "windows-x64",
+      "run_id": 45782494136,
+      "artifact_id": 15100751176,
+      "artifact_name": "partyops-windows-x64-BUILD_ONLY-2cfe443d5dea292260baf17d116c2a1451ee7032",
+      "archive_digest": "sha256:aa24d54f34e00c2b30de68dda1a33b3f3b53f5d957f3119f20aa54d933039fbd",
+      "archive_size_bytes": 589114863,
+      "expires_at": "2026-12-10T08:44:26Z",
+      "passed_job_id": 139781085792,
+      "cloud_status": "HOSTED_INSTALL_UPGRADE_ROLLBACK_DETACHED_DRIVE_AND_WIZARD_PASS",
+      "native_targets": [
+        "windows-10-x64",
+        "windows-11-x64"
+      ],
+      "native_release_acceptance": "NOT_COMPLETE",
+      "release_ready": false
+    },
+    {
+      "target": "windows-arm64",
+      "run_id": 45782084285,
+      "artifact_id": 15101167928,
+      "artifact_name": "RC1-Windows11-ARM64-UNSIGNED-EXE-BUILD-ONLY-2cfe443d5dea292260baf17d116c2a1451ee7032",
+      "archive_digest": "sha256:3554f63f5aad6c9ad83f5c9a19a837064a6ec1fda7e3da0b1632914c963f44da",
+      "archive_size_bytes": 443057216,
+      "expires_at": "2026-12-10T09:04:15Z",
+      "passed_job_id": 139793223758,
+      "cloud_status": "WINDOWS11_ARM64_HOSTED_INSTALL_UNINSTALL_PASS",
+      "native_targets": [
+        "windows-10-arm64",
+        "windows-11-arm64"
+      ],
+      "native_release_acceptance": "NOT_COMPLETE",
+      "release_ready": false
+    },
+    {
+      "target": "windows-7-x64",
+      "run_id": 45782084354,
+      "artifact_id": 15100855198,
+      "artifact_name": "RC1-Win7-amd64-CONVERGED-UNSIGNED-EXE-BUILD-ONLY-2cfe443d5dea292260baf17d116c2a1451ee7032",
+      "archive_digest": "sha256:a8dbc09b29dd1b2e3425f48634a2ddb849cd98da90b3b68ce8ce1bcf1af438aa",
+      "archive_size_bytes": 499257055,
+      "expires_at": "2026-12-10T08:44:00Z",
+      "passed_job_id": 139783377667,
+      "cloud_status": "WINDOWS_SERVER_HOSTED_INSTALL_UNINSTALL_PASS",
+      "native_targets": [
+        "windows-7-x64"
+      ],
+      "native_release_acceptance": "NOT_COMPLETE",
+      "release_ready": false
+    },
+    {
+      "target": "windows-7-x86",
+      "run_id": 45782084354,
+      "artifact_id": 15099633485,
+      "artifact_name": "RC1-Win7-x86-CONVERGED-UNSIGNED-EXE-BUILD-ONLY-2cfe443d5dea292260baf17d116c2a1451ee7032",
+      "archive_digest": "sha256:7508927210a9a5e891afb6ff2b242270bb254f08ee52e8d28a574571416c8547",
+      "archive_size_bytes": 458937316,
+      "expires_at": "2026-12-10T08:39:50Z",
+      "passed_job_id": 139783377768,
+      "cloud_status": "WINDOWS_SERVER_HOSTED_INSTALL_UNINSTALL_PASS",
+      "native_targets": [
+        "windows-7-x86"
+      ],
+      "native_release_acceptance": "NOT_COMPLETE",
+      "release_ready": false
+    },
+    {
+      "target": "deb-amd64",
+      "run_id": 45782211205,
+      "artifact_id": 15099441364,
+      "artifact_name": "partyops-uos-v20-amd64-RC1-ACTUAL-DEB-BUILD_ONLY-UNVERIFIED-2cfe443d5dea292260baf17d116c2a1451ee7032",
+      "archive_digest": "sha256:9585dee153546135811291f2832b1c197c89cb080cb913534af6718319c2d2f9",
+      "archive_size_bytes": 368747405,
+      "expires_at": "2026-12-10T08:26:11Z",
+      "passed_job_id": 139786088466,
+      "cloud_status": "HOSTED_PACKAGE_INTEGRITY_AND_ENTRYPOINT_PASS",
+      "native_targets": [
+        "uos-deb-x64"
+      ],
+      "native_release_acceptance": "NOT_COMPLETE",
+      "release_ready": false
+    },
+    {
+      "target": "deb-arm64",
+      "run_id": 45782211205,
+      "artifact_id": 15099142407,
+      "artifact_name": "partyops-RC1-kylin-uos-arm64-ACTUAL-DEB-BUILD_ONLY-2cfe443d5dea292260baf17d116c2a1451ee7032",
+      "archive_digest": "sha256:e45a559486185089ade52756a57e794e563454489fb48efdd4a459b22c6ba910",
+      "archive_size_bytes": 365419661,
+      "expires_at": "2026-12-10T08:26:41Z",
+      "passed_job_id": 139786088540,
+      "cloud_status": "HOSTED_PACKAGE_INTEGRITY_AND_ENTRYPOINT_PASS",
+      "native_targets": [
+        "uos-deb-arm64",
+        "kylin-deb-arm64"
+      ],
+      "native_release_acceptance": "NOT_COMPLETE",
+      "release_ready": false
+    },
+    {
+      "target": "deb-loong64",
+      "run_id": 45782397431,
+      "artifact_id": 15101410349,
+      "artifact_name": "RC1-Loong64-accelerated-UNSIGNED-DEB-CANDIDATE-2cfe443d5dea292260baf17d116c2a1451ee7032",
+      "archive_digest": "sha256:9f7c0e5ffcdb19e631fb674ee2997a185fedbee3a8c632b6ebb1a3a36d75068d",
+      "archive_size_bytes": 322668693,
+      "expires_at": "2026-12-10T08:53:10Z",
+      "passed_job_id": 139793040581,
+      "cloud_status": "DEEPIN_238_QEMU_ABI_AND_HEADLESS_PACKAGE_SELFTEST_PASS",
+      "native_targets": [
+        "deepin-deb-loong64"
+      ],
+      "native_release_acceptance": "NOT_COMPLETE",
+      "release_ready": false
+    },
+    {
+      "target": "rpm-x86_64",
+      "run_id": 45782211205,
+      "artifact_id": 15100225038,
+      "artifact_name": "partyops-RC1-openeuler-x86_64-RPM-BUILD_ONLY-2cfe443d5dea292260baf17d116c2a1451ee7032",
+      "archive_digest": "sha256:124715b39962bb1050f0c73ae34c3ede782c3ed7462bff83acb170fb1e6c90c6",
+      "archive_size_bytes": 889561865,
+      "expires_at": "2026-12-10T08:31:50Z",
+      "passed_job_id": 139786088461,
+      "cloud_status": "HOSTED_PACKAGE_INTEGRITY_AND_ENTRYPOINT_PASS",
+      "native_targets": [
+        "openeuler-rpm-x86_64"
+      ],
+      "native_release_acceptance": "NOT_COMPLETE",
+      "release_ready": false
+    },
+    {
+      "target": "rpm-aarch64",
+      "run_id": 45782211205,
+      "artifact_id": 15098679675,
+      "artifact_name": "partyops-RC1-openeuler-aarch64-RPM-BUILD_ONLY-2cfe443d5dea292260baf17d116c2a1451ee7032",
+      "archive_digest": "sha256:82766380fe9263b4dccc05ed8c7189869718427dfefac8ee561724f8e0ac1e7b",
+      "archive_size_bytes": 881242064,
+      "expires_at": "2026-12-10T08:32:05Z",
+      "passed_job_id": 139786088395,
+      "cloud_status": "HOSTED_PACKAGE_INTEGRITY_AND_ENTRYPOINT_PASS",
+      "native_targets": [
+        "openeuler-rpm-aarch64"
+      ],
+      "native_release_acceptance": "NOT_COMPLETE",
+      "release_ready": false
+    },
+    {
+      "target": "macos-intel",
+      "run_id": 45782084154,
+      "artifact_id": 15100564968,
+      "artifact_name": "partyops-rc1-macos-x86_64-ACTUAL-UNSIGNED-PKG-2cfe443d5dea292260baf17d116c2a1451ee7032",
+      "archive_digest": "sha256:19a084e635864bfcaf6380d93d4a91b0005aad49565e0cb49e5ada209537d835",
+      "archive_size_bytes": 569767680,
+      "expires_at": "2026-12-10T09:03:04Z",
+      "passed_job_id": 139784415885,
+      "cloud_status": "MACOS_HOSTED_NATIVE_INSTALL_SMOKE_PASS",
+      "native_targets": [
+        "macos-intel"
+      ],
+      "native_release_acceptance": "NOT_COMPLETE",
+      "release_ready": false
+    },
+    {
+      "target": "macos-apple-silicon",
+      "run_id": 45782084154,
+      "artifact_id": 15100581885,
+      "artifact_name": "partyops-rc1-macos-arm64-ACTUAL-UNSIGNED-PKG-2cfe443d5dea292260baf17d116c2a1451ee7032",
+      "archive_digest": "sha256:405c5ed2838fb3167147d27d54807be7b004262f58cb41fbb99d9eacb279bf55",
+      "archive_size_bytes": 594440352,
+      "expires_at": "2026-12-10T08:46:21Z",
+      "passed_job_id": 139784415905,
+      "cloud_status": "MACOS_HOSTED_NATIVE_INSTALL_SMOKE_PASS",
+      "native_targets": [
+        "macos-apple-silicon"
+      ],
+      "native_release_acceptance": "NOT_COMPLETE",
+      "release_ready": false
+    }
+  ],
+  "remaining": [
+    "formal release matrix must include Windows ARM64 and validate its actual installer stub architecture plus native payload",
+    "native target OS installation and upgrade/rollback acceptance",
+    "platform-specific legacy PDF dependency security approval",
+    "formal signatures and macOS notarization",
+    "final human release approval"
+  ]
+}

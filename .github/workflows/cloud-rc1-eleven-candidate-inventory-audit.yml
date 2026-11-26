@@ -1,0 +1,94 @@
+name: RC1 eleven existing installer inventory audit (NO REBUILD)
+on:
+  pull_request:
+    types: [opened]
+    branches: [qa/rc1-windows-interactive-wizard-fix-20261126]
+    paths:
+      - '.github/workflows/cloud-rc1-eleven-candidate-inventory-audit.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  inventory:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Verify all eleven exact candidate artifact identities and passed jobs
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p evidence
+          python - <<'PY'
+          import json, os, subprocess
+          from pathlib import Path
+          inventory=json.loads(Path('docs/1.4.6-rc1/CANDIDATE_INVENTORY_20261126.json').read_text())
+          repo=os.environ['GITHUB_REPOSITORY']
+          def api(path):
+              return json.loads(subprocess.check_output(['gh','api',f'repos/{repo}/{path}']))
+          source=inventory['business_source_commit']
+          rows=inventory['targets']
+          assert len(rows)==11==len({r['target'] for r in rows})==len({r['artifact_id'] for r in rows})==len({r['archive_digest'] for r in rows})
+          assert sum(len(r['native_targets']) for r in rows)==14
+          checked=[]
+          for r in rows:
+              a=api(f"actions/artifacts/{r['artifact_id']}")
+              job=api(f"actions/jobs/{r['passed_job_id']}")
+              assert not a['expired'] and a['name']==r['artifact_name'] and a['name'].endswith(source)
+              assert a['digest']==r['archive_digest'] and a['size_in_bytes']==r['archive_size_bytes']
+              assert a['workflow_run']['id']==r['run_id'] and job['run_id']==r['run_id'] and job['conclusion']=='success'
+              assert r['release_ready'] is False and r['native_release_acceptance']=='NOT_COMPLETE'
+              checked.append({'target':r['target'],'artifact_id':a['id'],'digest':a['digest'],'job_id':job['id'],'status':'PASS'})
+          x=inventory['windows_x64_wizard_retest']
+          a=api(f"actions/artifacts/{x['artifact_id']}")
+          job=api(f"actions/jobs/{x['job_id']}")
+          assert not a['expired'] and a['workflow_run']['id']==x['run_id'] and job['run_id']==x['run_id'] and job['conclusion']=='success'
+          Path('evidence/inventory-audit.json').write_text(json.dumps({'source_commit':source,'candidate_count':len(checked),'native_scenario_count':14,'targets':checked,'wizard_retest_verified':True,'release_ready':False},indent=2))
+          PY
+      - name: Inspect actual ARM64 installer stub and native hosted receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/15101167928/zip" > "$RUNNER_TEMP/arm64.zip"
+          printf '%s  %s\n' 3554f63f5aad6c9ad83f5c9a19a837064a6ec1fda7e3da0b1632914c963f44da "$RUNNER_TEMP/arm64.zip" | sha256sum -c -
+          python - "$RUNNER_TEMP/arm64.zip" <<'PY'
+          import hashlib,json,struct,sys,zipfile
+          from pathlib import Path
+          with zipfile.ZipFile(sys.argv[1]) as z:
+              names=z.namelist()
+              exes=[n for n in names if Path(n).name=='PartyOps_1.4.6-rc.1_windows11_arm64_BUILD_ONLY_UNVERIFIED.exe']
+              assert len(exes)==1,exes
+              exe=exes[0]
+              with z.open(exe) as f:
+                  header=f.read(4096)
+              assert header[:2]==b'MZ'
+              offset=struct.unpack_from('<I',header,60)[0]
+              assert 64<=offset<=len(header)-6 and header[offset:offset+4]==b'PE\x00\x00'
+              machine=struct.unpack_from('<H',header,offset+4)[0]
+              receipts=[n for n in names if Path(n).name==Path(exe).name+'.candidate.json']
+              assert len(receipts)==1,receipts
+              receipt=json.loads(z.read(receipts[0]).decode('utf-8-sig'))
+              with z.open(exe) as f:
+                  sha=hashlib.file_digest(f,'sha256').hexdigest()
+              assert sha==receipt['sha256'] and receipt['source_commit']=='2cfe443d5dea292260baf17d116c2a1451ee7032' and receipt['architecture']=='arm64' and not receipt['release_ready']
+              native=[n for n in names if Path(n).name=='hosted-install-evidence.json']
+              assert len(native)==1,native
+              report=json.loads(z.read(native[0]).decode('utf-8-sig'))
+              assert report['original_installer_sha256']==sha and report['expected_source_commit']=='2cfe443d5dea292260baf17d116c2a1451ee7032' and report['host_architecture']=='Arm64'
+              result={'installer_sha256':sha,'source_commit':'2cfe443d5dea292260baf17d116c2a1451ee7032','installer_stub_pe_machine':f'0x{machine:04x}','native_host_architecture':report['host_architecture'],'native_payload_test_job':139793223758,'release_ready':False}
+              Path('evidence/arm64-stub-audit.json').write_text(json.dumps(result,indent=2))
+              print(json.dumps(result))
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: RC1-eleven-candidate-inventory-audit-2cfe443d5dea292260baf17d116c2a1451ee7032
+          path: evidence
+          if-no-files-found: error
+          retention-days: 14
