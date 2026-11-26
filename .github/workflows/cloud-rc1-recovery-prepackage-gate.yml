@@ -8,6 +8,7 @@ on:
       - 'backend/tests/**'
       - 'packaging/windows/**'
       - '.github/workflows/cloud-rc1-recovery-prepackage-gate.yml'
+      - '.github/workflows/cloud-rc1-windows-interactive-wizard-fix.yml'
   workflow_dispatch:
 permissions:
   contents: read
@@ -86,6 +87,12 @@ jobs:
           if ($evidence.release_ready -or $evidence.production_upgrade_approved -or -not $evidence.production_files_unchanged) {
             throw '[WINDOWS_SECURE_PDF_21_UNAUTHORIZED_PRODUCTION_CHANGE]'
           }
+          foreach ($name in @('junit.xml', 'coverage.json', 'pytest.log', 'provenance.json')) {
+            $file = Join-Path 'artifacts/windows-pdf-full-regression-evidence' $name
+            if (-not (Test-Path -LiteralPath $file -PathType Leaf) -or (Get-Item -LiteralPath $file).Length -eq 0) {
+              throw "[RC1_PREPACKAGE_REQUIRED_EVIDENCE_MISSING] $name"
+            }
+          }
           'PartyOps Windows x64 full backend under isolated CVE-remediated PyMuPDF 2.1: test-only, source unchanged.' |
             Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
 
@@ -100,5 +107,5 @@ jobs:
             artifacts/windows-pdf-full-regression/pyproject.toml
             artifacts/windows-pdf-full-regression-delta.json
             artifacts/windows-pdf-full-regression-wheel-matrix.json
-          if-no-files-found: warn
+          if-no-files-found: error
           retention-days: 14
