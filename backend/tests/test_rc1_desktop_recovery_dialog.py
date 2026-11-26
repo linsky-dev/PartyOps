@@ -120,6 +120,8 @@ def gui(monkeypatch, tmp_path):
     monkeypatch.setattr(desktop_recovery, "trusted_data_directory", lambda p: p)
     monkeypatch.setattr(desktop_recovery, "personal_owner_scope", lambda p: state.owner)
     monkeypatch.setattr(desktop_recovery, "is_os_administrator", lambda: state.admin)
+    monkeypatch.setattr(desktop_recovery, "windows_host_recovery_available", lambda: False)
+    monkeypatch.setattr(desktop_recovery, "windows_host_recovery_config", lambda: (root / "partyops.env", data))
     monkeypatch.setattr(setup_wizard, "_executable", lambda name: tmp_path / "PartyOps.exe")
     monkeypatch.setattr(setup_wizard, "_discover_running_windows_personal", lambda *a: state.discovered)
     monkeypatch.setattr(setup_wizard, "_write_personal_process_marker", lambda *a: events.append(("marker", *a)))
@@ -245,3 +247,32 @@ def test_legacy_personal_dialog_repairs_only_after_confirmation(gui, monkeypatch
     assert ("submit" in kinds) == (consent and repair_ok)
     if consent and repair_ok:
         assert kinds.index("ask") < kinds.index("repair") < kinds.index("stop") < kinds.index("submit")
+
+@pytest.mark.parametrize("profile,admin", [("missing",False),("corrupt",False),("client",False),("missing",True)])
+def test_team_recovery_discovery_uses_machine_not_windows_profile(gui, monkeypatch, profile, admin):
+    state, events = gui
+    state.mode = "host"
+    state.admin = admin
+    state.set_mode("client")
+    mode = state.root / "mode.json"
+    if profile == "missing":
+        mode.unlink()
+    elif profile == "corrupt":
+        mode.write_text("invalid json", encoding="utf-8")
+    monkeypatch.setattr(desktop_recovery, "os", SimpleNamespace(name="nt", environ={}))
+    monkeypatch.setattr(desktop_recovery.subprocess, "CREATE_NO_WINDOW", 0x08000000, raising=False)
+    monkeypatch.setattr(desktop_recovery, "windows_host_recovery_available", lambda: True)
+    assert desktop_recovery.run_desktop_recovery() == 0
+    kinds = [event[0] for event in events]
+    assert ("submit" in kinds) == admin
+    assert ("elevate" in kinds) == (not admin)
+
+
+def test_team_recovery_uac_cancel_is_not_an_error(gui, monkeypatch):
+    state, events = gui
+    state.set_mode("host")
+    state.mode = "host"
+    state.code = 1223
+    monkeypatch.setattr(desktop_recovery, "os", SimpleNamespace(name="nt", environ={}))
+    assert desktop_recovery.run_desktop_recovery() == 0
+    assert not any(e[0] in {"submit","stop","error"} for e in events)

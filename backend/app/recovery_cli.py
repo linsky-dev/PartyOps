@@ -304,6 +304,53 @@ def personal_owner_scope(path: Path) -> bool:
         return False
 
 
+def windows_host_recovery_config() -> tuple[Path, Path]:
+    """Discover the saved machine-level host independently of user profile."""
+    if os.name != "nt":
+        raise RecoveryCLIError("请在保存团队业务数据的 Windows 主机上操作。")
+    import shlex
+    root = Path(os.getenv("PROGRAMDATA", "C:/ProgramData")) / "PartyOps"
+    config, mode = root / "partyops.env", root / "mode.json"
+    try:
+        for entry in (config, root, *root.parents):
+            info = entry.lstat()
+            if stat.S_ISLNK(info.st_mode) or getattr(info, "st_file_attributes", 0) & 0x400:
+                raise ValueError("link")
+        if not config.is_file() or config.stat().st_size > 65536:
+            raise ValueError("config")
+        if mode.exists() or mode.is_symlink():
+            info = mode.lstat()
+            if not stat.S_ISREG(info.st_mode) or getattr(info, "st_file_attributes", 0) & 0x400 or info.st_size > 8192:
+                raise ValueError("mode")
+            state = json.loads(mode.read_text(encoding="utf-8-sig"))
+            if not isinstance(state, dict) or state.get("mode") != "host":
+                raise ValueError("not-host")
+            if state.get("config_path") and Path(state["config_path"]).resolve() != config.resolve():
+                raise ValueError("mode-binding")
+        values = {}
+        for line in config.read_text(encoding="utf-8-sig").splitlines():
+            key, sep, raw = line.partition("=")
+            if sep and key in {"PARTYOPS_MODE", "PARTYOPS_DATA_DIR"}:
+                parts = shlex.split(raw)
+                if len(parts) != 1 or key in values:
+                    raise ValueError("duplicate")
+                values[key] = parts[0]
+        declared = Path(values.get("PARTYOPS_DATA_DIR", ""))
+        if values.get("PARTYOPS_MODE") != "host" or not declared.is_absolute():
+            raise ValueError("not-configured")
+        return config, declared
+    except (OSError, ValueError, TypeError, KeyError):
+        raise RecoveryCLIError("未找到已配置的团队主机。请在保存团队数据库的主机电脑上打开账号恢复。") from None
+
+
+def windows_host_recovery_available() -> bool:
+    try:
+        windows_host_recovery_config()
+        return True
+    except RecoveryCLIError:
+        return False
+
+
 def authorize_local_maintenance(db: Session, username: str, password: str) -> str:
     """在仍能验证现有管理员密码时，登记独立的本机维护授权。"""
     from sqlalchemy import select
@@ -500,21 +547,8 @@ def main(argv: list[str] | None = None) -> int:
             if not personal:
                 if not is_os_administrator() or os.name != "nt":
                     raise RecoveryCLIError("仅原个人系统账号或受支持的本机主机管理员可以恢复。")
-                import shlex
-
-                config = Path(os.getenv("PROGRAMDATA", "C:/ProgramData")) / "PartyOps" / "partyops.env"
-                if config.is_symlink() or not config.is_file() or config.stat().st_size > 65536:
-                    raise RecoveryCLIError("主机配置不可验证。")
-                values = {}
-                for line in config.read_text(encoding="utf-8").splitlines():
-                    key, sep, raw = line.partition("=")
-                    if sep and key in {"PARTYOPS_MODE", "PARTYOPS_DATA_DIR"}:
-                        parts = shlex.split(raw)
-                        if len(parts) != 1 or key in values:
-                            raise RecoveryCLIError("主机配置不可验证。")
-                        values[key] = parts[0]
-                declared = Path(values.get("PARTYOPS_DATA_DIR", ""))
-                if values.get("PARTYOPS_MODE") != "host" or not declared.is_absolute() or declared.resolve(strict=True) != path.resolve(strict=True):
+                _config, declared = windows_host_recovery_config()
+                if declared.resolve(strict=True) != path.resolve(strict=True):
                     raise RecoveryCLIError("恢复目录不是当前已配置的主机业务目录。")
             payload = json.loads(sys.stdin.read(8193))
             if (not isinstance(payload, dict) or set(payload) != {"password", "confirmation"}

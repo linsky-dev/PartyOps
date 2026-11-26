@@ -225,3 +225,21 @@ def test_personal_scope_binds_config_and_private_owner_on_each_os(monkeypatch, t
     monkeypatch.setattr(Path, "lstat", synthetic_lstat)
     monkeypatch.setattr(recovery_cli, "windows_personal_owner_scope", lambda p: p == data)
     assert recovery_cli.personal_owner_scope(data) is expected
+
+@pytest.mark.parametrize("mode_text,expected", [
+    (None,True), ('{"mode":"host"}',True), ('{"mode":"personal"}',False),
+    ('{"mode":"client"}',False), ('[]',False), ('bad json',False),
+])
+def test_machine_host_config_legacy_and_inactive_mode(monkeypatch, tmp_path, mode_text, expected):
+    from pathlib import Path
+    root = tmp_path / "PartyOps"
+    root.mkdir()
+    data = tmp_path / "业务 数据"
+    data.mkdir()
+    (root / "partyops.env").write_text("PARTYOPS_MODE=host\nPARTYOPS_DATA_DIR=" + shlex.quote(str(data)) + "\n", encoding="utf-8")
+    if mode_text is not None:
+        (root / "mode.json").write_text(mode_text, encoding="utf-8")
+    monkeypatch.setattr(recovery_cli, "os", SimpleNamespace(name="nt", getenv=lambda *args: str(tmp_path)))
+    assert recovery_cli.windows_host_recovery_available() is expected
+    if expected:
+        assert recovery_cli.windows_host_recovery_config() == (root / "partyops.env", data)
