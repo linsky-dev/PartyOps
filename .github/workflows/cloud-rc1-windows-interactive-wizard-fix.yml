@@ -1,10 +1,14 @@
-name: RC1 Windows x64 interactive wizard fix and targeted installation QA
+name: RC1 Windows x64 wizard and personal recovery combined fix
 on:
   pull_request:
     branches: [qa/rc1-cross-platform-source-convergence-20261125]
     paths:
       - 'packaging/windows/PartyOps.iss'
       - 'backend/tests/test_rc1_windows_install_path.py'
+      - 'backend/app/recovery_cli.py'
+      - 'backend/app/desktop_recovery.py'
+      - 'backend/tests/test_rc1_recovery_cli.py'
+      - 'backend/tests/test_rc1_desktop_recovery_dialog.py'
       - '.github/workflows/cloud-rc1-windows-interactive-wizard-fix.yml'
       - 'scripts/rc1_windows_interactive_wizard_qa.py'
 permissions:
@@ -70,6 +74,14 @@ jobs:
           python scripts/verify_windows_secure_pdf_package.py --root artifacts/windows-build-only-pdf
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python scripts/rc1_windows_pdf_lock_review.py finalize --root . --candidate $project --evidence artifacts/windows-build-only-pdf/provenance.json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Run real native Windows account recovery regression before packaging
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $python = (Resolve-Path 'artifacts/windows-build-only-pdf/backend/.venv/Scripts/python.exe').Path
+          $env:PYTHONPATH = (Resolve-Path backend).Path
+          & $python -m pytest -q backend/tests/test_rc1_recovery_cli.py backend/tests/test_rc1_desktop_recovery.py backend/tests/test_rc1_desktop_recovery_dialog.py backend/tests/test_rc1_account_recovery.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Download byte-verified official runtime inputs and RC6 archive
         shell: pwsh

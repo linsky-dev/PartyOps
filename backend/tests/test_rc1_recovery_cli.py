@@ -760,6 +760,17 @@ def test_native_windows_personal_recovery_with_real_sid_and_dacl(
     finally:
         protect(data_dir / "partyops.db")
     assert recovery_cli.windows_personal_owner_scope(data_dir)
+    # Reproduce a current-user personal database on a shared-permission
+    # data disk, then actually repair and read back the Windows DACL.
+    marker = data_dir / ".partyops-data-root.json"
+    marker.write_text(json.dumps({"format_version":2, "product":"PartyOps",
+        "app_id":"1C8EFC63-CAFC-46EF-A5E3-D3D119B5BB3A", "scopes":["personal"]}),
+        encoding="utf-8")
+    protect(marker)
+    protect(data_dir / "partyops.db", broad_writer=True)
+    assert recovery_cli.windows_personal_recovery_status(data_dir) == "repairable"
+    assert recovery_cli.repair_windows_personal_recovery_acl(data_dir)
+    assert recovery_cli.windows_personal_owner_scope(data_dir)
     _console(monkeypatch, elevated=False)
     monkeypatch.setattr(
         setup_wizard, "assert_windows_service_data_path_security",

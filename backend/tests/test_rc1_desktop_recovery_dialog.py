@@ -227,3 +227,21 @@ def test_team_dialog_os_authorization(gui, monkeypatch, scenario, expected):
     else:
         assert "submit" not in kinds
         assert ("elevate" in kinds) == (scenario in {"elevate", "failed-elevation"})
+
+@pytest.mark.parametrize("consent,repair_ok,expected", [(True,True,0),(False,True,0),(True,False,2)])
+def test_legacy_personal_dialog_repairs_only_after_confirmation(gui, monkeypatch, consent, repair_ok, expected):
+    state, events = gui
+    state.owner = False
+    state.consent = consent
+    monkeypatch.setattr(desktop_recovery, "os", SimpleNamespace(name="nt", environ={}))
+    monkeypatch.setattr(desktop_recovery.subprocess, "CREATE_NO_WINDOW", 0x08000000, raising=False)
+    monkeypatch.setattr(desktop_recovery, "windows_personal_recovery_status", lambda p: "repairable")
+    monkeypatch.setattr(desktop_recovery, "repair_windows_personal_recovery_acl",
+        lambda p: events.append(("repair", p)) or repair_ok)
+    assert desktop_recovery.run_desktop_recovery() == expected
+    kinds = [event[0] for event in events]
+    assert "ask" in kinds
+    assert ("repair" in kinds) == consent
+    assert ("submit" in kinds) == (consent and repair_ok)
+    if consent and repair_ok:
+        assert kinds.index("ask") < kinds.index("repair") < kinds.index("stop") < kinds.index("submit")
