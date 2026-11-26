@@ -1,13 +1,12 @@
 name: RC1 macOS native same-source freeze and unsigned PKG candidate
 on:
   pull_request:
-    branches: [main, feature/1.4.6-rc1-cloud-rebuild, qa/rc1-flexible-personal-startup-20261124]
+    types: [opened]
+    branches: [qa/rc1-windows-interactive-wizard-fix-20261126]
     paths:
-      - 'packaging/macos/**'
       - '.github/workflows/cloud-macos-rc1-application-freeze.yml'
-      - 'backend/**'
-      - 'frontend/**'
   workflow_dispatch:
+
 permissions:
   contents: read
   actions: read
@@ -15,7 +14,23 @@ concurrency:
   group: rc1-macos-app-only-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 jobs:
+  validated-source:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SOURCE: 2cfe443d5dea292260baf17d116c2a1451ee7032
+    steps:
+      - name: Validate immutable source and regression evidence before any package work
+        shell: bash
+        run: |
+          set -euo pipefail
+          r="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/45764904788")"
+          jq -e --arg sha "$SOURCE" '.head_sha == $sha and .status == "completed" and .conclusion == "success" and .path == ".github/workflows/cloud-rc1-recovery-prepackage-gate.yml"' <<< "$r" >/dev/null
+          a="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/45764904788/artifacts")"
+          jq -e --arg name "partyops-rc1-win-x64-secure-pdf21-full-backend-$SOURCE" '[.artifacts[] | select(.name == $name and .expired == false and .size_in_bytes > 0)] | length == 1' <<< "$a" >/dev/null
   freeze:
+    needs: validated-source
     name: Native Mac ${{ matrix.arch }} application only
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 120
@@ -30,7 +45,7 @@ jobs:
             runner: macos-15-intel
             python: x64
     env:
-      PARTYOPS_APP_ONLY_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      PARTYOPS_APP_ONLY_SOURCE_SHA: 2cfe443d5dea292260baf17d116c2a1451ee7032
       PARTYOPS_BUILD_JOBS: '3'
       PYTHONUTF8: '1'
     steps:
@@ -91,13 +106,13 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       TARGET_ARCH: ${{ matrix.arch }}
       DONOR_SHA: ${{ matrix.donor_sha }}
-      PKG_SOURCE: ${{ github.event.pull_request.head.sha || github.sha }}
+      PKG_SOURCE: 2cfe443d5dea292260baf17d116c2a1451ee7032
       CANDIDATE_RUN: ${{ github.run_id }}
-      CANDIDATE_SOURCE: ${{ github.event.pull_request.head.sha || github.sha }}
+      CANDIDATE_SOURCE: 2cfe443d5dea292260baf17d116c2a1451ee7032
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          ref: 2cfe443d5dea292260baf17d116c2a1451ee7032
           persist-credentials: false
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         with:
@@ -132,7 +147,7 @@ jobs:
           set -euo pipefail
           root="$RUNNER_TEMP/rc1-mac-audit"
           run_info="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$CANDIDATE_RUN")"
-          test "$(jq -r '.head_sha' <<< "$run_info")" = "$CANDIDATE_SOURCE"
+          test "$(jq -r '.head_sha' <<< "$run_info")" = '${{ github.event.pull_request.head.sha || github.sha }}'
           test "$(jq -r '.head_repository.full_name' <<< "$run_info")" = "$GITHUB_REPOSITORY"
           test "$(jq -r '.path | split("@")[0]' <<< "$run_info")" = '.github/workflows/cloud-macos-rc1-application-freeze.yml'
           # Both native freeze jobs must succeed (needs: freeze); this run is still active.
@@ -211,7 +226,7 @@ jobs:
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
-          name: partyops-rc1-macos-${{ matrix.arch }}-NATIVE-INPUT-AUDIT-${{ github.event.pull_request.head.sha || github.sha }}
+          name: partyops-rc1-macos-${{ matrix.arch }}-NATIVE-INPUT-AUDIT-2cfe443d5dea292260baf17d116c2a1451ee7032
           path: artifacts/macos-input-audit
           retention-days: 14
           if-no-files-found: warn

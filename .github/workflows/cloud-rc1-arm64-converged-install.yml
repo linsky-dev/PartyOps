@@ -1,6 +1,12 @@
 name: RC1 converged source ARM64 full freeze, installer and actual hosted install
 on:
+  pull_request:
+    types: [opened]
+    branches: [qa/rc1-windows-interactive-wizard-fix-20261126]
+    paths:
+      - '.github/workflows/cloud-rc1-arm64-converged-install.yml'
   workflow_dispatch:
+
 permissions:
   contents: read
   actions: read
@@ -10,7 +16,7 @@ jobs:
     runs-on: windows-11-arm
     timeout-minutes: 180
     env:
-      SOURCE_SHA: ${{ github.sha }}
+      SOURCE_SHA: 2cfe443d5dea292260baf17d116c2a1451ee7032
       GH_TOKEN: ${{ github.token }}
       PYTHONUTF8: '1'
       FULL_RUN: '45352811769'
@@ -260,7 +266,7 @@ jobs:
     timeout-minutes: 105
     env:
       GH_TOKEN: ${{ github.token }}
-      SOURCE_SHA: ${{ github.sha }}
+      SOURCE_SHA: 2cfe443d5dea292260baf17d116c2a1451ee7032
       PYTHONUTF8: '1'
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
