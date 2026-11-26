@@ -119,8 +119,8 @@ class BootstrapHostRequest(BaseModel):
 
 
 class LoginRequest(BaseModel):
-    username: str
-    password: str
+    username: str = Field(max_length=64)
+    password: str = Field(max_length=128)
 
 
 class UserCreate(BaseModel):

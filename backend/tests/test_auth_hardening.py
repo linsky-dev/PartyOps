@@ -228,3 +228,27 @@ def test_referer_checks_origin_not_page_parameters(monkeypatch, header, value, a
     from app import main
     monkeypatch.setattr(main.settings, "environment", "production")
     assert main._origin_allowed(_request_from("127.0.0.1", [(header, value)])) is allowed
+
+
+
+def test_missing_account_performs_password_verification_but_never_authenticates(client, admin, monkeypatch):
+    calls = []
+    def verify(password, encoded):
+        calls.append(encoded)
+        return True
+    monkeypatch.setattr(auth, "verify_password", verify)
+    login_throttle.reset()
+    try:
+        result = client.post("/api/v1/auth/login", json={
+            "username": "nonexistent-regression-account", "password": "not-a-password"})
+        assert result.status_code == 401
+        assert result.json()["code"] == "LOGIN_FAILED"
+        assert calls == [auth._DUMMY_PASSWORD_HASH]
+    finally:
+        login_throttle.reset()
+
+
+@pytest.mark.parametrize("username,password", [("x" * 65, "password"), ("admin", "x" * 129)])
+def test_login_input_bounds(client, username, password):
+    response = client.post("/api/v1/auth/login", json={"username": username, "password": password})
+    assert response.status_code == 422
