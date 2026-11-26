@@ -153,7 +153,7 @@ def gui(monkeypatch, tmp_path):
         assert kwargs["capture_output"] and kwargs["timeout"] == 120
         if state.submit_failure:
             raise OSError("private failure")
-        return SimpleNamespace(returncode=state.code, stdout='{"username":"admin"}')
+        return SimpleNamespace(returncode=state.code, stdout='{"username":"admin"}', stderr=getattr(state, "stderr", ""))
 
     monkeypatch.setattr(desktop_recovery.subprocess, "run", submit)
 
@@ -276,3 +276,49 @@ def test_team_recovery_uac_cancel_is_not_an_error(gui, monkeypatch):
     monkeypatch.setattr(desktop_recovery, "os", SimpleNamespace(name="nt", environ={}))
     assert desktop_recovery.run_desktop_recovery() == 0
     assert not any(e[0] in {"submit","stop","error"} for e in events)
+
+
+@pytest.mark.parametrize("case,expected,message", [
+    ("uac-exception", 2, "授权未完成"),
+    ("uac-timeout", 2, "授权未完成"),
+    ("uac-other-exit", 1, "授权未完成"),
+    ("host-path-mismatch", 2, "数据目录配置发生变化"),
+    ("host-acl-error", 2, "数据目录权限异常"),
+    ("multiple-admins", 2, "多位管理员"),
+    ("migration-required", 2, "数据库升级"),
+])
+def test_team_recovery_errors_are_actionable_without_leaking_child_details(gui, monkeypatch, case, expected, message):
+    state, events = gui
+    state.mode = "host"
+    state.set_mode("host")
+    state.admin = not case.startswith("uac-")
+    monkeypatch.setattr(desktop_recovery, "os", SimpleNamespace(name="nt", environ={}))
+    monkeypatch.setattr(desktop_recovery.subprocess, "CREATE_NO_WINDOW", 0x08000000, raising=False)
+
+    def fail(*args, **kwargs):
+        if case == "uac-timeout":
+            raise desktop_recovery.subprocess.TimeoutExpired("helper", 120)
+        if case == "host-acl-error":
+            raise PermissionError("private technical detail")
+        raise OSError("private technical detail")
+
+    if case in {"uac-exception", "uac-timeout"}:
+        monkeypatch.setattr(setup_wizard, "run_elevated", fail)
+    elif case == "uac-other-exit":
+        state.code = 5
+    elif case == "host-path-mismatch":
+        monkeypatch.setattr(desktop_recovery, "windows_host_recovery_config", lambda: (state.root / "partyops.env", state.root))
+    elif case == "host-acl-error":
+        monkeypatch.setattr(setup_wizard, "assert_windows_service_data_path_security", fail)
+    elif case in {"multiple-admins", "migration-required"}:
+        state.code = 2
+        state.stderr = ("仅当主机恰有一名有效管理员" if case == "multiple-admins" else "尚未完成 1.4.6 账号恢复迁移") + " private technical detail"
+
+    assert desktop_recovery.run_desktop_recovery() == expected
+    messages = [e[1] + e[2] for e in events if e[0] in {"warning", "error", "info"}]
+    assert any(message in value for value in messages)
+    assert all("private technical detail" not in value for value in messages)
+    kinds = [e[0] for e in events]
+    assert ("submit" in kinds) == (case in {"multiple-admins", "migration-required"})
+    if "submit" in kinds:
+        assert "restore" in kinds

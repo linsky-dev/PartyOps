@@ -460,7 +460,8 @@ def _synthetic_windows_personal_owner_scope(tmp_path, monkeypatch):
         SimpleNamespace(
             name="nt",
             getenv=lambda name, default=None: str(tmp_path)
-            if name == "LOCALAPPDATA" else default,
+            if name == "LOCALAPPDATA" else str(tmp_path / "machine")
+            if name == "PROGRAMDATA" else default,
         ),
     )
     state = {
@@ -479,7 +480,7 @@ def _synthetic_windows_personal_owner_scope(tmp_path, monkeypatch):
         def GetAce(self, _index):
             return (
                 (self.current["ace_type"], 0x08 if self.current["inherit_only"] else 0),
-                0x40000000,
+                self.current.get("mask", 0x40000000),
                 self.current["writer"],
             )
     class Descriptor:
@@ -920,3 +921,67 @@ def test_windows_personal_recovery_accepts_utf8_bom_config(tmp_path, monkeypatch
     for file in (files.env, files.mode):
         file.write_text(file.read_text(encoding="utf-8"), encoding="utf-8-sig")
     assert recovery_cli.windows_personal_owner_scope(files.path)
+
+
+@pytest.mark.parametrize("kind,expected", [
+    ("directory-sidecar", "denied"),
+    ("unknown-ace", "denied"),
+    ("read-only-foreign-ace", "verified"),
+    ("directory-marker", "denied"),
+    ("oversized-marker", "denied"),
+    ("invalid-product-marker", "denied"),
+    ("foreign-marker-owner", "denied"),
+    ("legacy-marker", "verified"),
+    ("same-host-path", "denied"),
+    ("malformed-host-path", "denied"),
+    ("different-host-path", "verified"),
+    ("os-owned-db-with-shared-sidecar", "denied"),
+])
+def test_windows_personal_recovery_rejects_unsafe_auxiliary_files_and_host_binding(
+    tmp_path, monkeypatch, kind, expected,
+):
+    import json
+    import shlex
+
+    files = _synthetic_windows_personal_owner_scope(tmp_path, monkeypatch)
+    marker = files.path / ".partyops-data-root.json"
+    data = {"format_version": 2, "product": "PartyOps",
+            "app_id": "1C8EFC63-CAFC-46EF-A5E3-D3D119B5BB3A", "scopes": ["personal"]}
+    db = files.path / "partyops.db"
+    if kind == "directory-sidecar":
+        (files.path / "partyops.db-wal").mkdir()
+    elif kind == "unknown-ace":
+        files.by_path[db] = {**files.state, "ace_type": 9}
+    elif kind == "read-only-foreign-ace":
+        files.by_path[db] = {**files.state, "writer": "S-1-5-21-foreign-user", "mask": 0x80000000}
+    elif kind == "directory-marker":
+        marker.mkdir()
+    elif kind == "oversized-marker":
+        marker.write_text(" " * 8193, encoding="utf-8")
+    else:
+        if kind == "invalid-product-marker":
+            data["product"] = "Other"
+        elif kind == "legacy-marker":
+            data.pop("scopes")
+            data.update(format_version=1, scope="personal")
+        marker.write_text(json.dumps(data), encoding="utf-8")
+        if kind == "foreign-marker-owner":
+            files.by_path[marker] = {**files.state, "owner": "S-1-5-21-foreign-user"}
+        elif kind in {"same-host-path", "malformed-host-path", "different-host-path"}:
+            config = tmp_path / "machine" / "PartyOps" / "partyops.env"
+            config.parent.mkdir(parents=True)
+            declared = files.path if kind == "same-host-path" else tmp_path / "other"
+            value = "" if kind == "malformed-host-path" else shlex.quote(str(declared))
+            config.write_text("# unrelated\nPARTYOPS_MODE=host\nPARTYOPS_DATA_DIR=" + value + "\n", encoding="utf-8-sig")
+        elif kind == "os-owned-db-with-shared-sidecar":
+            files.by_path[db] = {**files.state, "owner": "S-1-5-32-544"}
+            wal = files.path / "partyops.db-wal"
+            wal.touch()
+            files.by_path[wal] = {**files.state, "writer": "S-1-5-11"}
+    assert recovery_cli.windows_personal_recovery_status(files.path) == expected
+
+
+def test_windows_personal_scope_is_not_a_posix_authorization(tmp_path, monkeypatch):
+    monkeypatch.setattr(recovery_cli, "os", SimpleNamespace(name="posix"))
+    assert recovery_cli.windows_personal_recovery_status(tmp_path) == "denied"
+    assert not recovery_cli.repair_windows_personal_recovery_acl(tmp_path)

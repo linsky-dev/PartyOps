@@ -243,3 +243,28 @@ def test_machine_host_config_legacy_and_inactive_mode(monkeypatch, tmp_path, mod
     assert recovery_cli.windows_host_recovery_available() is expected
     if expected:
         assert recovery_cli.windows_host_recovery_config() == (root / "partyops.env", data)
+
+
+@pytest.mark.parametrize("case", ["posix", "bad-mode-binding", "mode-directory", "oversize-mode", "unrelated-config-line"])
+def test_machine_host_config_rejects_unsafe_saved_mode(monkeypatch, tmp_path, case):
+    root = tmp_path / "PartyOps"
+    root.mkdir()
+    data = tmp_path / "data"
+    data.mkdir()
+    config = root / "partyops.env"
+    config.write_text("# comment\nIGNORED=x\nPARTYOPS_MODE=host\nPARTYOPS_DATA_DIR=" + shlex.quote(str(data)) + "\n", encoding="utf-8-sig")
+    mode = root / "mode.json"
+    if case == "bad-mode-binding":
+        mode.write_text(json.dumps({"mode": "host", "config_path": str(root / "other.env")}), encoding="utf-8")
+    elif case == "mode-directory":
+        mode.mkdir()
+    elif case == "oversize-mode":
+        mode.write_text(" " * 8193, encoding="utf-8")
+    elif case == "unrelated-config-line":
+        mode.write_text(json.dumps({"mode": "host", "config_path": str(config)}), encoding="utf-8")
+    monkeypatch.setattr(recovery_cli, "os", SimpleNamespace(name="posix" if case == "posix" else "nt", getenv=lambda *args: str(tmp_path)))
+    if case == "unrelated-config-line":
+        assert recovery_cli.windows_host_recovery_config() == (config, data)
+    else:
+        with pytest.raises(recovery_cli.RecoveryCLIError):
+            recovery_cli.windows_host_recovery_config()
