@@ -12,6 +12,8 @@ from .recovery_cli import (
     is_os_administrator,
     personal_owner_scope,
     trusted_data_directory,
+    windows_personal_recovery_status,
+    repair_windows_personal_recovery_acl,
 )
 
 
@@ -103,11 +105,20 @@ def run_desktop_recovery(*, host: bool = False) -> int:
         data = trusted_data_directory(Path(saved["PARTYOPS_DATA_DIR"]))
         if host:
             wizard.assert_windows_service_data_path_security(data, verify_target=True)
-        elif not personal_owner_scope(data):
-            raise ValueError("当前操作系统账号不是已配置个人数据的安全所有者，恢复已停止。")
+        repair_permissions = False
+        if not host and not personal_owner_scope(data):
+            if os.name == "nt" and windows_personal_recovery_status(data) == "repairable":
+                repair_permissions = True
+            else:
+                raise ValueError("未能确认这是当前 Windows 账号的个人数据。请使用平时登录软件的 Windows 账号打开恢复助手；若数据在其他磁盘，请先确认原磁盘已连接。原账号和资料未修改。")
         password = ResetDialog(root).result
         if password is None:
             return 0
+        if repair_permissions:
+            if not messagebox.askyesno("确认本机恢复", "检测到旧版个人数据继承了共享磁盘权限。是否自动收紧本机数据库权限并继续找回账号？原业务资料不会被删除或迁移。", parent=root):
+                return 0
+            if not repair_windows_personal_recovery_acl(data):
+                raise ValueError("本机数据权限未能自动修复，原账号和资料未修改。请使用原 Windows 账号重试。")
         executable = wizard._executable("partyops")
         if host:
             lock_path = wizard._acquire_windows_data_migration_lock()
@@ -134,7 +145,7 @@ def run_desktop_recovery(*, host: bool = False) -> int:
             creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
         )
         if result.returncode != 0:
-            raise ValueError("恢复未完成。若有其他管理员，请联系其重置；否则请重新打开软件后重试。原账号和业务数据未被删除。")
+            raise ValueError("恢复未完成。请确认原业务数据可访问，并关闭其他正在使用党建智办的窗口后重试。原账号和业务数据未被删除。")
         username = json.loads(result.stdout)["username"]
         messagebox.showinfo("恢复成功", f"您的登录账号：{username}\n请使用刚设置的新密码登录。", parent=root)
         return 0

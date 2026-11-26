@@ -467,23 +467,28 @@ def _synthetic_windows_personal_owner_scope(tmp_path, monkeypatch):
         "owner": user_sid, "writer": user_sid, "inherit_only": False,
         "ace_type": 0, "null_dacl": False,
     }
+    by_path = {}
     class Handle:
         def Close(self):
             pass
     class DACL:
+        def __init__(self, current):
+            self.current = current
         def GetAceCount(self):
             return 1
         def GetAce(self, _index):
             return (
-                (state["ace_type"], 0x08 if state["inherit_only"] else 0),
+                (self.current["ace_type"], 0x08 if self.current["inherit_only"] else 0),
                 0x40000000,
-                state["writer"],
+                self.current["writer"],
             )
     class Descriptor:
+        def __init__(self, entry):
+            self.current = by_path.get(Path(entry), state)
         def GetSecurityDescriptorOwner(self):
-            return state["owner"]
+            return self.current["owner"]
         def GetSecurityDescriptorDacl(self):
-            return None if state["null_dacl"] else DACL()
+            return None if self.current["null_dacl"] else DACL(self.current)
     fake_security = SimpleNamespace(
         TOKEN_QUERY=8,
         TokenUser=1,
@@ -494,12 +499,12 @@ def _synthetic_windows_personal_owner_scope(tmp_path, monkeypatch):
         OpenProcessToken=lambda *_args: Handle(),
         GetTokenInformation=lambda *_args: (user_sid, 0),
         ConvertSidToStringSid=lambda sid: sid,
-        GetFileSecurity=lambda *_args: Descriptor(),
+        GetFileSecurity=lambda entry, *_args: Descriptor(entry),
     )
     monkeypatch.setitem(sys.modules, "win32api", SimpleNamespace(GetCurrentProcess=lambda: object()))
     monkeypatch.setitem(sys.modules, "win32security", fake_security)
     return SimpleNamespace(
-        root=root, path=data_dir, env=personal_env, mode=mode_file, state=state,
+        root=root, path=data_dir, env=personal_env, mode=mode_file, state=state, by_path=by_path,
     )
 
 
@@ -829,3 +834,28 @@ def test_desktop_reset_audit_failure_does_not_change_password(cli_store, monkeyp
     with cli_store.runtime.session_factory() as db:
         assert db.get(User, cli_store.admin_id).password_hash == cli_store.password_hash
         assert db.scalar(select(RecoveryCredential)) is None
+
+def test_windows_legacy_personal_data_permission_classification(tmp_path, monkeypatch):
+    import json
+    files = _synthetic_windows_personal_owner_scope(tmp_path, monkeypatch)
+    marker = files.path / ".partyops-data-root.json"
+    marker.write_text(json.dumps({"format_version":2, "product":"PartyOps",
+        "app_id":"1C8EFC63-CAFC-46EF-A5E3-D3D119B5BB3A", "scopes":["personal"]}))
+    original = files.state.copy()
+    files.by_path[files.path] = {**original, "writer":"S-1-5-11"}
+    assert recovery_cli.windows_personal_recovery_status(files.path) == "repairable"
+    assert not recovery_cli.windows_personal_owner_scope(files.path)
+    files.by_path[files.path] = {**original, "owner":"S-1-5-32-544"}
+    assert recovery_cli.windows_personal_owner_scope(files.path)
+    files.by_path[files.path]["writer"] = "S-1-5-11"
+    assert recovery_cli.windows_personal_recovery_status(files.path) == "denied"
+    files.by_path[files.path] = {**original, "owner":"S-1-5-21-foreign-user"}
+    assert recovery_cli.windows_personal_recovery_status(files.path) == "denied"
+    files.by_path[files.path] = {**original, "writer":"S-1-5-21-foreign-user"}
+    assert recovery_cli.windows_personal_recovery_status(files.path) == "denied"
+    files.by_path[files.path] = {**original, "writer":"S-1-5-11"}
+    marker.write_text(json.dumps({"format_version":2, "product":"PartyOps",
+        "app_id":"1C8EFC63-CAFC-46EF-A5E3-D3D119B5BB3A", "scopes":["host","personal"]}))
+    assert recovery_cli.windows_personal_recovery_status(files.path) == "denied"
+    marker.unlink()
+    assert recovery_cli.windows_personal_recovery_status(files.path) == "denied"
