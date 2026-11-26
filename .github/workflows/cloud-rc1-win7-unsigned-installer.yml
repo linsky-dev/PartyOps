@@ -126,6 +126,29 @@ jobs:
           python packaging-source/scripts/generate-release-manifest.py --root $bundle --output "$bundle/release-manifest.json" --version '1.4.6-rc.1' --tag 'v1.4.6-rc.1' --commit '5ea9c6a128f3d8aa71ff77e7e549f4fbd6115fdb' --platform windows7 --architecture $env:ARCH --runtime-profile $profile
           if ($LASTEXITCODE -ne 0 -or (Get-Item "$bundle/release-manifest.json").Length -gt 8MB) { throw 'RELEASE_MANIFEST_INVALID' }
           Move-Item -LiteralPath $prerequisites -Destination "$bundle/prerequisites"
+      - name: Prove the complete staged runtime starts from a Unicode path before Inno compilation
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $bundle=(Resolve-Path 'artifacts/win7-package-preflight/app-with-prerequisites').Path
+          $evidence=Join-Path $env:GITHUB_WORKSPACE 'artifacts/win7-precompile-runtime'
+          New-Item -ItemType Directory -Force $evidence | Out-Null
+          $probe=Join-Path $env:RUNNER_TEMP ("partyops-win7-precompile-" + [guid]::NewGuid().ToString('N') + ' 中文 空格')
+          try {
+            Copy-Item -LiteralPath $bundle -Destination $probe -Recurse
+            $exe=Join-Path $probe 'PartyOps.exe'
+            if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { throw 'WIN7_PRECOMPILE_RUNTIME_MISSING' }
+            $p=Start-Process -FilePath $exe -ArgumentList '--startup-self-test' -WorkingDirectory $probe -NoNewWindow -PassThru -RedirectStandardOutput "$evidence/stdout.log" -RedirectStandardError "$evidence/stderr.log"
+            if (-not $p.WaitForExit(180000)) {
+              Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+              throw 'WIN7_PRECOMPILE_RUNTIME_TIMEOUT'
+            }
+            $p.Refresh()
+            if ($p.ExitCode -ne 0) { throw "WIN7_PRECOMPILE_RUNTIME_FAILED: exit $($p.ExitCode)" }
+            @{status='HOSTED_STAGED_RUNTIME_STARTUP_PASS';architecture=$env:ARCH;source_commit=$env:PARTYOPS_QA_EXPECTED_SOURCE;native_win7_os_tested=$false;installer_created=$false;release_ready=$false} | ConvertTo-Json | Set-Content "$evidence/receipt.json"
+          } finally {
+            if (Test-Path -LiteralPath $probe) { Remove-Item -LiteralPath $probe -Recurse -Force }
+          }
       - name: Compile actual original Win7 Inno installer as an unsigned QA candidate
         shell: pwsh
         run: |
@@ -169,6 +192,7 @@ jobs:
           name: RC1-Win7-${{ matrix.arch }}-UNSIGNED-EXE-BUILD-ONLY-${{ github.event.pull_request.head.sha || github.sha }}
           path: |
             artifacts/win7-installer/*
+            artifacts/win7-precompile-runtime/*
             artifacts/win7-package-preflight/*json
             ${{ runner.temp }}/win7-hosted-evidence
           if-no-files-found: warn
