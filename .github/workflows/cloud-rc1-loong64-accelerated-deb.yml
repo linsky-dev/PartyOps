@@ -1,0 +1,413 @@
+name: RC1 Loong64 accelerated signed-toolchain freeze and same-run DEB candidate
+on:
+  pull_request:
+    types: [opened]
+    branches: [qa/rc1-windows-interactive-wizard-fix-20261126]
+    paths:
+      - '.github/workflows/cloud-rc1-loong64-accelerated-deb.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+jobs:
+  validated-source:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SOURCE: 2cfe443d5dea292260baf17d116c2a1451ee7032
+    steps:
+      - name: Validate immutable source and successful regression evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          r="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/45764904788")"
+          jq -e --arg sha "$SOURCE" '.head_sha == $sha and .status == "completed" and .conclusion == "success" and .path == ".github/workflows/cloud-rc1-recovery-prepackage-gate.yml"' <<< "$r" >/dev/null
+          a="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/45764904788/artifacts")"
+          jq -e --arg name "partyops-rc1-win-x64-secure-pdf21-full-backend-$SOURCE" '[.artifacts[] | select(.name == $name and .expired == false and .size_in_bytes > 0)] | length == 1' <<< "$a" >/dev/null
+  freeze:
+    needs: validated-source
+    runs-on: ubuntu-24.04
+    timeout-minutes: 350
+    env:
+      SOURCE_SHA: 2cfe443d5dea292260baf17d116c2a1451ee7032
+      GH_TOKEN: ${{ github.token }}
+      DEEPIN_REPO: https://community-packages.deepin.com/deepin/beige/
+      DEEPIN_KEY_COMMIT: b0946c78978ecc567118254fa0ff7806a6406f99
+      DEEPIN_KEY_BLOB: 1c3772a66d9af84c99e0ffb46e8c07d1df71befc
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          persist-credentials: false
+      - name: Prepare signed Ubuntu emulator tools and pin upstream Deepin archive keyring
+        shell: bash
+        run: |
+          set -euo pipefail
+          out="$PWD/artifacts/loong64-deepin-baseline"
+          mkdir -p "$out"
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends qemu-user-static binfmt-support mmdebstrap arch-test gpgv gnupg debian-archive-keyring
+          sudo update-binfmts --enable qemu-loongarch64
+          test -x /usr/bin/qemu-loongarch64-static
+          # Ubuntu noble arch-test 0.21 cannot identify loong64 (Debian #1099638).
+          # Obtain only the all-architecture detector from signed Debian trixie,
+          # keeping Debian packages out of the Deepin target sysroot.
+          aptroot="$RUNNER_TEMP/arch-test-apt"
+          mkdir -p "$aptroot/lists/partial" "$aptroot/download"
+          printf 'deb [signed-by=/usr/share/keyrings/debian-archive-keyring.gpg] https://deb.debian.org/debian trixie main\n' > "$aptroot/sources.list"
+          opts=(-o "Dir::Etc::sourcelist=$aptroot/sources.list" -o "Dir::Etc::sourceparts=-" -o "Dir::State::lists=$aptroot/lists" -o "APT::Get::List-Cleanup=0")
+          sudo apt-get "${opts[@]}" update
+          (cd "$aptroot/download"; apt-get "${opts[@]}" download arch-test=0.22-1)
+          deb="$aptroot/download/arch-test_0.22-1_all.deb"
+          test "$(dpkg-deb -f "$deb" Package)" = arch-test
+          test "$(dpkg-deb -f "$deb" Architecture)" = all
+          sha256sum "$deb" | tee "$out/arch-test-package-sha256.txt"
+          sudo dpkg -i "$deb"
+          arch-test loong64 | tee "$out/arch-test-loong64.txt"
+          # Noble mmdebstrap also predates the loong64 -> loongarch64 mapping.
+          # Use the signed Debian stable host tool only, not Debian target libs.
+          (cd "$aptroot/download"; apt-get "${opts[@]}" download mmdebstrap=1.5.7-1+deb13u1)
+          mmdeb="$aptroot/download/mmdebstrap_1.5.7-1+deb13u1_all.deb"
+          test "$(dpkg-deb -f "$mmdeb" Package)" = mmdebstrap
+          test "$(dpkg-deb -f "$mmdeb" Architecture)" = all
+          sha256sum "$mmdeb" | tee "$out/mmdebstrap-package-sha256.txt"
+          mkdir -p "$aptroot/mmdebstrap"
+          dpkg-deb -x "$mmdeb" "$aptroot/mmdebstrap"
+          tool="$aptroot/mmdebstrap/usr/bin/mmdebstrap"
+          test -x "$tool"
+          "$tool" --version | tee "$out/mmdebstrap-version.txt"
+          grep -Eq 'loong64.*loongarch64' "$tool"
+          echo "PARTYOPS_MMDEBSTRAP=$tool" >> "$GITHUB_ENV"
+          curl --fail --location --retry 3 --max-time 90 "https://raw.githubusercontent.com/linuxdeepin/deepin-keyring/$DEEPIN_KEY_COMMIT/keyrings/deepin-archive-crimson-keyring.gpg" -o "$out/crimson.gpg"
+          test "$(git hash-object "$out/crimson.gpg")" = "$DEEPIN_KEY_BLOB"
+          gpg --batch --show-keys --with-fingerprint "$out/crimson.gpg" > "$out/key-fingerprints.txt"
+          curl --fail --location --retry 3 --max-time 90 "$DEEPIN_REPO/dists/crimson/InRelease" -o "$out/InRelease"
+          # A dual-signed release may include an unknown older/newer key.
+          # Require the exact trusted upstream 2025 signing fingerprint; never
+          # accept BADSIG, expired/revoked signatures, unsigned or weak digests.
+          set +e
+          gpgv --keyring "$out/crimson.gpg" --status-fd 1 --output "$out/Release" "$out/InRelease" > "$out/release-signature-status.txt" 2> "$out/release-signature.log"
+          rc=$?
+          set -e
+          cat "$out/release-signature.log" "$out/release-signature-status.txt"
+          test "$rc" -eq 0 -o "$rc" -eq 2
+          python - "$out/release-signature-status.txt" <<'PY'
+          import pathlib, sys
+          lines = [line.split() for line in pathlib.Path(sys.argv[1]).read_text().splitlines() if line.startswith("[GNUPG:] ")]
+          trusted = "AD671F061CAFB9B639F1B139F5575F0BCD17A2D3"
+          assert any(len(x) >= 11 and x[1] == "VALIDSIG" and x[2] == trusted and x[9] in {"8", "9", "10"} for x in lines), "PINNED_DEEPIN_SIGNATURE_MISSING_OR_WEAK"
+          assert not any(x[1] in {"BADSIG", "EXPSIG", "EXPKEYSIG", "REVKEYSIG", "KEYEXPIRED", "SIGEXPIRED", "NODATA", "FAILURE"} for x in lines), "RELEASE_SIGNATURE_INVALID"
+          print("EXACT_PINNED_DEEPIN_SIGNATURE_PASS")
+          PY
+          test -s "$out/Release"
+          grep -Eq '^Architectures:.*\bloong64\b' "$out/Release"
+          sha256sum "$out/crimson.gpg" "$out/InRelease" > "$out/archive-input-sha256.txt"
+      - name: Bootstrap signed Deepin Crimson loong64 sysroot without disabling apt verification
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/deepin-loong64"
+          out="$PWD/artifacts/loong64-deepin-baseline"
+          key="$out/crimson.gpg"
+          sudo "$PARTYOPS_MMDEBSTRAP" --mode=root --architectures=loong64 --variant=minbase --keyring="$key" --include=ca-certificates,deepin-keyring,python3,build-essential,binutils '' "$root" "deb [signed-by=$key] $DEEPIN_REPO crimson main" 2>&1 | tee "$out/bootstrap.log"
+          sudo install -m 0755 /usr/bin/qemu-loongarch64-static "$root/usr/bin/qemu-loongarch64-static"
+          sudo install -D -m 0644 "$key" "$root/usr/share/keyrings/partyops-deepin-crimson-pinned.gpg"
+          printf 'deb [signed-by=/usr/share/keyrings/partyops-deepin-crimson-pinned.gpg] %s crimson main\n' "$DEEPIN_REPO" | sudo tee "$root/etc/apt/sources.list"
+          sudo chroot "$root" dpkg --print-architecture | tee "$out/architecture.txt"
+          test "$(cat "$out/architecture.txt")" = loong64
+          sudo chroot "$root" getconf GNU_LIBC_VERSION | tee "$out/glibc.txt"
+          test "$(cat "$out/glibc.txt")" = 'glibc 2.38'
+          sudo chroot "$root" cat /etc/os-release | tee "$out/os-release.txt"
+          sudo chroot "$root" python3 -c 'import platform,ssl,sqlite3; assert platform.machine() in ("loongarch64","loong64"); print(platform.python_version(),ssl.OPENSSL_VERSION,sqlite3.sqlite_version)' | tee "$out/native-python.txt"
+          sudo chroot "$root" apt-get update
+          sudo chroot "$root" apt-cache policy libc6 libc6-dev python3 python3.12 python3.12-dev python3-tk python3-pip python3-venv gcc rustc cargo python3-numpy python3-pyinstaller python3-pymupdf python3-cryptography python3-pydantic python3-calamine libmupdf-dev tesseract-ocr | tee "$out/native-package-availability.txt"
+          sudo chroot "$root" dpkg-query -W > "$out/installed-packages.tsv"
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          path: qa-driver
+          persist-credentials: false
+      - name: Prepare exact native compiler and PDF build dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/deepin-loong64"
+          sudo chroot "$root" apt-get install -y --no-install-recommends python3.12-dev=3.12.13-0deepin2 python3.12-venv python3-pip python3-tk pkg-config libffi-dev libssl-dev libopenblas-dev liblapack-dev gfortran libxml2-dev libxslt1-dev libjpeg-dev zlib1g-dev libtiff-dev libfreetype6-dev liblcms2-dev libwebp-dev libopenjp2-7-dev libharfbuzz-dev libjbig2dec0-dev libgumbo-dev swig make g++ xvfb xauth python3-clang libclang-dev cmake ninja-build
+          sudo chroot "$root" /usr/bin/python3.12 -c 'import platform,tkinter; assert platform.python_version()=="3.12.13"; assert platform.machine() in ("loongarch64","loong64"); print(tkinter.Tcl().eval("info patchlevel"))'
+          sudo chroot "$root" /usr/bin/python3.12 -m venv /opt/partyops-freeze-env
+          sudo chroot "$root" dpkg-query -W 'swig*' 'libclang*' 'python3-clang*' cmake ninja-build | tee "$PWD/artifacts/loong64-deepin-baseline/signed-build-tools.tsv"
+          sudo chroot "$root" /usr/bin/swig -version
+          sudo chroot "$root" /usr/bin/python3.12 -c 'from clang import cindex; print(cindex.__file__); print(cindex.Index.create())'
+          sudo chroot "$root" /usr/bin/cmake --version
+          sudo chroot "$root" /usr/bin/ninja --version
+      - name: Restore exact previously verified complete native closure and rerun offline gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          test "$(git hash-object backend/uv.lock)" = 74baefd95c736728d380a03897ca43a5f7c73c45
+          python -u qa-driver/scripts/rc1_loong64_accelerated_inputs.py restore_complete "$RUNNER_TEMP/deepin-loong64" "$PWD/artifacts/loong64-deepin-baseline"
+          python -u qa-driver/scripts/rc1_loong64_accelerated_inputs.py verify "$RUNNER_TEMP/deepin-loong64" "$PWD/artifacts/loong64-deepin-baseline"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: RC1-Loong64-reused-complete-closure-${{ env.SOURCE_SHA }}
+          path: |
+            artifacts/loong64-deepin-baseline/closure-sha256.txt
+            artifacts/loong64-deepin-baseline/wheelhouse
+            artifacts/loong64-deepin-baseline/reused-closure-receipt.json
+          if-no-files-found: warn
+          retention-days: 14
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - name: Build locked frontend and stage source plus exact SQLite amalgamation
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/deepin-loong64"
+          out="$PWD/artifacts/loong64-deepin-baseline"
+          corepack enable
+          corepack prepare 'pnpm@11.9.0' --activate
+          (cd frontend && corepack pnpm install --frozen-lockfile && corepack pnpm run build)
+          test -f frontend/dist/client/index.html
+          sudo mkdir -p "$root/tmp/rc1-freeze/backend" "$root/tmp/rc1-freeze/packaging/uos" "$root/tmp/rc1-freeze/frontend/dist" "$root/tmp/sqlite-inputs"
+          sudo cp -a backend/app backend/alembic backend/alembic.ini "$root/tmp/rc1-freeze/backend/"
+          sudo cp -a packaging/uos/*.py packaging/uos/partyops.spec "$root/tmp/rc1-freeze/packaging/uos/"
+          sudo cp -a frontend/dist/client "$root/tmp/rc1-freeze/frontend/dist/"
+          curl --fail --location --retry 3 --proto '=https' --tlsv1.2 --output "$RUNNER_TEMP/sqlite-amalgamation-3510300.zip" https://www.sqlite.org/2026/sqlite-amalgamation-3510300.zip
+          python -m pip download --no-deps --no-binary=:all: --dest "$RUNNER_TEMP" 'pysqlite3==0.5.4'
+          printf '%s  %s\n' acb1e6f5d832484bf6d32b681e858c38add8b2acdfd42ac5df24b8afb46552b4 "$RUNNER_TEMP/sqlite-amalgamation-3510300.zip" fbc69bfdc0cb43a5badd5403b126d5151371b5037e0397ba9802bb440c5b0021 "$RUNNER_TEMP/pysqlite3-0.5.4.tar.gz" | sha256sum -c -
+          sha256sum "$RUNNER_TEMP/sqlite-amalgamation-3510300.zip" "$RUNNER_TEMP/pysqlite3-0.5.4.tar.gz" > "$out/sqlite-input-sha256.txt"
+          python - "$RUNNER_TEMP" <<'PY'
+          import pathlib,sys,tarfile,zipfile
+          p=pathlib.Path(sys.argv[1])
+          d=p/'pysqlite-build'
+          d.mkdir()
+          with tarfile.open(p/'pysqlite3-0.5.4.tar.gz') as t:
+              t.extractall(d,filter='data')
+          with zipfile.ZipFile(p/'sqlite-amalgamation-3510300.zip') as z:
+              for name in ('sqlite3.c','sqlite3.h'):
+                  (d/'pysqlite3-0.5.4'/name).write_bytes(z.read('sqlite-amalgamation-3510300/'+name))
+          PY
+          sudo cp -a "$RUNNER_TEMP/pysqlite-build/pysqlite3-0.5.4/." "$root/tmp/sqlite-inputs/"
+          sudo chown -R 65534:65534 "$root/tmp/rc1-freeze" "$root/tmp/sqlite-inputs"
+      - name: Compile pinned SQLite and run dependency and schema gates without networking
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/deepin-loong64"
+          out="$PWD/artifacts/loong64-deepin-baseline"
+          sudo unshare --net chroot "$root" /bin/sh -c 'cd /tmp/sqlite-inputs && /opt/partyops-freeze-env/bin/python setup.py build_static bdist_wheel && /opt/partyops-freeze-env/bin/python -m pip install --no-index --no-deps dist/*.whl'
+          sudo mkdir -p "$root/tmp/rc1-data"
+          sudo chown 65534:65534 "$root/tmp/rc1-data"
+          sudo unshare --net chroot --userspec=65534:65534 "$root" /usr/bin/env -i HOME=/tmp/rc1-data PATH=/opt/partyops-freeze-env/bin:/usr/bin:/bin LANG=C.UTF-8 PYTHONPATH=/tmp/rc1-freeze/backend PARTYOPS_DATA_DIR=/tmp/rc1-data PARTYOPS_ENVIRONMENT=test PARTYOPS_STRICT_SQLITE=true PARTYOPS_SEED_DEMO=false PARTYOPS_MODE=personal /opt/partyops-freeze-env/bin/python -c 'import pysqlite3,fitz,numpy,cryptography,lxml.etree,python_calamine; from app.database import DatabaseRuntime,db_runtime; from app.main import app; assert app.version=="1.4.6-rc.1"; caps=db_runtime.validate_capabilities(); assert caps["fts5"]; assert pysqlite3.sqlite_version=="3.51.3"; DatabaseRuntime().create_schema(); db=pysqlite3.connect("/tmp/rc1-data/partyops.db"); assert db.execute("select version_num from alembic_version").fetchone()[0]=="0028"; assert db.execute("pragma integrity_check").fetchone()[0]=="ok"; d=fitz.open(); p=d.new_page(); p.insert_text((72,72),"PartyOps"); assert "PartyOps" in p.get_text(); print("DEEPIN_238_LOCKED_APP_SCHEMA_PDF_PASS",caps)' | tee "$out/schema-pdf-smoke.txt"
+      - name: Freeze actual four-entry Loong64 core and enforce GLIBC ceiling
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/deepin-loong64"
+          out="$PWD/artifacts/loong64-deepin-baseline"
+          sudo timeout 7200 unshare --net chroot --userspec=65534:65534 "$root" /usr/bin/env -i HOME=/tmp/rc1-freeze PATH=/opt/partyops-freeze-env/bin:/usr/bin:/bin LANG=C.UTF-8 PARTYOPS_RUNTIME_PROFILE=core /bin/sh -c 'cd /tmp/rc1-freeze && /opt/partyops-freeze-env/bin/python -m PyInstaller --noconfirm --clean --distpath dist --workpath work packaging/uos/partyops.spec' 2>&1 | tee "$out/actual-freeze.log"
+          bundle="$root/tmp/rc1-freeze/dist/PartyOps"
+          # Mirror the real portable packager's deny-by-default POSIX modes.
+          sudo find "$bundle" -type d -exec chmod 0755 {} +
+          sudo find "$bundle" -type f -exec chmod 0644 {} +
+          for entry in partyops partyops-client partyops-wizard partyops-updater; do sudo chmod 0755 "$bundle/$entry"; done
+          test -z "$(sudo find "$bundle/_internal" -type f -perm /111 -print -quit)"
+          sudo find "$bundle" -type f -perm /111 -printf '%P\n' | sort | tee "$out/frozen-executable-allowlist.txt"
+          test "$(wc -l < "$out/frozen-executable-allowlist.txt")" -eq 4
+          for name in partyops partyops-client partyops-wizard partyops-updater; do
+            test -x "$bundle/$name"
+            readelf -h "$bundle/$name" | tee "$out/$name-elf.txt"
+            grep -qi 'LoongArch' "$out/$name-elf.txt"
+          done
+          python scripts/verify-linux-elf-glibc.py --root "$bundle" --max-glibc 2.38
+          sudo unshare --net chroot --userspec=65534:65534 "$root" /usr/bin/env -i HOME=/tmp/rc1-freeze PATH=/usr/bin:/bin LANG=C.UTF-8 /tmp/rc1-freeze/dist/PartyOps/partyops --account-recovery --help | tee "$out/frozen-recovery-help.txt"
+          grep -q 'desktop-reset' "$out/frozen-recovery-help.txt"
+          sudo unshare --net chroot --userspec=65534:65534 "$root" /usr/bin/env -i HOME=/tmp/rc1-freeze PATH=/usr/bin:/bin LANG=C.UTF-8 /usr/bin/xvfb-run -a /tmp/rc1-freeze/dist/PartyOps/partyops-wizard --self-test | tee "$out/frozen-wizard-gui.txt"
+          sudo unshare --net chroot --userspec=65534:65534 "$root" /usr/bin/env -i HOME=/tmp/rc1-freeze PATH=/usr/bin:/bin LANG=C.UTF-8 /tmp/rc1-freeze/dist/PartyOps/partyops-wizard --runtime-layout-self-test 2>&1 | tee "$out/frozen-layout.txt"
+          for name in partyops-client partyops-wizard partyops-updater; do
+            sudo unshare --net chroot --userspec=65534:65534 "$root" /usr/bin/env -i HOME=/tmp/rc1-freeze PATH=/usr/bin:/bin LANG=C.UTF-8 "/tmp/rc1-freeze/dist/PartyOps/$name" --help > "$out/$name-help.txt"
+          done
+          sudo tar -C "$root/tmp/rc1-freeze/dist" -czf "$out/PartyOps-loong64-DEEPIN238-APP-ONLY.tar.gz" PartyOps
+          sudo chown "$(id -u):$(id -g)" "$out/PartyOps-loong64-DEEPIN238-APP-ONLY.tar.gz"
+          (cd "$out" && sha256sum PartyOps-loong64-DEEPIN238-APP-ONLY.tar.gz > frozen-app-sha256.txt)
+          python - <<'PY'
+          import json,os,pathlib
+          p=pathlib.Path('artifacts/loong64-deepin-baseline')
+          (p/'freeze-receipt.json').write_text(json.dumps({'source_commit':os.environ['SOURCE_SHA'],'status':'DEEPIN_238_EMULATED_CORE_FREEZE_ONLY','python':'3.12.13','target_glibc':'2.38','schema_0028':True,'new_application_frozen':True,'target_abi_static_pass':True,'native_deepin_tested':False,'installer_created':False,'release_ready':False},indent=2)+'\n')
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: RC1-Loong64-accelerated-frozen-APP-${{ env.SOURCE_SHA }}
+          path: artifacts/loong64-deepin-baseline
+          retention-days: 14
+          if-no-files-found: error
+
+  package:
+    needs: freeze
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    env:
+      SOURCE_SHA: 2cfe443d5dea292260baf17d116c2a1451ee7032
+      GH_TOKEN: ${{ github.token }}
+      DEEPIN_REPO: https://community-packages.deepin.com/deepin/beige/
+      DEEPIN_KEY_COMMIT: b0946c78978ecc567118254fa0ff7806a6406f99
+      DEEPIN_KEY_BLOB: 1c3772a66d9af84c99e0ffb46e8c07d1df71befc
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          persist-credentials: false
+      - name: Prepare signed Ubuntu emulator tools and pin upstream Deepin archive keyring
+        shell: bash
+        run: |
+          set -euo pipefail
+          out="$PWD/artifacts/loong64-deepin-baseline"
+          mkdir -p "$out"
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends qemu-user-static binfmt-support mmdebstrap arch-test gpgv gnupg debian-archive-keyring
+          sudo update-binfmts --enable qemu-loongarch64
+          test -x /usr/bin/qemu-loongarch64-static
+          # Ubuntu noble arch-test 0.21 cannot identify loong64 (Debian #1099638).
+          # Obtain only the all-architecture detector from signed Debian trixie,
+          # keeping Debian packages out of the Deepin target sysroot.
+          aptroot="$RUNNER_TEMP/arch-test-apt"
+          mkdir -p "$aptroot/lists/partial" "$aptroot/download"
+          printf 'deb [signed-by=/usr/share/keyrings/debian-archive-keyring.gpg] https://deb.debian.org/debian trixie main\n' > "$aptroot/sources.list"
+          opts=(-o "Dir::Etc::sourcelist=$aptroot/sources.list" -o "Dir::Etc::sourceparts=-" -o "Dir::State::lists=$aptroot/lists" -o "APT::Get::List-Cleanup=0")
+          sudo apt-get "${opts[@]}" update
+          (cd "$aptroot/download"; apt-get "${opts[@]}" download arch-test=0.22-1)
+          deb="$aptroot/download/arch-test_0.22-1_all.deb"
+          test "$(dpkg-deb -f "$deb" Package)" = arch-test
+          test "$(dpkg-deb -f "$deb" Architecture)" = all
+          sha256sum "$deb" | tee "$out/arch-test-package-sha256.txt"
+          sudo dpkg -i "$deb"
+          arch-test loong64 | tee "$out/arch-test-loong64.txt"
+          # Noble mmdebstrap also predates the loong64 -> loongarch64 mapping.
+          # Use the signed Debian stable host tool only, not Debian target libs.
+          (cd "$aptroot/download"; apt-get "${opts[@]}" download mmdebstrap=1.5.7-1+deb13u1)
+          mmdeb="$aptroot/download/mmdebstrap_1.5.7-1+deb13u1_all.deb"
+          test "$(dpkg-deb -f "$mmdeb" Package)" = mmdebstrap
+          test "$(dpkg-deb -f "$mmdeb" Architecture)" = all
+          sha256sum "$mmdeb" | tee "$out/mmdebstrap-package-sha256.txt"
+          mkdir -p "$aptroot/mmdebstrap"
+          dpkg-deb -x "$mmdeb" "$aptroot/mmdebstrap"
+          tool="$aptroot/mmdebstrap/usr/bin/mmdebstrap"
+          test -x "$tool"
+          "$tool" --version | tee "$out/mmdebstrap-version.txt"
+          grep -Eq 'loong64.*loongarch64' "$tool"
+          echo "PARTYOPS_MMDEBSTRAP=$tool" >> "$GITHUB_ENV"
+          curl --fail --location --retry 3 --max-time 90 "https://raw.githubusercontent.com/linuxdeepin/deepin-keyring/$DEEPIN_KEY_COMMIT/keyrings/deepin-archive-crimson-keyring.gpg" -o "$out/crimson.gpg"
+          test "$(git hash-object "$out/crimson.gpg")" = "$DEEPIN_KEY_BLOB"
+          gpg --batch --show-keys --with-fingerprint "$out/crimson.gpg" > "$out/key-fingerprints.txt"
+          curl --fail --location --retry 3 --max-time 90 "$DEEPIN_REPO/dists/crimson/InRelease" -o "$out/InRelease"
+          # A dual-signed release may include an unknown older/newer key.
+          # Require the exact trusted upstream 2025 signing fingerprint; never
+          # accept BADSIG, expired/revoked signatures, unsigned or weak digests.
+          set +e
+          gpgv --keyring "$out/crimson.gpg" --status-fd 1 --output "$out/Release" "$out/InRelease" > "$out/release-signature-status.txt" 2> "$out/release-signature.log"
+          rc=$?
+          set -e
+          cat "$out/release-signature.log" "$out/release-signature-status.txt"
+          test "$rc" -eq 0 -o "$rc" -eq 2
+          python - "$out/release-signature-status.txt" <<'PY'
+          import pathlib, sys
+          lines = [line.split() for line in pathlib.Path(sys.argv[1]).read_text().splitlines() if line.startswith("[GNUPG:] ")]
+          trusted = "AD671F061CAFB9B639F1B139F5575F0BCD17A2D3"
+          assert any(len(x) >= 11 and x[1] == "VALIDSIG" and x[2] == trusted and x[9] in {"8", "9", "10"} for x in lines), "PINNED_DEEPIN_SIGNATURE_MISSING_OR_WEAK"
+          assert not any(x[1] in {"BADSIG", "EXPSIG", "EXPKEYSIG", "REVKEYSIG", "KEYEXPIRED", "SIGEXPIRED", "NODATA", "FAILURE"} for x in lines), "RELEASE_SIGNATURE_INVALID"
+          print("EXACT_PINNED_DEEPIN_SIGNATURE_PASS")
+          PY
+          test -s "$out/Release"
+          grep -Eq '^Architectures:.*\bloong64\b' "$out/Release"
+          sha256sum "$out/crimson.gpg" "$out/InRelease" > "$out/archive-input-sha256.txt"
+      - name: Bootstrap signed Deepin Crimson loong64 sysroot without disabling apt verification
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/deepin-loong64"
+          out="$PWD/artifacts/loong64-deepin-baseline"
+          key="$out/crimson.gpg"
+          sudo "$PARTYOPS_MMDEBSTRAP" --mode=root --architectures=loong64 --variant=minbase --keyring="$key" --include=ca-certificates,deepin-keyring,python3,build-essential,binutils '' "$root" "deb [signed-by=$key] $DEEPIN_REPO crimson main" 2>&1 | tee "$out/bootstrap.log"
+          sudo install -m 0755 /usr/bin/qemu-loongarch64-static "$root/usr/bin/qemu-loongarch64-static"
+          sudo install -D -m 0644 "$key" "$root/usr/share/keyrings/partyops-deepin-crimson-pinned.gpg"
+          printf 'deb [signed-by=/usr/share/keyrings/partyops-deepin-crimson-pinned.gpg] %s crimson main\n' "$DEEPIN_REPO" | sudo tee "$root/etc/apt/sources.list"
+          sudo chroot "$root" dpkg --print-architecture | tee "$out/architecture.txt"
+          test "$(cat "$out/architecture.txt")" = loong64
+          sudo chroot "$root" getconf GNU_LIBC_VERSION | tee "$out/glibc.txt"
+          test "$(cat "$out/glibc.txt")" = 'glibc 2.38'
+          sudo chroot "$root" cat /etc/os-release | tee "$out/os-release.txt"
+          sudo chroot "$root" python3 -c 'import platform,ssl,sqlite3; assert platform.machine() in ("loongarch64","loong64"); print(platform.python_version(),ssl.OPENSSL_VERSION,sqlite3.sqlite_version)' | tee "$out/native-python.txt"
+          sudo chroot "$root" apt-get update
+          sudo chroot "$root" apt-cache policy libc6 libc6-dev python3 python3.12 python3.12-dev python3-tk python3-pip python3-venv gcc rustc cargo python3-numpy python3-pyinstaller python3-pymupdf python3-cryptography python3-pydantic python3-calamine libmupdf-dev tesseract-ocr | tee "$out/native-package-availability.txt"
+          sudo chroot "$root" dpkg-query -W > "$out/installed-packages.tsv"
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          path: qa-driver
+          persist-credentials: false
+      - name: Audit historical exact RC6 Loong64 donor and non-app native payload before freeze completes
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          out="$PWD/artifacts/loong64-deepin-baseline"
+          donor=PartyOps_1.4.5-rc.6_linux_loong64.deb
+          gh release download v1.4.5-rc.6 --repo "$GITHUB_REPOSITORY" --pattern "$donor" --dir "$RUNNER_TEMP"
+          printf '%s  %s\n' bec5993a12a9a66800fa039045f45329ecc486934cd1d1106c10d5e2ecf78017 "$RUNNER_TEMP/$donor" | sha256sum -c -
+          python qa-driver/scripts/rc1_loong64_stage_deb.py audit "$RUNNER_TEMP/$donor" "$RUNNER_TEMP/loong-package-stage" "$out"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: RC1-Loong64-verified-historical-native-donor-audit-${{ env.SOURCE_SHA }}
+          path: artifacts/loong64-deepin-baseline/donor-*.json
+          if-no-files-found: error
+          retention-days: 14
+      - name: Fetch immutable successful freeze from this exact workflow run
+        shell: bash
+        run: |
+          set -euo pipefail
+          name="RC1-Loong64-accelerated-frozen-APP-$SOURCE_SHA"
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts?per_page=100" | jq -e --arg name "$name" '[.artifacts[]|select(.name==$name and (.expired|not))] | if length==1 then .[0] else error("artifact not unique") end' > "$RUNNER_TEMP/freeze-artifact.json"
+          id="$(jq -r .id "$RUNNER_TEMP/freeze-artifact.json")"
+          digest="$(jq -r .digest "$RUNNER_TEMP/freeze-artifact.json")"
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$id/zip" > "$RUNNER_TEMP/freeze.zip"
+          printf '%s  %s\n' "${digest#sha256:}" "$RUNNER_TEMP/freeze.zip" | sha256sum -c -
+          python qa-driver/scripts/rc1_loong64_stage_deb.py stage "$RUNNER_TEMP/freeze.zip" "$RUNNER_TEMP/loong-package-stage" "$PWD/artifacts/loong64-deepin-baseline"
+      - name: Exercise full staged package in signed Deepin QEMU root before sealing
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/deepin-loong64"
+          out="$PWD/artifacts/loong64-deepin-baseline"
+          sudo chroot "$root" apt-get install -y --no-install-recommends xvfb xauth libgtk-3-0 libx11-6 libxext6 libxrender1 libfontconfig1 libfreetype6 libnss3 libdbus-1-3 libgl1 libxinerama1 libxrandr2 libxfixes3 libcups2 libsm6 libice6 libopenblas0 libgfortran5
+          sudo mkdir -p "$root/opt" "$root/tmp/partyops-pkg-selftest"
+          sudo cp -a "$RUNNER_TEMP/loong-package-stage/opt/partyops" "$root/opt/"
+          sudo chown 65534:65534 "$root/tmp/partyops-pkg-selftest"
+          # The package selftest is headless; GUI selftest was already validated
+          # by the frozen-app job. Avoid an unnecessary nested X server.
+          sudo unshare --mount --net --pid --fork /bin/bash -c 'set -e; root="$1"; shift; mount --make-rprivate /; mount -t proc -o nosuid,nodev,noexec proc "$root/proc"; exec timeout --signal=TERM --kill-after=20s 240s chroot --userspec=65534:65534 "$root" "$@"' _ "$root" /usr/bin/env -i HOME=/tmp/partyops-pkg-selftest PATH=/usr/bin:/bin LANG=C.UTF-8 PYTHONUNBUFFERED=1 PARTYOPS_DATA_DIR=/tmp/partyops-pkg-selftest PARTYOPS_ENVIRONMENT=production PARTYOPS_STRICT_SQLITE=true PARTYOPS_SEED_DEMO=false /opt/partyops/partyops --package-self-test 2>&1 | tee "$out/full-package-selftest.log"
+          python - "$out/full-package-selftest.log" <<'PY'
+          import json,sys
+          lines=open(sys.argv[1]).read().splitlines()
+          results=[json.loads(x) for x in lines if x.startswith("{") and x.endswith("}")]
+          assert len(results)==1 and results[0]["passed"] is True and results[0]["runtime_profile"]=="core",results
+          PY
+          printf 'PASS\n' > "$out/full-package-selftest.status"
+      - name: Seal unsigned candidate DEB only after full emulated runtime gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python qa-driver/scripts/rc1_loong64_stage_deb.py seal "$RUNNER_TEMP/loong-package-stage" "$PWD/artifacts/loong64-deepin-baseline"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: RC1-Loong64-accelerated-UNSIGNED-DEB-CANDIDATE-${{ env.SOURCE_SHA }}
+          path: artifacts/loong64-deepin-baseline
+          if-no-files-found: warn
+          retention-days: 14
