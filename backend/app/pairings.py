@@ -37,6 +37,8 @@ def authenticate_backup_pairing(
     """验证备份配对令牌，并在到期时立即撤销旧凭据。"""
 
     token = (raw_token or "").strip()
+    if not token:
+        raise ProblemException(401, "PAIRING_INVALID", "配对无效", "请重新配对终端。")
     pairing = db.scalar(
         select(ClientPairing).where(
             ClientPairing.token_hash == hash_token(token),

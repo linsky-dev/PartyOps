@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 import typing
 from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, Header, Query, Request, UploadFile
 from fastapi.responses import FileResponse
-from sqlalchemy import delete, or_, select, text
+from sqlalchemy import delete, func, or_, select, text
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from ..audit import write_audit
@@ -55,9 +57,10 @@ from ..schemas import (
     TemplateUpdate,
 )
 from ..security import get_current_user
-from ..task_service import can_view_task, get_task_or_404, task_to_out
+from ..task_service import can_view_task, get_task_or_404, task_to_out, task_visibility_clause
 
 router = APIRouter(tags=["support"])
+logger = logging.getLogger(__name__)
 
 
 def client_ip(request: Request) -> str:
@@ -565,49 +568,37 @@ def search(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_session),
 ) -> TaskListOut:
-    ids: list[str] = []
+    statement = select(Task).where(Task.deleted_at.is_(None), task_visibility_clause(user))
     if q.strip():
-        try:
-            ids = [
-            row[0]
-            for row in db.execute(
-                text(
-                        "SELECT task_id FROM task_search_fts_v2 "
-                        "WHERE task_search_fts_v2 MATCH :query LIMIT 500"
-                ),
-                {"query": f'"{q.replace(chr(34), "")}"'},
-            ).all()
-            ]
-        except Exception:
-            ids = []
-        related_ids = db.scalars(
-            select(MaterialItem.task_id)
-            .join(
-                AttachmentVersion,
-                AttachmentVersion.material_item_id == MaterialItem.id,
-                isouter=True,
-            )
-            .where(
-                or_(
-                    MaterialItem.name.contains(q),
-                    MaterialItem.category.contains(q),
-                    AttachmentVersion.display_name.contains(q),
-                )
-            )
-        ).all()
-        ids = list(dict.fromkeys([*ids, *related_ids]))
-    statement = select(Task).where(Task.deleted_at.is_(None))
-    if q.strip() and ids:
-        statement = statement.where(Task.id.in_(ids))
-    elif q.strip():
-        statement = statement.where(
-            or_(
-                Task.title.contains(q),
-                Task.source.contains(q),
-                Task.description.contains(q),
-                Task.category.contains(q),
-            )
-        )
+        ids: list[str] = []
+        # unicode61 ignores punctuation; literal wildcard searches must
+        # not gain unrelated FTS matches. Keep the existing index format.
+        if "%" not in q and "_" not in q:
+            try:
+                ids = list(db.scalars(
+                    text("SELECT task_id FROM task_search_fts_v2 "
+                         "WHERE task_search_fts_v2 MATCH :query LIMIT 500"),
+                    {"query": '"' + q.replace('"', '""') + '"'},
+                ).all())
+            except OperationalError:
+                logger.warning("task search FTS unavailable; using literal substring search")
+        related = select(MaterialItem.task_id).join(
+            AttachmentVersion,
+            AttachmentVersion.material_item_id == MaterialItem.id,
+            isouter=True,
+        ).where(or_(
+            MaterialItem.name.contains(q, autoescape=True),
+            MaterialItem.category.contains(q, autoescape=True),
+            AttachmentVersion.display_name.contains(q, autoescape=True),
+        ))
+        statement = statement.where(or_(
+            Task.id.in_(ids),
+            Task.id.in_(related),
+            Task.title.contains(q, autoescape=True),
+            Task.source.contains(q, autoescape=True),
+            Task.description.contains(q, autoescape=True),
+            Task.category.contains(q, autoescape=True),
+        ))
     if year:
         start = datetime(year, 1, 1, tzinfo=timezone.utc)
         end = datetime(year + 1, 1, 1, tzinfo=timezone.utc)
@@ -622,7 +613,7 @@ def search(
         file_task_ids = db.scalars(
             select(MaterialItem.task_id)
             .join(AttachmentVersion, AttachmentVersion.material_item_id == MaterialItem.id)
-            .where(AttachmentVersion.display_name.contains(file_name))
+            .where(AttachmentVersion.display_name.contains(file_name, autoescape=True))
         ).all()
         statement = statement.where(Task.id.in_(file_task_ids or [""]))
     if smart == "this_week_completed":
@@ -644,18 +635,18 @@ def search(
         statement = statement.where(Task.id.in_(final_task_ids or [""]))
     elif smart == "annual_focus":
         statement = statement.where(Task.annual_focus != "")
+    total = db.scalar(select(func.count()).select_from(statement.subquery())) or 0
     tasks = db.scalars(
         statement.order_by(
             Task.internal_due_at.is_(None),
             Task.internal_due_at,
             Task.updated_at.desc(),
-        )
+            Task.id,
+        ).offset((page - 1) * page_size).limit(page_size)
     ).all()
-    visible = [task for task in tasks if can_view_task(db, task, user)]
-    page_start = (page - 1) * page_size
     return TaskListOut(
-        items=[task_to_out(db, task, include_detail=False) for task in visible[page_start : page_start + page_size]],
-        total=len(visible),
+        items=[task_to_out(db, task, include_detail=False) for task in tasks],
+        total=total,
         page=page,
         page_size=page_size,
     )

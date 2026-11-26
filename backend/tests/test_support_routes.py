@@ -279,3 +279,41 @@ def test_if_match_validation_and_invalid_action(client: TestClient, admin: dict)
         json={"action": "archive", "note": ""},
     )
     assert invalid_action.status_code == 409
+
+
+
+def test_search_unions_cjk_substrings_with_fts_and_escapes_wildcards(client, admin):
+    prefix = "专项检索回归"
+    a = create_task(client, admin["id"], title=prefix + "基层党建工作检查", steps=[], materials=[])
+    b = create_task(client, admin["id"], title=prefix + " 党建 材料归档", steps=[], materials=[])
+    c = create_task(client, admin["id"], title=prefix + "三会一课台账", steps=[], materials=[])
+    d = create_task(client, admin["id"], title=prefix + "100%核验", steps=[], materials=[])
+    e = create_task(client, admin["id"], title=prefix + "100元核验", steps=[], materials=[])
+    for query, expected, excluded in [
+        ("党建", {a["id"], b["id"]}, set()),
+        ("党建工作", {a["id"]}, {b["id"]}),
+        ("三会一课", {c["id"]}, set()),
+        (prefix + "100%", {d["id"]}, {e["id"]}),
+    ]:
+        page = 1
+        found = set()
+        while True:
+            response = client.get("/api/v1/search", params={"q": query, "page": page, "page_size": 100})
+            assert response.status_code == 200, response.text
+            data = response.json()
+            found.update(item["id"] for item in data["items"])
+            if page * 100 >= data["total"]:
+                break
+            page += 1
+        assert expected <= found
+        assert not (excluded & found)
+    found = set()
+    for page in (1, 2, 3):
+        response = client.get("/api/v1/search", params={"q": prefix, "page": page, "page_size": 2})
+        assert response.status_code == 200, response.text
+        data = response.json()
+        assert data["total"] == 5
+        ids = {item["id"] for item in data["items"]}
+        assert not (found & ids)
+        found.update(ids)
+    assert found == {a["id"], b["id"], c["id"], d["id"], e["id"]}
