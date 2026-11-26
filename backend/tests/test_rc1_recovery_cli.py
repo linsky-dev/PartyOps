@@ -749,11 +749,21 @@ def test_native_windows_personal_recovery_with_real_sid_and_dacl(
             owner, None, acl, None,
         )
 
-    for entry in (root, mode_path, config_path, data_dir, data_dir / "partyops.db"):
+    # SQLite may already have created WAL/SHM/journal or instance-lock files
+    # before this fixture sets the parent ACL. The stricter recovery policy
+    # verifies these files too; do not leave them with runner-default ownership.
+    sidecars = [data_dir / name for name in (
+        "partyops.db-wal", "partyops.db-shm", "partyops.db-journal", ".partyops-instance.lock",
+    ) if (data_dir / name).exists()]
+    for entry in (root, mode_path, config_path, data_dir, data_dir / "partyops.db", *sidecars):
         protect(entry)
+        sd = win32security.GetFileSecurity(str(entry), win32security.OWNER_SECURITY_INFORMATION)
+        assert sd.GetSecurityDescriptorOwner() == owner, "native fixture owner mismatch: " + entry.name
 
     assert recovery_cli.trusted_data_directory(data_dir) == data_dir
-    assert recovery_cli.windows_personal_owner_scope(data_dir)
+    assert recovery_cli.windows_personal_owner_scope(data_dir), (
+        "native private ACL rejected; checked sidecars: " + ", ".join(p.name for p in sidecars)
+    )
     protect(data_dir / "partyops.db", broad_writer=True)
     try:
         assert not recovery_cli.windows_personal_owner_scope(data_dir)
@@ -870,3 +880,43 @@ def test_windows_legacy_personal_data_permission_classification(tmp_path, monkey
     assert recovery_cli.windows_personal_recovery_status(files.path) == "denied"
     marker.unlink()
     assert recovery_cli.windows_personal_recovery_status(files.path) == "denied"
+
+
+def test_windows_personal_recovery_rejects_nonpersonal_marker_with_private_acls(tmp_path, monkeypatch):
+    import json
+
+    files = _synthetic_windows_personal_owner_scope(tmp_path, monkeypatch)
+    marker = files.path / ".partyops-data-root.json"
+    data = {"format_version": 2, "product": "PartyOps",
+            "app_id": "1C8EFC63-CAFC-46EF-A5E3-D3D119B5BB3A", "scopes": ["host"]}
+    marker.write_text(json.dumps(data), encoding="utf-8")
+    assert recovery_cli.windows_personal_recovery_status(files.path) == "denied"
+    data["scopes"] = ["personal"]
+    marker.write_text(json.dumps(data), encoding="utf-8")
+    assert recovery_cli.windows_personal_recovery_status(files.path) == "verified"
+
+
+def test_windows_personal_recovery_checks_existing_sqlite_sidecars(tmp_path, monkeypatch):
+    import json
+
+    files = _synthetic_windows_personal_owner_scope(tmp_path, monkeypatch)
+    sidecar = files.path / "partyops.db-wal"
+    sidecar.touch()
+    files.by_path[sidecar] = {**files.state, "owner": "S-1-5-32-544"}
+    assert recovery_cli.windows_personal_recovery_status(files.path) == "denied"
+    marker = files.path / ".partyops-data-root.json"
+    marker.write_text(json.dumps({"format_version": 2, "product": "PartyOps",
+        "app_id": "1C8EFC63-CAFC-46EF-A5E3-D3D119B5BB3A", "scopes": ["personal"]}),
+        encoding="utf-8")
+    assert recovery_cli.windows_personal_recovery_status(files.path) == "verified"
+    files.by_path[sidecar] = {**files.state, "owner": "S-1-5-21-foreign-user"}
+    assert recovery_cli.windows_personal_recovery_status(files.path) == "denied"
+    files.by_path[sidecar] = {**files.state, "writer": "S-1-5-11"}
+    assert recovery_cli.windows_personal_recovery_status(files.path) == "repairable"
+
+
+def test_windows_personal_recovery_accepts_utf8_bom_config(tmp_path, monkeypatch):
+    files = _synthetic_windows_personal_owner_scope(tmp_path, monkeypatch)
+    for file in (files.env, files.mode):
+        file.write_text(file.read_text(encoding="utf-8"), encoding="utf-8-sig")
+    assert recovery_cli.windows_personal_owner_scope(files.path)

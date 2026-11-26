@@ -94,7 +94,7 @@ def _windows_personal_scope(path: Path, *, repair: bool = False) -> str:
                 return "denied"
             if limit is not None and info.st_size > limit:
                 return "denied"
-        mode = json.loads(mode_path.read_text(encoding="utf-8"))
+        mode = json.loads(mode_path.read_text(encoding="utf-8-sig"))
         if not isinstance(mode, dict) or mode.get("mode") != "personal":
             return "denied"
         configured_path = Path(str(mode.get("config_path") or config_path))
@@ -102,7 +102,7 @@ def _windows_personal_scope(path: Path, *, repair: bool = False) -> str:
             return "denied"
         environment: dict[str, str] = {}
         # Parse only the two needed keys as data; never execute saved content.
-        for line in config_path.read_text(encoding="utf-8").splitlines():
+        for line in config_path.read_text(encoding="utf-8-sig").splitlines():
             if not line.strip() or line.lstrip().startswith("#"):
                 continue
             key, separator, raw_value = line.partition("=")
@@ -196,7 +196,9 @@ def _windows_personal_scope(path: Path, *, repair: bool = False) -> str:
         if any(value is None for value in data_states):
             return "denied"
         needs_marker = any(value[0] != user_sid or value[1] for value in data_states)
-        if needs_marker:
+        if needs_marker or marker.exists() or marker.is_symlink():
+            # An existing marker must agree with the configured mode even
+            # when the database ACL itself is already private.
             # Marker must be a regular current-user-owned personal-only
             # record. Existing host/client/mixed scope is never adopted.
             info = marker.lstat()
