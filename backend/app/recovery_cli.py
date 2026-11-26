@@ -61,25 +61,27 @@ def trusted_data_directory(path: Path) -> Path:
 
 
 
-def windows_personal_owner_scope(path: Path) -> bool:
-    """Identify this Windows user's *configured* personal DB; never downgrade host ACLs.
+def _windows_personal_scope(path: Path, *, repair: bool = False) -> str:
+    """Validate saved personal identity, distinguish repairable inherited ACLs.
 
-    The current OS account must own the saved mode, personal configuration,
-    database directory and database file. No broad write ACE is permitted.
-    An elevated service operator using a different user's profile will not
-    qualify; that case must use the existing protected-host recovery flow.
+    Never adopt a foreign-owned or shared host database. An OS-owned legacy
+    data directory is accepted only with an explicit current-user write grant
+    and a private personal-only ownership marker. Broad ACL repair is limited
+    to objects already owned by the current user, with no foreign explicit
+    writers and no elevation. No ownership transfer or database edits.
     """
     if os.name != "nt":
-        return False
+        return "denied"
     import json
     import shlex
 
-    import win32api  # type: ignore[import-untyped]
-    import win32security  # type: ignore[import-untyped]
 
     # Do not import setup_wizard here: its transitive imports may initialize
     # app.database before PARTYOPS_DATA_DIR and PARTYOPS_MODE are bound.
     try:
+        import win32api  # type: ignore[import-untyped]
+        import win32security  # type: ignore[import-untyped]
+
         root = Path(os.getenv("LOCALAPPDATA", Path.home() / "AppData" / "Local")) / "PartyOps"
         mode_path = root / "mode.json"
         config_path = root / "personal.env"
@@ -89,18 +91,18 @@ def windows_personal_owner_scope(path: Path) -> bool:
             if stat.S_ISLNK(info.st_mode) or (
                 getattr(info, "st_file_attributes", 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT
             ):
-                return False
+                return "denied"
             if limit is not None and info.st_size > limit:
-                return False
-        mode = json.loads(mode_path.read_text(encoding="utf-8"))
+                return "denied"
+        mode = json.loads(mode_path.read_text(encoding="utf-8-sig"))
         if not isinstance(mode, dict) or mode.get("mode") != "personal":
-            return False
+            return "denied"
         configured_path = Path(str(mode.get("config_path") or config_path))
         if not configured_path.is_absolute() or configured_path.resolve(strict=True) != config_path.resolve(strict=True):
-            return False
+            return "denied"
         environment: dict[str, str] = {}
         # Parse only the two needed keys as data; never execute saved content.
-        for line in config_path.read_text(encoding="utf-8").splitlines():
+        for line in config_path.read_text(encoding="utf-8-sig").splitlines():
             if not line.strip() or line.lstrip().startswith("#"):
                 continue
             key, separator, raw_value = line.partition("=")
@@ -108,14 +110,14 @@ def windows_personal_owner_scope(path: Path) -> bool:
                 continue
             values = shlex.split(raw_value)
             if len(values) != 1 or key in environment:
-                return False
+                return "denied"
             environment[key] = values[0]
         saved_path = environment.get("PARTYOPS_DATA_DIR", "").strip()
         if environment.get("PARTYOPS_MODE") != "personal" or not saved_path:
-            return False
+            return "denied"
         declared = Path(saved_path)
         if not declared.is_absolute() or declared.resolve(strict=True) != path.resolve(strict=True):
-            return False
+            return "denied"
 
         token = win32security.OpenProcessToken(
             win32api.GetCurrentProcess(), win32security.TOKEN_QUERY
@@ -134,37 +136,137 @@ def windows_personal_owner_scope(path: Path) -> bool:
             0x00040000 | 0x00080000 | 0x10000000 | 0x40000000 |
             0x00000002 | 0x00000004 | 0x00000010 | 0x00000040 | 0x00000100
         )
-        for entry in (root, mode_path, config_path, path, path / "partyops.db"):
+        # The profile must remain private. Legacy data ACLs may inherit
+        # common local-disk groups; only repair our own data, never a foreign
+        # owner's files or any configured host database.
+        broad_groups = {"S-1-1-0", "S-1-5-11", "S-1-5-32-545"}
+        os_owners = {"S-1-5-18", "S-1-5-32-544"}
+        marker = path / ".partyops-data-root.json"
+        profile_entries = (root, mode_path, config_path)
+        data_entries = [path, path / "partyops.db"]
+        for name in ("partyops.db-wal", "partyops.db-shm", "partyops.db-journal", ".partyops-instance.lock"):
+            item = path / name
+            if item.exists() or item.is_symlink():
+                info = item.lstat()
+                if not stat.S_ISREG(info.st_mode) or getattr(info, "st_file_attributes", 0) & 0x400:
+                    return "denied"
+                data_entries.append(item)
+
+        def acl_state(entry: Path):
             descriptor = win32security.GetFileSecurity(
-                str(entry),
-                win32security.OWNER_SECURITY_INFORMATION |
+                str(entry), win32security.OWNER_SECURITY_INFORMATION |
                 win32security.DACL_SECURITY_INFORMATION,
             )
-            owner = win32security.ConvertSidToStringSid(
-                descriptor.GetSecurityDescriptorOwner()
-            )
-            if owner != user_sid:
-                return False
+            owner = win32security.ConvertSidToStringSid(descriptor.GetSecurityDescriptorOwner())
             dacl = descriptor.GetSecurityDescriptorDacl()
-            if dacl is None:
-                return False
+            if dacl is None or owner not in {user_sid, *os_owners}:
+                return None
+            direct = False
+            broad = False
             for index in range(dacl.GetAceCount()):
                 ace = dacl.GetAce(index)
                 ace_type, ace_flags = ace[0]
-                if ace_flags & 0x08:  # INHERIT_ONLY; not effective here.
+                if ace_flags & 0x08:
                     continue
                 if ace_type not in {
                     win32security.ACCESS_ALLOWED_ACE_TYPE,
                     getattr(win32security, "ACCESS_ALLOWED_OBJECT_ACE_TYPE", 5),
                 }:
+                    # Unknown allow/callback ACEs cannot be interpreted safely.
+                    if ace_type not in {1, 2, 3, 6, 7, 8}:
+                        return None
                     continue
                 sid = win32security.ConvertSidToStringSid(ace[-1])
-                if sid not in allowed_writers and int(ace[1]) & write_mask:
-                    return False
-        return True
-    except (OSError, ValueError, KeyError, TypeError, AttributeError, ImportError):
-        return False
+                if not int(ace[1]) & write_mask:
+                    continue
+                if sid == user_sid:
+                    direct = True
+                elif sid in broad_groups:
+                    broad = True
+                elif sid not in allowed_writers:
+                    return None
+            if owner != user_sid and not direct:
+                return None
+            return owner, broad
 
+        profile_states = [acl_state(entry) for entry in profile_entries]
+        if any(value is None or value[1] for value in profile_states):
+            return "denied"
+        data_states = [acl_state(entry) for entry in data_entries]
+        if any(value is None for value in data_states):
+            return "denied"
+        needs_marker = any(value[0] != user_sid or value[1] for value in data_states)
+        if needs_marker or marker.exists() or marker.is_symlink():
+            # An existing marker must agree with the configured mode even
+            # when the database ACL itself is already private.
+            # Marker must be a regular current-user-owned personal-only
+            # record. Existing host/client/mixed scope is never adopted.
+            info = marker.lstat()
+            if not stat.S_ISREG(info.st_mode) or info.st_size > 8192 or getattr(info, "st_file_attributes", 0) & 0x400:
+                return "denied"
+            mark = json.loads(marker.read_text(encoding="utf-8"))
+            if not isinstance(mark, dict) or mark.get("product") != "PartyOps" or mark.get("app_id") != "1C8EFC63-CAFC-46EF-A5E3-D3D119B5BB3A":
+                return "denied"
+            if not ((mark.get("format_version") == 2 and mark.get("scopes") == ["personal"]) or
+                    (mark.get("format_version") == 1 and mark.get("scope") == "personal")):
+                return "denied"
+            marker_state = acl_state(marker)
+            if marker_state is None or marker_state[0] != user_sid:
+                return "denied"
+            data_entries.append(marker)
+            data_states.append(marker_state)
+            # Do not reinterpret an active host configuration as personal.
+            host_config = Path(os.getenv("PROGRAMDATA", "C:/ProgramData")) / "PartyOps" / "partyops.env"
+            if host_config.is_file():
+                for line in host_config.read_text(encoding="utf-8-sig").splitlines():
+                    key, sep, raw = line.partition("=")
+                    if sep and key == "PARTYOPS_DATA_DIR":
+                        values = shlex.split(raw)
+                        if len(values) != 1 or Path(values[0]).resolve() == path.resolve():
+                            return "denied"
+        if not any(value[1] for value in data_states):
+            return "verified"
+        # Never repair ACLs on a SYSTEM/admin/foreign-owned directory or file;
+        # no takeover and no elevated helper. Only current user's old
+        # personal files with ordinary inherited broad group permissions.
+        if any(value[0] != user_sid for value in data_states):
+            return "denied"
+        if not repair:
+            return "repairable"
+        # Tighten only the database security boundary, not attachments,
+        # unrelated files or the parent volume. Protect DACL from inheritance.
+        for entry, state in zip(data_entries, data_states):
+            if not state[1]:
+                continue
+            acl = win32security.ACL()
+            flags = 0x03 if entry == path else 0  # object/container inherit
+            for sid in (user_sid, "S-1-5-18", "S-1-5-32-544"):
+                acl.AddAccessAllowedAceEx(
+                    win32security.ACL_REVISION_DS, flags, 0x001F01FF,
+                    win32security.ConvertStringSidToSid(sid),
+                )
+            win32security.SetNamedSecurityInfo(
+                str(entry), win32security.SE_FILE_OBJECT,
+                win32security.DACL_SECURITY_INFORMATION |
+                win32security.PROTECTED_DACL_SECURITY_INFORMATION,
+                None, None, acl, None,
+            )
+        # No reset may proceed unless actual ACL readback now passes.
+        return _windows_personal_scope(path)
+    except Exception:  # OS/ACL/parse errors are fail-closed, never expose secrets.
+        return "denied"
+
+
+def windows_personal_owner_scope(path: Path) -> bool:
+    return _windows_personal_scope(path) == "verified"
+
+
+def windows_personal_recovery_status(path: Path) -> str:
+    return _windows_personal_scope(path)
+
+
+def repair_windows_personal_recovery_acl(path: Path) -> bool:
+    return _windows_personal_scope(path, repair=True) == "verified"
 
 
 def personal_owner_scope(path: Path) -> bool:
@@ -201,6 +303,53 @@ def personal_owner_scope(path: Path) -> bool:
         return (values.get("PARTYOPS_MODE") == "personal" and declared.is_absolute()
                 and declared.resolve(strict=True) == path.resolve(strict=True))
     except (OSError, ValueError, TypeError, AttributeError):
+        return False
+
+
+def windows_host_recovery_config() -> tuple[Path, Path]:
+    """Discover the saved machine-level host independently of user profile."""
+    if os.name != "nt":
+        raise RecoveryCLIError("请在保存团队业务数据的 Windows 主机上操作。")
+    import shlex
+    root = Path(os.getenv("PROGRAMDATA", "C:/ProgramData")) / "PartyOps"
+    config, mode = root / "partyops.env", root / "mode.json"
+    try:
+        for entry in (config, root, *root.parents):
+            info = entry.lstat()
+            if stat.S_ISLNK(info.st_mode) or getattr(info, "st_file_attributes", 0) & 0x400:
+                raise ValueError("link")
+        if not config.is_file() or config.stat().st_size > 65536:
+            raise ValueError("config")
+        if mode.exists() or mode.is_symlink():
+            info = mode.lstat()
+            if not stat.S_ISREG(info.st_mode) or getattr(info, "st_file_attributes", 0) & 0x400 or info.st_size > 8192:
+                raise ValueError("mode")
+            state = json.loads(mode.read_text(encoding="utf-8-sig"))
+            if not isinstance(state, dict) or state.get("mode") != "host":
+                raise ValueError("not-host")
+            if state.get("config_path") and Path(state["config_path"]).resolve() != config.resolve():
+                raise ValueError("mode-binding")
+        values = {}
+        for line in config.read_text(encoding="utf-8-sig").splitlines():
+            key, sep, raw = line.partition("=")
+            if sep and key in {"PARTYOPS_MODE", "PARTYOPS_DATA_DIR"}:
+                parts = shlex.split(raw)
+                if len(parts) != 1 or key in values:
+                    raise ValueError("duplicate")
+                values[key] = parts[0]
+        declared = Path(values.get("PARTYOPS_DATA_DIR", ""))
+        if values.get("PARTYOPS_MODE") != "host" or not declared.is_absolute():
+            raise ValueError("not-configured")
+        return config, declared
+    except (OSError, ValueError, TypeError, KeyError):
+        raise RecoveryCLIError("未找到已配置的团队主机。请在保存团队数据库的主机电脑上打开账号恢复。") from None
+
+
+def windows_host_recovery_available() -> bool:
+    try:
+        windows_host_recovery_config()
+        return True
+    except RecoveryCLIError:
         return False
 
 
@@ -400,21 +549,8 @@ def main(argv: list[str] | None = None) -> int:
             if not personal:
                 if not is_os_administrator() or os.name != "nt":
                     raise RecoveryCLIError("仅原个人系统账号或受支持的本机主机管理员可以恢复。")
-                import shlex
-
-                config = Path(os.getenv("PROGRAMDATA", "C:/ProgramData")) / "PartyOps" / "partyops.env"
-                if config.is_symlink() or not config.is_file() or config.stat().st_size > 65536:
-                    raise RecoveryCLIError("主机配置不可验证。")
-                values = {}
-                for line in config.read_text(encoding="utf-8").splitlines():
-                    key, sep, raw = line.partition("=")
-                    if sep and key in {"PARTYOPS_MODE", "PARTYOPS_DATA_DIR"}:
-                        parts = shlex.split(raw)
-                        if len(parts) != 1 or key in values:
-                            raise RecoveryCLIError("主机配置不可验证。")
-                        values[key] = parts[0]
-                declared = Path(values.get("PARTYOPS_DATA_DIR", ""))
-                if values.get("PARTYOPS_MODE") != "host" or not declared.is_absolute() or declared.resolve(strict=True) != path.resolve(strict=True):
+                _config, declared = windows_host_recovery_config()
+                if declared.resolve(strict=True) != path.resolve(strict=True):
                     raise RecoveryCLIError("恢复目录不是当前已配置的主机业务目录。")
             payload = json.loads(sys.stdin.read(8193))
             if (not isinstance(payload, dict) or set(payload) != {"password", "confirmation"}

@@ -12,6 +12,10 @@ from .recovery_cli import (
     is_os_administrator,
     personal_owner_scope,
     trusted_data_directory,
+    windows_personal_recovery_status,
+    repair_windows_personal_recovery_acl,
+    windows_host_recovery_available,
+    windows_host_recovery_config,
 )
 
 
@@ -80,20 +84,35 @@ def run_desktop_recovery(*, host: bool = False) -> int:
     try:
         mode_path = wizard.config_root() / "mode.json"
         if not host:
-            mode = json.loads(mode_path.read_text(encoding="utf-8")).get("mode")
-            if mode == "host" and os.name == "nt":
+            try:
+                state = json.loads(mode_path.read_text(encoding="utf-8-sig"))
+                mode = state.get("mode") if isinstance(state, dict) else None
+            except (OSError, ValueError):
+                mode = None
+            if os.name == "nt" and (mode == "host" or (
+                mode != "personal" and windows_host_recovery_available()
+            )):
                 if not is_os_administrator():
-                    if messagebox.askyesno("党建智办", "团队主机恢复需要 Windows 管理员授权，是否继续？", parent=root):
-                        result = wizard.run_elevated(str(sys.executable), ["--recover-account", "--recovery-host"])
+                    if messagebox.askyesno("本机管理员确认", "这是团队主机。点击“是”，在 Windows 授权窗口确认后即可设置新密码，不需要原 PartyOps 密码。", parent=root):
+                        try:
+                            result = wizard.run_elevated(str(sys.executable), ["--recover-account", "--recovery-host"])
+                        except (OSError, subprocess.TimeoutExpired):
+                            messagebox.showwarning("授权未完成", "请重新打开恢复助手，并在 Windows 授权窗口完成确认。", parent=root)
+                            return 2
+                        if result.returncode == 1223:
+                            messagebox.showinfo("已取消", "未修改账号密码。需要恢复时可以重新打开助手。", parent=root)
+                            return 0
+                        if result.returncode not in (0, 2):
+                            messagebox.showwarning("授权未完成", "请在团队主机上使用 Windows 管理员账号确认授权后重试。", parent=root)
                         return int(result.returncode != 0)
                     return 0
                 host = True
             elif mode != "personal":
-                raise ValueError("请在保存业务数据的个人电脑或团队主机操作。")
+                raise ValueError("请在保存业务数据的个人电脑或团队主机操作。团队成员可请管理员重置密码。")
         if host:
             if os.name != "nt" or not is_os_administrator():
-                raise ValueError("团队主机需要本机管理员授权；当前平台请使用已有主机恢复流程。")
-            config = Path(os.getenv("PROGRAMDATA", "C:/ProgramData")) / "PartyOps" / "partyops.env"
+                raise ValueError("请在团队主机上打开找回账号和密码，并在 Windows 授权窗口确认。无需原 PartyOps 密码。")
+            config, host_data = windows_host_recovery_config()
         else:
             config = wizard.config_root() / "personal.env"
         saved = wizard.load_host_environment(config, inherit_environment=False)
@@ -102,12 +121,26 @@ def run_desktop_recovery(*, host: bool = False) -> int:
             raise ValueError("本机配置身份不匹配，恢复已停止。")
         data = trusted_data_directory(Path(saved["PARTYOPS_DATA_DIR"]))
         if host:
-            wizard.assert_windows_service_data_path_security(data, verify_target=True)
-        elif not personal_owner_scope(data):
-            raise ValueError("当前操作系统账号不是已配置个人数据的安全所有者，恢复已停止。")
+            if data.resolve(strict=True) != host_data.resolve(strict=True):
+                raise ValueError("团队主机数据目录配置发生变化，请重新打开恢复助手。")
+            try:
+                wizard.assert_windows_service_data_path_security(data, verify_target=True)
+            except PermissionError:
+                raise ValueError("已确认是团队主机，但数据目录权限异常。请在原主机使用配置向导检查数据目录后重试；原账号和资料未修改。") from None
+        repair_permissions = False
+        if not host and not personal_owner_scope(data):
+            if os.name == "nt" and windows_personal_recovery_status(data) == "repairable":
+                repair_permissions = True
+            else:
+                raise ValueError("未能确认这是当前 Windows 账号的个人数据。请使用平时登录软件的 Windows 账号打开恢复助手；若数据在其他磁盘，请先确认原磁盘已连接。原账号和资料未修改。")
         password = ResetDialog(root).result
         if password is None:
             return 0
+        if repair_permissions:
+            if not messagebox.askyesno("确认本机恢复", "检测到旧版个人数据继承了共享磁盘权限。是否自动收紧本机数据库权限并继续找回账号？原业务资料不会被删除或迁移。", parent=root):
+                return 0
+            if not repair_windows_personal_recovery_acl(data):
+                raise ValueError("本机数据权限未能自动修复，原账号和资料未修改。请使用原 Windows 账号重试。")
         executable = wizard._executable("partyops")
         if host:
             lock_path = wizard._acquire_windows_data_migration_lock()
@@ -134,7 +167,14 @@ def run_desktop_recovery(*, host: bool = False) -> int:
             creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
         )
         if result.returncode != 0:
-            raise ValueError("恢复未完成。若有其他管理员，请联系其重置；否则请重新打开软件后重试。原账号和业务数据未被删除。")
+            # Only display known fixed recovery errors, never child tracebacks,
+            # passwords, paths or arbitrary stderr.
+            detail = (getattr(result, "stderr", "") or "").strip()
+            if "仅当主机恰有一名有效管理员" in detail:
+                raise ValueError("本团队有多位管理员或没有有效管理员。请由另一位管理员重置，或使用已保存的恢复凭证。")
+            if "尚未完成 1.4.6 账号恢复迁移" in detail:
+                raise ValueError("请先正常启动一次新版党建智办完成数据库升级，再打开恢复助手。")
+            raise ValueError("恢复未完成。请确认原业务数据可访问，并关闭其他正在使用党建智办的窗口后重试。原账号和业务数据未被删除。")
         username = json.loads(result.stdout)["username"]
         messagebox.showinfo("恢复成功", f"您的登录账号：{username}\n请使用刚设置的新密码登录。", parent=root)
         return 0

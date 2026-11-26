@@ -1,0 +1,111 @@
+name: RC1 prepackage gate - full Windows regression (NO INSTALLER)
+on:
+  pull_request:
+    branches: [qa/rc1-cross-platform-source-convergence-20261125]
+    paths:
+      - 'backend/app/recovery_cli.py'
+      - 'backend/app/desktop_recovery.py'
+      - 'backend/tests/**'
+      - 'packaging/windows/**'
+      - '.github/workflows/cloud-rc1-recovery-prepackage-gate.yml'
+      - '.github/workflows/cloud-rc1-windows-interactive-wizard-fix.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+
+concurrency:
+  group: rc1-windows-x64-secure-pdf-full-backend-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  regression:
+    name: Real Windows x64 complete backend tests with isolated PyMuPDF 2.1 lock
+    runs-on: windows-2025
+    timeout-minutes: 55
+    env:
+      PYTHONUTF8: '1'
+    steps:
+      - name: Checkout exact PR code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Use Python 3.12 x64
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+          architecture: x64
+
+      - name: Resolve the existing backend with only PyMuPDF changed in a disposable project
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python -m pip install --disable-pip-version-check 'uv==0.11.7'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python scripts/rc1_windows_pdf_lock_review.py prepare --root . --candidate artifacts/windows-pdf-full-regression
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          uv lock --project artifacts/windows-pdf-full-regression --upgrade-package pymupdf
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python scripts/rc1_windows_pdf_lock_delta.py --baseline backend/uv.lock --candidate artifacts/windows-pdf-full-regression/uv.lock --output artifacts/windows-pdf-full-regression-delta.json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python scripts/rc1_pymupdf_21_wheel_matrix.py --lock artifacts/windows-pdf-full-regression/uv.lock --output artifacts/windows-pdf-full-regression-wheel-matrix.json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          uv sync --project artifacts/windows-pdf-full-regression --locked --no-install-project --group dev
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $python = 'artifacts/windows-pdf-full-regression/.venv/Scripts/python.exe'
+          uv pip install --python $python 'pytest==9.1.1' 'pytest-cov==6.2.1' 'pytest-asyncio==1.4.0' -r qa/vm-lab/requirements.txt -r packaging/windows/requirements-build.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          uv pip check --python $python
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & $python -c "import importlib.metadata; assert importlib.metadata.version('pymupdf') == '2.1'"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Run the unmodified PartyOps Windows backend regression suite and coverage
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $python = '../artifacts/windows-pdf-full-regression/.venv/Scripts/python.exe'
+          New-Item -ItemType Directory -Path artifacts/windows-pdf-full-regression-evidence -Force | Out-Null
+          Push-Location backend
+          try {
+            & $python -m pytest tests -rs --cov=app --cov-branch --cov-report=json:../artifacts/windows-pdf-full-regression-evidence/coverage.json --junitxml=../artifacts/windows-pdf-full-regression-evidence/junit.xml 2>&1 | Tee-Object -FilePath ../artifacts/windows-pdf-full-regression-evidence/pytest.log
+            if ($LASTEXITCODE -ne 0) { throw '[WINDOWS_SECURE_PDF_21_BACKEND_REGRESSION_FAILED]' }
+          } finally {
+            Pop-Location
+          }
+
+      - name: Enforce original release coverage thresholds, then verify unchanged production lock
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python scripts/verify-coverage.py artifacts/windows-pdf-full-regression-evidence/coverage.json --line 95 --branch 92
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python scripts/rc1_windows_pdf_lock_review.py finalize --root . --candidate artifacts/windows-pdf-full-regression --evidence artifacts/windows-pdf-full-regression-evidence/provenance.json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $evidence = Get-Content -LiteralPath artifacts/windows-pdf-full-regression-evidence/provenance.json -Raw | ConvertFrom-Json
+          if ($evidence.release_ready -or $evidence.production_upgrade_approved -or -not $evidence.production_files_unchanged) {
+            throw '[WINDOWS_SECURE_PDF_21_UNAUTHORIZED_PRODUCTION_CHANGE]'
+          }
+          foreach ($name in @('junit.xml', 'coverage.json', 'pytest.log', 'provenance.json')) {
+            $file = Join-Path 'artifacts/windows-pdf-full-regression-evidence' $name
+            if (-not (Test-Path -LiteralPath $file -PathType Leaf) -or (Get-Item -LiteralPath $file).Length -eq 0) {
+              throw "[RC1_PREPACKAGE_REQUIRED_EVIDENCE_MISSING] $name"
+            }
+          }
+          'PartyOps Windows x64 full backend under isolated CVE-remediated PyMuPDF 2.1: test-only, source unchanged.' |
+            Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+
+      - name: Upload only regression, coverage and candidate-lock evidence, not an installer
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: partyops-rc1-win-x64-secure-pdf21-full-backend-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            artifacts/windows-pdf-full-regression-evidence/**
+            artifacts/windows-pdf-full-regression/uv.lock
+            artifacts/windows-pdf-full-regression/pyproject.toml
+            artifacts/windows-pdf-full-regression-delta.json
+            artifacts/windows-pdf-full-regression-wheel-matrix.json
+          if-no-files-found: error
+          retention-days: 14
