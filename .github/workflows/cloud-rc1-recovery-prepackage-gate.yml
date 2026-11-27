@@ -108,3 +108,67 @@ jobs:
             artifacts/windows-pdf-full-regression-wheel-matrix.json
           if-no-files-found: error
           retention-days: 14
+
+  linux-system-regression:
+    name: Linux targeted system regressions and POSIX key permissions (no installer)
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.pull_request.base.ref == 'qa/rc1-windows-interactive-wizard-fix-20261126' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      PYTHONUTF8: '1'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+      - name: Prepare isolated dependency environment, preserve production lock
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check 'uv==0.11.7'
+          python scripts/rc1_windows_pdf_lock_review.py prepare --root . --candidate artifacts/linux-pdf-regression
+          uv lock --project artifacts/linux-pdf-regression --upgrade-package pymupdf
+          python scripts/rc1_windows_pdf_lock_delta.py --baseline backend/uv.lock --candidate artifacts/linux-pdf-regression/uv.lock --output artifacts/linux-pdf-delta.json
+          uv sync --project artifacts/linux-pdf-regression --locked --no-install-project --group dev
+          py=artifacts/linux-pdf-regression/.venv/bin/python
+          uv pip install --python "$py" 'pytest==9.1.1' 'pytest-cov==6.2.1' 'pytest-asyncio==1.4.0' -r qa/vm-lab/requirements.txt
+          uv pip check --python "$py"
+          "$py" -c "import importlib.metadata; assert importlib.metadata.version('pymupdf') == '2.1'"
+          git diff --exit-code -- backend/uv.lock backend/pyproject.toml backend/requirements.txt
+      - name: Exercise changed system boundaries and earlier account and transport contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/linux-system-regression
+          cd backend
+          ../artifacts/linux-pdf-regression/.venv/bin/python -m pytest -rs \
+            tests/test_auth_hardening.py tests/test_pairing_expiry.py \
+            tests/test_support_routes.py tests/test_rc3_remaining_branch_gate.py \
+            tests/test_rc1_agent_identity.py tests/test_rc2_ai_key_storage.py \
+            tests/test_rc1_account_recovery.py tests/test_rc1_recovery_cli.py \
+            tests/test_rc1_transport_enrollment_boundaries.py \
+            --junitxml=../artifacts/linux-system-regression/junit.xml \
+            2>&1 | tee ../artifacts/linux-system-regression/pytest.log
+      - name: Ensure real POSIX key mode check ran
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import xml.etree.ElementTree as ET
+          root = ET.parse('artifacts/linux-system-regression/junit.xml')
+          matches = [case for case in root.iter('testcase') if case.get('name') == 'test_new_key_is_private_before_atomic_publication']
+          assert len(matches) == 1 and not any(matches[0].find(tag) is not None for tag in ('skipped','failure','error'))
+          PY
+          git diff --exit-code -- backend/uv.lock backend/pyproject.toml backend/requirements.txt
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: partyops-linux-system-regression-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            artifacts/linux-system-regression/**
+            artifacts/linux-pdf-delta.json
+          if-no-files-found: error
+          retention-days: 14
