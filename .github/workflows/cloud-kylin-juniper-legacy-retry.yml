@@ -1,0 +1,157 @@
+name: Kylin Juniper ARM64 - verify existing SQLite and build remaining codecs
+on:
+  pull_request:
+    types: [opened]
+    branches: [qa/kylin-juniper-legacy-wheel-build-20261127]
+    paths:
+      - '.github/workflows/cloud-kylin-juniper-legacy-retry.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  sqlite-existing-wheel:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      IMAGE: quay.io/pypa/manylinux2014_aarch64@sha256:382236bfd11d86894d9792a6fa5286190b8dd3d075a7032284e123c288711e4f
+    steps:
+      - name: Verify original SQLite artifact and test existing wheel without rebuilding
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p evidence wheels
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/15196704686" > evidence/original-artifact.json
+          jq -e '.workflow_run.id==45999886156 and .expired==false and .digest=="sha256:f3939b7b8763b98f47b690d1cc2e393e7d59d638c75b474283afbed00bd17d61"' evidence/original-artifact.json
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/15196704686/zip" > original.zip
+          printf '%s  %s\n' f3939b7b8763b98f47b690d1cc2e393e7d59d638c75b474283afbed00bd17d61 original.zip | sha256sum -c -
+          unzip -q original.zip -d original
+          find original -name '*.whl' -type f -exec cp {} wheels/ \;
+          test "$(find wheels -name '*.whl' | wc -l)" = 1
+          sha256sum wheels/*.whl > evidence/wheel.sha256
+          docker pull "$IMAGE"
+          docker run --rm --network none -v "$PWD/wheels:/wheels:ro" "$IMAGE" /bin/bash -c '
+            set -euo pipefail
+            test "$(getconf GNU_LIBC_VERSION)" = "glibc 2.17"
+            PY=/opt/python/cp311-cp311/bin/python
+            auditwheel show /wheels/*.whl
+            "$PY" -m pip install --no-index --no-deps /wheels/*.whl
+            cd /tmp
+            "$PY" -I -c "import pysqlite3 as s; import pathlib; assert \"site-packages\" in str(pathlib.Path(s.__file__)); assert s.sqlite_version == \"3.51.3\"; db=s.connect(\":memory:\"); db.execute(\"create virtual table test using fts5(body)\"); db.execute(\"insert into test values (?)\",(\"党建工作\",)); assert db.execute(\"select count(*) from test where test match ?\",(\"党建工作\",)).fetchone()==(1,); print(s.sqlite_version,\"FTS5 PASS\",s.__file__)"
+          ' 2>&1 | tee evidence/retest.log
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: kylin-legacy-arm64-sqlite-existing-wheel-retest
+          path: evidence
+          if-no-files-found: error
+          retention-days: 14
+  pillow:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 120
+    env:
+      IMAGE: quay.io/pypa/manylinux2014_aarch64@sha256:382236bfd11d86894d9792a6fa5286190b8dd3d075a7032284e123c288711e4f
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Checkout pinned upstream Pillow including its codec build submodules
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: python-pillow/Pillow
+          ref: 293218ad059d994baf1777d882911bed6a49704a
+          path: upstream-pillow
+          submodules: recursive
+          persist-credentials: false
+      - name: Use pinned upstream codec build and upstream tagged source; retain PyPI source provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p evidence/wheels input
+          test "$(git -C upstream-pillow rev-parse HEAD)" = 293218ad059d994baf1777d882911bed6a49704a
+          git -C upstream-pillow submodule status --recursive > evidence/submodules.txt
+          ! grep -Eq '^[+-U]' evidence/submodules.txt
+          python scripts/download-pypi-sdist.py 'Pillow==13.0.0' input
+          cp input/*.pypi.json evidence/
+          sha256sum input/* > evidence/source.sha256
+          cp upstream-pillow/.github/dependencies.json evidence/codec-versions.json
+          docker pull "$IMAGE"
+          printf '%s\n' "$IMAGE" > evidence/builder-image.txt
+          docker run --rm -v "$PWD/upstream-pillow:/pillow" -v "$PWD/input:/input:ro" -v "$PWD/evidence:/out" -w /pillow "$IMAGE" /bin/bash -c '
+            set -euo pipefail
+            test "$(getconf GNU_LIBC_VERSION)" = "glibc 2.17"
+            PY=/opt/python/cp311-cp311/bin/python
+            export PATH="/opt/python/cp311-cp311/bin:$PATH"
+            "$PY" -m pip install setuptools==80.9.0 wheel==0.45.1 packaging==25.0 cmake==3.31.6 ninja==1.11.1.4
+            export CIBW_ARCHS=aarch64 CIBW_PLATFORM=linux
+            export CFLAGS="-O2 -g0 -fPIC -march=armv8-a"
+            export CXXFLAGS="-O2 -g0 -fPIC -march=armv8-a"
+            bash .github/workflows/wheels-dependencies.sh
+            mkdir -p /tmp/raw
+            "$PY" -m pip wheel --no-deps --wheel-dir /tmp/raw -C raqm=enable -C raqm=vendor -C fribidi=vendor -C imagequant=disable .
+            auditwheel repair --plat manylinux2014_aarch64 -w /out/wheels /tmp/raw/*.whl
+            "$PY" -m pip install --no-index --no-deps /out/wheels/*.whl
+            cd /tmp
+            "$PY" -I -c "from PIL import Image,features,__version__; import io; assert __version__==\"13.0.0\"; required=[\"jpg\",\"jpg_2000\",\"zlib\",\"libtiff\",\"webp\",\"avif\",\"littlecms2\",\"freetype2\"]; print({x:features.check(x) for x in required}); assert all(features.check(x) for x in required); im=Image.new(\"RGB\",(16,16)); b=io.BytesIO(); im.save(b,format=\"AVIF\"); b.seek(0); assert Image.open(b).size==(16,16); print(\"PILLOW_CODEC_PASS\")"
+            sha256sum /out/wheels/*.whl > /out/wheels.sha256
+          ' 2>&1 | tee evidence/build.log
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: kylin-legacy-arm64-pillow-upstream-codec-build
+          path: evidence
+          if-no-files-found: error
+          retention-days: 14
+  onnxruntime:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 180
+    env:
+      IMAGE: quay.io/pypa/manylinux2014_aarch64@sha256:382236bfd11d86894d9792a6fa5286190b8dd3d075a7032284e123c288711e4f
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Retrieve exact official ONNX source on hosted runner instead of inside container
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: microsoft/onnxruntime
+          ref: 89746dc19a0a1ae59ebf4b16df9acab8f99f3925
+          path: upstream-onnx
+          submodules: recursive
+          persist-credentials: false
+      - name: Build existing pinned source on glibc 2.17
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p evidence
+          test "$(git -C upstream-onnx rev-parse HEAD)" = 89746dc19a0a1ae59ebf4b16df9acab8f99f3925
+          git -C upstream-onnx submodule status --recursive > evidence/submodules.txt
+          ! grep -Eq '^[+-U]' evidence/submodules.txt
+          docker pull "$IMAGE"
+          printf '%s\n' "$IMAGE" > evidence/builder-image.txt
+          docker run --rm -v "$PWD:/workspace" -w /workspace "$IMAGE" /bin/bash -c '
+            set -euo pipefail
+            test "$(getconf GNU_LIBC_VERSION)" = "glibc 2.17"
+            git config --global --add safe.directory /workspace/upstream-onnx
+            PY=/opt/python/cp311-cp311/bin/python
+            export PATH="/opt/python/cp311-cp311/bin:$PATH"
+            "$PY" -m pip install setuptools==80.9.0 wheel==0.45.1 packaging==25.0 numpy==2.2.6 flatbuffers==25.2.10 cmake==3.31.6 ninja==1.11.1.4
+            export PARTYOPS_ONNX_SOURCE=/workspace/upstream-onnx PARTYOPS_BUILD_JOBS=2
+            export CFLAGS="-O2 -fstack-protector-strong -D_FORTIFY_SOURCE=2 -march=armv8-a"
+            export CXXFLAGS="-O2 -fstack-protector-strong -D_FORTIFY_SOURCE=2 -static-libstdc++ -static-libgcc -march=armv8-a"
+            bash scripts/build-onnxruntime-manylinux2014.sh arm64 "$PY"
+            "$PY" -m pip install vendor/wheels/arm64/onnxruntime-1.22.1-*.whl
+            "$PY" -I -c "import onnxruntime as ort; assert ort.__version__==\"1.22.1\"; assert \"CPUExecutionProvider\" in ort.get_available_providers(); print(ort.get_available_providers())"
+            cp vendor/wheels/arm64/onnxruntime-1.22.1-*.whl evidence/
+            cp artifacts/source-evidence/onnxruntime-1.22.1-arm64-* evidence/
+          ' 2>&1 | tee evidence/build.log
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: kylin-legacy-arm64-onnxruntime-host-checkout-build
+          path: evidence
+          if-no-files-found: error
+          retention-days: 14
