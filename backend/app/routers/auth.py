@@ -222,6 +222,18 @@ def login(
         )
     # 与凭据修改共用写临界区，旧密码验证不能在撤销后签出新会话。
     with credential_transaction(db):
+        # Requests that queued before a concurrent failure locked this account
+        # must recheck once they own the credential transaction.
+        retry_after = login_throttle.retry_after(payload.username, address, settings=settings)
+        if retry_after:
+            raise ProblemException(
+                429,
+                "LOGIN_THROTTLED",
+                "登录尝试过于频繁",
+                f"请等待约 {retry_after} 秒后再试。",
+                extra={"retry_after_seconds": retry_after},
+                headers={"Retry-After": str(retry_after)},
+            )
         user = db.scalar(select(User).where(User.username == payload.username.lower()))
         active = bool(user and user.active)
         candidate_hash = user.password_hash if user and user.active else _DUMMY_PASSWORD_HASH

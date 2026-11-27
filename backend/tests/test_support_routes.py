@@ -327,7 +327,7 @@ def test_search_cjk_permission_and_count_exclude_unrelated_restricted_tasks(clie
     phrase = "权限专项中文检索"
     visible = create_task(client, admin["id"], title=phrase + "正常事项", steps=[], materials=[])
     hidden = create_task(client, admin["id"], title=phrase + "受限事项",
-                         sensitivity="restricted", steps=[], materials=[])
+                         sensitivity="restricted", description="", steps=[], materials=[])
     # The session-scoped client already owns the application lifespan.
     other = TestClient(app)
     try:

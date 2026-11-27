@@ -110,8 +110,8 @@ class LoginThrottle:
                 state = self._states.get(key)
                 if (
                     state is None
-                    or current - state.window_started
-                    >= configured.login_window_seconds
+                    or (state.locked_until <= current and
+                        current - state.window_started >= configured.login_window_seconds)
                 ):
                     state = _FailureState(0, current, 0.0, current)
                 state.failures += 1
@@ -122,13 +122,15 @@ class LoginThrottle:
                         current + configured.login_lock_seconds,
                     )
                 self._states[key] = state
-            self._prune(current, configured)
+            # Read the outcome before capacity pruning: when older entries
+            # are locked, an unlocked new key can itself be evicted.
             retry = max(
                 0.0,
                 self._states[account_key].locked_until - current,
                 self._states[client_key].locked_until - current,
             )
             failures = self._states[account_key].failures
+            self._prune(current, configured)
         if self._log_failures:
             logger.warning(
                 "login_failed account=%s client=%s failures=%s locked=%s",

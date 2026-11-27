@@ -252,3 +252,43 @@ def test_missing_account_performs_password_verification_but_never_authenticates(
 def test_login_input_bounds(client, username, password):
     response = client.post("/api/v1/auth/login", json={"username": username, "password": password})
     assert response.status_code == 422
+
+
+
+def test_login_throttle_capacity_with_locked_entries_keeps_existing_locks(tmp_path):
+    settings = config.Settings(data_dir=tmp_path, login_account_failure_limit=3,
+        login_ip_failure_limit=5, login_throttle_max_entries=128,
+        login_window_seconds=60, login_lock_seconds=120)
+    throttle = LoginThrottle(log_failures=False)
+    for index in range(64):
+        for _ in range(5):
+            throttle.record_failure(f"locked-{index}", f"192.0.2.{index}", now=10, settings=settings)
+    assert len(throttle._states) == 128
+    # The new keys may be pruned immediately. Never index a pruned key or
+    # evict an existing active lock to retain low-frequency noise.
+    assert throttle.record_failure("new-account", "198.51.100.1", now=11, settings=settings) == 0
+    assert len(throttle._states) == 128
+    assert throttle.retry_after("locked-0", "192.0.2.0", now=11, settings=settings) == 119
+
+
+def test_login_throttle_failure_does_not_reset_active_lock_at_window_boundary(tmp_path):
+    settings = config.Settings(data_dir=tmp_path, login_account_failure_limit=3,
+        login_ip_failure_limit=20, login_window_seconds=60, login_lock_seconds=120)
+    throttle = LoginThrottle(log_failures=False)
+    for when in (0, 1, 2):
+        throttle.record_failure("admin", "192.0.2.1", now=when, settings=settings)
+    assert throttle.retry_after("admin", "192.0.2.1", now=61, settings=settings) == 61
+    assert throttle.record_failure("admin", "192.0.2.1", now=61, settings=settings) >= 61
+
+
+def test_login_rechecks_throttle_after_waiting_for_credential_transaction(client, admin, monkeypatch):
+    checks = iter([0, 90])
+    monkeypatch.setattr(login_throttle, "retry_after", lambda *_a, **_k: next(checks))
+    def unexpected(*_a, **_k):
+        pytest.fail("queued request verified password despite newly active lock")
+    monkeypatch.setattr(auth, "verify_password", unexpected)
+    response = client.post("/api/v1/auth/login", json={
+        "username": admin["username"], "password": "PartyOps@2026"})
+    assert response.status_code == 429, response.text
+    assert response.json()["code"] == "LOGIN_THROTTLED"
+    assert response.headers["retry-after"] == "90"
