@@ -57,6 +57,10 @@ from ..seed import seed_demo_data, seed_templates
 
 router = APIRouter(tags=["bootstrap-auth"])
 
+# Constant dummy Argon2id hash at the default cost. Its result can never
+# authorize a nonexistent or disabled account.
+_DUMMY_PASSWORD_HASH = "$argon2id$v=19$m=65536,t=3,p=4$Y4QzbiTOAl4ArjSp7QwH0w$uNxhtO+JOxlEs5lJkH9r7H7Uu2cpxvO93Kcxr5SS2t0"
+
 
 def client_ip(request: Request) -> str:
     return request.client.host if request.client else ""
@@ -218,8 +222,23 @@ def login(
         )
     # 与凭据修改共用写临界区，旧密码验证不能在撤销后签出新会话。
     with credential_transaction(db):
+        # Requests that queued before a concurrent failure locked this account
+        # must recheck once they own the credential transaction.
+        retry_after = login_throttle.retry_after(payload.username, address, settings=settings)
+        if retry_after:
+            raise ProblemException(
+                429,
+                "LOGIN_THROTTLED",
+                "登录尝试过于频繁",
+                f"请等待约 {retry_after} 秒后再试。",
+                extra={"retry_after_seconds": retry_after},
+                headers={"Retry-After": str(retry_after)},
+            )
         user = db.scalar(select(User).where(User.username == payload.username.lower()))
-        if not user or not user.active or not verify_password(payload.password, user.password_hash):
+        active = bool(user and user.active)
+        candidate_hash = user.password_hash if user and user.active else _DUMMY_PASSWORD_HASH
+        password_matches = verify_password(payload.password, candidate_hash)
+        if not active or not password_matches:
             retry_after = login_throttle.record_failure(
                 payload.username,
                 address,

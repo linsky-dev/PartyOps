@@ -79,16 +79,17 @@ def validate_session_csrf(request: Request, record: LoginSession) -> None:
         return
     expected_hash = (record.csrf_token_hash or "").strip()
     if not expected_hash:
-        # 0021 前创建的会话继续由严格同源中间件保护；重新登录后自动升级
-        # 为双重提交令牌，避免版本升级时把正在使用的账号直接踢出。
-        return
+        raise ProblemException(
+            403, "SESSION_CSRF_INVALID", "安全校验未通过",
+            "此会话来自旧版本，请重新登录后继续操作。",
+        )
     supplied_header = request.headers.get(CSRF_HEADER, "").strip()
     supplied_cookie = request.cookies.get(CSRF_COOKIE, "").strip()
     if (
         not supplied_header
         or not supplied_cookie
-        or not secrets.compare_digest(supplied_header, supplied_cookie)
-        or not secrets.compare_digest(hash_token(supplied_header), expected_hash)
+        or not secrets.compare_digest(supplied_header.encode("utf-8"), supplied_cookie.encode("utf-8"))
+        or not secrets.compare_digest(hash_token(supplied_header).encode("ascii"), expected_hash.encode("utf-8"))
     ):
         raise ProblemException(
             403,
@@ -121,7 +122,12 @@ def get_current_user(
     user = db.get(User, record.user_id, populate_existing=True)
     if not user or not user.active:
         raise ProblemException(403, "USER_DISABLED", "账号不可用", "请联系管理员。")
-    record.last_seen_at = utcnow()
+    # Keep authentication/revocation checks real-time, but avoid marking
+    # the ORM session dirty on every API request. This is activity metadata,
+    # not the credential expiry deadline. Keep the existing transaction policy.
+    now = utcnow()
+    if record.last_seen_at is None or now - _ensure_aware(record.last_seen_at) >= timedelta(seconds=60):
+        record.last_seen_at = now
     return user
 
 
@@ -141,6 +147,8 @@ def get_current_user_optional(
         or _ensure_aware(record.expires_at) <= utcnow()
     ):
         return None
+    if get_settings().environment == "production":
+        validate_session_csrf(request, record)
     user = db.get(User, record.user_id)
     return user if user and user.active else None
 

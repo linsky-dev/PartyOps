@@ -6,6 +6,8 @@ import ipaddress
 import os
 import re
 import socket
+import tempfile
+import threading
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -25,6 +27,7 @@ from .models import (
     WorkspaceFile,
     WorkspaceRoot,
 )
+from .private_files import verify_private_path
 from .problems import ProblemException
 from .task_service import can_view_task, visible_tasks
 from .workspace import search_workspace_files
@@ -35,17 +38,32 @@ def _machine_key_path() -> Path:
     return get_settings().secrets_dir / "ai-fernet.key"
 
 
+# PartyOps enforces a single host process per data directory. Serialize
+# first use by concurrent request threads so encrypted records keep one key.
+_machine_key_lock = threading.Lock()
+
+
 def _machine_fernet() -> Fernet:
     path = _machine_key_path()
-    if not path.exists():
-        temporary = path.with_suffix(".new")
-        temporary.write_bytes(Fernet.generate_key())
+    with _machine_key_lock:
         try:
-            os.chmod(temporary, 0o600)
-        except OSError:
-            pass
-        os.replace(temporary, path)
-    return Fernet(path.read_bytes().strip())
+            verify_private_path(path)
+        except FileNotFoundError:
+            # mkstemp creates a unique owner-only file on POSIX before writing
+            # a byte; Windows retains the protected host secrets-directory ACL.
+            descriptor, filename = tempfile.mkstemp(dir=path.parent, prefix=".ai-fernet-")
+            temporary = Path(filename)
+            try:
+                with os.fdopen(descriptor, "wb") as handle:
+                    handle.write(Fernet.generate_key())
+                    handle.flush()
+                    os.fsync(handle.fileno())
+                verify_private_path(temporary)
+                os.replace(temporary, path)
+            finally:
+                temporary.unlink(missing_ok=True)
+        verify_private_path(path)
+        return Fernet(path.read_bytes().strip())
 
 
 def encrypt_api_key(value: str) -> str:
@@ -57,7 +75,7 @@ def decrypt_api_key(value: str) -> str:
         return ""
     try:
         return _machine_fernet().decrypt(value.encode("ascii")).decode("utf-8")
-    except (InvalidToken, ValueError) as exc:
+    except (InvalidToken, ValueError, OSError) as exc:
         raise ProblemException(
             409,
             "AI_KEY_UNAVAILABLE",

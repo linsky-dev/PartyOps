@@ -514,8 +514,7 @@ def _origin_allowed(request: Request) -> bool:
         or parsed.username
         or parsed.password
         or (not allow_path and parsed.path not in {"", "/"})
-        or parsed.query
-        or parsed.fragment
+        or (not allow_path and (parsed.query or parsed.fragment))
     ):
         return False
     normalized = f"{parsed.scheme.lower()}://{parsed.netloc.lower()}"
@@ -556,6 +555,39 @@ def _authenticate_agent_transport(request: Request, token: str) -> None:
     """在工作线程核对设备身份，数据库会话只在本次验证中使用。"""
     with db_runtime.session_factory() as db:
         check_device_tls(request, db, token)
+
+
+def _device_version_gate_response(request: Request) -> JSONResponse | None:
+    """实时核对版本，不在事件循环线程等待 SQLite 或维护锁。"""
+    # 协同电脑版本低于主机时，服务端同时阻止业务 API。前端路由门禁
+    # 负责给出更新说明；此处避免手工输入 URL 绕过版本一致性要求。
+    with db_runtime.session_factory() as gate_db:
+        # 仅版本门禁允许旧客户端按唯一 IP 识别；业务授权始终要求签名
+        # 设备上下文，避免同一 NAT/IP 下的浏览器继承设备权限。
+        device = request_device(request, gate_db, allow_ip_fallback=True)
+        if device:
+            state = device_version_state(device)
+            if state != "current":
+                status_code = 403 if state in {"revoked", "quarantined"} else 426
+                return _apply_security_headers(
+                    JSONResponse(
+                        status_code=status_code,
+                        content={
+                            "type": "https://partyops.local/problems/DEVICE_UPDATE_REQUIRED",
+                            "title": "协同电脑需要更新",
+                            "detail": "当前协同电脑版本与主机不一致，请完成更新后再进入业务系统。",
+                            "code": "DEVICE_UPDATE_REQUIRED",
+                            "trace_id": request.state.trace_id,
+                            "device_id": device.id,
+                            "current_version": device.app_version or "未上报",
+                            "target_version": settings.app_version,
+                            "state": state,
+                        },
+                        media_type="application/problem+json",
+                    ),
+                    request,
+                )
+    return None
 
 
 @app.middleware("http")
@@ -661,34 +693,9 @@ async def trace_requests(request: Request, call_next):
             "/api/v1/devices/",
         )
     ):
-        # 协同电脑版本低于主机时，服务端同时阻止业务 API。前端路由门禁
-        # 负责给出更新说明；此处避免手工输入 URL 绕过版本一致性要求。
-        with db_runtime.session_factory() as gate_db:
-            # 仅版本门禁允许旧客户端按唯一 IP 识别；业务授权始终要求签名
-            # 设备上下文，避免同一 NAT/IP 下的浏览器继承设备权限。
-            device = request_device(request, gate_db, allow_ip_fallback=True)
-            if device:
-                state = device_version_state(device)
-                if state != "current":
-                    status_code = 403 if state in {"revoked", "quarantined"} else 426
-                    return _apply_security_headers(
-                        JSONResponse(
-                            status_code=status_code,
-                            content={
-                                "type": "https://partyops.local/problems/DEVICE_UPDATE_REQUIRED",
-                                "title": "协同电脑需要更新",
-                                "detail": "当前协同电脑版本与主机不一致，请完成更新后再进入业务系统。",
-                                "code": "DEVICE_UPDATE_REQUIRED",
-                                "trace_id": request.state.trace_id,
-                                "device_id": device.id,
-                                "current_version": device.app_version or "未上报",
-                                "target_version": settings.app_version,
-                                "state": state,
-                            },
-                            media_type="application/problem+json",
-                        ),
-                        request,
-                    )
+        denied = await run_in_threadpool(_device_version_gate_response, request)
+        if denied is not None:
+            return denied
     response = await call_next(request)
     return _apply_security_headers(response, request)
 

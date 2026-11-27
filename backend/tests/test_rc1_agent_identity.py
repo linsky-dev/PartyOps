@@ -85,3 +85,21 @@ def test_rotation_config_write_failure_preserves_previous_keys(monkeypatch, tmp_
     assert path.read_bytes() == previous
     assert config["key_file"] == "previous.key"
     assert not list((tmp_path / "pki").iterdir())
+
+
+
+def test_business_device_version_lookup_runs_outside_event_loop(client, admin, monkeypatch):
+    import asyncio
+
+    calls = []
+    def lookup(request, db, *, allow_ip_fallback=False):
+        assert allow_ip_fallback is True
+        with pytest.raises(RuntimeError, match="no running event loop"):
+            asyncio.get_running_loop()
+        calls.append(request.url.path)
+        return None
+
+    monkeypatch.setattr(app_main, "request_device", lookup)
+    response = client.get("/api/v1/users")
+    assert response.status_code == 200, response.text
+    assert calls == ["/api/v1/users"]

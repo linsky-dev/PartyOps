@@ -169,7 +169,7 @@ def test_demo_seed_is_opt_in_by_default() -> None:
     assert config.Settings.model_fields["seed_demo"].default is False
 
 
-def test_session_csrf_uses_double_submit_token_and_keeps_legacy_session() -> None:
+def test_session_csrf_uses_double_submit_token_and_rejects_legacy_write() -> None:
     token = "session-bound-csrf-token"
     valid = _request_from(
         "127.0.0.1",
@@ -192,5 +192,133 @@ def test_session_csrf_uses_double_submit_token_and_keeps_legacy_session() -> Non
         security.validate_session_csrf(forged, record)
     assert captured.value.code == "SESSION_CSRF_INVALID"
 
-    # 旧会话仍由生产同源中间件保护；用户下一次登录后自动具备新令牌。
-    security.validate_session_csrf(valid, SimpleNamespace(csrf_token_hash=None))
+    with pytest.raises(ProblemException) as captured:
+        security.validate_session_csrf(valid, SimpleNamespace(csrf_token_hash=None))
+    assert captured.value.code == "SESSION_CSRF_INVALID"
+
+
+
+def test_optional_cookie_auth_requires_csrf_for_production_writes(monkeypatch):
+    from datetime import timedelta
+    from app.models import utcnow
+
+    record = SimpleNamespace(revoked_at=None, expires_at=utcnow() + timedelta(hours=1),
+                             user_id="u", csrf_token_hash=security.hash_token("csrf"))
+    user = SimpleNamespace(active=True)
+    db = SimpleNamespace(scalar=lambda _: record, get=lambda *_: user)
+    monkeypatch.setattr(security, "get_settings", lambda: SimpleNamespace(environment="production"))
+    req = _request_from("127.0.0.1", [(b"cookie", b"partyops_session=token")])
+    with pytest.raises(ProblemException) as captured:
+        security.get_current_user_optional(req, db)
+    assert captured.value.code == "SESSION_CSRF_INVALID"
+    valid = _request_from("127.0.0.1", [
+        (b"cookie", b"partyops_session=token; partyops_csrf=csrf"),
+        (b"x-partyops-csrf", b"csrf"),
+    ])
+    assert security.get_current_user_optional(valid, db) is user
+
+
+@pytest.mark.parametrize("header,value,allowed", [
+    (b"referer", b"https://partyops.local:18765/a?tab=1#x", True),
+    (b"origin", b"https://partyops.local:18765/?tab=1", False),
+    (b"origin", b"https://partyops.local:18765/#x", False),
+    (b"referer", b"https://other.invalid/a?tab=1", False),
+])
+def test_referer_checks_origin_not_page_parameters(monkeypatch, header, value, allowed):
+    from app import main
+    monkeypatch.setattr(main.settings, "environment", "production")
+    assert main._origin_allowed(_request_from("127.0.0.1", [(header, value)])) is allowed
+
+
+
+def test_missing_account_performs_password_verification_but_never_authenticates(client, admin, monkeypatch):
+    calls = []
+    def verify(password, encoded):
+        calls.append(encoded)
+        return True
+    monkeypatch.setattr(auth, "verify_password", verify)
+    login_throttle.reset()
+    try:
+        result = client.post("/api/v1/auth/login", json={
+            "username": "nonexistent-regression-account", "password": "not-a-password"})
+        assert result.status_code == 401
+        assert result.json()["code"] == "LOGIN_FAILED"
+        assert calls == [auth._DUMMY_PASSWORD_HASH]
+    finally:
+        login_throttle.reset()
+
+
+@pytest.mark.parametrize("username,password", [("x" * 65, "password"), ("admin", "x" * 129)])
+def test_login_input_bounds(client, username, password):
+    response = client.post("/api/v1/auth/login", json={"username": username, "password": password})
+    assert response.status_code == 422
+
+
+
+def test_login_throttle_capacity_with_locked_entries_keeps_existing_locks(tmp_path):
+    settings = config.Settings(data_dir=tmp_path, login_account_failure_limit=3,
+        login_ip_failure_limit=5, login_throttle_max_entries=128,
+        login_window_seconds=60, login_lock_seconds=120)
+    throttle = LoginThrottle(log_failures=False)
+    for index in range(64):
+        for _ in range(5):
+            throttle.record_failure(f"locked-{index}", f"192.0.2.{index}", now=10, settings=settings)
+    assert len(throttle._states) == 128
+    # The new keys may be pruned immediately. Never index a pruned key or
+    # evict an existing active lock to retain low-frequency noise.
+    assert throttle.record_failure("new-account", "198.51.100.1", now=11, settings=settings) == 0
+    assert len(throttle._states) == 128
+    assert throttle.retry_after("locked-0", "192.0.2.0", now=11, settings=settings) == 119
+
+
+def test_login_throttle_failure_does_not_reset_active_lock_at_window_boundary(tmp_path):
+    settings = config.Settings(data_dir=tmp_path, login_account_failure_limit=3,
+        login_ip_failure_limit=20, login_window_seconds=60, login_lock_seconds=120)
+    throttle = LoginThrottle(log_failures=False)
+    for when in (0, 1, 2):
+        throttle.record_failure("admin", "192.0.2.1", now=when, settings=settings)
+    assert throttle.retry_after("admin", "192.0.2.1", now=61, settings=settings) == 61
+    assert throttle.record_failure("admin", "192.0.2.1", now=61, settings=settings) >= 61
+
+
+def test_login_rechecks_throttle_after_waiting_for_credential_transaction(client, admin, monkeypatch):
+    checks = iter([0, 90])
+    monkeypatch.setattr(login_throttle, "retry_after", lambda *_a, **_k: next(checks))
+    def unexpected(*_a, **_k):
+        pytest.fail("queued request verified password despite newly active lock")
+    monkeypatch.setattr(auth, "verify_password", unexpected)
+    response = client.post("/api/v1/auth/login", json={
+        "username": admin["username"], "password": "PartyOps@2026"})
+    assert response.status_code == 429, response.text
+    assert response.json()["code"] == "LOGIN_THROTTLED"
+    assert response.headers["retry-after"] == "90"
+
+
+
+@pytest.mark.parametrize("age,refresh", [(0, False), (59, False), (60, True), (600, True), (None, True)])
+def test_session_activity_metadata_is_throttled_without_changing_expiry(monkeypatch, age, refresh):
+    from datetime import datetime, timedelta, timezone
+
+    now = datetime(2026, 11, 27, 8, 0, tzinfo=timezone.utc)
+    seen = (now - timedelta(seconds=age)).replace(tzinfo=None) if age is not None else None
+    expiry = now + timedelta(hours=1)
+    record = SimpleNamespace(revoked_at=None, expires_at=expiry, user_id="u", last_seen_at=seen)
+    user = SimpleNamespace(active=True)
+    db = SimpleNamespace(scalar=lambda _: record, get=lambda *_a, **_k: user)
+    monkeypatch.setattr(security, "utcnow", lambda: now)
+    monkeypatch.setattr(security, "get_settings", lambda: SimpleNamespace(environment="production"))
+    req = _request_from("127.0.0.1", [(b"authorization", b"Bearer synthetic")])
+    assert security.get_current_user(req, db) is user
+    assert record.last_seen_at == (now if refresh else seen)
+    assert record.expires_at == expiry
+
+
+def test_csrf_non_ascii_header_is_rejected_as_controlled_error():
+    req = _request_from("127.0.0.1", [
+        (b"cookie", b"partyops_session=synthetic; partyops_csrf=valid"),
+        (b"x-partyops-csrf", b"\xe9"),
+    ])
+    record = SimpleNamespace(csrf_token_hash=security.hash_token("valid"))
+    with pytest.raises(ProblemException) as captured:
+        security.validate_session_csrf(req, record)
+    assert captured.value.code == "SESSION_CSRF_INVALID"

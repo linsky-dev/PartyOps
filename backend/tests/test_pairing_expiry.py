@@ -60,3 +60,19 @@ def test_fresh_backup_pairing_remains_compatible(client: TestClient, admin: dict
     assert listed.status_code == 200
     current = next(item for item in listed.json() if item["id"] == payload["id"])
     assert current["expires_at"] == payload["expires_at"]
+
+
+
+def test_empty_backup_pairing_never_queries_database():
+    import pytest
+    from app.pairings import authenticate_backup_pairing
+    from app.problems import ProblemException
+
+    class NoDatabaseQuery:
+        def scalar(self, statement):
+            raise AssertionError("empty pairing token queried database")
+
+    for token in (None, "", "  "):
+        with pytest.raises(ProblemException) as captured:
+            authenticate_backup_pairing(NoDatabaseQuery(), token)
+        assert captured.value.code == "PAIRING_INVALID"
