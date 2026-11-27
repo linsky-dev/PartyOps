@@ -88,8 +88,8 @@ def validate_session_csrf(request: Request, record: LoginSession) -> None:
     if (
         not supplied_header
         or not supplied_cookie
-        or not secrets.compare_digest(supplied_header, supplied_cookie)
-        or not secrets.compare_digest(hash_token(supplied_header), expected_hash)
+        or not secrets.compare_digest(supplied_header.encode("utf-8"), supplied_cookie.encode("utf-8"))
+        or not secrets.compare_digest(hash_token(supplied_header).encode("ascii"), expected_hash.encode("utf-8"))
     ):
         raise ProblemException(
             403,
@@ -122,7 +122,12 @@ def get_current_user(
     user = db.get(User, record.user_id, populate_existing=True)
     if not user or not user.active:
         raise ProblemException(403, "USER_DISABLED", "账号不可用", "请联系管理员。")
-    record.last_seen_at = utcnow()
+    # Keep authentication/revocation checks real-time, but avoid marking
+    # the ORM session dirty on every API request. This is activity metadata,
+    # not the credential expiry deadline. Keep the existing transaction policy.
+    now = utcnow()
+    if record.last_seen_at is None or now - _ensure_aware(record.last_seen_at) >= timedelta(seconds=60):
+        record.last_seen_at = now
     return user
 
 

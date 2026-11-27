@@ -292,3 +292,33 @@ def test_login_rechecks_throttle_after_waiting_for_credential_transaction(client
     assert response.status_code == 429, response.text
     assert response.json()["code"] == "LOGIN_THROTTLED"
     assert response.headers["retry-after"] == "90"
+
+
+
+@pytest.mark.parametrize("age,refresh", [(0, False), (59, False), (60, True), (600, True), (None, True)])
+def test_session_activity_metadata_is_throttled_without_changing_expiry(monkeypatch, age, refresh):
+    from datetime import datetime, timedelta, timezone
+
+    now = datetime(2026, 11, 27, 8, 0, tzinfo=timezone.utc)
+    seen = (now - timedelta(seconds=age)).replace(tzinfo=None) if age is not None else None
+    expiry = now + timedelta(hours=1)
+    record = SimpleNamespace(revoked_at=None, expires_at=expiry, user_id="u", last_seen_at=seen)
+    user = SimpleNamespace(active=True)
+    db = SimpleNamespace(scalar=lambda _: record, get=lambda *_a, **_k: user)
+    monkeypatch.setattr(security, "utcnow", lambda: now)
+    monkeypatch.setattr(security, "get_settings", lambda: SimpleNamespace(environment="production"))
+    req = _request_from("127.0.0.1", [(b"authorization", b"Bearer synthetic")])
+    assert security.get_current_user(req, db) is user
+    assert record.last_seen_at == (now if refresh else seen)
+    assert record.expires_at == expiry
+
+
+def test_csrf_non_ascii_header_is_rejected_as_controlled_error():
+    req = _request_from("127.0.0.1", [
+        (b"cookie", b"partyops_session=synthetic; partyops_csrf=valid"),
+        (b"x-partyops-csrf", b"\xe9"),
+    ])
+    record = SimpleNamespace(csrf_token_hash=security.hash_token("valid"))
+    with pytest.raises(ProblemException) as captured:
+        security.validate_session_csrf(req, record)
+    assert captured.value.code == "SESSION_CSRF_INVALID"
