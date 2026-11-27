@@ -328,7 +328,9 @@ def test_search_cjk_permission_and_count_exclude_unrelated_restricted_tasks(clie
     visible = create_task(client, admin["id"], title=phrase + "正常事项", steps=[], materials=[])
     hidden = create_task(client, admin["id"], title=phrase + "受限事项",
                          sensitivity="restricted", steps=[], materials=[])
-    with TestClient(app) as other:
+    # The session-scoped client already owns the application lifespan.
+    other = TestClient(app)
+    try:
         login = other.post("/api/v1/auth/login", json={
             "username": staff["username"], "password": "PartyOps@2026"})
         assert login.status_code == 200, login.text
@@ -338,3 +340,5 @@ def test_search_cjk_permission_and_count_exclude_unrelated_restricted_tasks(clie
         assert data["total"] == 1
         assert [item["id"] for item in data["items"]] == [visible["id"]]
         assert hidden["id"] not in {item["id"] for item in data["items"]}
+    finally:
+        other.close()
