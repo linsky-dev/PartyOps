@@ -1,0 +1,87 @@
+name: RC1 early Kylin ARM64 compatibility evidence (NO REBUILD)
+on:
+  pull_request:
+    types: [opened]
+    branches: [qa/rc1-windows-interactive-wizard-fix-20261126]
+    paths:
+      - '.github/workflows/cloud-rc1-kylin-juniper-compat-audit.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 25
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Fetch immutable original candidate, verify archive and installer bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p evidence candidate
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/15099142407" > evidence/artifact.json
+          jq -e '.workflow_run.id == 45782211205 and .expired == false and .digest == "sha256:e45a559486185089ade52756a57e794e563454489fb48efdd4a459b22c6ba910"' evidence/artifact.json
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/15099142407/zip" > candidate.zip
+          printf '%s  %s\n' e45a559486185089ade52756a57e794e563454489fb48efdd4a459b22c6ba910 candidate.zip | sha256sum -c -
+          unzip -q candidate.zip -d candidate
+          cd candidate
+          sha256sum -c *.deb.sha256
+          jq -e '.source_sha == "2cfe443d5dea292260baf17d116c2a1451ee7032" and .architecture == "arm64" and .release_ready == false' buildonly-receipt.json
+          dpkg-deb --field *.deb > ../evidence/control.txt
+          ar t *.deb | tee ../evidence/archive-members.txt
+          dpkg-deb --raw-extract *.deb ../payload
+      - name: Inspect actual required ELF symbol versions, separately for private office runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json,re,subprocess
+          from pathlib import Path
+          root=Path('payload/opt/partyops')
+          rows=[]
+          for p in sorted(root.rglob('*')):
+              if p.is_symlink() or not p.is_file(): continue
+              with p.open('rb') as f:
+                  if f.read(4)!=b'\x7fELF': continue
+              output=subprocess.check_output(['readelf','--version-info','--wide',str(p)],text=True,errors='replace')
+              needs=output.partition('Version needs section')[2]
+              values=sorted(set(re.findall(r'Name: GLIBC_(\d+(?:\.\d+)+)\b',needs)),key=lambda x:tuple(map(int,x.split('.'))))
+              if values:
+                  rel=p.relative_to(root)
+                  rows.append({'path':str(rel),'private_office':rel.parts[0]=='office-runtime','max_required_glibc':values[-1]})
+          assert len(rows)>=4
+          def newer(v):return tuple(map(int,v.split('.')))>(2,23)
+          blocked=[r for r in rows if not r['private_office'] and newer(r['max_required_glibc'])]
+          result={'elf_with_glibc_needs':len(rows),'shared_namespace_above_2_23':len(blocked),'blocked_examples':blocked[:30],'all':rows,'scope':'static original artifact audit, not Kylin native installation'}
+          Path('evidence/elf-glibc.json').write_text(json.dumps(result,indent=2))
+          print(json.dumps({k:v for k,v in result.items() if k!='all'},indent=2))
+          PY
+      - name: Probe legacy ARM64 Ubuntu 16.04 userspace (not Kylin or old kernel)
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker pull ubuntu:16.04
+          image="$(docker image inspect --format '{{index .RepoDigests 0}}' ubuntu:16.04)"
+          printf '%s\n' "$image" > evidence/legacy-image.txt
+          docker run --rm --network none --volume "$PWD/candidate:/candidate:ro" --volume "$PWD/payload/opt/partyops:/runtime:ro" "$image" /bin/bash -c '
+            set -u
+            uname -m
+            getconf GNU_LIBC_VERSION
+            dpkg --version | head -n1
+            dpkg-deb --info /candidate/*.deb
+            printf "OLD_DPKG_INFO_EXIT=%s\n" "$?"
+            for entry in partyops-wizard partyops-updater; do
+              timeout 30 "/runtime/$entry" --help
+              printf "OLD_USERSPACE_%s_EXIT=%s\n" "$entry" "$?"
+            done
+          ' 2>&1 | tee evidence/legacy-userspace.log
+          echo 'Observation only: exit codes above are evidence, not a native install pass.'
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: rc1-kylin-early-v10-original-deb-audit
+          path: evidence
+          if-no-files-found: error
+          retention-days: 14
