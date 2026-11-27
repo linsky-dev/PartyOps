@@ -1,0 +1,172 @@
+name: Early Kylin ARM64 legacy native dependency rebuilds (NO INSTALLER)
+on:
+  pull_request:
+    types: [opened]
+    branches: [qa/kylin-juniper-legacy-runtime-20261127]
+    paths:
+      - '.github/workflows/cloud-kylin-juniper-legacy-wheel-build.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  sqlite-rebuild:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 35
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Build same SQLite 3.51.3 and pysqlite3 0.5.4 against native glibc 2.17
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p evidence/sqlite input
+          # Reuse source hashes recorded by the original ARM64 freeze.
+          gh run download 45782211205 --repo "$GITHUB_REPOSITORY" --name 'partyops-uos-arm64-APP-FREEZE-RECEIPT-2cfe443d5dea292260baf17d116c2a1451ee7032' --dir input/receipt
+          curl --fail --location --retry 3 --proto '=https' --tlsv1.2 -o input/sqlite-amalgamation-3510300.zip https://www.sqlite.org/2026/sqlite-amalgamation-3510300.zip
+          python scripts/download-pypi-sdist.py 'pysqlite3==0.5.4' input
+          python - <<'PY'
+          import hashlib,json
+          from pathlib import Path
+          reports=[json.loads(p.read_text()) for p in Path('input/receipt').rglob('*.json')]
+          receipt=next(r for r in reports if 'source_input_sha256' in r)
+          for name in ['sqlite-amalgamation-3510300.zip','pysqlite3-0.5.4.tar.gz']:
+              assert hashlib.sha256((Path('input')/name).read_bytes()).hexdigest()==receipt['source_input_sha256'][name],name
+          PY
+          mkdir -p input/tools
+          python -m pip download --only-binary=:all: --no-deps --dest input/tools 'setuptools==80.9.0' 'wheel==0.45.1' 'packaging==25.0'
+          image="quay.io/pypa/manylinux2014_aarch64@sha256:382236bfd11d86894d9792a6fa5286190b8dd3d075a7032284e123c288711e4f"
+          docker pull "$image"
+          printf '%s\n' "$image" > evidence/sqlite/builder-image.txt
+          docker run --rm --network none -v "$PWD/input:/input:ro" -v "$PWD/evidence/sqlite:/out" "$image" /bin/bash -c '
+            set -euo pipefail
+            test "$(getconf GNU_LIBC_VERSION)" = "glibc 2.17"
+            PY=/opt/python/cp311-cp311/bin/python
+            "$PY" -m pip install --no-index --find-links /input/tools setuptools==80.9.0 wheel==0.45.1 packaging==25.0
+            mkdir -p /tmp/src
+            cd /tmp/src
+            tar -xzf /input/pysqlite3-0.5.4.tar.gz
+            cd pysqlite3-0.5.4
+            unzip -p /input/sqlite-amalgamation-3510300.zip sqlite-amalgamation-3510300/sqlite3.c > sqlite3.c
+            unzip -p /input/sqlite-amalgamation-3510300.zip sqlite-amalgamation-3510300/sqlite3.h > sqlite3.h
+            export CFLAGS="-O3 -g0 -fPIC"
+            "$PY" setup.py build_static bdist_wheel
+            auditwheel repair --plat manylinux2014_aarch64 -w /out dist/*.whl
+            "$PY" -m pip install --no-index /out/*.whl
+            "$PY" -c "import pysqlite3 as s; assert s.sqlite_version == \"3.51.3\"; db=s.connect(\":memory:\"); db.execute(\"create virtual table test using fts5(body)\"); print(s.sqlite_version, \"FTS5 PASS\")"
+            sha256sum /out/*.whl > /out/wheel.sha256
+          ' 2>&1 | tee evidence/sqlite/build.log
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: kylin-legacy-arm64-sqlite-wheel-rebuilt
+          path: evidence/sqlite
+          if-no-files-found: error
+          retention-days: 14
+
+  python-native-wheels:
+    name: Native glibc 2.17 wheel - ${{ matrix.name }}
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: argon2
+            requirement: argon2-cffi-bindings==25.1.0
+          - name: pillow
+            requirement: Pillow==13.0.0
+    env:
+      REQUIREMENT: ${{ matrix.requirement }}
+      COMPONENT: ${{ matrix.name }}
+      IMAGE: quay.io/pypa/manylinux2014_aarch64@sha256:382236bfd11d86894d9792a6fa5286190b8dd3d075a7032284e123c288711e4f
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Fetch exact source with official PyPI digest
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p input evidence/wheels
+          python scripts/download-pypi-sdist.py "$REQUIREMENT" input
+          cp input/*.pypi.json evidence/
+          sha256sum input/* > evidence/source.sha256
+          docker pull "$IMAGE"
+          printf '%s\n' "$IMAGE" > evidence/builder-image.txt
+      - name: Build and audit wheel without relabeling or downgrading
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm -v "$PWD/input:/input:ro" -v "$PWD/evidence:/out" -e COMPONENT "$IMAGE" /bin/bash -c '
+            set -euo pipefail
+            test "$(uname -m)" = aarch64
+            test "$(getconf GNU_LIBC_VERSION)" = "glibc 2.17"
+            PY=/opt/python/cp311-cp311/bin/python
+            "$PY" -m pip install "setuptools==80.9.0" "wheel==0.45.1" "packaging==25.0"
+            export CFLAGS="-O2 -g0 -fPIC -march=armv8-a"
+            export CXXFLAGS="-O2 -g0 -fPIC -march=armv8-a"
+            mkdir -p /tmp/raw
+            "$PY" -m pip wheel --no-deps --wheel-dir /tmp/raw /input/*.tar.gz
+            auditwheel show /tmp/raw/*.whl
+            auditwheel repair --plat manylinux2014_aarch64 -w /out/wheels /tmp/raw/*.whl
+            "$PY" -m pip install /out/wheels/*.whl
+            if [ "$COMPONENT" = argon2 ]; then
+              "$PY" -c "from _argon2_cffi_bindings import ffi,lib; assert lib.ARGON2_VERSION_NUMBER == 19; print(\"ARGON2_IMPORT_PASS\")"
+            else
+              "$PY" -c "from PIL import Image,features; import io; required=[\"jpg\",\"zlib\",\"libtiff\",\"webp\",\"avif\",\"littlecms2\"]; print({x:features.check(x) for x in required}); assert all(features.check(x) for x in required); im=Image.new(\"RGB\",(16,16)); b=io.BytesIO(); im.save(b,format=\"AVIF\"); b.seek(0); assert Image.open(b).size==(16,16)"
+            fi
+            sha256sum /out/wheels/*.whl > /out/wheels.sha256
+          ' 2>&1 | tee evidence/build.log
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: kylin-legacy-arm64-${{ matrix.name }}-build-evidence
+          path: evidence
+          if-no-files-found: error
+          retention-days: 14
+  onnxruntime:
+    name: ONNX Runtime 1.22.1 official source glibc 2.17 rebuild
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 180
+    env:
+      IMAGE: quay.io/pypa/manylinux2014_aarch64@sha256:382236bfd11d86894d9792a6fa5286190b8dd3d075a7032284e123c288711e4f
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Reuse established pinned ONNX source build script
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p evidence
+          docker pull "$IMAGE"
+          printf '%s\n' "$IMAGE" > evidence/builder-image.txt
+          docker run --rm -v "$PWD:/workspace" -w /workspace "$IMAGE" /bin/bash -c '
+            set -euo pipefail
+            test "$(getconf GNU_LIBC_VERSION)" = "glibc 2.17"
+            PY=/opt/python/cp311-cp311/bin/python
+            "$PY" -m pip install "setuptools==80.9.0" "wheel==0.45.1" "packaging==25.0" "numpy==2.2.6" "flatbuffers==25.2.10" "cmake==3.31.6" "ninja==1.11.1.4"
+            export PATH="/opt/python/cp311-cp311/bin:$PATH"
+            export PARTYOPS_BUILD_JOBS=2
+            export CFLAGS="-O2 -fstack-protector-strong -D_FORTIFY_SOURCE=2 -march=armv8-a"
+            export CXXFLAGS="-O2 -fstack-protector-strong -D_FORTIFY_SOURCE=2 -static-libstdc++ -static-libgcc -march=armv8-a"
+            bash scripts/build-onnxruntime-manylinux2014.sh arm64 "$PY"
+            "$PY" -m pip install vendor/wheels/arm64/onnxruntime-1.22.1-*.whl
+            "$PY" -c "import onnxruntime as ort; assert ort.__version__==\"1.22.1\"; assert \"CPUExecutionProvider\" in ort.get_available_providers(); print(ort.get_available_providers())"
+            cp vendor/wheels/arm64/onnxruntime-1.22.1-*.whl evidence/
+            cp artifacts/source-evidence/onnxruntime-1.22.1-arm64-* evidence/
+          ' 2>&1 | tee evidence/build.log
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: kylin-legacy-arm64-onnxruntime-build-evidence
+          path: evidence
+          if-no-files-found: error
+          retention-days: 14
