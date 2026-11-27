@@ -317,3 +317,24 @@ def test_search_unions_cjk_substrings_with_fts_and_escapes_wildcards(client, adm
         assert not (found & ids)
         found.update(ids)
     assert found == {a["id"], b["id"], c["id"], d["id"], e["id"]}
+
+
+
+def test_search_cjk_permission_and_count_exclude_unrelated_restricted_tasks(client, admin, staff):
+    from fastapi.testclient import TestClient
+    from app.main import app
+
+    phrase = "权限专项中文检索"
+    visible = create_task(client, admin["id"], title=phrase + "正常事项", steps=[], materials=[])
+    hidden = create_task(client, admin["id"], title=phrase + "受限事项",
+                         sensitivity="restricted", steps=[], materials=[])
+    with TestClient(app) as other:
+        login = other.post("/api/v1/auth/login", json={
+            "username": staff["username"], "password": "PartyOps@2026"})
+        assert login.status_code == 200, login.text
+        response = other.get("/api/v1/search", params={"q": phrase, "page_size": 1})
+        assert response.status_code == 200, response.text
+        data = response.json()
+        assert data["total"] == 1
+        assert [item["id"] for item in data["items"]] == [visible["id"]]
+        assert hidden["id"] not in {item["id"] for item in data["items"]}

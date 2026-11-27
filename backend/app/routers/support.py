@@ -575,11 +575,11 @@ def search(
         # not gain unrelated FTS matches. Keep the existing index format.
         if "%" not in q and "_" not in q:
             try:
-                ids = list(db.scalars(
+                ids = [row[0] for row in db.execute(
                     text("SELECT task_id FROM task_search_fts_v2 "
                          "WHERE task_search_fts_v2 MATCH :query LIMIT 500"),
                     {"query": '"' + q.replace('"', '""') + '"'},
-                ).all())
+                ).all()]
             except OperationalError:
                 logger.warning("task search FTS unavailable; using literal substring search")
         related = select(MaterialItem.task_id).join(

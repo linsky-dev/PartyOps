@@ -15,6 +15,7 @@ from types import SimpleNamespace
 
 import pytest
 from starlette.requests import Request
+from sqlalchemy.exc import OperationalError
 
 from app import (
     client_agent,
@@ -524,7 +525,6 @@ def test_support_search_filter_and_smart_branches(
     q = "党建" if smart == "finals" else ""
     if q:
         execute_values.append([("task-1",)])
-        scalars_values.append(["task-2"])
     if smart == "finals":
         scalars_values.append(["task-1"])
     scalars_values.append([])
@@ -558,8 +558,9 @@ def test_support_search_fts_failure_filename_and_no_ids(monkeypatch: pytest.Monk
         page_size=10,
         user=SimpleNamespace(id="u1"),
         db=_Db(
-            execute_values=[RuntimeError("FTS unavailable")],
-            scalars_values=[[], [], []],
+            execute_values=[OperationalError("SELECT FTS", {}, RuntimeError("FTS unavailable"))],
+            scalar_values=[0],
+            scalars_values=[[], []],
         ),
     )
     assert result.total == 0
