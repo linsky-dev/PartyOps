@@ -285,7 +285,7 @@ def write_package_scripts(staged: Path) -> None:
         "Architecture: arm64\n"
         "Maintainer: PartyOps Local\n"
         "Depends: libc6 (>= 2.28), bash, systemd, util-linux, coreutils, iproute2, curl, xdg-utils, policykit-1\n"
-        "Description: 党建智办 PartyOps UOS V20 AMD64 BUILD_ONLY preview\n"
+        "Description: 党建智办 PartyOps Kylin/UOS ARM64 BUILD_ONLY preview\n"
         " Source-matched RC1 application and byte-identical historical RC6 WPS native runtime; not production verified.\n"
     )
     (debian / "control").write_text(control, encoding="utf-8")
@@ -411,7 +411,7 @@ def build(donor: Path, app: Path, receipt: Path, output: Path) -> Path:
             raise RuntimeError("[UOS_PREVIEW_NATIVE_WPS_BYTES_CHANGED]")
         build_manifest(runtime, head)
         verify_non_office_host_abi(runtime)
-        command("dpkg-deb", "--root-owner-group", "--build", str(staging), str(output))
+        command("dpkg-deb", "--root-owner-group", "-Zxz", "-z6", "--build", str(staging), str(output))
         if command("dpkg-deb", "--field", str(output), "Version", capture=True) != "1.4.6~rc.1":
             raise RuntimeError("[UOS_PREVIEW_INSTALLER_VERSION_MISMATCH]")
         if command("dpkg-deb", "--field", str(output), "Architecture", capture=True) != "arm64":
