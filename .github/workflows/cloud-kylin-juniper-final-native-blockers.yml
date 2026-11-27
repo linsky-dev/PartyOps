@@ -1,0 +1,184 @@
+name: Kylin Juniper - JPEG linker repair and ONNX historical binary verification (NO INSTALLER)
+on:
+  pull_request:
+    types: [opened]
+    branches: [qa/kylin-juniper-reuse-sqlite-and-codecs-20261127]
+    paths:
+      - '.github/workflows/cloud-kylin-juniper-final-native-blockers.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  pillow:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 120
+    env:
+      IMAGE: quay.io/pypa/manylinux2014_aarch64@sha256:382236bfd11d86894d9792a6fa5286190b8dd3d075a7032284e123c288711e4f
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Checkout pinned upstream Pillow including its codec build submodules
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: python-pillow/Pillow
+          ref: 293218ad059d994baf1777d882911bed6a49704a
+          path: upstream-pillow
+          submodules: recursive
+          persist-credentials: false
+      - name: Use pinned upstream codec build and upstream tagged source; retain PyPI source provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p evidence/wheels input
+          test "$(git -C upstream-pillow rev-parse HEAD)" = 293218ad059d994baf1777d882911bed6a49704a
+          git -C upstream-pillow submodule status --recursive > evidence/submodules.txt
+          ! grep -Eq '^[+-U]' evidence/submodules.txt
+          python scripts/download-pypi-sdist.py 'Pillow==13.0.0' input
+          cp input/*.pypi.json evidence/
+          sha256sum input/* > evidence/source.sha256
+          cp upstream-pillow/.github/dependencies.json evidence/codec-versions.json
+          docker pull "$IMAGE"
+          printf '%s\n' "$IMAGE" > evidence/builder-image.txt
+          docker run --rm -v "$PWD/upstream-pillow:/pillow" -v "$PWD/input:/input:ro" -v "$PWD/evidence:/out" -w /pillow "$IMAGE" /bin/bash -c '
+            set -euo pipefail
+            test "$(getconf GNU_LIBC_VERSION)" = "glibc 2.17"
+            PY=/opt/python/cp311-cp311/bin/python
+            export PATH="/opt/python/cp311-cp311/bin:$PATH"
+            "$PY" -m pip install setuptools==80.9.0 wheel==0.45.1 packaging==25.0 cmake==3.31.6 ninja==1.11.1.4
+            export CIBW_ARCHS=aarch64 CIBW_PLATFORM=linux
+            export CFLAGS="-O2 -g0 -fPIC -march=armv8-a"
+            export CXXFLAGS="-O2 -g0 -fPIC -march=armv8-a"
+            # Only change the JPEG C link command: libspng uses libm on glibc 2.17.
+            # CMAKE_C_STANDARD_LIBRARIES appends libm after the static objects.
+            test "$(grep -cF -- "-DCMAKE_POSITION_INDEPENDENT_CODE=1" .github/workflows/wheels-dependencies.sh || true)" != 0
+            sed -i "s/-DCMAKE_POSITION_INDEPENDENT_CODE=1 /-DCMAKE_POSITION_INDEPENDENT_CODE=1 -DCMAKE_C_STANDARD_LIBRARIES=-lm /" .github/workflows/wheels-dependencies.sh
+            grep -F -- "-DCMAKE_C_STANDARD_LIBRARIES=-lm" .github/workflows/wheels-dependencies.sh
+            git -c safe.directory=/pillow diff -- .github/workflows/wheels-dependencies.sh > /out/jpeg-link.patch
+            bash .github/workflows/wheels-dependencies.sh
+            mkdir -p /tmp/raw
+            "$PY" -m pip wheel --no-deps --wheel-dir /tmp/raw -C raqm=enable -C raqm=vendor -C fribidi=vendor -C imagequant=disable .
+            auditwheel repair --plat manylinux2014_aarch64 -w /out/wheels /tmp/raw/*.whl
+            "$PY" -m pip install --no-index --no-deps /out/wheels/*.whl
+            cd /tmp
+            "$PY" -I -c "from PIL import Image,features,__version__; import io; assert __version__==\"13.0.0\"; required=[\"jpg\",\"jpg_2000\",\"zlib\",\"libtiff\",\"webp\",\"avif\",\"littlecms2\",\"freetype2\"]; print({x:features.check(x) for x in required}); assert all(features.check(x) for x in required); im=Image.new(\"RGB\",(16,16),(40,80,120)); exec(\"for fmt in (\\\"JPEG\\\",\\\"PNG\\\",\\\"TIFF\\\",\\\"WEBP\\\",\\\"AVIF\\\",\\\"JPEG2000\\\"):\\n b=io.BytesIO(); im.save(b,format=fmt); b.seek(0); decoded=Image.open(b); decoded.load(); assert decoded.size==(16,16)\\n print(fmt,\\\"roundtrip PASS\\\")\"); print(\"PILLOW_CODEC_PASS\")"
+            sha256sum /out/wheels/*.whl > /out/wheels.sha256
+          ' 2>&1 | tee evidence/build.log
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: kylin-legacy-arm64-pillow-jpeg-libm-retry
+          path: evidence
+          if-no-files-found: error
+          retention-days: 14
+
+  onnx-donor-verification:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 35
+    env:
+      GH_TOKEN: ${{ github.token }}
+      IMAGE: quay.io/pypa/manylinux2014_aarch64@sha256:382236bfd11d86894d9792a6fa5286190b8dd3d075a7032284e123c288711e4f
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Extract exact historical package and verify native library identities
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p evidence donor native official
+          gh release download v1.4.5-rc.6 --repo "$GITHUB_REPOSITORY" --pattern 'PartyOps_1.4.5-rc.6_linux_arm64_kylin-full-20261016.deb' --dir donor
+          printf '%s  %s\n' 17d0e3a3acf060d3c65299c012078435bacc0da3f1f0a909fe3cc997cbbee69c donor/*.deb | sha256sum -c -
+          dpkg-deb -x donor/*.deb old
+          python - <<'PY'
+          import hashlib,json,shutil,subprocess
+          from pathlib import Path
+          expected={'libonnxruntime.so.1.22.1':'7c37abe9df86debe1fbc3a801aa30a316fbcc54b3a3653889147b3b13917f7b5','libonnxruntime_providers_shared.so':'7d1cdbb027cb076dbdd0c3d9369602010f28ed7e0fee1c7c6b1b2e8adf3977f6','onnxruntime_pybind11_state.so':'07aa6f1b6ace1416f973ba6fbc7e0725435424cb309d61f8e08282675f7d709d'}
+          root=Path('old/opt/partyops/_internal/onnxruntime/capi')
+          for name,digest in expected.items():
+              p=root/name
+              with p.open('rb') as f: assert hashlib.file_digest(f,'sha256').hexdigest()==digest,name
+              header=subprocess.check_output(['readelf','-h',str(p)],text=True)
+              assert 'AArch64' in header,name
+              shutil.copyfile(p,Path('native')/name)
+          Path('evidence/native-identities.json').write_text(json.dumps(expected,indent=2))
+          PY
+          python scripts/verify-linux-elf-glibc.py --root native --max-glibc 2.17 | tee evidence/abi.log
+          # Use published same-version Python package only as a disposable test harness;
+          # no repacked wheel is emitted, no wheel ABI label is changed.
+          python -m pip download --no-deps --only-binary=:all: --python-version 311 --implementation cp --abi cp311 --platform manylinux_2_28_aarch64 --platform manylinux_2_27_aarch64 --platform manylinux2014_aarch64 --dest official 'onnxruntime==1.22.1'
+          python - <<'PY'
+          import hashlib,tomllib,json
+          from pathlib import Path
+          lock=tomllib.loads(Path('backend/uv.lock').read_text())
+          entry=next(p for p in lock['package'] if p['name']=='onnxruntime' and p['version']=='1.22.1')
+          wheel,=Path('official').glob('*.whl')
+          with wheel.open('rb') as f: h=hashlib.file_digest(f,'sha256').hexdigest()
+          assert any(w.get('hash')=='sha256:'+h for w in entry['wheels']), 'Official wheel missing from lock'
+          Path('evidence/official-wheel.json').write_text(json.dumps({'filename':wheel.name,'sha256':h}))
+          PY
+          docker pull "$IMAGE"
+      - name: Confirm native version API, Python binding version and actual CPU inference in old ABI environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm -v "$PWD/native:/native:ro" -v "$PWD/official:/official:ro" -v "$PWD/evidence:/out" "$IMAGE" /bin/bash -c '
+            set -euo pipefail
+            test "$(getconf GNU_LIBC_VERSION)" = "glibc 2.17"
+            PY=/opt/python/cp311-cp311/bin/python
+            "$PY" -m pip install "numpy==2.2.6" "flatbuffers==25.2.10" "packaging==25.0" "protobuf==6.31.1" "sympy==1.14.0" "coloredlogs==15.0.1"
+            mkdir /tmp/harness
+            "$PY" -m zipfile -e /official/*.whl /tmp/harness
+            "$PY" - <<"PY"
+          import ctypes, hashlib, json, os, shutil, sys
+          from pathlib import Path
+          lib=ctypes.CDLL("/native/libonnxruntime.so.1.22.1",mode=ctypes.RTLD_LOCAL)
+          class ApiBase(ctypes.Structure):
+              _fields_=[("GetApi",ctypes.c_void_p),("GetVersionString",ctypes.CFUNCTYPE(ctypes.c_char_p))]
+          lib.OrtGetApiBase.restype=ctypes.POINTER(ApiBase)
+          native_version=lib.OrtGetApiBase().contents.GetVersionString().decode()
+          assert native_version=="1.22.1",native_version
+          capi=Path("/tmp/harness/onnxruntime/capi")
+          donor={p.name:p for p in Path("/native").glob("*.so*")}
+          originals={p.name:p for p in capi.glob("*.so*")}
+          assert originals.keys()==donor.keys(),(list(originals),list(donor))
+          for name,p in donor.items(): shutil.copyfile(p,capi/name)
+          sys.path.insert(0,"/tmp/harness")
+          import numpy as np
+          import onnxruntime as ort
+          from onnxruntime.capi import _pybind_state
+          assert ort.__version__=="1.22.1" and _pybind_state.get_version_string()=="1.22.1"
+          # Construct a minimal ONNX Identity model (IR9/opset13) using protobuf wire encoding.
+          def varint(v):
+              out=bytearray()
+              while v>127: out.append((v&127)|128); v>>=7
+              out.append(v); return bytes(out)
+          def vi(n,v): return varint(n*8)+varint(v)
+          def bs(n,v):
+              if isinstance(v,str): v=v.encode()
+              return varint(n*8+2)+varint(len(v))+v
+          shape=bs(1,vi(1,1))+bs(1,vi(1,3))
+          tensor=vi(1,1)+bs(2,shape)
+          value=lambda name:bs(1,name)+bs(2,bs(1,tensor))
+          node=bs(1,"input")+bs(2,"output")+bs(4,"Identity")
+          graph=bs(1,node)+bs(2,"partyops_identity")+bs(11,value("input"))+bs(12,value("output"))
+          model=vi(1,9)+bs(7,graph)+bs(8,vi(2,13))
+          session=ort.InferenceSession(model,providers=["CPUExecutionProvider"])
+          data=np.array([[1.125,-3.5,0]],dtype=np.float32)
+          np.testing.assert_array_equal(session.run(None,{"input":data})[0],data)
+          assert session.get_providers()==["CPUExecutionProvider"]
+          result={"native_version":native_version,"binding_version":_pybind_state.get_version_string(),"build_info":_pybind_state.get_build_info(),"python_wrapper_version":ort.__version__,"synthetic_cpu_inference":"PASS","scope":"historical binary identity and disposable harness only","release_ready":False,"source_build_provenance_complete":False}
+          Path("/out/inference.json").write_text(json.dumps(result,indent=2))
+          print(json.dumps(result))
+          PY
+          ' 2>&1 | tee evidence/inference.log
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: kylin-legacy-arm64-onnx-historical-native-verification
+          path: evidence
+          if-no-files-found: error
+          retention-days: 14
