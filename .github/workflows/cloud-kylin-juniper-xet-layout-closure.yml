@@ -1,0 +1,215 @@
+name: Kylin Juniper - native Xet layout repair, complete dependency inventory and frontend preparation
+on:
+  pull_request:
+    types: [opened]
+    branches: [qa/kylin-juniper-xet-and-python-20261128]
+    paths:
+      - '.github/workflows/cloud-kylin-juniper-xet-layout-closure.yml'
+      - 'scripts/kylin-legacy-wheel-inventory.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  xet-native:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 90
+    env:
+      IMAGE: quay.io/pypa/manylinux2014_aarch64@sha256:382236bfd11d86894d9792a6fa5286190b8dd3d075a7032284e123c288711e4f
+      RUST_VERSION: '1.96.0'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Fetch exact PyPI source and bind to original production lock
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p input evidence/wheels
+          python scripts/download-pypi-sdist.py 'hf-xet==1.5.2' input
+          python - <<'PY'
+          import hashlib,tomllib,tarfile
+          from pathlib import Path,PurePosixPath
+          p,=Path('input').glob('*.tar.gz')
+          lock=tomllib.loads(Path('backend/uv.lock').read_text())
+          entry=next(p for p in lock['package'] if p['name']=='hf-xet' and p['version']=='1.5.2')
+          assert hashlib.sha256(p.read_bytes()).hexdigest()=='73044bd31bae33c984af832d19c752a0dffb67518fee9ddbd91d616e1101cf47'
+          assert entry['sdist']['hash']=='sha256:'+hashlib.sha256(p.read_bytes()).hexdigest()
+          with tarfile.open(p) as t:
+              for m in t.getmembers():
+                  assert not PurePosixPath(m.name).is_absolute() and '..' not in PurePosixPath(m.name).parts
+                  assert m.isfile() or m.isdir()
+          PY
+          cp input/*.pypi.json evidence/
+          curl -fL --retry 3 --proto '=https' -o input/rustup-init https://static.rust-lang.org/rustup/archive/1.29.0/aarch64-unknown-linux-gnu/rustup-init
+          curl -fL --retry 3 --proto '=https' -o input/rustup-init.sha256 https://static.rust-lang.org/rustup/archive/1.29.0/aarch64-unknown-linux-gnu/rustup-init.sha256
+          printf '%s  %s\n' "$(awk 'NR==1{print $1}' input/rustup-init.sha256)" input/rustup-init | sha256sum -c -
+          cp input/rustup-init.sha256 evidence/
+          docker pull "$IMAGE"
+          printf '%s\n' "$IMAGE" > evidence/builder-image.txt
+      - name: Compile locked Rust graph in glibc 2.17, audit and import
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm -v "$PWD/input:/input:ro" -v "$PWD/evidence:/out" -e RUST_VERSION "$IMAGE" /bin/bash -c '
+            set -euo pipefail
+            test "$(getconf GNU_LIBC_VERSION)" = "glibc 2.17"
+            test "$(uname -m)" = aarch64
+            PY=/opt/python/cp311-cp311/bin/python
+            export PATH="/opt/python/cp311-cp311/bin:$HOME/.cargo/bin:$PATH"
+            cp /input/rustup-init /tmp/rustup-init
+            chmod 700 /tmp/rustup-init
+            /tmp/rustup-init -y --profile minimal --default-toolchain "$RUST_VERSION"
+            rustc --version | tee /out/rust-version.txt
+            cargo --version | tee /out/cargo-version.txt
+            "$PY" -m pip install "maturin==1.9.6" "packaging==25.0" || cargo install --locked maturin --version 1.9.6
+            maturin --version | tee /out/maturin-version.txt
+            mkdir /tmp/src
+            tar -xzf /input/*.tar.gz -C /tmp/src
+            cd /tmp/src/hf_xet-1.5.2
+            find . -type f \( -name Cargo.toml -o -name Cargo.lock -o -name pyproject.toml \) | sort | tee /out/source-layout.txt
+            MANIFEST="$("$PY" -c "import pathlib,tomllib; p=pathlib.Path(\"pyproject.toml\"); c=tomllib.loads(p.read_text()); m=c.get(\"tool\",{}).get(\"maturin\",{}).get(\"manifest-path\"); print(m or \"Cargo.toml\")")"
+            if [ ! -f "$MANIFEST" ]; then
+              MANIFEST="$("$PY" -c "import pathlib,tomllib; ps=[p for p in pathlib.Path(\".\").rglob(\"Cargo.toml\") if tomllib.loads(p.read_text()).get(\"package\",{}).get(\"name\",\"\").replace(\"-\",\"_\")==\"hf_xet\"]; assert len(ps)==1,ps; print(ps[0])")"
+            fi
+            test -f "$MANIFEST"
+            ROOT_MANIFEST="$(cargo locate-project --workspace --manifest-path "$MANIFEST" --message-format plain)"
+            LOCK="$(dirname "$ROOT_MANIFEST")/Cargo.lock"
+            printf "%s\n" "$MANIFEST" "$ROOT_MANIFEST" "$LOCK" | tee /out/cargo-layout.txt
+            if [ ! -f "$LOCK" ]; then
+              echo "SOURCE_SDIST_MISSING_WORKSPACE_LOCK: cannot build a reproducibly locked graph" >&2
+              exit 2
+            fi
+            sha256sum "$LOCK" > /out/cargo-lock.sha256
+            cargo metadata --no-deps --locked --manifest-path "$MANIFEST" --format-version 1 > /out/cargo-metadata.json
+            "$PY" -c "import json; x=json.load(open(\"/out/cargo-metadata.json\")); p=[p for p in x[\"packages\"] if p[\"name\"].replace(\"-\",\"_\")==\"hf_xet\"]; assert len(p)==1 and p[0][\"version\"]==\"1.5.2\",p"
+            export CARGO_BUILD_JOBS=2
+            export RUSTFLAGS="-C target-cpu=generic"
+            export CFLAGS="-O2 -fPIC -march=armv8-a"
+            export CXXFLAGS="-O2 -fPIC -march=armv8-a"
+            cargo fetch --locked --manifest-path "$MANIFEST"
+            CARGO_NET_OFFLINE=true maturin build --manifest-path "$MANIFEST" --release --locked --interpreter "$PY" --compatibility manylinux2014 --out /out/wheels
+            sha256sum -c /out/cargo-lock.sha256
+            auditwheel show /out/wheels/*.whl
+            "$PY" -m pip install --no-index --no-deps /out/wheels/*.whl
+            cd /tmp
+            "$PY" -I -c "from importlib.metadata import version; import hf_xet; assert version(\"hf-xet\")==\"1.5.2\"; assert callable(hf_xet.download_files) and callable(hf_xet.upload_files); print(\"HF_XET_IMPORT_API_PASS\")"
+            sha256sum /out/wheels/*.whl > /out/wheel.sha256
+          ' 2>&1 | tee evidence/build.log
+      - name: Verify all ELF version requirements, not only the wheel label
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir unpacked
+          unzip -q evidence/wheels/*.whl -d unpacked
+          python scripts/verify-linux-elf-glibc.py --root unpacked --max-glibc 2.17 | tee evidence/abi.log
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: kylin-legacy-arm64-hf-xet-layout-retry
+          path: evidence
+          if-no-files-found: error
+          retention-days: 14
+
+  prepare-verified-wheelhouse:
+    name: Inventory every remaining locked dependency; preserve available wheels
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 40
+    env:
+      GH_TOKEN: ${{ github.token }}
+      IMAGE: quay.io/pypa/manylinux2014_aarch64@sha256:382236bfd11d86894d9792a6fa5286190b8dd3d075a7032284e123c288711e4f
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.11'
+          architecture: arm64
+      - name: Fetch immutable five successful wheel inputs and verify ZIP digests
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p evidence seeds artifacts-in resolved official
+          fetch() {
+            local id="$1" run="$2" digest="$3"
+            gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$id" > "evidence/artifact-$id.json"
+            jq -e --arg sha "sha256:$digest" --argjson run "$run" '.expired == false and .digest==$sha and .workflow_run.id==$run' "evidence/artifact-$id.json"
+            gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$id/zip" > "artifacts-in/$id.zip"
+            printf '%s  %s\n' "$digest" "artifacts-in/$id.zip" | sha256sum -c -
+            unzip -q "artifacts-in/$id.zip" -d "artifacts-in/$id"
+          }
+          fetch 15196295986 45996334514 49ecb2faba7074a4b11e96090b7fc9bad2002f8161fa1bfb310e7611b3d6f7bd
+          fetch 15197288701 45999886156 e85ed39034f8adeff4d574b36405a3e9c47c3896267ff50767d2a004dff87ca4
+          fetch 15196704686 45999886156 f3939b7b8763b98f47b690d1cc2e393e7d59d638c75b474283afbed00bd17d61
+          fetch 15210775117 46022303443 641ea0bc452e9704fa5ca1cf7aba43e4620782f156dcfbd867aa381826095e30
+          fetch 15213180616 46026834609 6098b74c1cb3804717212925f3b3d9887007271d839de8979d6dba949f0e4326
+          python -m pip install 'packaging==25.0'
+          python - <<'PY'
+          import hashlib,json,shutil
+          from pathlib import Path
+          from packaging.utils import canonicalize_name,parse_wheel_filename
+          expected={'cryptography':('15196295986','50.0.0'),'lxml':('15196295986','6.1.1'),'argon2-cffi-bindings':('15197288701','25.1.0'),'pysqlite3':('15196704686','0.5.4'),'pillow':('15213180616','13.0.0')}
+          def digest(p):
+              with p.open('rb') as f: return hashlib.file_digest(f,'sha256').hexdigest()
+          rows=[]
+          for name,(aid,version) in expected.items():
+              candidates=[p for p in Path('artifacts-in',aid).rglob('*.whl') if canonicalize_name(parse_wheel_filename(p.name)[0])==name and str(parse_wheel_filename(p.name)[1])==version]
+              hashes={digest(p) for p in candidates}
+              assert len(hashes)==1,(name,[str(p) for p in candidates])
+              src=candidates[0]
+              if name=='pysqlite3':
+                  receipts=list(Path('artifacts-in/15210775117').rglob('wheel.sha256'))
+                  assert len(receipts)==1 and receipts[0].read_text().split()[0]==digest(src)
+              shutil.copyfile(src,Path('seeds',src.name))
+              rows.append({'name':name,'version':version,'artifact_id':int(aid),'filename':src.name,'sha256':digest(src)})
+          Path('evidence/seeds.json').write_text(json.dumps(rows,indent=2))
+          PY
+      - name: Independently inventory every dependency, preserve successes even if one is blocked
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/kylin-legacy-wheel-inventory.py 2>&1 | tee evidence/inventory.log
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: kylin-legacy-arm64-independent-wheel-inventory
+          path: |
+            evidence
+            resolved/*.whl
+          if-no-files-found: error
+          retention-days: 14
+  frontend-current:
+    name: Freeze unchanged regression-tested Vue source independently (no installer)
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: 16bf283691739cc86ed396cbcd1c31bf2568dcdc
+          persist-credentials: false
+      - name: Build exact frontend assets and record source hash
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = 16bf283691739cc86ed396cbcd1c31bf2568dcdc
+          corepack enable
+          corepack prepare 'pnpm@11.9.0' --activate
+          pnpm --dir frontend install --frozen-lockfile
+          pnpm --dir frontend run build
+          test -s frontend/dist/client/index.html
+          mkdir -p evidence
+          git rev-parse HEAD > evidence/source.txt
+          git ls-tree HEAD frontend > evidence/frontend-tree.txt
+          (cd frontend/dist/client && find . -type f -print0 | sort -z | xargs -0 sha256sum) > evidence/frontend.sha256
+          tar -C frontend/dist -czf evidence/frontend-client.tar.gz client
+          sha256sum evidence/frontend-client.tar.gz > evidence/archive.sha256
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: kylin-legacy-arm64-current-frontend
+          path: evidence
+          if-no-files-found: error
+          retention-days: 14
