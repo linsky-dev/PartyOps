@@ -224,7 +224,8 @@ jobs:
           test "$(cat "$receipt")" = 16bf283691739cc86ed396cbcd1c31bf2568dcdc
           printf '%s  %s\n' "$(awk 'NR==1{print $1}' "$(find input/frontend -name archive.sha256 -type f)")" "$bundle" | sha256sum -c -
           tar -xzf "$bundle" -C frontend-input
-          (cd frontend-input/client && sha256sum -c "../../$(find input/frontend -name frontend.sha256 -type f)") > evidence/frontend-check.log
+          manifest="$(realpath "$(find input/frontend -name frontend.sha256 -type f)")"
+          (cd frontend-input/client && sha256sum -c "$manifest") > evidence/frontend-check.log
           test -s frontend-input/client/index.html
           echo RETAINED_FRONTEND_PASS | tee evidence/frontend-status.txt
       - name: Independently import available components on the pinned legacy runtime
