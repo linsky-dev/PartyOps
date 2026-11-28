@@ -1,0 +1,259 @@
+name: Kylin Juniper - immutable ONNX retest and remaining offline closure preparation (NO INSTALLER)
+on:
+  pull_request:
+    types: [opened]
+    branches: [qa/kylin-juniper-final-native-blockers-20261127]
+    paths:
+      - '.github/workflows/cloud-kylin-juniper-closure-and-onnx-retest.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  onnx-donor-verification:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 35
+    env:
+      GH_TOKEN: ${{ github.token }}
+      IMAGE: quay.io/pypa/manylinux2014_aarch64@sha256:382236bfd11d86894d9792a6fa5286190b8dd3d075a7032284e123c288711e4f
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Extract exact historical package and verify native library identities
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p evidence donor native official
+          gh release download v1.4.5-rc.6 --repo "$GITHUB_REPOSITORY" --pattern 'PartyOps_1.4.5-rc.6_linux_arm64_kylin-full-20261016.deb' --dir donor
+          printf '%s  %s\n' 17d0e3a3acf060d3c65299c012078435bacc0da3f1f0a909fe3cc997cbbee69c donor/*.deb | sha256sum -c -
+          dpkg-deb -x donor/*.deb old
+          python - <<'PY'
+          import hashlib,json,shutil,subprocess
+          from pathlib import Path
+          expected={'libonnxruntime.so.1.22.1':'7c37abe9df86debe1fbc3a801aa30a316fbcc54b3a3653889147b3b13917f7b5','libonnxruntime_providers_shared.so':'7d1cdbb027cb076dbdd0c3d9369602010f28ed7e0fee1c7c6b1b2e8adf3977f6','onnxruntime_pybind11_state.so':'07aa6f1b6ace1416f973ba6fbc7e0725435424cb309d61f8e08282675f7d709d'}
+          root=Path('old/opt/partyops/_internal/onnxruntime/capi')
+          for name,digest in expected.items():
+              p=root/name
+              with p.open('rb') as f: assert hashlib.file_digest(f,'sha256').hexdigest()==digest,name
+              header=subprocess.check_output(['readelf','-h',str(p)],text=True)
+              assert 'AArch64' in header,name
+              shutil.copyfile(p,Path('native')/name)
+          Path('evidence/native-identities.json').write_text(json.dumps(expected,indent=2))
+          PY
+          python scripts/verify-linux-elf-glibc.py --root native --max-glibc 2.17 | tee evidence/abi.log
+          # Use published same-version Python package only as a disposable test harness;
+          # no repacked wheel is emitted, no wheel ABI label is changed.
+          python -m pip download --no-deps --only-binary=:all: --python-version 311 --implementation cp --abi cp311 --platform manylinux_2_28_aarch64 --platform manylinux_2_27_aarch64 --platform manylinux2014_aarch64 --dest official 'onnxruntime==1.22.1'
+          python - <<'PY'
+          import hashlib,tomllib,json
+          from pathlib import Path
+          lock=tomllib.loads(Path('backend/uv.lock').read_text())
+          entry=next(p for p in lock['package'] if p['name']=='onnxruntime' and p['version']=='1.22.1')
+          wheel,=Path('official').glob('*.whl')
+          with wheel.open('rb') as f: h=hashlib.file_digest(f,'sha256').hexdigest()
+          assert any(w.get('hash')=='sha256:'+h for w in entry['wheels']), 'Official wheel missing from lock'
+          Path('evidence/official-wheel.json').write_text(json.dumps({'filename':wheel.name,'sha256':h}))
+          PY
+          docker pull "$IMAGE"
+      - name: Confirm native version API, Python binding version and actual CPU inference in old ABI environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm -v "$PWD/native:/native:ro" -v "$PWD/official:/official:ro" -v "$PWD/evidence:/out" "$IMAGE" /bin/bash -c '
+            set -euo pipefail
+            test "$(getconf GNU_LIBC_VERSION)" = "glibc 2.17"
+            PY=/opt/python/cp311-cp311/bin/python
+            "$PY" -m pip install "numpy==2.2.6" "flatbuffers==25.2.10" "packaging==25.0" "protobuf==6.31.1" "sympy==1.14.0" "coloredlogs==15.0.1"
+            mkdir /tmp/harness
+            "$PY" -m zipfile -e /official/*.whl /tmp/harness
+            "$PY" - <<"PY"
+          import ctypes, hashlib, json, os, shutil, sys
+          from pathlib import Path
+          lib=ctypes.CDLL("/native/libonnxruntime.so.1.22.1",mode=ctypes.RTLD_LOCAL)
+          class ApiBase(ctypes.Structure):
+              _fields_=[("GetApi",ctypes.c_void_p),("GetVersionString",ctypes.CFUNCTYPE(ctypes.c_char_p))]
+          lib.OrtGetApiBase.restype=ctypes.POINTER(ApiBase)
+          native_version=lib.OrtGetApiBase().contents.GetVersionString().decode()
+          assert native_version=="1.22.1",native_version
+          capi=Path("/tmp/harness/onnxruntime/capi")
+          donor={p.name:p for p in Path("/native").glob("*.so*")}
+          originals={p.name:p for p in capi.glob("*.so*")}
+          # Frozen PyInstaller extension drops the CPython ABI suffix. Permit
+          # exactly this one name mapping, never an arbitrary library swap.
+          mapping={
+              "libonnxruntime.so.1.22.1":"libonnxruntime.so.1.22.1",
+              "libonnxruntime_providers_shared.so":"libonnxruntime_providers_shared.so",
+              "onnxruntime_pybind11_state.so":"onnxruntime_pybind11_state.cpython-311-aarch64-linux-gnu.so",
+          }
+          assert set(donor)==set(mapping) and set(originals)==set(mapping.values()),(list(originals),list(donor))
+          for name,target in mapping.items():
+              shutil.copyfile(donor[name],capi/target)
+              assert hashlib.sha256(donor[name].read_bytes()).digest()==hashlib.sha256((capi/target).read_bytes()).digest()
+          Path("/out/harness-file-map.json").write_text(json.dumps(mapping,indent=2))
+          sys.path.insert(0,"/tmp/harness")
+          import numpy as np
+          import onnxruntime as ort
+          from onnxruntime.capi import _pybind_state, onnxruntime_pybind11_state
+          assert Path(onnxruntime_pybind11_state.__file__).resolve()==(capi/mapping["onnxruntime_pybind11_state.so"]).resolve()
+          assert ort.__version__=="1.22.1" and _pybind_state.get_version_string()=="1.22.1"
+          # Construct a minimal ONNX Identity model (IR9/opset13) using protobuf wire encoding.
+          def varint(v):
+              out=bytearray()
+              while v>127: out.append((v&127)|128); v>>=7
+              out.append(v); return bytes(out)
+          def vi(n,v): return varint(n*8)+varint(v)
+          def bs(n,v):
+              if isinstance(v,str): v=v.encode()
+              return varint(n*8+2)+varint(len(v))+v
+          shape=bs(1,vi(1,1))+bs(1,vi(1,3))
+          tensor=vi(1,1)+bs(2,shape)
+          value=lambda name:bs(1,name)+bs(2,bs(1,tensor))
+          node=bs(1,"input")+bs(2,"output")+bs(4,"Identity")
+          graph=bs(1,node)+bs(2,"partyops_identity")+bs(11,value("input"))+bs(12,value("output"))
+          model=vi(1,9)+bs(7,graph)+bs(8,vi(2,13))
+          session=ort.InferenceSession(model,providers=["CPUExecutionProvider"])
+          data=np.array([[1.125,-3.5,0]],dtype=np.float32)
+          np.testing.assert_array_equal(session.run(None,{"input":data})[0],data)
+          assert session.get_providers()==["CPUExecutionProvider"]
+          result={"native_version":native_version,"binding_version":_pybind_state.get_version_string(),"build_info":_pybind_state.get_build_info(),"python_wrapper_version":ort.__version__,"synthetic_cpu_inference":"PASS","scope":"historical binary identity and disposable harness only","release_ready":False,"source_build_provenance_complete":False}
+          Path("/out/inference.json").write_text(json.dumps(result,indent=2))
+          print(json.dumps(result))
+          PY
+          ' 2>&1 | tee evidence/inference.log
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: kylin-legacy-arm64-onnx-historical-native-mapped-retest
+          path: evidence
+          if-no-files-found: error
+          retention-days: 14
+
+  prepare-verified-wheelhouse:
+    name: Prepare partial glibc 2.17 closure; ONNX remains explicitly blocked
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 40
+    env:
+      GH_TOKEN: ${{ github.token }}
+      IMAGE: quay.io/pypa/manylinux2014_aarch64@sha256:382236bfd11d86894d9792a6fa5286190b8dd3d075a7032284e123c288711e4f
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.11'
+          architecture: arm64
+      - name: Fetch immutable five successful wheel inputs and verify ZIP digests
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p evidence seeds artifacts-in resolved official
+          fetch() {
+            local id="$1" run="$2" digest="$3"
+            gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$id" > "evidence/artifact-$id.json"
+            jq -e --arg sha "sha256:$digest" --argjson run "$run" '.expired == false and .digest==$sha and .workflow_run.id==$run' "evidence/artifact-$id.json"
+            gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$id/zip" > "artifacts-in/$id.zip"
+            printf '%s  %s\n' "$digest" "artifacts-in/$id.zip" | sha256sum -c -
+            unzip -q "artifacts-in/$id.zip" -d "artifacts-in/$id"
+          }
+          fetch 15196295986 45996334514 49ecb2faba7074a4b11e96090b7fc9bad2002f8161fa1bfb310e7611b3d6f7bd
+          fetch 15197288701 45999886156 e85ed39034f8adeff4d574b36405a3e9c47c3896267ff50767d2a004dff87ca4
+          fetch 15196704686 45999886156 f3939b7b8763b98f47b690d1cc2e393e7d59d638c75b474283afbed00bd17d61
+          fetch 15210775117 46022303443 641ea0bc452e9704fa5ca1cf7aba43e4620782f156dcfbd867aa381826095e30
+          fetch 15213180616 46026834609 6098b74c1cb3804717212925f3b3d9887007271d839de8979d6dba949f0e4326
+          python -m pip install 'packaging==25.0'
+          python - <<'PY'
+          import hashlib,json,shutil
+          from pathlib import Path
+          from packaging.utils import canonicalize_name,parse_wheel_filename
+          expected={'cryptography':('15196295986','50.0.0'),'lxml':('15196295986','6.1.1'),'argon2-cffi-bindings':('15197288701','25.1.0'),'pysqlite3':('15196704686','0.5.4'),'pillow':('15213180616','13.0.0')}
+          def digest(p):
+              with p.open('rb') as f: return hashlib.file_digest(f,'sha256').hexdigest()
+          rows=[]
+          for name,(aid,version) in expected.items():
+              candidates=[p for p in Path('artifacts-in',aid).rglob('*.whl') if canonicalize_name(parse_wheel_filename(p.name)[0])==name and str(parse_wheel_filename(p.name)[1])==version]
+              hashes={digest(p) for p in candidates}
+              assert len(hashes)==1,(name,[str(p) for p in candidates])
+              src=candidates[0]
+              if name=='pysqlite3':
+                  receipts=list(Path('artifacts-in/15210775117').rglob('wheel.sha256'))
+                  assert len(receipts)==1 and receipts[0].read_text().split()[0]==digest(src)
+              shutil.copyfile(src,Path('seeds',src.name))
+              rows.append({'name':name,'version':version,'artifact_id':int(aid),'filename':src.name,'sha256':digest(src)})
+          Path('evidence/seeds.json').write_text(json.dumps(rows,indent=2))
+          PY
+      - name: Resolve remaining original-version wheels without importing unverified ONNX binaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Original published ONNX wheel is used only to obtain dependency metadata.
+          python -m pip download --no-deps --only-binary=:all: --python-version 311 --implementation cp --abi cp311 --platform manylinux_2_28_aarch64 --platform manylinux_2_27_aarch64 --dest official 'onnxruntime==1.22.1'
+          python - <<'PY'
+          import hashlib,tomllib,zipfile,email
+          from pathlib import Path
+          from packaging.requirements import Requirement
+          lock=tomllib.loads(Path('backend/uv.lock').read_text())
+          entry=next(p for p in lock['package'] if p['name']=='onnxruntime' and p['version']=='1.22.1')
+          wheel,=Path('official').glob('*.whl')
+          with wheel.open('rb') as f: h=hashlib.file_digest(f,'sha256').hexdigest()
+          assert any(w.get('hash')=='sha256:'+h for w in entry['wheels'])
+          with zipfile.ZipFile(wheel) as z:
+              meta,=[p for p in z.namelist() if p.endswith('.dist-info/METADATA')]
+              requirements=email.message_from_bytes(z.read(meta)).get_all('Requires-Dist',[])
+          roots=[]
+          for p in ['backend/requirements.txt','backend/requirements-local-ai.txt','packaging/uos/requirements-build.txt']:
+              for line in Path(p).read_text().splitlines():
+                  value=line.split('#',1)[0].strip()
+                  if value and Requirement(value).name.lower()!='onnxruntime': roots.append(value)
+          roots += [str(Requirement(v)) for v in requirements]
+          Path('evidence/partial-requirements.txt').write_text('\n'.join(roots)+'\n')
+          PY
+          python -m pip download --disable-pip-version-check --only-binary=:all: --python-version 311 --implementation cp --abi cp311 --platform manylinux2014_aarch64 --platform manylinux_2_17_aarch64 --dest resolved -r evidence/partial-requirements.txt seeds/*.whl 2>&1 | tee evidence/resolve.log
+          python - <<'PY'
+          import hashlib,json,sys
+          from pathlib import Path
+          sys.path.insert(0,'scripts')
+          import importlib
+          checker=importlib.import_module('validate-uos-wheelhouse')
+          wheels=checker.read_wheels(Path('resolved'),'arm64','full')
+          assert 'onnxruntime' not in wheels
+          for item in json.loads(Path('evidence/seeds.json').read_text()):
+              p=wheels[item['name']].path
+              assert hashlib.sha256(p.read_bytes()).hexdigest()==item['sha256']
+          rows=[{'name':n,'version':str(w.version),'filename':w.path.name,'sha256':hashlib.sha256(w.path.read_bytes()).hexdigest()} for n,w in sorted(wheels.items())]
+          Path('evidence/partial-wheelhouse.json').write_text(json.dumps({'status':'PARTIAL_ONLY_ONNX_NOT_PRESENT','release_ready':False,'count':len(rows),'wheels':rows},indent=2))
+          print('PARTIAL_WHEEL_COUNT',len(rows))
+          PY
+      - name: Check original pinned CPython runtime against old glibc and imports
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p pyinput
+          file='cpython-3.11.15+20260623-aarch64-unknown-linux-gnu-install_only_stripped.tar.gz'
+          curl --fail --location --retry 3 --proto '=https' --tlsv1.2 --output "pyinput/$file" 'https://github.com/astral-sh/python-build-standalone/releases/download/20260623/cpython-3.11.15%2B20260623-aarch64-unknown-linux-gnu-install_only_stripped.tar.gz'
+          printf '%s  %s\n' 9ac18c9a761e91e6c6452bc0ef0082922a00a3fdec734555635d57c3169309b7 "pyinput/$file" | sha256sum -c -
+          tar -xzf "pyinput/$file" -C pyinput
+          docker pull "$IMAGE"
+          docker run --rm --network none -v "$PWD/pyinput/python:/python:ro" -v "$PWD/resolved:/wheels:ro" "$IMAGE" /bin/bash -c '
+            set -euo pipefail
+            test "$(getconf GNU_LIBC_VERSION)" = "glibc 2.17"
+            /python/bin/python3.11 -V
+            /python/bin/python3.11 -m venv --copies /tmp/partyops-env
+            PY=/tmp/partyops-env/bin/python
+            "$PY" -m pip install --no-index /wheels/*.whl
+            "$PY" -m pip check
+            cd /tmp
+            "$PY" -I -c "from importlib.metadata import version; import cryptography, lxml.etree, argon2, PIL.Image, pysqlite3, numpy, tokenizers; assert pysqlite3.sqlite_version==\"3.51.3\"; assert version(\"cryptography\")==\"50.0.0\"; assert version(\"Pillow\")==\"13.0.0\"; print(\"PARTIAL_LEGACY_RUNTIME_IMPORTS_PASS\")"
+          ' 2>&1 | tee evidence/python-runtime.log
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: kylin-legacy-arm64-partial-offline-wheelhouse
+          path: |
+            evidence
+            resolved/*.whl
+          if-no-files-found: error
+          retention-days: 14
