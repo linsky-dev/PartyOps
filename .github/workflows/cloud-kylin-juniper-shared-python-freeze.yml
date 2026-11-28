@@ -1,0 +1,263 @@
+name: Kylin Juniper - shared Python Xet, Greenlet and preserved wheel verification
+on:
+  pull_request:
+    types: [opened]
+    branches: [qa/kylin-juniper-xet-layout-closure-20261128]
+    paths:
+      - '.github/workflows/cloud-kylin-juniper-shared-python-freeze.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  xet-native:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 90
+    env:
+      IMAGE: quay.io/pypa/manylinux2014_aarch64@sha256:382236bfd11d86894d9792a6fa5286190b8dd3d075a7032284e123c288711e4f
+      RUST_VERSION: '1.96.0'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Fetch exact PyPI source and bind to original production lock
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p input evidence/wheels
+          python scripts/download-pypi-sdist.py 'hf-xet==1.5.2' input
+          python - <<'PY'
+          import hashlib,tomllib,tarfile
+          from pathlib import Path,PurePosixPath
+          p,=Path('input').glob('*.tar.gz')
+          lock=tomllib.loads(Path('backend/uv.lock').read_text())
+          entry=next(p for p in lock['package'] if p['name']=='hf-xet' and p['version']=='1.5.2')
+          assert hashlib.sha256(p.read_bytes()).hexdigest()=='73044bd31bae33c984af832d19c752a0dffb67518fee9ddbd91d616e1101cf47'
+          assert entry['sdist']['hash']=='sha256:'+hashlib.sha256(p.read_bytes()).hexdigest()
+          with tarfile.open(p) as t:
+              for m in t.getmembers():
+                  assert not PurePosixPath(m.name).is_absolute() and '..' not in PurePosixPath(m.name).parts
+                  assert m.isfile() or m.isdir()
+          PY
+          cp input/*.pypi.json evidence/
+          curl -fL --retry 3 --proto '=https' -o input/rustup-init https://static.rust-lang.org/rustup/archive/1.29.0/aarch64-unknown-linux-gnu/rustup-init
+          curl -fL --retry 3 --proto '=https' -o input/rustup-init.sha256 https://static.rust-lang.org/rustup/archive/1.29.0/aarch64-unknown-linux-gnu/rustup-init.sha256
+          printf '%s  %s\n' "$(awk 'NR==1{print $1}' input/rustup-init.sha256)" input/rustup-init | sha256sum -c -
+          cp input/rustup-init.sha256 evidence/
+          file='cpython-3.11.15+20260623-aarch64-unknown-linux-gnu-install_only_stripped.tar.gz'
+          curl --fail --location --retry 3 --proto '=https' --tlsv1.2 -o "input/$file" 'https://github.com/astral-sh/python-build-standalone/releases/download/20260623/cpython-3.11.15%2B20260623-aarch64-unknown-linux-gnu-install_only_stripped.tar.gz'
+          printf '%s  %s\n' 9ac18c9a761e91e6c6452bc0ef0082922a00a3fdec734555635d57c3169309b7 "input/$file" | sha256sum -c -
+          tar -xzf "input/$file" -C input
+          docker pull "$IMAGE"
+          printf '%s\n' "$IMAGE" > evidence/builder-image.txt
+      - name: Compile locked Rust graph in glibc 2.17, audit and import
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm -v "$PWD/input:/input:ro" -v "$PWD/evidence:/out" -e RUST_VERSION "$IMAGE" /bin/bash -c '
+            set -euo pipefail
+            test "$(getconf GNU_LIBC_VERSION)" = "glibc 2.17"
+            test "$(uname -m)" = aarch64
+            cp -a /input/python /tmp/partyops-python
+            PY=/tmp/partyops-python/bin/python3.11
+            test -f /tmp/partyops-python/lib/libpython3.11.so.1.0
+            export LD_LIBRARY_PATH="/tmp/partyops-python/lib:${LD_LIBRARY_PATH:-}"
+            "$PY" -I -c "import sysconfig,sys; assert sys.version_info[:3]==(3,11,15); assert sysconfig.get_config_var(\"Py_ENABLE_SHARED\")==1; print(sysconfig.get_config_var(\"LDLIBRARY\"))" | tee /out/shared-python.txt
+            "$PY" -m venv /tmp/xet-venv
+            PY=/tmp/xet-venv/bin/python
+            export PATH="/tmp/xet-venv/bin:/opt/python/cp311-cp311/bin:$HOME/.cargo/bin:$PATH"
+            export PYO3_PYTHON="$PY"
+            cp /input/rustup-init /tmp/rustup-init
+            chmod 700 /tmp/rustup-init
+            /tmp/rustup-init -y --profile minimal --default-toolchain "$RUST_VERSION"
+            rustc --version | tee /out/rust-version.txt
+            cargo --version | tee /out/cargo-version.txt
+            "$PY" -m pip install "maturin==1.9.6" "packaging==25.0" || cargo install --locked maturin --version 1.9.6
+            maturin --version | tee /out/maturin-version.txt
+            mkdir /tmp/src
+            tar -xzf /input/hf_xet-1.5.2.tar.gz -C /tmp/src
+            cd /tmp/src/hf_xet-1.5.2
+            find . -type f \( -name Cargo.toml -o -name Cargo.lock -o -name pyproject.toml \) | sort | tee /out/source-layout.txt
+            MANIFEST="$("$PY" -c "import pathlib,tomllib; p=pathlib.Path(\"pyproject.toml\"); c=tomllib.loads(p.read_text()); m=c.get(\"tool\",{}).get(\"maturin\",{}).get(\"manifest-path\"); print(m or \"Cargo.toml\")")"
+            if [ ! -f "$MANIFEST" ]; then
+              MANIFEST="$("$PY" -c "import pathlib,tomllib; ps=[p for p in pathlib.Path(\".\").rglob(\"Cargo.toml\") if tomllib.loads(p.read_text()).get(\"package\",{}).get(\"name\",\"\").replace(\"-\",\"_\")==\"hf_xet\"]; assert len(ps)==1,ps; print(ps[0])")"
+            fi
+            test -f "$MANIFEST"
+            ROOT_MANIFEST="$(cargo locate-project --workspace --manifest-path "$MANIFEST" --message-format plain)"
+            LOCK="$(dirname "$ROOT_MANIFEST")/Cargo.lock"
+            printf "%s\n" "$MANIFEST" "$ROOT_MANIFEST" "$LOCK" | tee /out/cargo-layout.txt
+            if [ ! -f "$LOCK" ]; then
+              echo "SOURCE_SDIST_MISSING_WORKSPACE_LOCK: cannot build a reproducibly locked graph" >&2
+              exit 2
+            fi
+            sha256sum "$LOCK" > /out/cargo-lock.sha256
+            cargo metadata --no-deps --locked --manifest-path "$MANIFEST" --format-version 1 > /out/cargo-metadata.json
+            "$PY" -c "import json; x=json.load(open(\"/out/cargo-metadata.json\")); p=[p for p in x[\"packages\"] if p[\"name\"].replace(\"-\",\"_\")==\"hf_xet\"]; assert len(p)==1 and p[0][\"version\"]==\"1.5.2\",p"
+            export CARGO_BUILD_JOBS=2
+            export RUSTFLAGS="-C target-cpu=generic"
+            export CFLAGS="-O2 -fPIC -march=armv8-a"
+            export CXXFLAGS="-O2 -fPIC -march=armv8-a"
+            cargo fetch --locked --manifest-path "$MANIFEST"
+            CARGO_NET_OFFLINE=true maturin build --manifest-path "$MANIFEST" --release --locked --interpreter "$PY" --compatibility manylinux2014 --out /out/wheels
+            sha256sum -c /out/cargo-lock.sha256
+            auditwheel show /out/wheels/*.whl
+            "$PY" -m pip install --no-index --no-deps /out/wheels/*.whl
+            cd /tmp
+            "$PY" -I -c "from importlib.metadata import version; import hf_xet; assert version(\"hf-xet\")==\"1.5.2\"; assert callable(hf_xet.download_files) and callable(hf_xet.upload_files); print(\"HF_XET_IMPORT_API_PASS\")"
+            sha256sum /out/wheels/*.whl > /out/wheel.sha256
+          ' 2>&1 | tee evidence/build.log
+      - name: Verify all ELF version requirements, not only the wheel label
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir unpacked
+          unzip -q evidence/wheels/*.whl -d unpacked
+          python scripts/verify-linux-elf-glibc.py --root unpacked --max-glibc 2.17 | tee evidence/abi.log
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: kylin-legacy-arm64-hf-xet-shared-python
+          path: evidence
+          if-no-files-found: error
+          retention-days: 14
+
+
+  greenlet:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 35
+    env:
+      IMAGE: quay.io/pypa/manylinux2014_aarch64@sha256:382236bfd11d86894d9792a6fa5286190b8dd3d075a7032284e123c288711e4f
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Build exact locked Greenlet 3.5.4 from official sdist
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p input evidence/wheels
+          python scripts/download-pypi-sdist.py 'greenlet==3.5.4' input
+          printf '%s  %s\n' 0232ae1de90a8e07867bb127d7a6ba2301e859145489f25cda8a6096dabe1d20 input/greenlet-3.5.4.tar.gz | sha256sum -c -
+          cp input/*.pypi.json evidence/
+          docker pull "$IMAGE"
+          printf '%s\n' "$IMAGE" > evidence/builder-image.txt
+          docker run --rm -v "$PWD/input:/input:ro" -v "$PWD/evidence:/out" "$IMAGE" /bin/bash -c '
+            set -euo pipefail
+            test "$(getconf GNU_LIBC_VERSION)" = "glibc 2.17"
+            PY=/opt/python/cp311-cp311/bin/python
+            "$PY" -m pip install setuptools==80.9.0 wheel==0.45.1 packaging==25.0
+            export CFLAGS="-O2 -fPIC -march=armv8-a"
+            export CXXFLAGS="-O2 -fPIC -march=armv8-a"
+            mkdir /tmp/raw
+            "$PY" -m pip wheel --no-deps --wheel-dir /tmp/raw /input/greenlet-3.5.4.tar.gz
+            auditwheel repair --plat manylinux2014_aarch64 -w /out/wheels /tmp/raw/*.whl
+            "$PY" -m pip install --no-deps --no-index /out/wheels/*.whl
+            cd /tmp
+            "$PY" -I -c "from greenlet import greenlet; import greenlet as g; assert g.__version__==\"3.5.4\"; parent=greenlet.getcurrent(); child=greenlet(lambda: parent.switch(42)); assert child.switch()==42; child.switch(); assert child.dead; print(\"GREENLET_SWITCH_PASS\")"
+            sha256sum /out/wheels/*.whl > /out/wheel.sha256
+          ' 2>&1 | tee evidence/build.log
+          mkdir unpacked
+          unzip -q evidence/wheels/*.whl -d unpacked
+          python scripts/verify-linux-elf-glibc.py --root unpacked --max-glibc 2.17 | tee evidence/abi.log
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: kylin-legacy-arm64-greenlet-native
+          path: evidence
+          if-no-files-found: error
+          retention-days: 14
+  retained-inputs:
+    name: Validate retained 61 wheels and frontend bytes (no rebuild)
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      IMAGE: quay.io/pypa/manylinux2014_aarch64@sha256:382236bfd11d86894d9792a6fa5286190b8dd3d075a7032284e123c288711e4f
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Acquire immutable retained artifacts and verify every wheel
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p evidence input wheels unpacked frontend-input
+          fetch() {
+            local id="$1" digest="$2" dest="$3"
+            gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$id" > "evidence/artifact-$id.json"
+            jq -e --arg sha "sha256:$digest" '.expired==false and .workflow_run.id==46120734653 and .digest==$sha' "evidence/artifact-$id.json"
+            gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$id/zip" > "input/$id.zip"
+            printf '%s  %s\n' "$digest" "input/$id.zip" | sha256sum -c -
+            unzip -q "input/$id.zip" -d "$dest"
+          }
+          fetch 15253996311 efb30994a81925306ac70c1d5b186c17cc5c30740bec4bf4bab60138271092f6 input/inventory
+          fetch 15253686348 49c281894f7853b3f5cc1e5e98eb688d737ae7555a1c9e10f186b9ecb32244c6 input/frontend
+          python -m pip install 'packaging==25.0'
+          python - <<'PY'
+          import hashlib,json,shutil,sys,zipfile,importlib
+          from pathlib import Path
+          manifest,=Path('input/inventory').rglob('independent-inventory.json')
+          data=json.loads(manifest.read_text())
+          assert set(data['intentionally_not_packaged'])=={'onnxruntime','hf-xet'}
+          assert set(data['other_failures'])=={'greenlet'}
+          wheel_list=list(Path('input/inventory').rglob('*.whl'))
+          assert len(wheel_list)==61
+          rows={p['filename']:p for p in data['entries'] if not p['metadata_only']}
+          for p in wheel_list:
+              assert rows[p.name]['sha256']==hashlib.sha256(p.read_bytes()).hexdigest(),p.name
+              shutil.copyfile(p,Path('wheels',p.name))
+              with zipfile.ZipFile(p) as z:
+                  z.extractall(Path('unpacked',p.stem))
+          sys.path.insert(0,'scripts')
+          checker=importlib.import_module('validate-uos-wheelhouse')
+          actual=checker.read_wheels(Path('wheels'),'arm64','full')
+          assert len(actual)==61 and not {'greenlet','onnxruntime','hf-xet'} & set(actual)
+          Path('evidence/wheels.json').write_text(json.dumps([rows[p.name] for p in wheel_list],indent=2))
+          print('RETAINED_61_WHEEL_HASHES_PASS')
+          PY
+          python scripts/verify-linux-elf-glibc.py --root unpacked --max-glibc 2.17 | tee evidence/wheel-abi.log
+          bundle="$(find input/frontend -name frontend-client.tar.gz -type f)"
+          receipt="$(find input/frontend -name source.txt -type f)"
+          test "$(cat "$receipt")" = 16bf283691739cc86ed396cbcd1c31bf2568dcdc
+          printf '%s  %s\n' "$(awk 'NR==1{print $1}' "$(find input/frontend -name archive.sha256 -type f)")" "$bundle" | sha256sum -c -
+          tar -xzf "$bundle" -C frontend-input
+          manifest="$(realpath "$(find input/frontend -name frontend.sha256 -type f)")"
+          (cd frontend-input/client && sha256sum -c "$manifest") > evidence/frontend-check.log
+          test -s frontend-input/client/index.html
+          echo RETAINED_FRONTEND_PASS | tee evidence/frontend-status.txt
+      - name: Independently import available components on the pinned legacy runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p pyinput
+          file='cpython-3.11.15+20260623-aarch64-unknown-linux-gnu-install_only_stripped.tar.gz'
+          curl --fail --location --retry 3 --proto '=https' --tlsv1.2 -o "pyinput/$file" 'https://github.com/astral-sh/python-build-standalone/releases/download/20260623/cpython-3.11.15%2B20260623-aarch64-unknown-linux-gnu-install_only_stripped.tar.gz'
+          printf '%s  %s\n' 9ac18c9a761e91e6c6452bc0ef0082922a00a3fdec734555635d57c3169309b7 "pyinput/$file" | sha256sum -c -
+          tar -xzf "pyinput/$file" -C pyinput
+          docker pull "$IMAGE"
+          docker run --rm --network none -v "$PWD/pyinput/python:/python:ro" -v "$PWD/wheels:/wheels:ro" "$IMAGE" /bin/bash -c '
+            set -euo pipefail
+            /python/bin/python3.11 -m venv --copies /tmp/venv
+            PY=/tmp/venv/bin/python
+            "$PY" -m pip install --no-index --no-deps /wheels/*.whl
+            cd /tmp
+            "$PY" -I -c "import cryptography,lxml.etree,argon2,PIL.Image,pysqlite3,numpy,tokenizers,fitz,python_calamine,PyInstaller; assert pysqlite3.sqlite_version==\"3.51.3\"; print(\"RETAINED_CORE_IMPORTS_PASS\")"
+            set +e
+            "$PY" -m pip check > /tmp/pip-check.txt 2>&1
+            rc=$?
+            set -e
+            cat /tmp/pip-check.txt
+            "$PY" -c "from pathlib import Path; lines=Path(\"/tmp/pip-check.txt\").read_text().splitlines(); assert lines and all(any(\" requires \"+n+\", which is not installed.\" in l for n in (\"greenlet\",\"hf-xet\",\"onnxruntime\")) for l in lines),lines"
+            test "$rc" = 1
+            echo PARTIAL_ONLY_EXPECTED_MISSING_DEPENDENCIES
+          ' 2>&1 | tee evidence/partial-imports.log
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: kylin-legacy-arm64-retained-input-validation
+          path: evidence
+          if-no-files-found: error
+          retention-days: 14
