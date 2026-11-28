@@ -1,0 +1,134 @@
+name: Kylin Juniper - locked Xet source build and independent Python runtime probe
+on:
+  pull_request:
+    types: [opened]
+    branches: [qa/kylin-juniper-closure-and-onnx-retest-20261128]
+    paths:
+      - '.github/workflows/cloud-kylin-juniper-xet-and-python.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  xet-native:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 90
+    env:
+      IMAGE: quay.io/pypa/manylinux2014_aarch64@sha256:382236bfd11d86894d9792a6fa5286190b8dd3d075a7032284e123c288711e4f
+      RUST_VERSION: '1.96.0'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Fetch exact PyPI source and bind to original production lock
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p input evidence/wheels
+          python scripts/download-pypi-sdist.py 'hf-xet==1.5.2' input
+          python - <<'PY'
+          import hashlib,tomllib,tarfile
+          from pathlib import Path,PurePosixPath
+          p,=Path('input').glob('*.tar.gz')
+          lock=tomllib.loads(Path('backend/uv.lock').read_text())
+          entry=next(p for p in lock['package'] if p['name']=='hf-xet' and p['version']=='1.5.2')
+          assert hashlib.sha256(p.read_bytes()).hexdigest()=='73044bd31bae33c984af832d19c752a0dffb67518fee9ddbd91d616e1101cf47'
+          assert entry['sdist']['hash']=='sha256:'+hashlib.sha256(p.read_bytes()).hexdigest()
+          with tarfile.open(p) as t:
+              for m in t.getmembers():
+                  assert not PurePosixPath(m.name).is_absolute() and '..' not in PurePosixPath(m.name).parts
+                  assert m.isfile() or m.isdir()
+          PY
+          cp input/*.pypi.json evidence/
+          curl -fL --retry 3 --proto '=https' -o input/rustup-init https://static.rust-lang.org/rustup/archive/1.29.0/aarch64-unknown-linux-gnu/rustup-init
+          curl -fL --retry 3 --proto '=https' -o input/rustup-init.sha256 https://static.rust-lang.org/rustup/archive/1.29.0/aarch64-unknown-linux-gnu/rustup-init.sha256
+          printf '%s  %s\n' "$(awk 'NR==1{print $1}' input/rustup-init.sha256)" input/rustup-init | sha256sum -c -
+          cp input/rustup-init.sha256 evidence/
+          docker pull "$IMAGE"
+          printf '%s\n' "$IMAGE" > evidence/builder-image.txt
+      - name: Compile locked Rust graph in glibc 2.17, audit and import
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm -v "$PWD/input:/input:ro" -v "$PWD/evidence:/out" -e RUST_VERSION "$IMAGE" /bin/bash -c '
+            set -euo pipefail
+            test "$(getconf GNU_LIBC_VERSION)" = "glibc 2.17"
+            test "$(uname -m)" = aarch64
+            PY=/opt/python/cp311-cp311/bin/python
+            export PATH="/opt/python/cp311-cp311/bin:$HOME/.cargo/bin:$PATH"
+            cp /input/rustup-init /tmp/rustup-init
+            chmod 700 /tmp/rustup-init
+            /tmp/rustup-init -y --profile minimal --default-toolchain "$RUST_VERSION"
+            rustc --version | tee /out/rust-version.txt
+            cargo --version | tee /out/cargo-version.txt
+            "$PY" -m pip install "maturin==1.9.6" "packaging==25.0" || cargo install --locked maturin --version 1.9.6
+            maturin --version | tee /out/maturin-version.txt
+            mkdir /tmp/src
+            tar -xzf /input/*.tar.gz -C /tmp/src
+            cd /tmp/src/hf_xet-1.5.2
+            test -f Cargo.lock
+            sha256sum Cargo.lock > /out/cargo-lock.sha256
+            export CARGO_BUILD_JOBS=2
+            export RUSTFLAGS="-C target-cpu=generic"
+            export CFLAGS="-O2 -fPIC -march=armv8-a"
+            export CXXFLAGS="-O2 -fPIC -march=armv8-a"
+            cargo fetch --locked
+            CARGO_NET_OFFLINE=true maturin build --release --locked --interpreter "$PY" --compatibility manylinux2014 --out /out/wheels
+            sha256sum -c /out/cargo-lock.sha256
+            auditwheel show /out/wheels/*.whl
+            "$PY" -m pip install --no-index --no-deps /out/wheels/*.whl
+            cd /tmp
+            "$PY" -I -c "from importlib.metadata import version; import hf_xet; assert version(\"hf-xet\")==\"1.5.2\"; assert callable(hf_xet.download_files) and callable(hf_xet.upload_files); print(\"HF_XET_IMPORT_API_PASS\")"
+            sha256sum /out/wheels/*.whl > /out/wheel.sha256
+          ' 2>&1 | tee evidence/build.log
+      - name: Verify all ELF version requirements, not only the wheel label
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir unpacked
+          unzip -q evidence/wheels/*.whl -d unpacked
+          python scripts/verify-linux-elf-glibc.py --root unpacked --max-glibc 2.17 | tee evidence/abi.log
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: kylin-legacy-arm64-hf-xet-native-build
+          path: evidence
+          if-no-files-found: error
+          retention-days: 14
+  python-runtime:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 20
+    env:
+      IMAGE: quay.io/pypa/manylinux2014_aarch64@sha256:382236bfd11d86894d9792a6fa5286190b8dd3d075a7032284e123c288711e4f
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Probe exact production CPython independently of failed wheel resolution
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p evidence pyinput
+          file='cpython-3.11.15+20260623-aarch64-unknown-linux-gnu-install_only_stripped.tar.gz'
+          curl --fail --location --retry 3 --proto '=https' --tlsv1.2 --output "pyinput/$file" 'https://github.com/astral-sh/python-build-standalone/releases/download/20260623/cpython-3.11.15%2B20260623-aarch64-unknown-linux-gnu-install_only_stripped.tar.gz'
+          printf '%s  %s\n' 9ac18c9a761e91e6c6452bc0ef0082922a00a3fdec734555635d57c3169309b7 "pyinput/$file" | sha256sum -c -
+          tar -xzf "pyinput/$file" -C pyinput
+          docker pull "$IMAGE"
+          docker run --rm --network none -v "$PWD/pyinput/python:/python:ro" "$IMAGE" /bin/bash -c '
+            set -euo pipefail
+            test "$(getconf GNU_LIBC_VERSION)" = "glibc 2.17"
+            /python/bin/python3.11 -I -c "import sys,platform,ssl,ctypes,sqlite3,zlib,bz2,lzma; assert sys.version_info[:3]==(3,11,15); assert platform.machine()==\"aarch64\"; print(sys.version,ssl.OPENSSL_VERSION,sqlite3.sqlite_version)"
+            /python/bin/python3.11 -m venv --copies /tmp/partyops-env
+            /tmp/partyops-env/bin/python -I -c "import pip,sys; print(sys.executable,pip.__version__)"
+            echo CPYTHON_LEGACY_RUNTIME_PASS
+          ' 2>&1 | tee evidence/python-runtime.log
+          python scripts/verify-linux-elf-glibc.py --root pyinput/python --max-glibc 2.17 | tee evidence/python-abi.log
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: kylin-legacy-arm64-pinned-python-probe
+          path: evidence
+          if-no-files-found: error
+          retention-days: 14
